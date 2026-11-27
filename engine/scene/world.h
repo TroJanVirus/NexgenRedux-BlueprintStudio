@@ -271,6 +271,7 @@ namespace nx
         bool addBehaviour(u32 id, asIScriptObject* object);
         // The first, or nullptr. No reference is added.
         asIScriptObject* behaviour(u32 id) const;
+        asIScriptObject* behaviourAt(u32 id, u32 index) const;
 
         // --- Files ---
 

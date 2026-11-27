@@ -1,0 +1,849 @@
+{
+  "version": 1,
+  "name": "BP_Extended",
+  "kind": "Screen",
+  "variables": [],
+  "graphs": [
+    {
+      "kind": "event",
+      "name": "onEnter",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 20,
+          "y": 60,
+          "defaults": {}
+        },
+        {
+          "id": "compute",
+          "kind": "call",
+          "x": 250,
+          "y": 60,
+          "defaults": {},
+          "ref": "Compute"
+        },
+        {
+          "id": "double",
+          "kind": "macroCall",
+          "x": 500,
+          "y": 60,
+          "defaults": {},
+          "ref": "DoubleValue"
+        },
+        {
+          "id": "triple",
+          "kind": "call",
+          "x": 750,
+          "y": 260,
+          "defaults": {},
+          "ref": "Triple"
+        },
+        {
+          "id": "switch",
+          "kind": "switch",
+          "x": 750,
+          "y": 60,
+          "defaults": {},
+          "type": "int",
+          "cases": [
+            36,
+            12
+          ]
+        },
+        {
+          "id": "route",
+          "kind": "macroCall",
+          "x": 1000,
+          "y": 60,
+          "defaults": {
+            "condition": true
+          },
+          "ref": "Route"
+        },
+        {
+          "id": "pass",
+          "kind": "api:Save:Save::set:string,string",
+          "x": 1250,
+          "y": 60,
+          "defaults": {
+            "key": "bp_extended",
+            "value": "yes"
+          }
+        },
+        {
+          "id": "wrong",
+          "kind": "api:Save:Save::set:string,string",
+          "x": 1250,
+          "y": 260,
+          "defaults": {
+            "key": "bp_extended",
+            "value": "no"
+          }
+        },
+        {
+          "id": "timeline",
+          "kind": "timeline",
+          "x": 1500,
+          "y": 60,
+          "defaults": {
+            "duration": 1,
+            "from": 0,
+            "to": 10
+          },
+          "keys": [
+            {
+              "time": 0,
+              "value": 0,
+              "mode": "linear"
+            },
+            {
+              "time": 0.5,
+              "value": 0.2,
+              "mode": "linear"
+            },
+            {
+              "time": 1,
+              "value": 1,
+              "mode": "linear"
+            }
+          ]
+        },
+        {
+          "id": "text",
+          "kind": "toString",
+          "x": 1750,
+          "y": 250,
+          "defaults": {},
+          "type": "float"
+        },
+        {
+          "id": "progress",
+          "kind": "api:Save:Save::set:string,string",
+          "x": 1750,
+          "y": 60,
+          "defaults": {
+            "key": "bp_curve"
+          }
+        }
+      ],
+      "links": [
+        {
+          "from": {
+            "node": "entry",
+            "pin": "then"
+          },
+          "to": {
+            "node": "compute",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "compute",
+            "pin": "then"
+          },
+          "to": {
+            "node": "double",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "compute",
+            "pin": "result"
+          },
+          "to": {
+            "node": "double",
+            "pin": "value"
+          }
+        },
+        {
+          "from": {
+            "node": "double",
+            "pin": "result"
+          },
+          "to": {
+            "node": "triple",
+            "pin": "value"
+          }
+        },
+        {
+          "from": {
+            "node": "triple",
+            "pin": "result"
+          },
+          "to": {
+            "node": "switch",
+            "pin": "value"
+          }
+        },
+        {
+          "from": {
+            "node": "double",
+            "pin": "then"
+          },
+          "to": {
+            "node": "switch",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "switch",
+            "pin": "case0"
+          },
+          "to": {
+            "node": "route",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "route",
+            "pin": "yes"
+          },
+          "to": {
+            "node": "pass",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "route",
+            "pin": "no"
+          },
+          "to": {
+            "node": "wrong",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "switch",
+            "pin": "case1"
+          },
+          "to": {
+            "node": "wrong",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "switch",
+            "pin": "default"
+          },
+          "to": {
+            "node": "wrong",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "pass",
+            "pin": "then"
+          },
+          "to": {
+            "node": "timeline",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "timeline",
+            "pin": "update"
+          },
+          "to": {
+            "node": "progress",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "timeline",
+            "pin": "value"
+          },
+          "to": {
+            "node": "text",
+            "pin": "value"
+          }
+        },
+        {
+          "from": {
+            "node": "text",
+            "pin": "result"
+          },
+          "to": {
+            "node": "progress",
+            "pin": "value"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "function",
+      "name": "Compute",
+      "params": [],
+      "returns": "int",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 20,
+          "y": 60,
+          "defaults": {}
+        },
+        {
+          "id": "array",
+          "kind": "arrayNew",
+          "x": 250,
+          "y": 60,
+          "defaults": {
+            "length": 3
+          },
+          "type": "array<int>@"
+        },
+        {
+          "id": "setA",
+          "kind": "arraySet",
+          "x": 500,
+          "y": 60,
+          "defaults": {
+            "index": 0,
+            "value": 2
+          },
+          "type": "array<int>@"
+        },
+        {
+          "id": "setB",
+          "kind": "arraySet",
+          "x": 750,
+          "y": 60,
+          "defaults": {
+            "index": 1,
+            "value": 8
+          },
+          "type": "array<int>@"
+        },
+        {
+          "id": "setC",
+          "kind": "arraySet",
+          "x": 1000,
+          "y": 60,
+          "defaults": {
+            "index": 2,
+            "value": 4
+          },
+          "type": "array<int>@"
+        },
+        {
+          "id": "each",
+          "kind": "forEach",
+          "x": 1250,
+          "y": 60,
+          "defaults": {},
+          "type": "array<int>@"
+        },
+        {
+          "id": "eq",
+          "kind": "equal",
+          "x": 1250,
+          "y": 250,
+          "defaults": {
+            "b": 1
+          },
+          "type": "uint"
+        },
+        {
+          "id": "branch",
+          "kind": "branch",
+          "x": 1500,
+          "y": 60,
+          "defaults": {}
+        },
+        {
+          "id": "continue",
+          "kind": "continueLoop",
+          "x": 1750,
+          "y": 60,
+          "defaults": {}
+        },
+        {
+          "id": "get",
+          "kind": "getLocal",
+          "x": 1500,
+          "y": 300,
+          "defaults": {},
+          "ref": "sum"
+        },
+        {
+          "id": "sum",
+          "kind": "add",
+          "x": 1750,
+          "y": 300,
+          "defaults": {},
+          "type": "int"
+        },
+        {
+          "id": "set",
+          "kind": "setLocal",
+          "x": 2000,
+          "y": 260,
+          "defaults": {},
+          "ref": "sum"
+        },
+        {
+          "id": "get2",
+          "kind": "getLocal",
+          "x": 1250,
+          "y": 500,
+          "defaults": {},
+          "ref": "sum"
+        },
+        {
+          "id": "ret",
+          "kind": "return",
+          "x": 1500,
+          "y": 500,
+          "defaults": {}
+        }
+      ],
+      "links": [
+        {
+          "from": {
+            "node": "entry",
+            "pin": "then"
+          },
+          "to": {
+            "node": "array",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "array",
+            "pin": "then"
+          },
+          "to": {
+            "node": "setA",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "array",
+            "pin": "result"
+          },
+          "to": {
+            "node": "setA",
+            "pin": "target"
+          }
+        },
+        {
+          "from": {
+            "node": "setA",
+            "pin": "then"
+          },
+          "to": {
+            "node": "setB",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "array",
+            "pin": "result"
+          },
+          "to": {
+            "node": "setB",
+            "pin": "target"
+          }
+        },
+        {
+          "from": {
+            "node": "setB",
+            "pin": "then"
+          },
+          "to": {
+            "node": "setC",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "array",
+            "pin": "result"
+          },
+          "to": {
+            "node": "setC",
+            "pin": "target"
+          }
+        },
+        {
+          "from": {
+            "node": "setC",
+            "pin": "then"
+          },
+          "to": {
+            "node": "each",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "array",
+            "pin": "result"
+          },
+          "to": {
+            "node": "each",
+            "pin": "target"
+          }
+        },
+        {
+          "from": {
+            "node": "each",
+            "pin": "body"
+          },
+          "to": {
+            "node": "branch",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "each",
+            "pin": "index"
+          },
+          "to": {
+            "node": "eq",
+            "pin": "a"
+          }
+        },
+        {
+          "from": {
+            "node": "eq",
+            "pin": "result"
+          },
+          "to": {
+            "node": "branch",
+            "pin": "condition"
+          }
+        },
+        {
+          "from": {
+            "node": "branch",
+            "pin": "true"
+          },
+          "to": {
+            "node": "continue",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "branch",
+            "pin": "false"
+          },
+          "to": {
+            "node": "set",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "get",
+            "pin": "value"
+          },
+          "to": {
+            "node": "sum",
+            "pin": "a"
+          }
+        },
+        {
+          "from": {
+            "node": "each",
+            "pin": "element"
+          },
+          "to": {
+            "node": "sum",
+            "pin": "b"
+          }
+        },
+        {
+          "from": {
+            "node": "sum",
+            "pin": "result"
+          },
+          "to": {
+            "node": "set",
+            "pin": "value"
+          }
+        },
+        {
+          "from": {
+            "node": "each",
+            "pin": "completed"
+          },
+          "to": {
+            "node": "ret",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "get2",
+            "pin": "value"
+          },
+          "to": {
+            "node": "ret",
+            "pin": "value"
+          }
+        }
+      ],
+      "locals": [
+        {
+          "name": "sum",
+          "type": "int",
+          "default": 0
+        }
+      ]
+    },
+    {
+      "kind": "function",
+      "name": "Triple",
+      "params": [
+        {
+          "name": "value",
+          "type": "int"
+        }
+      ],
+      "returns": "int",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 20,
+          "y": 60,
+          "defaults": {}
+        },
+        {
+          "id": "mul",
+          "kind": "multiply",
+          "x": 250,
+          "y": 240,
+          "defaults": {
+            "b": 3
+          },
+          "type": "int"
+        },
+        {
+          "id": "ret",
+          "kind": "return",
+          "x": 510,
+          "y": 60,
+          "defaults": {}
+        }
+      ],
+      "links": [
+        {
+          "from": {
+            "node": "entry",
+            "pin": "then"
+          },
+          "to": {
+            "node": "ret",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "entry",
+            "pin": "value"
+          },
+          "to": {
+            "node": "mul",
+            "pin": "a"
+          }
+        },
+        {
+          "from": {
+            "node": "mul",
+            "pin": "result"
+          },
+          "to": {
+            "node": "ret",
+            "pin": "value"
+          }
+        }
+      ],
+      "pure": true
+    },
+    {
+      "kind": "macro",
+      "name": "DoubleValue",
+      "params": [
+        {
+          "name": "value",
+          "type": "int"
+        }
+      ],
+      "results": [
+        {
+          "name": "result",
+          "type": "int"
+        }
+      ],
+      "exits": [
+        "then"
+      ],
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 20,
+          "y": 60,
+          "defaults": {}
+        },
+        {
+          "id": "mul",
+          "kind": "multiply",
+          "x": 250,
+          "y": 240,
+          "defaults": {
+            "b": 2
+          },
+          "type": "int"
+        },
+        {
+          "id": "exit",
+          "kind": "macroExit",
+          "x": 510,
+          "y": 60,
+          "defaults": {},
+          "ref": "then"
+        }
+      ],
+      "links": [
+        {
+          "from": {
+            "node": "entry",
+            "pin": "then"
+          },
+          "to": {
+            "node": "exit",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "entry",
+            "pin": "value"
+          },
+          "to": {
+            "node": "mul",
+            "pin": "a"
+          }
+        },
+        {
+          "from": {
+            "node": "mul",
+            "pin": "result"
+          },
+          "to": {
+            "node": "exit",
+            "pin": "result"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "macro",
+      "name": "Route",
+      "params": [
+        {
+          "name": "condition",
+          "type": "bool"
+        }
+      ],
+      "results": [],
+      "exits": [
+        "yes",
+        "no"
+      ],
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 20,
+          "y": 60,
+          "defaults": {}
+        },
+        {
+          "id": "branch",
+          "kind": "branch",
+          "x": 250,
+          "y": 60,
+          "defaults": {}
+        },
+        {
+          "id": "yes",
+          "kind": "macroExit",
+          "x": 510,
+          "y": 60,
+          "defaults": {},
+          "ref": "yes"
+        },
+        {
+          "id": "no",
+          "kind": "macroExit",
+          "x": 510,
+          "y": 260,
+          "defaults": {},
+          "ref": "no"
+        }
+      ],
+      "links": [
+        {
+          "from": {
+            "node": "entry",
+            "pin": "then"
+          },
+          "to": {
+            "node": "branch",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "entry",
+            "pin": "condition"
+          },
+          "to": {
+            "node": "branch",
+            "pin": "condition"
+          }
+        },
+        {
+          "from": {
+            "node": "branch",
+            "pin": "true"
+          },
+          "to": {
+            "node": "yes",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "branch",
+            "pin": "false"
+          },
+          "to": {
+            "node": "no",
+            "pin": "in"
+          }
+        }
+      ]
+    }
+  ]
+}

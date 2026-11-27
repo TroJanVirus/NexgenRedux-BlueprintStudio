@@ -373,6 +373,13 @@ namespace nx
             return object;
         }
 
+        asIScriptObject* entityBehaviourAt(u32 index, const EntityRef* e)
+        {
+            asIScriptObject* object = e->world ? e->world->behaviourAt(e->id, index) : nullptr;
+            if (object) object->AddRef();
+            return object;
+        }
+
         // --- scene:: ---
 
         EntityRef* sceneSpawn(const Vec2& at)
@@ -573,6 +580,7 @@ namespace nx
         b.method("void set_lifetime(float) property", NX_OBJ_LAST(setLifetime), "Destroys it after some seconds.");
         b.method("void add(IBehaviour@+ behaviour)", NX_OBJ_LAST(entityAdd), "Adds a behaviour.");
         b.method("IBehaviour@ get_behaviour() const property", NX_OBJ_LAST(entityBehaviour), "Its first behaviour, or null. `cast<Enemy>(e.behaviour)` gives the class back.");
+        b.method("IBehaviour@ behaviourAt(uint index) const", NX_OBJ_LAST(entityBehaviourAt), "A behaviour by zero-based attachment order, or null for an invalid index or dead entity.");
 
         b.section("Scene", "Entities that move, collide and are drawn by the engine. Each screen has its own scene, and it is stepped after the screen's update().");
         b.names("Scene");

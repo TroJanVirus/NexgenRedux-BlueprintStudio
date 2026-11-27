@@ -1,0 +1,206 @@
+{
+  "version": 1,
+  "name": "BP_Child",
+  "kind": "Screen",
+  "parent": {
+    "version": 1,
+    "name": "BP_Base",
+    "kind": "Screen",
+    "variables": [
+      {
+        "name": "baseScore",
+        "type": "int",
+        "default": 4
+      }
+    ],
+    "graphs": [
+      {
+        "kind": "event",
+        "name": "onEnter",
+        "nodes": [
+          {
+            "id": "entry",
+            "kind": "entry",
+            "x": 20,
+            "y": 60,
+            "defaults": {}
+          },
+          {
+            "id": "set",
+            "kind": "set",
+            "x": 260,
+            "y": 60,
+            "defaults": {
+              "value": 7
+            },
+            "ref": "baseScore"
+          }
+        ],
+        "links": [
+          {
+            "from": {
+              "node": "entry",
+              "pin": "then"
+            },
+            "to": {
+              "node": "set",
+              "pin": "in"
+            }
+          }
+        ]
+      },
+      {
+        "kind": "function",
+        "name": "GetScore",
+        "params": [],
+        "returns": "int",
+        "nodes": [
+          {
+            "id": "entry",
+            "kind": "entry",
+            "x": 20,
+            "y": 60,
+            "defaults": {}
+          },
+          {
+            "id": "get",
+            "kind": "get",
+            "x": 20,
+            "y": 250,
+            "defaults": {},
+            "ref": "baseScore"
+          },
+          {
+            "id": "ret",
+            "kind": "return",
+            "x": 260,
+            "y": 60,
+            "defaults": {}
+          }
+        ],
+        "links": [
+          {
+            "from": {
+              "node": "entry",
+              "pin": "then"
+            },
+            "to": {
+              "node": "ret",
+              "pin": "in"
+            }
+          },
+          {
+            "from": {
+              "node": "get",
+              "pin": "value"
+            },
+            "to": {
+              "node": "ret",
+              "pin": "value"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "variables": [],
+  "graphs": [
+    {
+      "kind": "event",
+      "name": "onEnter",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 20,
+          "y": 60,
+          "defaults": {}
+        },
+        {
+          "id": "parent",
+          "kind": "parentCall",
+          "x": 260,
+          "y": 60,
+          "defaults": {}
+        },
+        {
+          "id": "call",
+          "kind": "call",
+          "x": 500,
+          "y": 60,
+          "defaults": {},
+          "ref": "GetScore"
+        },
+        {
+          "id": "str",
+          "kind": "toString",
+          "x": 740,
+          "y": 240,
+          "defaults": {},
+          "type": "int"
+        },
+        {
+          "id": "save",
+          "kind": "api:Save:Save::set:string,string",
+          "x": 980,
+          "y": 60,
+          "defaults": {
+            "key": "bp_inherited"
+          }
+        }
+      ],
+      "links": [
+        {
+          "from": {
+            "node": "entry",
+            "pin": "then"
+          },
+          "to": {
+            "node": "parent",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "parent",
+            "pin": "then"
+          },
+          "to": {
+            "node": "call",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "call",
+            "pin": "then"
+          },
+          "to": {
+            "node": "save",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "call",
+            "pin": "result"
+          },
+          "to": {
+            "node": "str",
+            "pin": "value"
+          }
+        },
+        {
+          "from": {
+            "node": "str",
+            "pin": "result"
+          },
+          "to": {
+            "node": "save",
+            "pin": "value"
+          }
+        }
+      ]
+    }
+  ]
+}

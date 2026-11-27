@@ -712,6 +712,19 @@ namespace nx
         return e && e->behaviour != kNone ? m_behaviours[e->behaviour].object : nullptr;
     }
 
+    asIScriptObject* World::behaviourAt(u32 id, u32 index) const
+    {
+        const Entity* e = find(id);
+        if (!e) return nullptr;
+        u32 at = e->behaviour;
+        while (at != kNone && index != 0)
+        {
+            at = m_behaviours[at].next;
+            --index;
+        }
+        return at != kNone ? m_behaviours[at].object : nullptr;
+    }
+
     bool World::startBehaviours()
     {
         // Starting one may add more.

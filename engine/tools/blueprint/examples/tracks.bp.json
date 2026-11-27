@@ -1,0 +1,353 @@
+{
+  "version": 1,
+  "name": "BP_Tracks",
+  "kind": "Screen",
+  "variables": [],
+  "graphs": [
+    {
+      "kind": "event",
+      "name": "onEnter",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 20,
+          "y": 60,
+          "defaults": {}
+        },
+        {
+          "id": "seq",
+          "kind": "sequence",
+          "x": 260,
+          "y": 60,
+          "defaults": {}
+        },
+        {
+          "id": "timeline",
+          "kind": "timeline",
+          "x": 500,
+          "y": 60,
+          "defaults": {
+            "duration": 1,
+            "from": 0,
+            "to": 10
+          },
+          "playback": "reverse",
+          "tracks": [
+            {
+              "name": "Position",
+              "type": "Vec3",
+              "channels": [
+                [
+                  {
+                    "time": 0,
+                    "value": 0,
+                    "mode": "linear"
+                  },
+                  {
+                    "time": 1,
+                    "value": 10,
+                    "mode": "linear"
+                  }
+                ],
+                [
+                  {
+                    "time": 0,
+                    "value": 10,
+                    "mode": "linear"
+                  },
+                  {
+                    "time": 1,
+                    "value": 30,
+                    "mode": "linear"
+                  }
+                ],
+                [
+                  {
+                    "time": 0,
+                    "value": 5,
+                    "mode": "linear"
+                  },
+                  {
+                    "time": 1,
+                    "value": 5,
+                    "mode": "linear"
+                  }
+                ]
+              ]
+            },
+            {
+              "name": "Tint",
+              "type": "Color",
+              "channels": [
+                [
+                  {
+                    "time": 0,
+                    "value": 0,
+                    "mode": "linear"
+                  },
+                  {
+                    "time": 1,
+                    "value": 1,
+                    "mode": "linear"
+                  }
+                ],
+                [
+                  {
+                    "time": 0,
+                    "value": 1,
+                    "mode": "linear"
+                  },
+                  {
+                    "time": 1,
+                    "value": 0,
+                    "mode": "linear"
+                  }
+                ],
+                [
+                  {
+                    "time": 0,
+                    "value": 0.5,
+                    "mode": "linear"
+                  },
+                  {
+                    "time": 1,
+                    "value": 0.5,
+                    "mode": "linear"
+                  }
+                ],
+                [
+                  {
+                    "time": 0,
+                    "value": 1,
+                    "mode": "linear"
+                  },
+                  {
+                    "time": 1,
+                    "value": 1,
+                    "mode": "linear"
+                  }
+                ]
+              ]
+            },
+            {
+              "name": "Volume",
+              "type": "float",
+              "channels": [
+                [
+                  {
+                    "time": 0,
+                    "value": 0,
+                    "mode": "linear"
+                  },
+                  {
+                    "time": 1,
+                    "value": 2,
+                    "mode": "linear"
+                  }
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "id": "part",
+          "kind": "component",
+          "x": 760,
+          "y": 260,
+          "defaults": {},
+          "type": "Vec3",
+          "ref": "y"
+        },
+        {
+          "id": "text",
+          "kind": "toString",
+          "x": 1000,
+          "y": 260,
+          "defaults": {},
+          "type": "float"
+        },
+        {
+          "id": "progress",
+          "kind": "api:Save:Save::set:string,string",
+          "x": 1240,
+          "y": 60,
+          "defaults": {
+            "key": "bp_track_y"
+          }
+        },
+        {
+          "id": "finished",
+          "kind": "api:Save:Save::set:string,string",
+          "x": 1240,
+          "y": 470,
+          "defaults": {
+            "key": "bp_reverse_done",
+            "value": "yes"
+          }
+        },
+        {
+          "id": "loop",
+          "kind": "timeline",
+          "x": 500,
+          "y": 620,
+          "defaults": {
+            "duration": 1,
+            "from": 0,
+            "to": 10
+          },
+          "playback": "pingpong"
+        },
+        {
+          "id": "loopText",
+          "kind": "toString",
+          "x": 760,
+          "y": 800,
+          "defaults": {},
+          "type": "float"
+        },
+        {
+          "id": "loopSave",
+          "kind": "api:Save:Save::set:string,string",
+          "x": 1000,
+          "y": 620,
+          "defaults": {
+            "key": "bp_pingpong"
+          }
+        },
+        {
+          "id": "loopDone",
+          "kind": "api:Save:Save::set:string,string",
+          "x": 1000,
+          "y": 1050,
+          "defaults": {
+            "key": "bp_pingpong_done",
+            "value": "wrong"
+          }
+        }
+      ],
+      "links": [
+        {
+          "from": {
+            "node": "entry",
+            "pin": "then"
+          },
+          "to": {
+            "node": "seq",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "seq",
+            "pin": "first"
+          },
+          "to": {
+            "node": "timeline",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "timeline",
+            "pin": "update"
+          },
+          "to": {
+            "node": "progress",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "timeline",
+            "pin": "Position"
+          },
+          "to": {
+            "node": "part",
+            "pin": "value"
+          }
+        },
+        {
+          "from": {
+            "node": "part",
+            "pin": "result"
+          },
+          "to": {
+            "node": "text",
+            "pin": "value"
+          }
+        },
+        {
+          "from": {
+            "node": "text",
+            "pin": "result"
+          },
+          "to": {
+            "node": "progress",
+            "pin": "value"
+          }
+        },
+        {
+          "from": {
+            "node": "timeline",
+            "pin": "finished"
+          },
+          "to": {
+            "node": "finished",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "seq",
+            "pin": "second"
+          },
+          "to": {
+            "node": "loop",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "loop",
+            "pin": "update"
+          },
+          "to": {
+            "node": "loopSave",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "loop",
+            "pin": "value"
+          },
+          "to": {
+            "node": "loopText",
+            "pin": "value"
+          }
+        },
+        {
+          "from": {
+            "node": "loopText",
+            "pin": "result"
+          },
+          "to": {
+            "node": "loopSave",
+            "pin": "value"
+          }
+        },
+        {
+          "from": {
+            "node": "loop",
+            "pin": "finished"
+          },
+          "to": {
+            "node": "loopDone",
+            "pin": "in"
+          }
+        }
+      ]
+    }
+  ]
+}

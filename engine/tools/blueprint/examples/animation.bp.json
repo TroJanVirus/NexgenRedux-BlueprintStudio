@@ -1,0 +1,401 @@
+{
+  "version": 1,
+  "name": "BP_Animation",
+  "kind": "Screen",
+  "variables": [
+    {
+      "name": "actor",
+      "type": "Entity@",
+      "default": null
+    }
+  ],
+  "graphs": [
+    {
+      "kind": "event",
+      "name": "onEnter",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 20,
+          "y": 60,
+          "defaults": {}
+        },
+        {
+          "id": "spawn",
+          "kind": "api:Scene:Scene::spawn:Vec2",
+          "x": 260,
+          "y": 60,
+          "defaults": {}
+        },
+        {
+          "id": "name",
+          "kind": "api:Entity:set_name:Entity@,string",
+          "x": 500,
+          "y": 60,
+          "defaults": {
+            "value": "AnimatedActor"
+          }
+        },
+        {
+          "id": "rect",
+          "kind": "api:Entity:rect:Entity@,float,float,Color",
+          "x": 740,
+          "y": 60,
+          "defaults": {
+            "w": 64,
+            "h": 64,
+            "color": [
+              1,
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "id": "sheet",
+          "kind": "api:Entity:sheet:Entity@,uint,uint",
+          "x": 980,
+          "y": 60,
+          "defaults": {
+            "columns": 4,
+            "rows": 1
+          }
+        },
+        {
+          "id": "store",
+          "kind": "set",
+          "x": 1220,
+          "y": 60,
+          "defaults": {},
+          "ref": "actor"
+        }
+      ],
+      "links": [
+        {
+          "from": {
+            "node": "entry",
+            "pin": "then"
+          },
+          "to": {
+            "node": "spawn",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "spawn",
+            "pin": "then"
+          },
+          "to": {
+            "node": "name",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "name",
+            "pin": "then"
+          },
+          "to": {
+            "node": "rect",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "rect",
+            "pin": "then"
+          },
+          "to": {
+            "node": "sheet",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "sheet",
+            "pin": "then"
+          },
+          "to": {
+            "node": "store",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "spawn",
+            "pin": "result"
+          },
+          "to": {
+            "node": "name",
+            "pin": "target"
+          }
+        },
+        {
+          "from": {
+            "node": "spawn",
+            "pin": "result"
+          },
+          "to": {
+            "node": "rect",
+            "pin": "target"
+          }
+        },
+        {
+          "from": {
+            "node": "spawn",
+            "pin": "result"
+          },
+          "to": {
+            "node": "sheet",
+            "pin": "target"
+          }
+        },
+        {
+          "from": {
+            "node": "spawn",
+            "pin": "result"
+          },
+          "to": {
+            "node": "store",
+            "pin": "value"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "event",
+      "name": "update",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 20,
+          "y": 60,
+          "defaults": {}
+        },
+        {
+          "id": "actor",
+          "kind": "get",
+          "x": 20,
+          "y": 260,
+          "defaults": {},
+          "ref": "actor"
+        },
+        {
+          "id": "press",
+          "kind": "api:Input:Input::pressed:string",
+          "x": 270,
+          "y": 260,
+          "defaults": {
+            "action": "accept"
+          }
+        },
+        {
+          "id": "machine",
+          "kind": "stateMachine",
+          "x": 530,
+          "y": 60,
+          "defaults": {},
+          "mode": "sprite",
+          "initial": "Idle",
+          "states": [
+            {
+              "name": "Idle",
+              "first": 0,
+              "last": 0,
+              "fps": 8,
+              "loop": true
+            },
+            {
+              "name": "Attack",
+              "first": 1,
+              "last": 3,
+              "fps": 12,
+              "loop": false
+            }
+          ],
+          "transitions": [
+            {
+              "name": "AttackPressed",
+              "from": "Idle",
+              "to": "Attack"
+            },
+            {
+              "name": "Finished",
+              "from": "Attack",
+              "to": "Idle"
+            }
+          ]
+        },
+        {
+          "id": "save",
+          "kind": "api:Save:Save::set:string,string",
+          "x": 820,
+          "y": 60,
+          "defaults": {
+            "key": "bp_anim_state"
+          }
+        },
+        {
+          "id": "entered",
+          "kind": "toString",
+          "x": 820,
+          "y": 280,
+          "defaults": {},
+          "type": "bool"
+        },
+        {
+          "id": "entrySave",
+          "kind": "api:Save:Save::set:string,string",
+          "x": 1100,
+          "y": 60,
+          "defaults": {
+            "key": "bp_anim_entered"
+          }
+        },
+        {
+          "id": "elapsed",
+          "kind": "toString",
+          "x": 820,
+          "y": 480,
+          "defaults": {},
+          "type": "float"
+        },
+        {
+          "id": "elapsedSave",
+          "kind": "api:Save:Save::set:string,string",
+          "x": 1380,
+          "y": 60,
+          "defaults": {
+            "key": "bp_anim_elapsed"
+          }
+        }
+      ],
+      "links": [
+        {
+          "from": {
+            "node": "entry",
+            "pin": "then"
+          },
+          "to": {
+            "node": "machine",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "entry",
+            "pin": "dt"
+          },
+          "to": {
+            "node": "machine",
+            "pin": "dt"
+          }
+        },
+        {
+          "from": {
+            "node": "actor",
+            "pin": "value"
+          },
+          "to": {
+            "node": "machine",
+            "pin": "target"
+          }
+        },
+        {
+          "from": {
+            "node": "press",
+            "pin": "result"
+          },
+          "to": {
+            "node": "machine",
+            "pin": "when_AttackPressed"
+          }
+        },
+        {
+          "from": {
+            "node": "machine",
+            "pin": "then"
+          },
+          "to": {
+            "node": "save",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "machine",
+            "pin": "activeState"
+          },
+          "to": {
+            "node": "save",
+            "pin": "value"
+          }
+        },
+        {
+          "from": {
+            "node": "save",
+            "pin": "then"
+          },
+          "to": {
+            "node": "entrySave",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "machine",
+            "pin": "entered"
+          },
+          "to": {
+            "node": "entered",
+            "pin": "value"
+          }
+        },
+        {
+          "from": {
+            "node": "entered",
+            "pin": "result"
+          },
+          "to": {
+            "node": "entrySave",
+            "pin": "value"
+          }
+        },
+        {
+          "from": {
+            "node": "entrySave",
+            "pin": "then"
+          },
+          "to": {
+            "node": "elapsedSave",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "machine",
+            "pin": "elapsed"
+          },
+          "to": {
+            "node": "elapsed",
+            "pin": "value"
+          }
+        },
+        {
+          "from": {
+            "node": "elapsed",
+            "pin": "result"
+          },
+          "to": {
+            "node": "elapsedSave",
+            "pin": "value"
+          }
+        }
+      ]
+    }
+  ]
+}

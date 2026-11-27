@@ -1,0 +1,339 @@
+{
+  "version": 1,
+  "name": "BP_Gameplay",
+  "kind": "Screen",
+  "variables": [
+    {
+      "name": "total",
+      "type": "int",
+      "default": 0
+    }
+  ],
+  "dispatchers": [
+    {
+      "name": "Scored",
+      "params": [
+        {
+          "name": "amount",
+          "type": "int"
+        }
+      ]
+    }
+  ],
+  "graphs": [
+    {
+      "kind": "event",
+      "name": "onEnter",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 20,
+          "y": 60,
+          "defaults": {}
+        },
+        {
+          "id": "bind",
+          "kind": "bind",
+          "x": 260,
+          "y": 60,
+          "defaults": {},
+          "ref": "Scored",
+          "handler": "OnScore"
+        },
+        {
+          "id": "broadcast",
+          "kind": "broadcast",
+          "x": 500,
+          "y": 60,
+          "defaults": {
+            "amount": 3
+          },
+          "ref": "Scored"
+        },
+        {
+          "id": "unbind",
+          "kind": "unbind",
+          "x": 740,
+          "y": 60,
+          "defaults": {},
+          "ref": "Scored",
+          "handler": "OnScore"
+        },
+        {
+          "id": "again",
+          "kind": "broadcast",
+          "x": 980,
+          "y": 60,
+          "defaults": {
+            "amount": 8
+          },
+          "ref": "Scored"
+        },
+        {
+          "id": "timeline",
+          "kind": "timeline",
+          "x": 1220,
+          "y": 60,
+          "defaults": {
+            "duration": 1,
+            "from": 0,
+            "to": 10
+          }
+        },
+        {
+          "id": "text",
+          "kind": "toString",
+          "x": 1500,
+          "y": 230,
+          "defaults": {},
+          "type": "float"
+        },
+        {
+          "id": "progress",
+          "kind": "api:Save:Save::set:string,string",
+          "x": 1500,
+          "y": 60,
+          "defaults": {
+            "key": "bp_progress"
+          }
+        },
+        {
+          "id": "done",
+          "kind": "api:Save:Save::set:string,string",
+          "x": 1500,
+          "y": 440,
+          "defaults": {
+            "key": "bp_timeline_done",
+            "value": "yes"
+          }
+        }
+      ],
+      "links": [
+        {
+          "from": {
+            "node": "entry",
+            "pin": "then"
+          },
+          "to": {
+            "node": "bind",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "bind",
+            "pin": "then"
+          },
+          "to": {
+            "node": "broadcast",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "broadcast",
+            "pin": "then"
+          },
+          "to": {
+            "node": "unbind",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "unbind",
+            "pin": "then"
+          },
+          "to": {
+            "node": "again",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "again",
+            "pin": "then"
+          },
+          "to": {
+            "node": "timeline",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "timeline",
+            "pin": "update"
+          },
+          "to": {
+            "node": "progress",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "timeline",
+            "pin": "value"
+          },
+          "to": {
+            "node": "text",
+            "pin": "value"
+          }
+        },
+        {
+          "from": {
+            "node": "text",
+            "pin": "result"
+          },
+          "to": {
+            "node": "progress",
+            "pin": "value"
+          }
+        },
+        {
+          "from": {
+            "node": "timeline",
+            "pin": "finished"
+          },
+          "to": {
+            "node": "done",
+            "pin": "in"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "function",
+      "name": "OnScore",
+      "params": [
+        {
+          "name": "amount",
+          "type": "int"
+        }
+      ],
+      "returns": "void",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 20,
+          "y": 60,
+          "defaults": {}
+        },
+        {
+          "id": "get",
+          "kind": "get",
+          "x": 20,
+          "y": 250,
+          "defaults": {},
+          "ref": "total"
+        },
+        {
+          "id": "sum",
+          "kind": "add",
+          "x": 260,
+          "y": 250,
+          "defaults": {},
+          "type": "int"
+        },
+        {
+          "id": "set",
+          "kind": "set",
+          "x": 520,
+          "y": 60,
+          "defaults": {},
+          "ref": "total"
+        },
+        {
+          "id": "str",
+          "kind": "toString",
+          "x": 760,
+          "y": 250,
+          "defaults": {},
+          "type": "int"
+        },
+        {
+          "id": "save",
+          "kind": "api:Save:Save::set:string,string",
+          "x": 1000,
+          "y": 60,
+          "defaults": {
+            "key": "bp_dispatch_total"
+          }
+        }
+      ],
+      "links": [
+        {
+          "from": {
+            "node": "entry",
+            "pin": "then"
+          },
+          "to": {
+            "node": "set",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "entry",
+            "pin": "amount"
+          },
+          "to": {
+            "node": "sum",
+            "pin": "b"
+          }
+        },
+        {
+          "from": {
+            "node": "get",
+            "pin": "value"
+          },
+          "to": {
+            "node": "sum",
+            "pin": "a"
+          }
+        },
+        {
+          "from": {
+            "node": "sum",
+            "pin": "result"
+          },
+          "to": {
+            "node": "set",
+            "pin": "value"
+          }
+        },
+        {
+          "from": {
+            "node": "set",
+            "pin": "then"
+          },
+          "to": {
+            "node": "save",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "set",
+            "pin": "value"
+          },
+          "to": {
+            "node": "str",
+            "pin": "value"
+          }
+        },
+        {
+          "from": {
+            "node": "str",
+            "pin": "result"
+          },
+          "to": {
+            "node": "save",
+            "pin": "value"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -576,6 +576,7 @@ A script on an entity. Write a class that comes from it and any of these methods
 | `void set_lifetime(float) property` | Destroys it after some seconds. |
 | `void add(IBehaviour@+ behaviour)` | Adds a behaviour. |
 | `IBehaviour@ get_behaviour() const property` | Its first behaviour, or null. `cast<Enemy>(e.behaviour)` gives the class back. |
+| `IBehaviour@ behaviourAt(uint index) const` | A behaviour by zero-based attachment order, or null for an invalid index or dead entity. |
 
 ## Scene
 

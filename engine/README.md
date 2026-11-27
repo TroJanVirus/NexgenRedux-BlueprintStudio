@@ -56,6 +56,10 @@ twice more to check that nothing leaks, and stops.
 Saves are in `%LOCALAPPDATA%\Nexgen` (Windows), `~/.local/share/nexgen` (Linux), `~/Library/Application Support/Nexgen`
 (macOS), the app's LocalState (UWP) and the title's own folder (Xbox).
 
+## Blueprint Studio
+
+Open `tools/blueprint/index.html` in a desktop browser to build visual Screen and Behaviour graphs. The editor compiles them to ordinary AngelScript and keeps all editor work off the target console. See [the Blueprint guide](tools/blueprint/README.md) for the node catalogue, component workflow, interfaces, state machines, multi-track timelines, reusable entity hierarchies, CLI and focused headless tests. Interface messages require the updated `Entity.behaviourAt` native binding.
+
 ## Record a video
 
 On Windows, with ffmpeg. The app hands over each frame and its sound, so none is missed, and nothing is shown or heard meanwhile.
@@ -90,7 +94,7 @@ cook tool that was built. Both are a download of their own, for Windows, Linux a
 | `script/` | AngelScript host, coroutines, bindings and the reference writer | base |
 | `bindings/`, `screens/` | What scripts can call; the screen stack and the engine's menu | all above |
 | `app/` | The program that runs the showcase | all |
-| `tools/` | `cook`, and `cook-ui`, a window for it; `record`; `make_media.py`, `make_models.py` and `make_pieces.py`, which make the showcase's sounds, music and models; `make_docs.py`, which makes the web site; `stage-rxdk.ps1` | all |
+| `tools/` | `blueprint`, the visual graph editor and compiler; `cook`, and `cook-ui`, a window for it; `record`; `make_media.py`, `make_models.py` and `make_pieces.py`, which make the showcase's sounds, music and models; `make_docs.py`, which makes the web site; `stage-rxdk.ps1` | all |
 | `third_party/` | AngelScript, SSFN, stb, cgltf, ufbx, miniaudio, dr_libs and Mbed TLS, unmodified but for cgltf, which reads its numbers the same way on a big-endian machine | |
 | `tests/` | The tests | all |
 

@@ -1,0 +1,544 @@
+{
+  "version": 1,
+  "name": "BP_Hierarchies",
+  "kind": "Screen",
+  "variables": [],
+  "components": [
+    {
+      "version": 1,
+      "name": "BP_Spinner",
+      "kind": "Behaviour",
+      "variables": [
+        {
+          "name": "hits",
+          "type": "int",
+          "default": 0
+        }
+      ],
+      "graphs": [
+        {
+          "kind": "event",
+          "name": "start",
+          "nodes": [
+            {
+              "id": "entry",
+              "kind": "entry",
+              "x": 20,
+              "y": 60,
+              "defaults": {}
+            },
+            {
+              "id": "self",
+              "kind": "self",
+              "x": 20,
+              "y": 250,
+              "defaults": {}
+            },
+            {
+              "id": "spin",
+              "kind": "api:Entity:set_spin:Entity@,float",
+              "x": 300,
+              "y": 60,
+              "defaults": {
+                "value": 90
+              }
+            },
+            {
+              "id": "save",
+              "kind": "api:Save:Save::set:string,string",
+              "x": 580,
+              "y": 60,
+              "defaults": {
+                "key": "bp_started",
+                "value": "yes"
+              }
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "entry",
+                "pin": "then"
+              },
+              "to": {
+                "node": "spin",
+                "pin": "in"
+              }
+            },
+            {
+              "from": {
+                "node": "self",
+                "pin": "value"
+              },
+              "to": {
+                "node": "spin",
+                "pin": "target"
+              }
+            },
+            {
+              "from": {
+                "node": "spin",
+                "pin": "then"
+              },
+              "to": {
+                "node": "save",
+                "pin": "in"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "event",
+          "name": "onHit",
+          "nodes": [
+            {
+              "id": "hit",
+              "kind": "entry",
+              "x": 20,
+              "y": 60,
+              "defaults": {}
+            },
+            {
+              "id": "get",
+              "kind": "get",
+              "x": 20,
+              "y": 240,
+              "defaults": {},
+              "ref": "hits"
+            },
+            {
+              "id": "add",
+              "kind": "add",
+              "x": 300,
+              "y": 240,
+              "defaults": {
+                "b": 1
+              },
+              "type": "int"
+            },
+            {
+              "id": "set",
+              "kind": "set",
+              "x": 560,
+              "y": 60,
+              "defaults": {},
+              "ref": "hits"
+            },
+            {
+              "id": "text",
+              "kind": "toString",
+              "x": 560,
+              "y": 240,
+              "defaults": {},
+              "type": "int"
+            },
+            {
+              "id": "save",
+              "kind": "api:Save:Save::set:string,string",
+              "x": 830,
+              "y": 60,
+              "defaults": {
+                "key": "bp_hits"
+              }
+            },
+            {
+              "id": "name",
+              "kind": "api:Entity:get_name:Entity@",
+              "x": 830,
+              "y": 240,
+              "defaults": {}
+            },
+            {
+              "id": "saveOther",
+              "kind": "api:Save:Save::set:string,string",
+              "x": 1100,
+              "y": 60,
+              "defaults": {
+                "key": "bp_other"
+              }
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "hit",
+                "pin": "then"
+              },
+              "to": {
+                "node": "set",
+                "pin": "in"
+              }
+            },
+            {
+              "from": {
+                "node": "get",
+                "pin": "value"
+              },
+              "to": {
+                "node": "add",
+                "pin": "a"
+              }
+            },
+            {
+              "from": {
+                "node": "add",
+                "pin": "result"
+              },
+              "to": {
+                "node": "set",
+                "pin": "value"
+              }
+            },
+            {
+              "from": {
+                "node": "set",
+                "pin": "then"
+              },
+              "to": {
+                "node": "save",
+                "pin": "in"
+              }
+            },
+            {
+              "from": {
+                "node": "set",
+                "pin": "value"
+              },
+              "to": {
+                "node": "text",
+                "pin": "value"
+              }
+            },
+            {
+              "from": {
+                "node": "text",
+                "pin": "result"
+              },
+              "to": {
+                "node": "save",
+                "pin": "value"
+              }
+            },
+            {
+              "from": {
+                "node": "save",
+                "pin": "then"
+              },
+              "to": {
+                "node": "saveOther",
+                "pin": "in"
+              }
+            },
+            {
+              "from": {
+                "node": "hit",
+                "pin": "other"
+              },
+              "to": {
+                "node": "name",
+                "pin": "target"
+              }
+            },
+            {
+              "from": {
+                "node": "name",
+                "pin": "result"
+              },
+              "to": {
+                "node": "saveOther",
+                "pin": "value"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "hierarchies": [
+    {
+      "name": "PlayerRig",
+      "mode": "2D",
+      "entities": [
+        {
+          "name": "Weapon2D",
+          "parent": "Player2D",
+          "position": [
+            20,
+            0
+          ],
+          "rotation": 0,
+          "scale": [
+            1,
+            1
+          ],
+          "visual": {
+            "kind": "rect",
+            "size": [
+              12,
+              6
+            ],
+            "color": [
+              1,
+              0.5,
+              0,
+              1
+            ]
+          },
+          "behaviours": [
+            "BP_Spinner"
+          ]
+        },
+        {
+          "name": "Player2D",
+          "parent": null,
+          "position": [
+            10,
+            20
+          ],
+          "rotation": 0,
+          "scale": [
+            2,
+            2
+          ],
+          "visual": {
+            "kind": "disc",
+            "radius": 12,
+            "color": [
+              0.1,
+              0.6,
+              1,
+              1
+            ]
+          },
+          "behaviours": []
+        },
+        {
+          "name": "Muzzle2D",
+          "parent": "Weapon2D",
+          "position": [
+            5,
+            0
+          ],
+          "rotation": 0,
+          "scale": [
+            1,
+            1
+          ],
+          "visual": {
+            "kind": "none"
+          },
+          "behaviours": []
+        }
+      ]
+    },
+    {
+      "name": "SpaceRig",
+      "mode": "3D",
+      "entities": [
+        {
+          "name": "Root3D",
+          "parent": null,
+          "position": [
+            1,
+            2,
+            3
+          ],
+          "rotation": [
+            0,
+            0,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "visual": {
+            "kind": "shape",
+            "shape": "SolidBox",
+            "color": [
+              0.2,
+              0.4,
+              0.9,
+              1
+            ]
+          },
+          "behaviours": []
+        },
+        {
+          "name": "Child3D",
+          "parent": "Root3D",
+          "position": [
+            3,
+            0,
+            0
+          ],
+          "rotation": [
+            0,
+            45,
+            0
+          ],
+          "scale": [
+            0.5,
+            0.5,
+            0.5
+          ],
+          "visual": {
+            "kind": "shape",
+            "shape": "SolidSphere",
+            "color": [
+              1,
+              0.5,
+              0.2,
+              1
+            ]
+          },
+          "behaviours": []
+        }
+      ]
+    }
+  ],
+  "graphs": [
+    {
+      "kind": "event",
+      "name": "onEnter",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 20,
+          "y": 60,
+          "defaults": {}
+        },
+        {
+          "id": "spawn2",
+          "kind": "hierarchySpawn",
+          "x": 280,
+          "y": 60,
+          "defaults": {
+            "origin": [
+              100,
+              200
+            ]
+          },
+          "ref": "PlayerRig"
+        },
+        {
+          "id": "rename",
+          "kind": "api:Entity:set_name:Entity@,string",
+          "x": 550,
+          "y": 60,
+          "defaults": {
+            "value": "WeaponRenamed"
+          }
+        },
+        {
+          "id": "spawn3",
+          "kind": "hierarchySpawn",
+          "x": 820,
+          "y": 60,
+          "defaults": {
+            "origin": [
+              10,
+              20,
+              30
+            ]
+          },
+          "ref": "SpaceRig"
+        },
+        {
+          "id": "done",
+          "kind": "api:Save:Save::set:string,string",
+          "x": 1100,
+          "y": 60,
+          "defaults": {
+            "key": "bp_hierarchy",
+            "value": "yes"
+          }
+        },
+        {
+          "id": "fail",
+          "kind": "api:Save:Save::set:string,string",
+          "x": 550,
+          "y": 440,
+          "defaults": {
+            "key": "bp_hierarchy",
+            "value": "failed"
+          }
+        }
+      ],
+      "links": [
+        {
+          "from": {
+            "node": "entry",
+            "pin": "then"
+          },
+          "to": {
+            "node": "spawn2",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "spawn2",
+            "pin": "then"
+          },
+          "to": {
+            "node": "rename",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "spawn2",
+            "pin": "entity_Weapon2D"
+          },
+          "to": {
+            "node": "rename",
+            "pin": "target"
+          }
+        },
+        {
+          "from": {
+            "node": "rename",
+            "pin": "then"
+          },
+          "to": {
+            "node": "spawn3",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "spawn3",
+            "pin": "then"
+          },
+          "to": {
+            "node": "done",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "spawn2",
+            "pin": "failed"
+          },
+          "to": {
+            "node": "fail",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "spawn3",
+            "pin": "failed"
+          },
+          "to": {
+            "node": "fail",
+            "pin": "in"
+          }
+        }
+      ]
+    }
+  ]
+}

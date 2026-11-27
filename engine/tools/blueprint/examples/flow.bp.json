@@ -1,0 +1,295 @@
+{
+  "version": 1,
+  "name": "BP_Flow",
+  "kind": "Screen",
+  "variables": [
+    {
+      "name": "count",
+      "type": "int",
+      "default": 0
+    }
+  ],
+  "graphs": [
+    {
+      "kind": "event",
+      "name": "onEnter",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 0,
+          "y": 0,
+          "defaults": {}
+        },
+        {
+          "id": "repeat",
+          "kind": "repeat",
+          "x": 0,
+          "y": 0,
+          "defaults": {
+            "count": 4
+          }
+        },
+        {
+          "id": "get",
+          "kind": "get",
+          "x": 0,
+          "y": 0,
+          "defaults": {},
+          "ref": "count"
+        },
+        {
+          "id": "add",
+          "kind": "add",
+          "x": 0,
+          "y": 0,
+          "defaults": {
+            "b": 1
+          },
+          "type": "int"
+        },
+        {
+          "id": "set",
+          "kind": "set",
+          "x": 0,
+          "y": 0,
+          "defaults": {},
+          "ref": "count"
+        },
+        {
+          "id": "seq",
+          "kind": "sequence",
+          "x": 0,
+          "y": 0,
+          "defaults": {}
+        },
+        {
+          "id": "str",
+          "kind": "toString",
+          "x": 0,
+          "y": 0,
+          "defaults": {},
+          "type": "int"
+        },
+        {
+          "id": "saveCount",
+          "kind": "api:Save:Save::set:string,string",
+          "x": 0,
+          "y": 0,
+          "defaults": {
+            "key": "bp_count"
+          }
+        },
+        {
+          "id": "call",
+          "kind": "call",
+          "x": 0,
+          "y": 0,
+          "defaults": {},
+          "ref": "Gate"
+        },
+        {
+          "id": "callAgain",
+          "kind": "call",
+          "x": 0,
+          "y": 0,
+          "defaults": {},
+          "ref": "Gate"
+        }
+      ],
+      "links": [
+        {
+          "from": {
+            "node": "entry",
+            "pin": "then"
+          },
+          "to": {
+            "node": "repeat",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "repeat",
+            "pin": "body"
+          },
+          "to": {
+            "node": "set",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "get",
+            "pin": "value"
+          },
+          "to": {
+            "node": "add",
+            "pin": "a"
+          }
+        },
+        {
+          "from": {
+            "node": "add",
+            "pin": "result"
+          },
+          "to": {
+            "node": "set",
+            "pin": "value"
+          }
+        },
+        {
+          "from": {
+            "node": "repeat",
+            "pin": "completed"
+          },
+          "to": {
+            "node": "seq",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "seq",
+            "pin": "first"
+          },
+          "to": {
+            "node": "call",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "call",
+            "pin": "then"
+          },
+          "to": {
+            "node": "callAgain",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "seq",
+            "pin": "second"
+          },
+          "to": {
+            "node": "saveCount",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "get",
+            "pin": "value"
+          },
+          "to": {
+            "node": "str",
+            "pin": "value"
+          }
+        },
+        {
+          "from": {
+            "node": "str",
+            "pin": "result"
+          },
+          "to": {
+            "node": "saveCount",
+            "pin": "value"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "function",
+      "name": "Gate",
+      "params": [],
+      "returns": "void",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 0,
+          "y": 0,
+          "defaults": {}
+        },
+        {
+          "id": "once",
+          "kind": "once",
+          "x": 0,
+          "y": 0,
+          "defaults": {}
+        },
+        {
+          "id": "flip",
+          "kind": "flipflop",
+          "x": 0,
+          "y": 0,
+          "defaults": {}
+        },
+        {
+          "id": "a",
+          "kind": "api:Save:Save::set:string,string",
+          "x": 0,
+          "y": 0,
+          "defaults": {
+            "key": "bp_flip",
+            "value": "A"
+          }
+        },
+        {
+          "id": "b",
+          "kind": "api:Save:Save::set:string,string",
+          "x": 0,
+          "y": 0,
+          "defaults": {
+            "key": "bp_flip",
+            "value": "B"
+          }
+        }
+      ],
+      "links": [
+        {
+          "from": {
+            "node": "entry",
+            "pin": "then"
+          },
+          "to": {
+            "node": "once",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "once",
+            "pin": "then"
+          },
+          "to": {
+            "node": "flip",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "flip",
+            "pin": "a"
+          },
+          "to": {
+            "node": "a",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "flip",
+            "pin": "b"
+          },
+          "to": {
+            "node": "b",
+            "pin": "in"
+          }
+        }
+      ]
+    }
+  ]
+}

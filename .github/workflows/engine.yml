@@ -57,6 +57,9 @@ jobs:
     - name: Test
       run: ctest --test-dir build -C Release --output-on-failure --timeout 300
 
+    - name: Test Blueprint graph compiler
+      run: node engine/tools/blueprint/test_compiler.js
+
     # With a real window and GPU driver, though a software one.
     - name: Draw every screen
       if: runner.os == 'Linux'
@@ -80,6 +83,13 @@ jobs:
           Linux)   cp -r build/showcase/nexgen build/showcase/media "dist/$package/" ;;
           macOS)   cp -R build/showcase/nexgen.app "dist/$package/Nexgen.app"
                    codesign --force --deep --sign - "dist/$package/Nexgen.app" ;;
+        esac
+        node engine/tools/blueprint/bundle.js "dist/$package/NexgenBlueprintStudio.html"
+        mkdir -p "dist/$package/BlueprintTools"
+        cp -r engine/tools/blueprint/. "dist/$package/BlueprintTools/"
+        case "$RUNNER_OS" in
+          Windows) cp build/Release/nx_blueprint_validate.exe "dist/$package/BlueprintTools/" ;;
+          Linux|macOS) cp build/nx_blueprint_validate "dist/$package/BlueprintTools/" ;;
         esac
         # The demos have to be there, not just the program.
         test "$(find "dist/$package" -path '*media/showcase/*/main.as' | wc -l)" -ge 20

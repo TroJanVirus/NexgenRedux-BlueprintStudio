@@ -1,0 +1,145 @@
+{
+  "version": 1,
+  "name": "BP_Health",
+  "kind": "Behaviour",
+  "interfaces": [
+    {
+      "name": "Damageable",
+      "implement": true,
+      "methods": [
+        {
+          "name": "ApplyDamage",
+          "params": [
+            {
+              "name": "amount",
+              "type": "int"
+            }
+          ],
+          "returns": "int"
+        }
+      ]
+    }
+  ],
+  "variables": [
+    {
+      "name": "health",
+      "type": "int",
+      "default": 100
+    }
+  ],
+  "graphs": [
+    {
+      "kind": "function",
+      "name": "ApplyDamage",
+      "params": [
+        {
+          "name": "amount",
+          "type": "int"
+        }
+      ],
+      "returns": "int",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 20,
+          "y": 60,
+          "defaults": {}
+        },
+        {
+          "id": "get",
+          "kind": "get",
+          "x": 20,
+          "y": 250,
+          "defaults": {},
+          "ref": "health"
+        },
+        {
+          "id": "subtract",
+          "kind": "subtract",
+          "x": 260,
+          "y": 250,
+          "defaults": {},
+          "type": "int"
+        },
+        {
+          "id": "set",
+          "kind": "set",
+          "x": 520,
+          "y": 60,
+          "defaults": {},
+          "ref": "health"
+        },
+        {
+          "id": "ret",
+          "kind": "return",
+          "x": 780,
+          "y": 60,
+          "defaults": {}
+        }
+      ],
+      "links": [
+        {
+          "from": {
+            "node": "entry",
+            "pin": "then"
+          },
+          "to": {
+            "node": "set",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "entry",
+            "pin": "amount"
+          },
+          "to": {
+            "node": "subtract",
+            "pin": "b"
+          }
+        },
+        {
+          "from": {
+            "node": "get",
+            "pin": "value"
+          },
+          "to": {
+            "node": "subtract",
+            "pin": "a"
+          }
+        },
+        {
+          "from": {
+            "node": "subtract",
+            "pin": "result"
+          },
+          "to": {
+            "node": "set",
+            "pin": "value"
+          }
+        },
+        {
+          "from": {
+            "node": "set",
+            "pin": "then"
+          },
+          "to": {
+            "node": "ret",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "set",
+            "pin": "value"
+          },
+          "to": {
+            "node": "ret",
+            "pin": "value"
+          }
+        }
+      ]
+    }
+  ]
+}

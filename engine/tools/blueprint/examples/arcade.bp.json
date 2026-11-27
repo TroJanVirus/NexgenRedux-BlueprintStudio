@@ -1,0 +1,628 @@
+{
+  "version": 1,
+  "name": "BP_Arcade",
+  "kind": "Screen",
+  "variables": [
+    {
+      "name": "player",
+      "type": "Entity@",
+      "default": null
+    },
+    {
+      "name": "score",
+      "type": "int",
+      "default": 0
+    }
+  ],
+  "graphs": [
+    {
+      "kind": "event",
+      "name": "onEnter",
+      "nodes": [
+        {
+          "id": "begin",
+          "kind": "entry",
+          "x": 20,
+          "y": 70,
+          "defaults": {}
+        },
+        {
+          "id": "spawn",
+          "kind": "api:Scene:Scene::spawn:Vec2",
+          "x": 285,
+          "y": 70,
+          "defaults": {
+            "position": [
+              640,
+              360
+            ]
+          }
+        },
+        {
+          "id": "name",
+          "kind": "api:Entity:set_name:Entity@,string",
+          "x": 550,
+          "y": 70,
+          "defaults": {
+            "value": "Player"
+          }
+        },
+        {
+          "id": "rect",
+          "kind": "api:Entity:rect:Entity@,float,float,Color",
+          "x": 815,
+          "y": 70,
+          "defaults": {
+            "w": 76,
+            "h": 76,
+            "color": [
+              0.18,
+              0.65,
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "id": "store",
+          "kind": "set",
+          "x": 1080,
+          "y": 70,
+          "defaults": {},
+          "ref": "player"
+        },
+        {
+          "id": "announce",
+          "kind": "print",
+          "x": 1345,
+          "y": 70,
+          "defaults": {
+            "text": "Blueprint ready — press Accept to score"
+          }
+        }
+      ],
+      "links": [
+        {
+          "from": {
+            "node": "begin",
+            "pin": "then"
+          },
+          "to": {
+            "node": "spawn",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "spawn",
+            "pin": "then"
+          },
+          "to": {
+            "node": "name",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "name",
+            "pin": "then"
+          },
+          "to": {
+            "node": "rect",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "rect",
+            "pin": "then"
+          },
+          "to": {
+            "node": "store",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "store",
+            "pin": "then"
+          },
+          "to": {
+            "node": "announce",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "spawn",
+            "pin": "result"
+          },
+          "to": {
+            "node": "name",
+            "pin": "target"
+          }
+        },
+        {
+          "from": {
+            "node": "spawn",
+            "pin": "result"
+          },
+          "to": {
+            "node": "rect",
+            "pin": "target"
+          }
+        },
+        {
+          "from": {
+            "node": "spawn",
+            "pin": "result"
+          },
+          "to": {
+            "node": "store",
+            "pin": "value"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "event",
+      "name": "update",
+      "nodes": [
+        {
+          "id": "tick",
+          "kind": "entry",
+          "x": 20,
+          "y": 45,
+          "defaults": {}
+        },
+        {
+          "id": "seq",
+          "kind": "sequence",
+          "x": 275,
+          "y": 45,
+          "defaults": {}
+        },
+        {
+          "id": "branch",
+          "kind": "branch",
+          "x": 550,
+          "y": 45,
+          "defaults": {}
+        },
+        {
+          "id": "input",
+          "kind": "api:Input:Input::pressed:string",
+          "x": 270,
+          "y": 235,
+          "defaults": {
+            "action": "accept"
+          }
+        },
+        {
+          "id": "call",
+          "kind": "call",
+          "x": 820,
+          "y": 45,
+          "defaults": {
+            "amount": 1
+          },
+          "ref": "AddScore"
+        },
+        {
+          "id": "text",
+          "kind": "toString",
+          "x": 820,
+          "y": 240,
+          "defaults": {},
+          "type": "int"
+        },
+        {
+          "id": "save",
+          "kind": "api:Save:Save::set:string,string",
+          "x": 1090,
+          "y": 45,
+          "defaults": {
+            "key": "bp_score"
+          }
+        },
+        {
+          "id": "log",
+          "kind": "print",
+          "x": 1355,
+          "y": 45,
+          "defaults": {}
+        },
+        {
+          "id": "player",
+          "kind": "get",
+          "x": 270,
+          "y": 435,
+          "defaults": {},
+          "ref": "player"
+        },
+        {
+          "id": "rotation",
+          "kind": "api:Entity:get_rotation:Entity@",
+          "x": 550,
+          "y": 435,
+          "defaults": {}
+        },
+        {
+          "id": "speed",
+          "kind": "multiply",
+          "x": 550,
+          "y": 620,
+          "defaults": {
+            "b": 45
+          },
+          "type": "float"
+        },
+        {
+          "id": "sum",
+          "kind": "add",
+          "x": 825,
+          "y": 460,
+          "defaults": {},
+          "type": "float"
+        },
+        {
+          "id": "turn",
+          "kind": "api:Entity:set_rotation:Entity@,float",
+          "x": 1090,
+          "y": 390,
+          "defaults": {}
+        }
+      ],
+      "links": [
+        {
+          "from": {
+            "node": "tick",
+            "pin": "then"
+          },
+          "to": {
+            "node": "seq",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "seq",
+            "pin": "first"
+          },
+          "to": {
+            "node": "branch",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "seq",
+            "pin": "second"
+          },
+          "to": {
+            "node": "turn",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "input",
+            "pin": "result"
+          },
+          "to": {
+            "node": "branch",
+            "pin": "condition"
+          }
+        },
+        {
+          "from": {
+            "node": "branch",
+            "pin": "true"
+          },
+          "to": {
+            "node": "call",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "call",
+            "pin": "then"
+          },
+          "to": {
+            "node": "save",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "call",
+            "pin": "result"
+          },
+          "to": {
+            "node": "text",
+            "pin": "value"
+          }
+        },
+        {
+          "from": {
+            "node": "text",
+            "pin": "result"
+          },
+          "to": {
+            "node": "save",
+            "pin": "value"
+          }
+        },
+        {
+          "from": {
+            "node": "save",
+            "pin": "then"
+          },
+          "to": {
+            "node": "log",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "text",
+            "pin": "result"
+          },
+          "to": {
+            "node": "log",
+            "pin": "text"
+          }
+        },
+        {
+          "from": {
+            "node": "player",
+            "pin": "value"
+          },
+          "to": {
+            "node": "rotation",
+            "pin": "target"
+          }
+        },
+        {
+          "from": {
+            "node": "player",
+            "pin": "value"
+          },
+          "to": {
+            "node": "turn",
+            "pin": "target"
+          }
+        },
+        {
+          "from": {
+            "node": "tick",
+            "pin": "dt"
+          },
+          "to": {
+            "node": "speed",
+            "pin": "a"
+          }
+        },
+        {
+          "from": {
+            "node": "rotation",
+            "pin": "result"
+          },
+          "to": {
+            "node": "sum",
+            "pin": "a"
+          }
+        },
+        {
+          "from": {
+            "node": "speed",
+            "pin": "result"
+          },
+          "to": {
+            "node": "sum",
+            "pin": "b"
+          }
+        },
+        {
+          "from": {
+            "node": "sum",
+            "pin": "result"
+          },
+          "to": {
+            "node": "turn",
+            "pin": "value"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "event",
+      "name": "draw",
+      "nodes": [
+        {
+          "id": "draw",
+          "kind": "entry",
+          "x": 20,
+          "y": 60,
+          "defaults": {}
+        },
+        {
+          "id": "design",
+          "kind": "api:Canvas:design:Canvas@,float,float",
+          "x": 290,
+          "y": 60,
+          "defaults": {
+            "width": 1280,
+            "height": 720
+          }
+        },
+        {
+          "id": "scene",
+          "kind": "api:Scene:Scene::draw:Canvas@,int,int",
+          "x": 560,
+          "y": 60,
+          "defaults": {
+            "first": -32768,
+            "last": 32767
+          }
+        }
+      ],
+      "links": [
+        {
+          "from": {
+            "node": "draw",
+            "pin": "then"
+          },
+          "to": {
+            "node": "design",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "design",
+            "pin": "then"
+          },
+          "to": {
+            "node": "scene",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "draw",
+            "pin": "canvas"
+          },
+          "to": {
+            "node": "design",
+            "pin": "target"
+          }
+        },
+        {
+          "from": {
+            "node": "draw",
+            "pin": "canvas"
+          },
+          "to": {
+            "node": "scene",
+            "pin": "canvas"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "function",
+      "name": "AddScore",
+      "params": [
+        {
+          "name": "amount",
+          "type": "int"
+        }
+      ],
+      "returns": "int",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 20,
+          "y": 80,
+          "defaults": {}
+        },
+        {
+          "id": "get",
+          "kind": "get",
+          "x": 20,
+          "y": 265,
+          "defaults": {},
+          "ref": "score"
+        },
+        {
+          "id": "sum",
+          "kind": "add",
+          "x": 290,
+          "y": 240,
+          "defaults": {},
+          "type": "int"
+        },
+        {
+          "id": "set",
+          "kind": "set",
+          "x": 560,
+          "y": 80,
+          "defaults": {},
+          "ref": "score"
+        },
+        {
+          "id": "ret",
+          "kind": "return",
+          "x": 830,
+          "y": 80,
+          "defaults": {}
+        }
+      ],
+      "links": [
+        {
+          "from": {
+            "node": "entry",
+            "pin": "then"
+          },
+          "to": {
+            "node": "set",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "entry",
+            "pin": "amount"
+          },
+          "to": {
+            "node": "sum",
+            "pin": "b"
+          }
+        },
+        {
+          "from": {
+            "node": "get",
+            "pin": "value"
+          },
+          "to": {
+            "node": "sum",
+            "pin": "a"
+          }
+        },
+        {
+          "from": {
+            "node": "sum",
+            "pin": "result"
+          },
+          "to": {
+            "node": "set",
+            "pin": "value"
+          }
+        },
+        {
+          "from": {
+            "node": "set",
+            "pin": "then"
+          },
+          "to": {
+            "node": "ret",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "set",
+            "pin": "value"
+          },
+          "to": {
+            "node": "ret",
+            "pin": "value"
+          }
+        }
+      ]
+    }
+  ]
+}

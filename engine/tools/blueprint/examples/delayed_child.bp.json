@@ -1,0 +1,116 @@
+{
+  "version": 1,
+  "name": "BP_DelayedChild",
+  "kind": "Screen",
+  "parent": {
+    "version": 1,
+    "name": "BP_DelayedBase",
+    "kind": "Screen",
+    "variables": [],
+    "graphs": [
+      {
+        "kind": "event",
+        "name": "onEnter",
+        "nodes": [
+          {
+            "id": "entry",
+            "kind": "entry",
+            "x": 20,
+            "y": 60,
+            "defaults": {}
+          },
+          {
+            "id": "wait",
+            "kind": "delay",
+            "x": 250,
+            "y": 60,
+            "defaults": {
+              "seconds": 0.2
+            }
+          },
+          {
+            "id": "done",
+            "kind": "api:Save:Save::set:string,string",
+            "x": 500,
+            "y": 60,
+            "defaults": {
+              "key": "bp_parent_delay",
+              "value": "yes"
+            }
+          }
+        ],
+        "links": [
+          {
+            "from": {
+              "node": "entry",
+              "pin": "then"
+            },
+            "to": {
+              "node": "wait",
+              "pin": "in"
+            }
+          },
+          {
+            "from": {
+              "node": "wait",
+              "pin": "then"
+            },
+            "to": {
+              "node": "done",
+              "pin": "in"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "variables": [],
+  "graphs": [
+    {
+      "kind": "event",
+      "name": "onEnter",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 20,
+          "y": 60,
+          "defaults": {}
+        },
+        {
+          "id": "parent",
+          "kind": "parentCall",
+          "x": 250,
+          "y": 60,
+          "defaults": {}
+        }
+      ],
+      "links": [
+        {
+          "from": {
+            "node": "entry",
+            "pin": "then"
+          },
+          "to": {
+            "node": "parent",
+            "pin": "in"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "event",
+      "name": "update",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 20,
+          "y": 60,
+          "defaults": {}
+        }
+      ],
+      "links": []
+    }
+  ]
+}

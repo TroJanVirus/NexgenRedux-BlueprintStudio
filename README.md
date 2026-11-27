@@ -94,6 +94,7 @@ a compiler and the platform's SDK, downloads nothing, and uses no SDL or GLFW.
 
 ## Features
 
+- **Blueprints** — [Nexgen Blueprint Studio](engine/tools/blueprint/README.md), an offline visual scripting editor with typed node graphs, screen/behaviour events, reusable components, functions, interfaces, multi-track timelines, animation state machines, entity hierarchies and AngelScript export.
 - **Scripts** — AngelScript 2.39.0. Each screen is one folder with one script; a mistake in it shows its file and line, and
   never takes the app down. Coroutines, tweens, live reload while you edit, and a debugger for VS Code.
 - **2D drawing** — shapes, images, sprite sheets, nine-slice, tiling, scalable text, clipping and blending, batched, on any

@@ -1,0 +1,503 @@
+{
+  "version": 1,
+  "name": "BP_Advanced",
+  "kind": "Screen",
+  "variables": [
+    {
+      "name": "numbers",
+      "type": "array<int>@",
+      "default": null
+    }
+  ],
+  "components": [
+    {
+      "version": 1,
+      "name": "BP_Spinner",
+      "kind": "Behaviour",
+      "variables": [
+        {
+          "name": "hits",
+          "type": "int",
+          "default": 0
+        }
+      ],
+      "graphs": [
+        {
+          "kind": "event",
+          "name": "start",
+          "nodes": [
+            {
+              "id": "entry",
+              "kind": "entry",
+              "x": 20,
+              "y": 60,
+              "defaults": {}
+            },
+            {
+              "id": "self",
+              "kind": "self",
+              "x": 20,
+              "y": 250,
+              "defaults": {}
+            },
+            {
+              "id": "spin",
+              "kind": "api:Entity:set_spin:Entity@,float",
+              "x": 300,
+              "y": 60,
+              "defaults": {
+                "value": 90
+              }
+            },
+            {
+              "id": "save",
+              "kind": "api:Save:Save::set:string,string",
+              "x": 580,
+              "y": 60,
+              "defaults": {
+                "key": "bp_started",
+                "value": "yes"
+              }
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "entry",
+                "pin": "then"
+              },
+              "to": {
+                "node": "spin",
+                "pin": "in"
+              }
+            },
+            {
+              "from": {
+                "node": "self",
+                "pin": "value"
+              },
+              "to": {
+                "node": "spin",
+                "pin": "target"
+              }
+            },
+            {
+              "from": {
+                "node": "spin",
+                "pin": "then"
+              },
+              "to": {
+                "node": "save",
+                "pin": "in"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "event",
+          "name": "onHit",
+          "nodes": [
+            {
+              "id": "hit",
+              "kind": "entry",
+              "x": 20,
+              "y": 60,
+              "defaults": {}
+            },
+            {
+              "id": "get",
+              "kind": "get",
+              "x": 20,
+              "y": 240,
+              "defaults": {},
+              "ref": "hits"
+            },
+            {
+              "id": "add",
+              "kind": "add",
+              "x": 300,
+              "y": 240,
+              "defaults": {
+                "b": 1
+              },
+              "type": "int"
+            },
+            {
+              "id": "set",
+              "kind": "set",
+              "x": 560,
+              "y": 60,
+              "defaults": {},
+              "ref": "hits"
+            },
+            {
+              "id": "text",
+              "kind": "toString",
+              "x": 560,
+              "y": 240,
+              "defaults": {},
+              "type": "int"
+            },
+            {
+              "id": "save",
+              "kind": "api:Save:Save::set:string,string",
+              "x": 830,
+              "y": 60,
+              "defaults": {
+                "key": "bp_hits"
+              }
+            },
+            {
+              "id": "name",
+              "kind": "api:Entity:get_name:Entity@",
+              "x": 830,
+              "y": 240,
+              "defaults": {}
+            },
+            {
+              "id": "saveOther",
+              "kind": "api:Save:Save::set:string,string",
+              "x": 1100,
+              "y": 60,
+              "defaults": {
+                "key": "bp_other"
+              }
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "hit",
+                "pin": "then"
+              },
+              "to": {
+                "node": "set",
+                "pin": "in"
+              }
+            },
+            {
+              "from": {
+                "node": "get",
+                "pin": "value"
+              },
+              "to": {
+                "node": "add",
+                "pin": "a"
+              }
+            },
+            {
+              "from": {
+                "node": "add",
+                "pin": "result"
+              },
+              "to": {
+                "node": "set",
+                "pin": "value"
+              }
+            },
+            {
+              "from": {
+                "node": "set",
+                "pin": "then"
+              },
+              "to": {
+                "node": "save",
+                "pin": "in"
+              }
+            },
+            {
+              "from": {
+                "node": "set",
+                "pin": "value"
+              },
+              "to": {
+                "node": "text",
+                "pin": "value"
+              }
+            },
+            {
+              "from": {
+                "node": "text",
+                "pin": "result"
+              },
+              "to": {
+                "node": "save",
+                "pin": "value"
+              }
+            },
+            {
+              "from": {
+                "node": "save",
+                "pin": "then"
+              },
+              "to": {
+                "node": "saveOther",
+                "pin": "in"
+              }
+            },
+            {
+              "from": {
+                "node": "hit",
+                "pin": "other"
+              },
+              "to": {
+                "node": "name",
+                "pin": "target"
+              }
+            },
+            {
+              "from": {
+                "node": "name",
+                "pin": "result"
+              },
+              "to": {
+                "node": "saveOther",
+                "pin": "value"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "graphs": [
+    {
+      "kind": "event",
+      "name": "onEnter",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 20,
+          "y": 60,
+          "defaults": {}
+        },
+        {
+          "id": "spawn",
+          "kind": "api:Scene:Scene::spawn:Vec2",
+          "x": 280,
+          "y": 60,
+          "defaults": {
+            "position": [
+              100,
+              100
+            ]
+          }
+        },
+        {
+          "id": "attach",
+          "kind": "attach",
+          "x": 540,
+          "y": 60,
+          "defaults": {},
+          "ref": "BP_Spinner"
+        },
+        {
+          "id": "array",
+          "kind": "arrayNew",
+          "x": 800,
+          "y": 60,
+          "defaults": {
+            "length": 1
+          },
+          "type": "array<int>@"
+        },
+        {
+          "id": "store",
+          "kind": "set",
+          "x": 1060,
+          "y": 60,
+          "defaults": {},
+          "ref": "numbers"
+        },
+        {
+          "id": "set",
+          "kind": "arraySet",
+          "x": 1320,
+          "y": 60,
+          "defaults": {
+            "index": 0,
+            "value": 7
+          },
+          "type": "array<int>@"
+        },
+        {
+          "id": "delay",
+          "kind": "delay",
+          "x": 1580,
+          "y": 60,
+          "defaults": {
+            "seconds": 0.05
+          }
+        },
+        {
+          "id": "get",
+          "kind": "get",
+          "x": 1300,
+          "y": 280,
+          "defaults": {},
+          "ref": "numbers"
+        },
+        {
+          "id": "read",
+          "kind": "arrayGet",
+          "x": 1560,
+          "y": 280,
+          "defaults": {
+            "index": 0
+          },
+          "type": "array<int>@"
+        },
+        {
+          "id": "str",
+          "kind": "toString",
+          "x": 1820,
+          "y": 280,
+          "defaults": {},
+          "type": "int"
+        },
+        {
+          "id": "save",
+          "kind": "api:Save:Save::set:string,string",
+          "x": 1840,
+          "y": 60,
+          "defaults": {
+            "key": "bp_delayed"
+          }
+        }
+      ],
+      "links": [
+        {
+          "from": {
+            "node": "entry",
+            "pin": "then"
+          },
+          "to": {
+            "node": "spawn",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "spawn",
+            "pin": "then"
+          },
+          "to": {
+            "node": "attach",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "spawn",
+            "pin": "result"
+          },
+          "to": {
+            "node": "attach",
+            "pin": "target"
+          }
+        },
+        {
+          "from": {
+            "node": "attach",
+            "pin": "then"
+          },
+          "to": {
+            "node": "array",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "array",
+            "pin": "then"
+          },
+          "to": {
+            "node": "store",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "array",
+            "pin": "result"
+          },
+          "to": {
+            "node": "store",
+            "pin": "value"
+          }
+        },
+        {
+          "from": {
+            "node": "store",
+            "pin": "then"
+          },
+          "to": {
+            "node": "set",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "store",
+            "pin": "value"
+          },
+          "to": {
+            "node": "set",
+            "pin": "target"
+          }
+        },
+        {
+          "from": {
+            "node": "set",
+            "pin": "then"
+          },
+          "to": {
+            "node": "delay",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "delay",
+            "pin": "then"
+          },
+          "to": {
+            "node": "save",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "get",
+            "pin": "value"
+          },
+          "to": {
+            "node": "read",
+            "pin": "target"
+          }
+        },
+        {
+          "from": {
+            "node": "read",
+            "pin": "result"
+          },
+          "to": {
+            "node": "str",
+            "pin": "value"
+          }
+        },
+        {
+          "from": {
+            "node": "str",
+            "pin": "result"
+          },
+          "to": {
+            "node": "save",
+            "pin": "value"
+          }
+        }
+      ]
+    }
+  ]
+}

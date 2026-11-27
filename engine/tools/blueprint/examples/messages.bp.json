@@ -1,0 +1,696 @@
+{
+  "version": 1,
+  "name": "BP_Messages",
+  "kind": "Screen",
+  "interfaces": [
+    {
+      "name": "Damageable",
+      "implement": false,
+      "methods": [
+        {
+          "name": "ApplyDamage",
+          "params": [
+            {
+              "name": "amount",
+              "type": "int"
+            }
+          ],
+          "returns": "int"
+        }
+      ]
+    }
+  ],
+  "components": [
+    {
+      "version": 1,
+      "name": "BP_Spinner",
+      "kind": "Behaviour",
+      "variables": [
+        {
+          "name": "hits",
+          "type": "int",
+          "default": 0
+        }
+      ],
+      "graphs": [
+        {
+          "kind": "event",
+          "name": "start",
+          "nodes": [
+            {
+              "id": "entry",
+              "kind": "entry",
+              "x": 20,
+              "y": 60,
+              "defaults": {}
+            },
+            {
+              "id": "self",
+              "kind": "self",
+              "x": 20,
+              "y": 250,
+              "defaults": {}
+            },
+            {
+              "id": "spin",
+              "kind": "api:Entity:set_spin:Entity@,float",
+              "x": 300,
+              "y": 60,
+              "defaults": {
+                "value": 90
+              }
+            },
+            {
+              "id": "save",
+              "kind": "api:Save:Save::set:string,string",
+              "x": 580,
+              "y": 60,
+              "defaults": {
+                "key": "bp_started",
+                "value": "yes"
+              }
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "entry",
+                "pin": "then"
+              },
+              "to": {
+                "node": "spin",
+                "pin": "in"
+              }
+            },
+            {
+              "from": {
+                "node": "self",
+                "pin": "value"
+              },
+              "to": {
+                "node": "spin",
+                "pin": "target"
+              }
+            },
+            {
+              "from": {
+                "node": "spin",
+                "pin": "then"
+              },
+              "to": {
+                "node": "save",
+                "pin": "in"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "event",
+          "name": "onHit",
+          "nodes": [
+            {
+              "id": "hit",
+              "kind": "entry",
+              "x": 20,
+              "y": 60,
+              "defaults": {}
+            },
+            {
+              "id": "get",
+              "kind": "get",
+              "x": 20,
+              "y": 240,
+              "defaults": {},
+              "ref": "hits"
+            },
+            {
+              "id": "add",
+              "kind": "add",
+              "x": 300,
+              "y": 240,
+              "defaults": {
+                "b": 1
+              },
+              "type": "int"
+            },
+            {
+              "id": "set",
+              "kind": "set",
+              "x": 560,
+              "y": 60,
+              "defaults": {},
+              "ref": "hits"
+            },
+            {
+              "id": "text",
+              "kind": "toString",
+              "x": 560,
+              "y": 240,
+              "defaults": {},
+              "type": "int"
+            },
+            {
+              "id": "save",
+              "kind": "api:Save:Save::set:string,string",
+              "x": 830,
+              "y": 60,
+              "defaults": {
+                "key": "bp_hits"
+              }
+            },
+            {
+              "id": "name",
+              "kind": "api:Entity:get_name:Entity@",
+              "x": 830,
+              "y": 240,
+              "defaults": {}
+            },
+            {
+              "id": "saveOther",
+              "kind": "api:Save:Save::set:string,string",
+              "x": 1100,
+              "y": 60,
+              "defaults": {
+                "key": "bp_other"
+              }
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "hit",
+                "pin": "then"
+              },
+              "to": {
+                "node": "set",
+                "pin": "in"
+              }
+            },
+            {
+              "from": {
+                "node": "get",
+                "pin": "value"
+              },
+              "to": {
+                "node": "add",
+                "pin": "a"
+              }
+            },
+            {
+              "from": {
+                "node": "add",
+                "pin": "result"
+              },
+              "to": {
+                "node": "set",
+                "pin": "value"
+              }
+            },
+            {
+              "from": {
+                "node": "set",
+                "pin": "then"
+              },
+              "to": {
+                "node": "save",
+                "pin": "in"
+              }
+            },
+            {
+              "from": {
+                "node": "set",
+                "pin": "value"
+              },
+              "to": {
+                "node": "text",
+                "pin": "value"
+              }
+            },
+            {
+              "from": {
+                "node": "text",
+                "pin": "result"
+              },
+              "to": {
+                "node": "save",
+                "pin": "value"
+              }
+            },
+            {
+              "from": {
+                "node": "save",
+                "pin": "then"
+              },
+              "to": {
+                "node": "saveOther",
+                "pin": "in"
+              }
+            },
+            {
+              "from": {
+                "node": "hit",
+                "pin": "other"
+              },
+              "to": {
+                "node": "name",
+                "pin": "target"
+              }
+            },
+            {
+              "from": {
+                "node": "name",
+                "pin": "result"
+              },
+              "to": {
+                "node": "saveOther",
+                "pin": "value"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "name": "BP_Health",
+      "kind": "Behaviour",
+      "interfaces": [
+        {
+          "name": "Damageable",
+          "implement": true,
+          "methods": [
+            {
+              "name": "ApplyDamage",
+              "params": [
+                {
+                  "name": "amount",
+                  "type": "int"
+                }
+              ],
+              "returns": "int"
+            }
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "health",
+          "type": "int",
+          "default": 100
+        }
+      ],
+      "graphs": [
+        {
+          "kind": "function",
+          "name": "ApplyDamage",
+          "params": [
+            {
+              "name": "amount",
+              "type": "int"
+            }
+          ],
+          "returns": "int",
+          "nodes": [
+            {
+              "id": "entry",
+              "kind": "entry",
+              "x": 20,
+              "y": 60,
+              "defaults": {}
+            },
+            {
+              "id": "get",
+              "kind": "get",
+              "x": 20,
+              "y": 250,
+              "defaults": {},
+              "ref": "health"
+            },
+            {
+              "id": "subtract",
+              "kind": "subtract",
+              "x": 260,
+              "y": 250,
+              "defaults": {},
+              "type": "int"
+            },
+            {
+              "id": "set",
+              "kind": "set",
+              "x": 520,
+              "y": 60,
+              "defaults": {},
+              "ref": "health"
+            },
+            {
+              "id": "ret",
+              "kind": "return",
+              "x": 780,
+              "y": 60,
+              "defaults": {}
+            }
+          ],
+          "links": [
+            {
+              "from": {
+                "node": "entry",
+                "pin": "then"
+              },
+              "to": {
+                "node": "set",
+                "pin": "in"
+              }
+            },
+            {
+              "from": {
+                "node": "entry",
+                "pin": "amount"
+              },
+              "to": {
+                "node": "subtract",
+                "pin": "b"
+              }
+            },
+            {
+              "from": {
+                "node": "get",
+                "pin": "value"
+              },
+              "to": {
+                "node": "subtract",
+                "pin": "a"
+              }
+            },
+            {
+              "from": {
+                "node": "subtract",
+                "pin": "result"
+              },
+              "to": {
+                "node": "set",
+                "pin": "value"
+              }
+            },
+            {
+              "from": {
+                "node": "set",
+                "pin": "then"
+              },
+              "to": {
+                "node": "ret",
+                "pin": "in"
+              }
+            },
+            {
+              "from": {
+                "node": "set",
+                "pin": "value"
+              },
+              "to": {
+                "node": "ret",
+                "pin": "value"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variables": [],
+  "graphs": [
+    {
+      "kind": "event",
+      "name": "onEnter",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 20,
+          "y": 60,
+          "defaults": {}
+        },
+        {
+          "id": "spawn",
+          "kind": "api:Scene:Scene::spawn:Vec2",
+          "x": 260,
+          "y": 60,
+          "defaults": {}
+        },
+        {
+          "id": "spinner",
+          "kind": "attach",
+          "x": 500,
+          "y": 60,
+          "defaults": {},
+          "ref": "BP_Spinner"
+        },
+        {
+          "id": "health",
+          "kind": "attach",
+          "x": 740,
+          "y": 60,
+          "defaults": {},
+          "ref": "BP_Health"
+        },
+        {
+          "id": "damage",
+          "kind": "interfaceMessage",
+          "x": 980,
+          "y": 60,
+          "defaults": {
+            "amount": 25
+          },
+          "ref": "Damageable",
+          "method": "ApplyDamage"
+        },
+        {
+          "id": "text",
+          "kind": "toString",
+          "x": 1220,
+          "y": 260,
+          "defaults": {},
+          "type": "int"
+        },
+        {
+          "id": "save",
+          "kind": "api:Save:Save::set:string,string",
+          "x": 1460,
+          "y": 60,
+          "defaults": {
+            "key": "bp_health"
+          }
+        },
+        {
+          "id": "empty",
+          "kind": "api:Scene:Scene::spawn:Vec2",
+          "x": 1700,
+          "y": 60,
+          "defaults": {}
+        },
+        {
+          "id": "missing",
+          "kind": "interfaceMessage",
+          "x": 1940,
+          "y": 60,
+          "defaults": {
+            "amount": 1
+          },
+          "ref": "Damageable",
+          "method": "ApplyDamage"
+        },
+        {
+          "id": "fallback",
+          "kind": "api:Save:Save::set:string,string",
+          "x": 2180,
+          "y": 260,
+          "defaults": {
+            "key": "bp_missing",
+            "value": "yes"
+          }
+        },
+        {
+          "id": "wrong",
+          "kind": "api:Save:Save::set:string,string",
+          "x": 1460,
+          "y": 450,
+          "defaults": {
+            "key": "bp_health",
+            "value": "wrong"
+          }
+        },
+        {
+          "id": "wrong2",
+          "kind": "api:Save:Save::set:string,string",
+          "x": 2180,
+          "y": 60,
+          "defaults": {
+            "key": "bp_missing",
+            "value": "wrong"
+          }
+        }
+      ],
+      "links": [
+        {
+          "from": {
+            "node": "entry",
+            "pin": "then"
+          },
+          "to": {
+            "node": "spawn",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "spawn",
+            "pin": "then"
+          },
+          "to": {
+            "node": "spinner",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "spinner",
+            "pin": "then"
+          },
+          "to": {
+            "node": "health",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "health",
+            "pin": "then"
+          },
+          "to": {
+            "node": "damage",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "spawn",
+            "pin": "result"
+          },
+          "to": {
+            "node": "spinner",
+            "pin": "target"
+          }
+        },
+        {
+          "from": {
+            "node": "spawn",
+            "pin": "result"
+          },
+          "to": {
+            "node": "health",
+            "pin": "target"
+          }
+        },
+        {
+          "from": {
+            "node": "spawn",
+            "pin": "result"
+          },
+          "to": {
+            "node": "damage",
+            "pin": "target"
+          }
+        },
+        {
+          "from": {
+            "node": "damage",
+            "pin": "then"
+          },
+          "to": {
+            "node": "save",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "damage",
+            "pin": "missing"
+          },
+          "to": {
+            "node": "wrong",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "damage",
+            "pin": "result"
+          },
+          "to": {
+            "node": "text",
+            "pin": "value"
+          }
+        },
+        {
+          "from": {
+            "node": "text",
+            "pin": "result"
+          },
+          "to": {
+            "node": "save",
+            "pin": "value"
+          }
+        },
+        {
+          "from": {
+            "node": "save",
+            "pin": "then"
+          },
+          "to": {
+            "node": "empty",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "empty",
+            "pin": "then"
+          },
+          "to": {
+            "node": "missing",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "empty",
+            "pin": "result"
+          },
+          "to": {
+            "node": "missing",
+            "pin": "target"
+          }
+        },
+        {
+          "from": {
+            "node": "missing",
+            "pin": "then"
+          },
+          "to": {
+            "node": "wrong2",
+            "pin": "in"
+          }
+        },
+        {
+          "from": {
+            "node": "missing",
+            "pin": "missing"
+          },
+          "to": {
+            "node": "fallback",
+            "pin": "in"
+          }
+        }
+      ]
+    }
+  ]
+}
