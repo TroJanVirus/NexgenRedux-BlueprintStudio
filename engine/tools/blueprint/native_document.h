@@ -17,6 +17,7 @@ namespace nx
     };
     const std::vector<BlueprintNodeSpec>& blueprintCatalogue();
     const BlueprintNodeSpec* blueprintSpec(const std::string& kind);
+    bool blueprintLiteralType(const std::string& type);
     // Managed authoring files are direct children of Redux's own folder.
     bool blueprintFileName(const std::string& file);
     bool blueprintManagedName(const std::string& name,std::string& file);
@@ -25,7 +26,8 @@ namespace nx
     // The pre-release browser format is deliberately not supported.
     struct BlueprintDocument
     {
-        struct Node { std::string id, kind, ref; float x=0,y=0; };
+        struct InputValue { std::string pin,value; };
+        struct Node { std::string id, kind, ref; float x=0,y=0; std::vector<InputValue> values{}; };
         struct Link { size_t from=0,to=0; std::string output,input; };
         struct Graph
         {
@@ -44,6 +46,8 @@ namespace nx
         bool connect(size_t graph,size_t from,const std::string& output,size_t to,const std::string& input,std::string& error);
         bool disconnect(size_t graph,size_t node,const std::string& pin,bool output);
         bool setLiteral(size_t graph,size_t node,const std::string& value,std::string& error);
+        bool setInputValue(size_t graph,size_t node,const std::string& pin,const std::string& value,std::string& error);
+        bool clearInputValue(size_t graph,size_t node,const std::string& pin);
         bool setReference(size_t graph,size_t node,const std::string& value,std::string& error);
         bool addFunction(const std::string& name,std::string& error);
         bool removeFunction(size_t graph,std::string& error);

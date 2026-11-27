@@ -51,7 +51,8 @@ namespace nx
         size_t m_pending=static_cast<size_t>(-1),m_paletteFirst=0;
         std::string m_pendingPin,m_query,m_edit;
         std::vector<const BlueprintNodeSpec*> m_palette;
-        int m_focus=0; // 1 catalogue search, 2 literal, 3 reference, 4 new function, 5 save as
+        int m_focus=0; // 1 catalogue search, 2 literal, 3 reference, 4 new function, 5 save as, 6 input value
+        std::string m_editPin,m_editType;
         std::string m_filePath,m_fileBaseline;
         std::vector<std::string> m_files;
         size_t m_fileFirst=0;

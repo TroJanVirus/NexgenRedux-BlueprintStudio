@@ -415,12 +415,13 @@ namespace nx
                     size_t end=value.size()-1;while(end&&(static_cast<unsigned char>(value[end])&0xc0)==0x80)--end;
                     value.resize(end);changed=true;
                 }
-                else if(ch>=32&&(focus==1||focus==2||ch<127)&&appendCharacter(value,ch,focus==1?80u:focus==2?4096u:64u))changed=true;
+                else if(ch>=32&&(focus==1||focus==2||focus==6||ch<127)&&appendCharacter(value,ch,focus==1?80u:(focus==2||focus==6)?4096u:64u))changed=true;
                 else if(ch==13)
                 {
                     if(focus==2&&!m_document.setLiteral(m_graph,m_selection,m_edit,m_status))break;
                     if(focus==3&&!m_document.setReference(m_graph,m_selection,m_edit,m_status))break;
                     if(focus==5&&!saveNamed(s,m_edit))break;
+                    if(focus==6&&!m_document.setInputValue(m_graph,m_selection,m_editPin,m_edit,m_status))break;
                     if(focus==4)
                     {
                         if(!m_document.addFunction(m_edit,m_status))break;
@@ -430,6 +431,11 @@ namespace nx
                 }
             }
             if(changed&&focus==1)filterCatalogue();
+            if(focus==6&&click&&in(x,y,360,391,540,430))
+            {
+                m_document.clearInputValue(m_graph,m_selection,m_editPin);m_focus=0;input.setTyping(false);
+                m_status="Input reset to its API default, or requires a wire.";
+            }
             if(click&&m_focus==1&&!in(x,y,kRight+8,kTop+38,kWidth-8,kTop+68)){m_focus=0;input.setTyping(false);}
             else {m_left=left;return;}
         }
@@ -517,6 +523,12 @@ namespace nx
                         else if(m_pending!=static_cast<size_t>(-1))
                         {
                             if(m_document.connect(m_graph,m_pending,m_pendingPin,i-1,pins[p],m_status)){rebuildPins();clearWire();m_status="Connected pins.";}
+                        }
+                        else if(blueprintLiteralType(row.inputTypes[p]))
+                        {
+                            m_editPin=pins[p];m_editType=row.inputTypes[p];m_edit.clear();
+                            for(const auto& v:n.values)if(v.pin==m_editPin)m_edit=v.value;
+                            m_focus=6;input.setTyping(true);m_status="Enter a typed value. A connected wire takes precedence.";
                         }
                         else m_status="Input "+pins[p]+" ("+row.inputTypes[p]+"): choose an output pin first.";
                         m_left=left;return;
@@ -655,7 +667,14 @@ namespace nx
                     c.text(*m_font,shorten(title(n),24).c_str(),x+8,y+3,text);c.pop();
                     // Clip each column separately to prevent long pin names overlapping.
                     c.push();c.clip(x+6,y+24*m_zoom,w*0.5f-8,h-24*m_zoom);
-                    for(size_t p=first;p<std::min(last,rows[i].inputs.size());++p)c.text(*m_font,shorten(rows[i].inputs[p],12).c_str(),x+8,y+pinY(p)*m_zoom-8,muted);
+                    for(size_t p=first;p<std::min(last,rows[i].inputs.size());++p)
+                    {
+                        const auto& pin=rows[i].inputs[p];
+                        std::string label=pin;
+                        const auto custom=std::find_if(n.values.begin(),n.values.end(),[&](const BlueprintDocument::InputValue& v){return v.pin==pin;});
+                        if(custom!=n.values.end())label+=" = "+custom->value;
+                        c.text(*m_font,shorten(label,15).c_str(),x+8,y+pinY(p)*m_zoom-8,muted);
+                    }
                     c.pop();
                     c.push();c.clip(x+w*0.5f,y+24*m_zoom,w*0.5f-6,h-24*m_zoom);
                     for(size_t p=first;p<std::min(last,rows[i].outputs.size());++p)c.text(*m_font,shorten(rows[i].outputs[p],12).c_str(),x+w-8,y+pinY(p)*m_zoom-8,muted,Align::Right);
@@ -709,8 +728,8 @@ namespace nx
         }
         c.rect(0,kBottom,kWidth,kHeight-kBottom,{0.12f,0.16f,0.22f,1});
         c.text(*m_font,shorten(m_status,110).c_str(),12,kBottom+6,text);
-        c.text(*m_font,"Click output then input: connect | Ctrl+click pin: disconnect | Drag: move | Ctrl+S: save",12,kBottom+26,muted);
-        if(m_browsing||m_focus==5)
+        c.text(*m_font,"Click output then input: connect | Click input: value | Ctrl+click: disconnect | Ctrl+S: save",12,kBottom+26,muted);
+        if(m_browsing||m_focus==5||m_focus==6)
         {
             c.rect(0,0,kWidth,kHeight,{0,0,0,0.70f});
             if(m_browsing)
@@ -726,6 +745,16 @@ namespace nx
                 }
                 if(m_files.empty())c.text(*m_font,"No saved Blueprints. Save as or drop a .bp.json file.",640,330,muted,Align::Center);
                 c.clip(280,603,720,22);c.text(*m_font,shorten(m_status,90).c_str(),280,603,muted);c.noClip();
+            }
+            else if(m_focus==6)
+            {
+                c.roundRect(340,226,600,224,9,{0.12f,0.16f,0.22f,1});
+                c.text(*m_font,("INPUT: "+m_editPin+" ("+m_editType+")").c_str(),360,245,accent);
+                c.roundRect(360,285,560,36,4,{0.24f,0.35f,0.48f,1});
+                c.clip(364,285,552,36);c.text(*m_font,m_edit.c_str(),370,293,text);c.noClip();
+                c.paragraph(*m_font,m_status.c_str(),360,330,560,muted);
+                c.roundRect(360,391,180,39,4,{0.22f,0.31f,0.43f,1});c.text(*m_font,"Reset value",450,400,text,Align::Center);
+                c.text(*m_font,"Enter confirms | Escape cancels",730,400,text,Align::Center);
             }
             else
             {

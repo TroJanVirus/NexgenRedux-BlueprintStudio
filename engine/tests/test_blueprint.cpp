@@ -545,3 +545,17 @@ NX_TEST(nativeBlueprintExportLoadsAsOrdinaryReduxScreen)
     r.step(3);
     NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("export_test","missing"),"ran")==0);
 }
+
+NX_TEST(nativeBlueprintInlineInputsRunOnRealEngine)
+{
+    BlueprintDocument doc;doc.create();std::string error,source;
+    const bool authored=doc.addNode(0,"api:Save:Save::set:string,string",0,0,error)&&
+        doc.connect(0,0,"then",1,"in",error)&&doc.setInputValue(0,1,"key","inline_test",error)&&
+        doc.setInputValue(0,1,"value","works",error)&&compileBlueprint(doc,source,error);
+    NX_EXPECT(authored);if(!authored)return;
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    r.platform.files["showcase/inline_values/screen.json"]="{\"title\":\"Inline values\"}";
+    r.platform.files["showcase/inline_values/main.as"]=source;
+    if(!r.screens.init(r.services,"showcase","inline_values")){NX_EXPECT(false);return;}
+    r.step(3);NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("inline_test","missing"),"works")==0);
+}

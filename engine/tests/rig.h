@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <map>
+#include <set>
 #include <string>
 
 namespace nx::test
@@ -79,23 +80,23 @@ namespace nx::test
 
         void list(const char* path, bool folders, FolderCallback callback, void* user) override
         {
-            if (!folders && strcmp(path, "own") == 0)
+            std::set<std::string> emitted;
+            auto emit=[&](const std::string& name)
             {
-                for (const char* name : { "b.stl", "a.obj" })
-                {
-                    callback(name, user);
-                }
-            }
-            if (!folders)
+                if(emitted.insert(name).second)callback(name.c_str(),user);
+            };
+            if(!folders&&strcmp(path,"own")==0)
+                for(const char* name:{"b.stl","a.obj"})emit(name);
+            if(folders&&strcmp(path,"showcase")==0)
+                for(const char* name:{"main","shapes","blend","faulty","test"})emit(name);
+            const std::string prefix=std::string(path)+"/";
+            for(const auto& item:files)
             {
-                return;
-            }
-            if (strcmp(path, "showcase") == 0)
-            {
-                for (const char* name : { "main", "shapes", "blend", "faulty", "test" })
-                {
-                    callback(name, user);
-                }
+                if(item.first.compare(0,prefix.size(),prefix)!=0)continue;
+                const auto relative=item.first.substr(prefix.size());
+                const auto slash=relative.find('/');
+                if(folders&&slash!=std::string::npos&&slash>0)emit(relative.substr(0,slash));
+                else if(!folders&&slash==std::string::npos&&!relative.empty())emit(relative);
             }
         }
 

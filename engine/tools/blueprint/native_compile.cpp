@@ -37,16 +37,34 @@ namespace nx
                 const auto found=std::find_if(graph.links.begin(),graph.links.end(),[&](const Link& l){return l.to==node&&l.input==input;});
                 return found==graph.links.end()?nullptr:&*found;
             }
+            bool literalValue(size_t node,const std::string& type,const std::string& value,std::string& result)
+            {
+                if(type=="string")
+                {
+                    for(unsigned char c:value)if(c<32&&c!='\n'&&c!='\r'&&c!='\t')return fail(node,"Unsupported control character in string.");
+                    result=quote(value);
+                }
+                else if(type=="bool")result=value;
+                else result=type+"("+value+")";
+                return true;
+            }
             bool value(size_t node,const std::string& pin,std::string& result,unsigned depth)
             {
                 const auto* wire=incoming(node,pin);
                 if(!wire)
                 {
-                    if(const auto* spec=blueprintSpec(graph.nodes[node].kind))
+                    const auto& n=graph.nodes[node];
+                    if(const auto* spec=blueprintSpec(n.kind))
+                    {
+                        for(const auto& v:n.values)if(v.pin==pin)
+                            for(const auto& p:spec->inputs)if(p.name==pin)return literalValue(node,p.type,v.value,result);
                         for(const auto& d:spec->defaults)if(d.name==pin){result=d.type;return true;}
+                    }
                     return fail(node,"Connect input "+pin+".");
                 }
-                return expression(wire->from,wire->output,result,depth+1);
+                if(!expression(wire->from,wire->output,result,depth+1))return false;
+                if(result.size()>65536)return fail(node,"Expression too large.");
+                return true;
             }
             bool api(size_t node,const BlueprintNodeSpec& spec,std::string& result,unsigned depth)
             {
@@ -89,15 +107,7 @@ namespace nx
                 if(!spec)return fail(node,"Unknown node.");
                 if(n.kind.rfind("literal:",0)==0&&pin=="value")
                 {
-                    const auto type=n.kind.substr(8);
-                    if(type=="string")
-                    {
-                        for(unsigned char c:n.ref)if(c<32&&c!='\n'&&c!='\r'&&c!='\t')return fail(node,"Unsupported control character in string.");
-                        result=quote(n.ref);
-                    }
-                    else if(type=="bool")result=n.ref;
-                    else result=type+"("+n.ref+")";
-                    return true;
+                    return literalValue(node,n.kind.substr(8),n.ref,result);
                 }
                 if((n.kind=="add:float"||n.kind=="less:float")&&pin=="result")
                 {
@@ -233,6 +243,7 @@ namespace nx
             Emitter e{graph,result,error,std::vector<bool>(graph.nodes.size(),false),std::vector<bool>(graph.nodes.size(),false)};
             if(!e.flow(index,"then",2,0))return false;
             result+="    }\n";
+            if(result.size()>1024*1024){error="Generated source exceeds the size limit.";return false;}
         }
         result+="}\n";source.swap(result);error.clear();return true;
     }

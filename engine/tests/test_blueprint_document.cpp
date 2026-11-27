@@ -191,3 +191,19 @@ NX_TEST(nativeBlueprintScreenExportIsTransactionalAndUsesNativeManifest)
     const auto previousSource=source,previousManifest=manifest;
     NX_EXPECT(!compileBlueprintScreen(doc,source,manifest,error)&&source==previousSource&&manifest==previousManifest);
 }
+
+NX_TEST(nativeInputValuesAreTypedUndoableAndWiresTakePrecedence)
+{
+    BlueprintDocument doc;doc.create();std::string error,source,saved;
+    NX_EXPECT(doc.addNode(0,"api:Save:Save::set:string,string",0,0,error)&&doc.connect(0,0,"then",1,"in",error));
+    NX_EXPECT(!doc.setInputValue(0,1,"in","true",error)&&!doc.setInputValue(0,1,"absent","x",error));
+    NX_EXPECT(doc.setInputValue(0,1,"key","key",error)&&doc.setInputValue(0,1,"value","first",error));
+    NX_EXPECT(compileBlueprint(doc,source,error)&&source.find("Save::set(\"key\", \"first\")")!=std::string::npos);
+    NX_EXPECT(doc.addNode(0,"literal:string",0,0,error)&&doc.setLiteral(0,2,"wired",error)&&doc.connect(0,2,"value",1,"value",error));
+    NX_EXPECT(compileBlueprint(doc,source,error)&&source.find("Save::set(\"key\", \"wired\")")!=std::string::npos);
+    NX_EXPECT(doc.serialize(saved,error));BlueprintDocument copy;NX_EXPECT(copy.load(saved.data(),saved.size(),error));
+    NX_EXPECT(copy.disconnect(0,1,"value",false)&&compileBlueprint(copy,source,error)&&source.find("\"first\"")!=std::string::npos);
+    NX_EXPECT(copy.clearInputValue(0,1,"value")&&!compileBlueprint(copy,source,error));
+    NX_EXPECT(copy.undo()&&compileBlueprint(copy,source,error));
+    NX_EXPECT(copy.addNode(0,"repeat",0,0,error)&&!copy.setInputValue(0,3,"count","1.5",error)&&copy.setInputValue(0,3,"count","5",error));
+}

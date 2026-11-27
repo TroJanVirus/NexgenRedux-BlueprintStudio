@@ -130,6 +130,8 @@ namespace nx
         bool text(JsonValue& j,const char* key,const std::string& value){auto* v=j.put(key);if(!v)return false;v->setText(value);return true;}
         bool number(JsonValue& j,const char* key,double value){auto* v=j.put(key);if(!v)return false;v->setNumber(value);return true;}
     }
+    bool blueprintLiteralType(const std::string& type)
+    {return type=="bool"||type=="int"||type=="uint"||type=="float"||type=="double"||type=="string";}
     bool blueprintFileName(const std::string& file)
     {
         return file.size()>8&&file.size()<=240&&file.ends_with(".bp.json")&&file!="blueprint-recovery.bp.json"&&
@@ -206,7 +208,25 @@ namespace nx
                     ((variableKind(kind)||kind=="call:function")&&(!n["value"].isString()||!identifier(ref))))
                 {error="Invalid node in "+g.name;return false;}
                 if(kind=="entry")++entries;
-                g.nodes.push_back({n["id"].text(),kind,ref,x,y});
+                Node node{n["id"].text(),kind,ref,x,y};
+                const auto values=n["values"];
+                if(values.exists())
+                {
+                    const auto* spec=blueprintSpec(kind);
+                    if(!values.isObject()||values.count()>spec->inputs.size())
+                    {error="Invalid input values in "+g.name;return false;}
+                    for(auto v=values.first();v.exists();v=v.next())
+                    {
+                        const std::string pin=v.key();
+                        const auto* input=findPin(spec->inputs,pin);
+                        if(!input||!blueprintLiteralType(input->type)||!v.isString()||
+                            !literal("literal:"+input->type,v.text())||
+                            std::any_of(node.values.begin(),node.values.end(),[&](const InputValue& old){return old.pin==pin;}))
+                        {error="Invalid or duplicate input value: "+pin;return false;}
+                        node.values.push_back({pin,v.text()});
+                    }
+                }
+                g.nodes.push_back(std::move(node));
             }
             if(entries!=1){error="Each graph needs exactly one entry.";return false;}
             for(auto l=ls.first();l.exists();l=l.next())
@@ -239,6 +259,11 @@ namespace nx
             {
                 auto* j=ns->add();if(!j||!text(*j,"id",n.id)||!text(*j,"kind",n.kind)||!number(*j,"x",n.x)||!number(*j,"y",n.y))return fail();
                 if((n.kind.rfind("literal:",0)==0||variableKind(n.kind)||n.kind=="call:function")&&!text(*j,"value",n.ref))return fail();
+                if(!n.values.empty())
+                {
+                    auto* values=j->put("values");if(!values)return fail();
+                    for(const auto& v:n.values)if(!text(*values,v.pin.c_str(),v.value))return fail();
+                }
             }
             auto* ls=v->put("links");if(!ls)return fail();ls->setArray();
             for(const auto& l:g.links)
@@ -324,6 +349,29 @@ namespace nx
         {error="Invalid value for this literal type.";return false;}
         auto& n=graphs[graph].nodes[node];if(n.ref==value){error.clear();return true;}
         record(graph);n.ref=value;error.clear();return true;
+    }
+    bool BlueprintDocument::setInputValue(size_t graph,size_t node,const std::string& pin,const std::string& value,std::string& error)
+    {
+        if(graph>=graphs.size()||node>=graphs[graph].nodes.size()){error="Invalid node.";return false;}
+        auto& n=graphs[graph].nodes[node];
+        const auto* spec=blueprintSpec(n.kind);
+        const auto* input=spec?findPin(spec->inputs,pin):nullptr;
+        if(!input||!blueprintLiteralType(input->type)||!literal("literal:"+input->type,value))
+        {error="Invalid value for input "+pin+".";return false;}
+        const auto it=std::find_if(n.values.begin(),n.values.end(),[&](const InputValue& v){return v.pin==pin;});
+        if(it!=n.values.end()&&it->value==value){error.clear();return true;}
+        record(graph);
+        if(it==n.values.end())n.values.push_back({pin,value});
+        else it->value=value;
+        error.clear();return true;
+    }
+    bool BlueprintDocument::clearInputValue(size_t graph,size_t node,const std::string& pin)
+    {
+        if(graph>=graphs.size()||node>=graphs[graph].nodes.size())return false;
+        auto& values=graphs[graph].nodes[node].values;
+        const auto it=std::find_if(values.begin(),values.end(),[&](const InputValue& v){return v.pin==pin;});
+        if(it==values.end())return false;
+        record(graph);values.erase(it);return true;
     }
     bool BlueprintDocument::variables(std::vector<BlueprintPin>& values,std::string& error)const
     {
