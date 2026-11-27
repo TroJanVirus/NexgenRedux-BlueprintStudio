@@ -14,7 +14,7 @@ namespace nx
     namespace
     {
         struct Row {const char* id;const char* title;const char* category;const char* inputs;const char* outputs;
-            const char* call="";const char* property="";const char* member="";const char* pure="";const char* result="";const char* hasOut="";};
+            const char* call="";const char* property="";const char* member="";const char* pure="";const char* result="";const char* hasOut="";const char* arguments="";const char* defaults="";};
         constexpr Row rows[]={
             {"entry","Event entry","Flow","","then:exec"},
             {"branch","Branch","Flow","in:exec|condition:bool","true:exec|false:exec"},
@@ -31,6 +31,28 @@ namespace nx
             {"make:Color","Make Color","Values","r:float|g:float|b:float|a:float","result:Color"},
             {"event:delta","Delta time","Events","","value:float"},
             {"event:canvas","Canvas","Events","","value:Canvas@"},
+            {"var:get:bool","Get bool variable","Variables","","value:bool"},
+            {"var:set:bool","Set bool variable","Variables","in:exec|value:bool","then:exec"},
+            {"var:get:int","Get int variable","Variables","","value:int"},
+            {"var:set:int","Set int variable","Variables","in:exec|value:int","then:exec"},
+            {"var:get:uint","Get uint variable","Variables","","value:uint"},
+            {"var:set:uint","Set uint variable","Variables","in:exec|value:uint","then:exec"},
+            {"var:get:float","Get float variable","Variables","","value:float"},
+            {"var:set:float","Set float variable","Variables","in:exec|value:float","then:exec"},
+            {"var:get:double","Get double variable","Variables","","value:double"},
+            {"var:set:double","Set double variable","Variables","in:exec|value:double","then:exec"},
+            {"var:get:string","Get string variable","Variables","","value:string"},
+            {"var:set:string","Set string variable","Variables","in:exec|value:string","then:exec"},
+            {"var:get:Vec2","Get Vec2 variable","Variables","","value:Vec2"},
+            {"var:set:Vec2","Set Vec2 variable","Variables","in:exec|value:Vec2","then:exec"},
+            {"var:get:Vec3","Get Vec3 variable","Variables","","value:Vec3"},
+            {"var:set:Vec3","Set Vec3 variable","Variables","in:exec|value:Vec3","then:exec"},
+            {"var:get:Color","Get Color variable","Variables","","value:Color"},
+            {"var:set:Color","Set Color variable","Variables","in:exec|value:Color","then:exec"},
+            {"var:get:Entity@","Get Entity@ variable","Variables","","value:Entity@"},
+            {"var:set:Entity@","Set Entity@ variable","Variables","in:exec|value:Entity@","then:exec"},
+            {"sequence","Sequence","Flow","in:exec","first:exec|second:exec|then:exec"},
+            {"repeat","Repeat (bounded)","Flow","in:exec|count:int","body:exec|then:exec|index:int"},
 #include "tools/blueprint/native_catalog.inc"
         };
         std::vector<BlueprintPin> parsePins(const std::string& text)
@@ -53,6 +75,13 @@ namespace nx
         }
         constexpr size_t kMaxNodes=1024,kMaxLinks=4096,kMaxGraphs=64,kHistory=48;
         bool coordinate(float v){return std::isfinite(v)&&std::abs(v)<=1000000;}
+        bool variableKind(const std::string& kind){return kind.rfind("var:get:",0)==0||kind.rfind("var:set:",0)==0;}
+        bool identifier(const std::string& s)
+        {
+            if(s.empty()||s.size()>64)return false;
+            for(size_t i=0;i<s.size();++i){const char c=s[i];if(!(c=='_'||(c>='a'&&c<='z')||(c>='A'&&c<='Z')||(i&&c>='0'&&c<='9')))return false;}
+            return true;
+        }
         bool context(const std::string& event,const std::string& kind)
         {return (kind!="event:delta"||event=="update")&&(kind!="event:canvas"||event=="draw");}
         bool validText(JsonTree::Value v){return v.isString()&&v.text()[0]&&std::strlen(v.text())<=512;}
@@ -103,7 +132,7 @@ namespace nx
         static const auto catalogue=[]{
             std::vector<BlueprintNodeSpec> result;
             result.reserve(sizeof(rows)/sizeof(rows[0]));
-            for(const auto& row:rows)result.push_back({row.id,row.title,row.category,parsePins(row.inputs),parsePins(row.outputs),row.call,row.property,row.result,*row.member!=0,*row.pure!=0,*row.hasOut!=0});
+            for(const auto& row:rows)result.push_back({row.id,row.title,row.category,parsePins(row.inputs),parsePins(row.outputs),row.call,row.property,row.result,*row.member!=0,*row.pure!=0,*row.hasOut!=0,parsePins(row.arguments),parsePins(row.defaults)});
             return result;
         }();
         return catalogue;
@@ -154,7 +183,8 @@ namespace nx
                 const float x=n["x"].number(),y=n["y"].number();
                 if(!validText(n["id"])||!blueprintSpec(kind)||!context(g.name,kind)||!n["x"].isNumber()||!n["y"].isNumber()||
                     !coordinate(x)||!coordinate(y)||!ids.emplace(n["id"].text(),g.nodes.size()).second||
-                    (kind.rfind("literal:",0)==0&&(!n["value"].isString()||!literal(kind,ref))))
+                    (kind.rfind("literal:",0)==0&&(!n["value"].isString()||!literal(kind,ref)))||
+                    (variableKind(kind)&&(!n["value"].isString()||!identifier(ref))))
                 {error="Invalid node in "+g.name;return false;}
                 if(kind=="entry")++entries;
                 g.nodes.push_back({n["id"].text(),kind,ref,x,y});
@@ -169,6 +199,8 @@ namespace nx
             }
             candidate.graphs.push_back(std::move(g));
         }
+        std::vector<BlueprintPin> vars;
+        if(!candidate.variables(vars,error))return false;
         *this=std::move(candidate);error.clear();return true;
     }
     bool BlueprintDocument::serialize(std::string& result,std::string& error)const
@@ -183,7 +215,7 @@ namespace nx
             {
                 auto* j=ns->add();text(*j,"id",n.id);text(*j,"kind",n.kind);
                 number(*j,"x",n.x);number(*j,"y",n.y);
-                if(n.kind.rfind("literal:",0)==0)text(*j,"value",n.ref);
+                if(n.kind.rfind("literal:",0)==0||variableKind(n.kind))text(*j,"value",n.ref);
             }
             auto* ls=v->put("links");ls->setArray();
             for(const auto& l:g.links)
@@ -216,7 +248,15 @@ namespace nx
         if(!context(g.name,kind)){error="This event value belongs to a different event graph.";return false;}
         std::string id;
         do{id="n"+std::to_string(++m_nextId);}while(std::any_of(g.nodes.begin(),g.nodes.end(),[&](const Node& n){return n.id==id;}));
-        const std::string value=kind=="literal:string"?"":kind=="literal:bool"?"false":kind.rfind("literal:",0)==0?"0":"";
+        std::string value=kind=="literal:string"?"":kind=="literal:bool"?"false":kind.rfind("literal:",0)==0?"0":"";
+        if(variableKind(kind))
+        {
+            const auto type=kind.substr(8);
+            value="value_"+type; if(value.back()=='@')value.pop_back();
+            std::vector<BlueprintPin> vars;
+            if(!variables(vars,error))return false;
+            for(unsigned i=1;std::any_of(vars.begin(),vars.end(),[&](const BlueprintPin& p){return p.name==value&&p.type!=type;});++i)value="variable_"+std::to_string(i);
+        }
         record(graph);g.nodes.push_back({id,kind,value,x,y});error.clear();return true;
     }
     bool BlueprintDocument::deleteNode(size_t graph,size_t node,std::string& error)
@@ -247,6 +287,36 @@ namespace nx
         if(graph>=graphs.size()||node>=graphs[graph].nodes.size()||!literal(graphs[graph].nodes[node].kind,value))
         {error="Invalid value for this literal type.";return false;}
         auto& n=graphs[graph].nodes[node];if(n.ref==value){error.clear();return true;}
+        record(graph);n.ref=value;error.clear();return true;
+    }
+    bool BlueprintDocument::variables(std::vector<BlueprintPin>& values,std::string& error)const
+    {
+        std::vector<BlueprintPin> result;
+        for(const auto& graph:graphs)for(const auto& node:graph.nodes)
+        {
+            if(!variableKind(node.kind))continue;
+            if(!identifier(node.ref)){error="Invalid variable name in "+graph.name;return false;}
+            const auto type=node.kind.substr(8);
+            const auto found=std::find_if(result.begin(),result.end(),[&](const BlueprintPin& p){return p.name==node.ref;});
+            if(found!=result.end())
+            {
+                if(found->type!=type){error="Variable "+node.ref+" has conflicting types.";return false;}
+            }
+            else result.push_back({node.ref,type});
+        }
+        std::sort(result.begin(),result.end(),[](const BlueprintPin& a,const BlueprintPin& b){return a.name<b.name;});
+        values.swap(result);error.clear();return true;
+    }
+    bool BlueprintDocument::setReference(size_t graph,size_t node,const std::string& value,std::string& error)
+    {
+        if(graph>=graphs.size()||node>=graphs[graph].nodes.size()||!variableKind(graphs[graph].nodes[node].kind)||!identifier(value))
+        {error="Use a variable name containing letters, digits and underscores.";return false;}
+        auto& n=graphs[graph].nodes[node];
+        if(n.ref==value){error.clear();return true;}
+        const auto type=n.kind.substr(8);
+        for(const auto& g:graphs)for(const auto& other:g.nodes)
+            if(&other!=&n&&variableKind(other.kind)&&other.ref==value&&other.kind.substr(8)!=type)
+            {error="Variable name already has a different type.";return false;}
         record(graph);n.ref=value;error.clear();return true;
     }
     bool BlueprintDocument::undo()

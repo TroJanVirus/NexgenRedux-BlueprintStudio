@@ -12,6 +12,8 @@ namespace nx
         std::vector<BlueprintPin> inputs, outputs;
         std::string call,property,result;
         bool member=false,pure=false,hasOut=false;
+        // name=in/out is encoded as a pin pair; defaults are trusted generated expressions.
+        std::vector<BlueprintPin> arguments, defaults;
     };
     const std::vector<BlueprintNodeSpec>& blueprintCatalogue();
     const BlueprintNodeSpec* blueprintSpec(const std::string& kind);
@@ -39,6 +41,9 @@ namespace nx
         bool connect(size_t graph,size_t from,const std::string& output,size_t to,const std::string& input,std::string& error);
         bool disconnect(size_t graph,size_t node,const std::string& pin,bool output);
         bool setLiteral(size_t graph,size_t node,const std::string& value,std::string& error);
+        bool setReference(size_t graph,size_t node,const std::string& value,std::string& error);
+        // Collect named, per-instance variables. A name must have exactly one type across all graphs.
+        bool variables(std::vector<BlueprintPin>& values,std::string& error) const;
         bool undo();
         bool redo();
         bool dirty()const{return m_revision!=m_savedRevision;}
