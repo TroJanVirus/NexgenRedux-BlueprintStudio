@@ -75,6 +75,7 @@ namespace nx
         bool validateBlueprintSource(const std::string& source,std::string& error);
         void stopPreview();
         bool previewing() const { return m_previewSave != nullptr; }
+        bool resolvePreviewGlobal(const char* name,char* out,size_t size) const;
 #endif
 
         u32 count() const;

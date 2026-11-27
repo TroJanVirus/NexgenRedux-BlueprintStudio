@@ -61,6 +61,19 @@ namespace nx
             {error="Asset copy verification failed: "+to;return false;}
             return true;
         }
+        bool copyShared(Platform& p,const std::string& source,const std::string& destination,const std::vector<std::string>& files,size_t& total,std::string& error)
+        {
+            if(files.empty())return true;
+            const auto dest=destination+"/_global",base="own/"+source+"/_global/";
+            if(!ensure(p,dest)){error="Cannot create shared asset directory.";return false;}
+            for(const auto& file:files)
+            {
+                for(size_t at=file.find('/');at!=std::string::npos;at=file.find('/',at+1))
+                    if(!ensure(p,dest+"/"+file.substr(0,at))){error="Cannot create shared asset subfolder.";return false;}
+                if(!copy(p,base+file,"own/"+dest+"/"+file,total,error))return false;
+            }
+            return true;
+        }
     }
     bool blueprintCreateAssetRoot(Platform& p,std::string& root,std::string& error)
     {
@@ -181,6 +194,18 @@ namespace nx
             stamp.substr(0,separator).find_first_not_of("0123456789")==std::string::npos&&
             stamp.substr(separator+1).find_first_not_of("0123456789")==std::string::npos;
     }
+    bool blueprintCopySharedAssets(Platform& p,const std::string& source,const std::string& destination,std::string& error)
+    {
+        if(source.empty()){error.clear();return true;}
+        if(!blueprintAssetRoot(source)||!directoryRoot(destination)||source==destination||
+            !p.fileTime(("own/"+source).c_str())||!p.fileTime(("own/"+destination).c_str()))
+        {error="Invalid shared asset copy roots.";return false;}
+        const auto base="own/"+source+"/_global";
+        if(!p.fileTime(base.c_str())){error.clear();return true;}
+        std::vector<std::string> files;size_t directories=0,total=0;
+        if(!collect(p,base,"",0,directories,files,error)||!copyShared(p,source,destination,files,total,error))return false;
+        error.clear();return true;
+    }
     bool blueprintImportFolderAssets(Platform& p,const std::string& folder,const std::vector<std::string>& screens,std::string& root,std::string& error)
     {
         if(!blueprintImportProjectFolderName(folder)||screens.empty()||screens.size()>10)
@@ -196,9 +221,14 @@ namespace nx
             totalFiles+=collected[i].size();
             if(totalFiles>kMaxFiles){error="Project asset count limit exceeded.";return false;}
         }
+        std::vector<std::string> shared;
+        const auto sharedBase="own/"+folder+"/_global";
+        if(p.fileTime(sharedBase.c_str())&&!collect(p,sharedBase,"",0,directories,shared,error))return false;
+        if(shared.size()>kMaxFiles-totalFiles){error="Project asset count limit exceeded.";return false;}
         std::string fresh;
         if(!blueprintCreateAssetRoot(p,fresh,error))return false;
         size_t total=0;
+        if(!copyShared(p,folder,fresh,shared,total,error))return false;
         for(size_t i=0;i<screens.size();++i)
         {
             if(!blueprintEnsureAssetFolder(p,fresh,screens[i],error))return false;

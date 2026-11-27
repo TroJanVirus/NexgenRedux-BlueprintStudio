@@ -295,6 +295,7 @@ namespace nx
         s.platform->listFolders(base.c_str(),[](const char* name,void* user)
         {
             auto& state=*static_cast<Listing*>(user);
+            if(std::strcmp(name,"_global")==0)return;
             if(state.names.size()>=10)state.overflow=true;
             else state.names.emplace_back(name);
         },&listing);
@@ -457,6 +458,7 @@ namespace nx
         if(!blueprintCreateAssetRoot(*s.platform,newRoot,m_status))return false;
         for(const auto& screen:m_document.screens())
             if(!blueprintCopyAssets(*s.platform,oldRoot,newRoot,screen,m_status))return false;
+        if(!blueprintCopySharedAssets(*s.platform,oldRoot,newRoot,m_status))return false;
         m_document.name=name;m_document.assetRoot=newRoot;
         std::string bytes;
         if(!m_document.serialize(bytes,m_status)||!writeVerified(s,path,bytes))
@@ -545,6 +547,8 @@ namespace nx
         for(const auto& screen:screens)
             if(!blueprintCopyAssets(*s.platform,m_document.assetRoot,root,screen.id,m_status))
             {m_status="Incomplete export: "+m_status;return false;}
+        if(!blueprintCopySharedAssets(*s.platform,m_document.assetRoot,root,m_status))
+        {m_status="Incomplete export: "+m_status;return false;}
         for(const auto& screen:screens)
             if(!writeVerified(s,"own/"+root+"/"+screen.id+"/screen.json",screen.manifest))
             {m_status="Incomplete project export. Do not install own/"+root;return false;}

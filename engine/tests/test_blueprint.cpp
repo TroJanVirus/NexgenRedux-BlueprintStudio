@@ -1816,6 +1816,8 @@ NX_TEST(nativeWorkspaceImportsNativeExportScreensAndTheirAssets)
         const std::string second="class LevelScreen : Screen { void onEnter(){ Save::set(\"level\",\"ok\"); } }";
         const std::string originalManifest="{\n  \"title\": \"Original title\", \"category\": \"Game\", \"order\": 7, \"custom\": [1,2]\n}\n";
         r.platform.files[folder+"/"+firstId+"/screen.json"]=originalManifest;
+        r.platform.ownFolders.insert(folder+"/_global");
+        r.platform.files[folder+"/_global/shared/data.bin"]=std::string("shared\0bytes",12);
         r.platform.files[folder+"/"+firstId+"/main.as"]=first;
         if(multiple)r.platform.files[folder+"/level/main.as"]=second;
         for(const auto& screen:expected)
@@ -1850,6 +1852,10 @@ NX_TEST(nativeWorkspaceImportsNativeExportScreensAndTheirAssets)
         if(!output.empty())NX_EXPECT(output[0].manifest==originalManifest);
         NX_EXPECT(r.platform.files[folder+"/"+firstId+"/screen.json"]==originalManifest);
         NX_EXPECT(project.name=="bp-1790000000-1");
+        const auto shared="own/"+project.assetRoot+"/_global/shared/data.bin";
+        NX_EXPECT(r.platform.files[shared]==r.platform.files[folder+"/_global/shared/data.bin"]);
+        std::string cloned;NX_EXPECT(blueprintCreateAssetRoot(r.platform,cloned,error)&&blueprintCopySharedAssets(r.platform,project.assetRoot,cloned,error));
+        NX_EXPECT(r.platform.files["own/"+cloned+"/_global/shared/data.bin"]==r.platform.files[shared]);
         for(const auto& screen:expected)
             NX_EXPECT(r.platform.files["own/"+project.assetRoot+"/"+screen+"/asset/data.bin"]==r.platform.files[folder+"/"+screen+"/asset/data.bin"]);
         NX_EXPECT(r.platform.files[folder+"/"+firstId+"/main.as"]==first);
@@ -1865,12 +1871,16 @@ NX_TEST(nativeWorkspaceImportsNativeExportScreensAndTheirAssets)
             NX_EXPECT(r.screens.startProjectPreview(preview,"main",error,project.assetRoot));
             if(r.screens.previewing())
             {
+                char resolved[192];
+                NX_EXPECT(resolveAsset(r.services,"global:shared/data.bin",resolved,sizeof(resolved))&&shared==resolved);
+                NX_EXPECT(resolveAsset(r.services,"global:freesans.sfn",resolved,sizeof(resolved))&&strcmp(resolved,"global/freesans.sfn")==0);
                 r.step(5);NX_EXPECT(r.screens.depth()==3&&strcmp(r.screens.current(),"level")==0);
                 NX_EXPECT(strcmp(r.services.save->get("level","missing"),"ok")==0);
                 r.screens.home();r.step(1);NX_EXPECT(r.screens.depth()==2&&strcmp(r.screens.current(),"main")==0);
                 r.screens.stopPreview();
                 NX_EXPECT(r.screens.depth()==1&&r.services.save==&r.save&&strcmp(r.screens.current(),"main")==0);
                 NX_EXPECT(strcmp(r.save.get("level","missing"),"missing")==0);
+                NX_EXPECT(resolveAsset(r.services,"global:shared/data.bin",resolved,sizeof(resolved))&&strcmp(resolved,"global/shared/data.bin")==0);
             }
         }
         studio.close(r.services);

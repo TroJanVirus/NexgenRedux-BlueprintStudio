@@ -143,6 +143,21 @@ namespace nx
     }
 
 #ifdef NX_DESKTOP_BLUEPRINT
+    bool Screens::resolvePreviewGlobal(const char* name,char* out,size_t size) const
+    {
+        if(!previewing()||m_services->sceneEditorAssets||m_previewRoot.rfind("own/",0)!=0||!name||!*name)return false;
+        // Only portable relative paths may resolve inside the private project tree.
+        const std::string relative=name;
+        if(relative.size()>90||relative.front()=='/'||relative.back()=='/'||relative.find("..")!=std::string::npos||relative.find("//")!=std::string::npos||
+            relative.find_first_not_of("abcdefghijklmnopqrstuvwxyz0123456789_-/ .")!=std::string::npos||relative.find(' ')!=std::string::npos)return false;
+        for(size_t at=0;at<relative.size();)
+        {
+            if(relative[at]=='.')return false;
+            const auto slash=relative.find('/',at);if(slash==std::string::npos)break;at=slash+1;
+        }
+        const int length=snprintf(out,size,"%s/_global/%s",m_previewRoot.c_str(),name);
+        return length>0&&static_cast<size_t>(length)<size&&m_services->platform->fileTime(out)!=0;
+    }
     bool Screens::startPreview(const std::string& source, std::string& error)
     {
         PreviewScreen screen;
