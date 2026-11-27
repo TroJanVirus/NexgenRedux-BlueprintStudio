@@ -96,6 +96,8 @@ namespace nx
             std::unordered_set<std::string> methods;
             std::string eventArg,eventType;
             std::unordered_map<std::string,Value> locals;
+            std::unordered_set<std::string> freeFunctions{};
+            bool inFreeFunction=false;
             const Token& peek()const{return tokens[at];}
             bool is(const char* s)const{return peek().kind!=Kind::String&&peek().kind!=Kind::End&&peek().text==s;}
             bool take(const char* s){if(!is(s))return false;++at;return true;}
@@ -229,6 +231,7 @@ namespace nx
                 if(is("true")||is("false")){v={"bool",peek().text,"",static_cast<size_t>(-1)};++at;return true;}
                 std::string id;if(!name(id)||!qualified(id))return false;
                 const bool instanceOnly=id=="this";
+                if(instanceOnly&&inFreeFunction)return fail("Standalone functions cannot use this.");
                 if(instanceOnly&&(!expect(".")||!name(id)))return false;
                 if(take("."))
                 {
@@ -300,8 +303,11 @@ namespace nx
                 }
                 return true;
             }
-            bool functionCall(const std::string& id,const std::vector<Value>& args,Flow& flow,Value& result)
+            bool functionCall(const std::string& id,const std::vector<Value>& args,Flow& flow,Value& result,bool instanceOnly=false)
             {
+                const bool standalone=freeFunctions.count(id)!=0;
+                if((inFreeFunction&&!standalone)||(instanceOnly&&(inFreeFunction||standalone)))
+                    return fail("Function call crosses unsupported standalone/instance scope: "+id+".");
                 const auto* fn=doc.function("Screen",id);
                 if(!fn||args.size()!=fn->parameters.size())return fail("Unsupported function arguments: "+id+".");
                 size_t n;if(!add("call:function",n,id))return false;
@@ -314,9 +320,10 @@ namespace nx
                 if(is("this")&&at+3<tokens.size()&&tokens[at+1].text==".")methodAt=at+2;
                 if(tokens[methodAt].kind==Kind::Name&&methodAt+1<tokens.size()&&tokens[methodAt+1].text=="("&&doc.function("Screen",tokens[methodAt].text))
                 {
+                    const bool instanceOnly=methodAt!=at;
                     const auto id=tokens[methodAt].text;at=methodAt+1;
                     std::vector<Value> args;
-                    return arguments(args)&&functionCall(id,args,flow,result);
+                    return arguments(args)&&functionCall(id,args,flow,result,instanceOnly);
                 }
                 // Direct action calls must be hoisted only when they are the complete value expression.
                 // Leave pure or mixed-classification overload sets to the ordinary expression parser.
@@ -442,6 +449,7 @@ namespace nx
                 const bool handleAssignment=take("@");
                 std::string id;if(!name(id)||!qualified(id))return false;
                 const bool instanceOnly=id=="this";
+                if(instanceOnly&&inFreeFunction)return fail("Standalone functions cannot use this.");
                 if(instanceOnly&&(!expect(".")||!name(id)))return false;
                 if(!prefix.empty()&&(handleAssignment||id.find("::")!=std::string::npos||!is(";")))
                     return fail("Prefix increment requires a standalone plain local or field.");
@@ -521,7 +529,7 @@ namespace nx
                 std::vector<Value> args;Value unused;
                 if(!arguments(args)||!expect(";"))return false;
                 if(!member&&doc.function("Screen",id))
-                {if(!functionCall(id,args,flow,unused))return false;}
+                {if(!functionCall(id,args,flow,unused,instanceOnly))return false;}
                 else
                 {
                     if(instanceOnly&&!member)return fail("Unknown instance method: "+id+".");
@@ -531,23 +539,24 @@ namespace nx
             }
             bool parse()
             {
-                doc.create();std::string className;
-                if(!expect("class")||!name(className)||!expect(":")||!expect("Screen")||!expect("{"))return false;
-                doc.name=className;
-                // First collect simple fields and event declaration/body ranges; fields can follow methods.
-                struct Method {size_t graph,body,end;std::string arg,type;};
+                doc.create();
+                // Register all declarations before converting any body, including forward calls.
+                struct Method {size_t graph,body,end;std::string arg,type;bool standalone;};
                 std::vector<Method> bodies;
-                while(!take("}"))
+                auto declaration=[&](bool standalone)
                 {
                     std::string type,id;if(!name(type)||!name(id))return false;
                     if(take(";"))
                     {
+                        if(standalone)return fail("Global variables are not supported.");
                         if(!blueprintLiteralType(type)||!fields.emplace(id,type).second)return fail("Only unique, uninitialized primitive instance fields are supported.");
-                        continue;
+                        return true;
                     }
                     if(!methods.insert(id).second)return fail("Overloaded or duplicate method "+id+".");
                     const auto found=std::find_if(doc.graphs.begin(),doc.graphs.end(),[&](const BlueprintDocument::Graph& g){return g.name==id;});
                     const bool event=found!=doc.graphs.end();
+                    if(standalone&&event)return fail("Standalone functions cannot use a lifecycle event name.");
+                    if(standalone)freeFunctions.insert(id);
                     const size_t methodGraph=event?static_cast<size_t>(found-doc.graphs.begin()):doc.graphs.size();
                     if(!expect("("))return false;
                     std::string arg,argType;
@@ -593,14 +602,36 @@ namespace nx
                         if(is("}"))--braces;
                         ++at;
                     }while(braces);
-                    bodies.push_back({methodGraph,body,at,arg,argType});
+                    bodies.push_back({methodGraph,body,at,arg,argType,standalone});
+                    return true;
+                };
+                bool sawScreen=false;
+                while(peek().kind!=Kind::End)
+                {
+                    if(take("class"))
+                    {
+                        if(sawScreen)return fail("Additional classes are not supported.");
+                        std::string className;
+                        if(!name(className)||!expect(":")||!expect("Screen")||!expect("{"))return false;
+                        doc.name=className;sawScreen=true;
+                        while(!take("}"))if(!declaration(false))return false;
+                        take(";");
+                    }
+                    else if(!declaration(true))return false;
                 }
-                take(";");
-                if(peek().kind!=Kind::End)return fail("Additional declarations or classes are not supported.");
+                if(!sawScreen)return fail("Expected one Screen class.");
+                for(const auto& id:freeFunctions)if(fields.count(id))return fail("Standalone function and Screen field have the same name: "+id+".");
                 for(const auto& method:bodies)
                 {
                     graph=method.graph;at=method.body;eventArg=method.arg;eventType=method.type;locals.clear();
-                    if(!block({},0)||at!=method.end)return fail("Method body could not be converted completely.");
+                    inFreeFunction=method.standalone;
+                    // A standalone function has no implicit instance state. Lower it to an
+                    // owner-local function graph only when its entire body is convertible.
+                    std::unordered_map<std::string,std::string> instanceFields;
+                    if(inFreeFunction)fields.swap(instanceFields);
+                    const bool ok=block({},0)&&at==method.end;
+                    if(inFreeFunction)fields.swap(instanceFields);
+                    if(!ok)return fail("Method body could not be converted completely.");
                 }
                 return true;
             }

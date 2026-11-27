@@ -761,3 +761,30 @@ NX_TEST(nativeImportResolvesBoundedIncludeTreesTransactionally)
     }
     NX_EXPECT(!resolveBlueprintIncludes(std::string(512*1024+1,'x'),"main.as",read,expanded,error)&&expanded==before);
 }
+
+NX_TEST(nativeImportStandaloneFunctionsRetainScopeAndForwardCalls)
+{
+    BlueprintDocument doc;std::string error,generated,saved;
+    const std::string code=R"(int Twice(int amount){int n=amount+amount;return n;}
+        class Example : Screen { int value; void onEnter(){value=Twice(4);Record(value);} }
+        void Record(int amount){if(amount==8){Save::set("standalone","ok");}})";
+    NX_EXPECT(importBlueprintScreen(code,doc,error)&&compileBlueprint(doc,generated,error));
+    NX_EXPECT(doc.function("Screen","Twice")&&doc.function("Screen","Record"));
+    NX_EXPECT(generated.find("bp_fn_Twice(int(4))")!=std::string::npos&&generated.find("bp_fn_Record(bp_var_value)")!=std::string::npos);
+    NX_EXPECT(doc.serialize(saved,error));
+    for(const char* invalid:{
+        "int state; class Bad : Screen {}",
+        "int Read(){return x;} class Bad : Screen {int x;}",
+        "void Write(){x=1;} class Bad : Screen {int x;}",
+        "void Run(){F();} class Bad : Screen {void F(){}}",
+        "void Run(){this.F();} class Bad : Screen {void F(){}}",
+        "void Run(){} class Bad : Screen {void onEnter(){this.Run();}}",
+        "void Run(){} class Bad : Screen {void Run(){}}",
+        "void Run(){} class Bad : Screen {int Run;}",
+        "void onEnter(){} class Bad : Screen {}",
+        "void Run(){Run();} class Bad : Screen {}"})
+    {
+        NX_EXPECT(!importBlueprintScreen(invalid,doc,error)&&!error.empty());
+        std::string after;NX_EXPECT(doc.serialize(after,error)&&after==saved);
+    }
+}

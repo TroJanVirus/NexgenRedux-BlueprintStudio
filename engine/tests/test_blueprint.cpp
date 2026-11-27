@@ -1812,14 +1812,14 @@ NX_TEST(nativeWorkspaceImportsNativeExportScreensAndTheirAssets)
         const std::string firstId=scenario==0?"intro":scenario==3?"main":"Screen";
         const bool multiple=scenario!=2;
         const std::vector<std::string> expected=multiple?std::vector<std::string>{firstId,"level"}:std::vector<std::string>{firstId};
-        const std::string first=multiple?"class Start : Screen { void onEnter(){ Screens::push(\"level\"); } }":"class Start : Screen { void onEnter(){ Save::set(\"start\",\"ok\"); } }";
+        const std::string first=scenario==3?"class Start : Screen { void onEnter(){ LaunchLevel(); } }":multiple?"class Start : Screen { void onEnter(){ Screens::push(\"level\"); } }":"class Start : Screen { void onEnter(){ Save::set(\"start\",\"ok\"); } }";
         const std::string second="class LevelScreen : Screen { void onEnter(){ Save::set(\"level\",\"ok\"); } }";
         const std::string originalManifest="{\n  \"title\": \"Original title\", \"category\": \"Game\", \"order\": 7, \"custom\": [1,2]\n}\n";
         r.platform.files[folder+"/"+firstId+"/screen.json"]=originalManifest;
         r.platform.ownFolders.insert(folder+"/_global");
         r.platform.files[folder+"/_global/shared/data.bin"]=std::string("shared\0bytes",12);
         const std::string entry=scenario==3?"#include \"global:shared/entry.as\"\n":first;
-        if(scenario==3)r.platform.files[folder+"/_global/shared/entry.as"]="#include \"asset:entry.as\"\n";
+        if(scenario==3)r.platform.files[folder+"/_global/shared/entry.as"]="#include \"asset:entry.as\"\nvoid LaunchLevel(){ Save::set(\"helper\",\"ran\"); Screens::push(\"level\"); }\n";
         if(scenario==3)r.platform.files[folder+"/"+firstId+"/asset/entry.as"]=first;
         r.platform.files[folder+"/"+firstId+"/main.as"]=entry;
         if(multiple)r.platform.files[folder+"/level/main.as"]=second;
@@ -1865,6 +1865,7 @@ NX_TEST(nativeWorkspaceImportsNativeExportScreensAndTheirAssets)
         if(multiple)NX_EXPECT(r.platform.files[folder+"/level/main.as"]==second);
         if(scenario==3&&output.size()==2)
         {
+            NX_EXPECT(project.function("main","LaunchLevel"));
             // Play an imported main while the real Redux main is still on the host stack.
             std::vector<Screens::PreviewScreen> preview;
             for(const auto& o:output)
@@ -1879,6 +1880,7 @@ NX_TEST(nativeWorkspaceImportsNativeExportScreensAndTheirAssets)
                 NX_EXPECT(resolveAsset(r.services,"global:freesans.sfn",resolved,sizeof(resolved))&&strcmp(resolved,"global/freesans.sfn")==0);
                 r.step(5);NX_EXPECT(r.screens.depth()==3&&strcmp(r.screens.current(),"level")==0);
                 NX_EXPECT(strcmp(r.services.save->get("level","missing"),"ok")==0);
+                NX_EXPECT(strcmp(r.services.save->get("helper","missing"),"ran")==0);
                 r.screens.home();r.step(1);NX_EXPECT(r.screens.depth()==2&&strcmp(r.screens.current(),"main")==0);
                 r.screens.stopPreview();
                 NX_EXPECT(r.screens.depth()==1&&r.services.save==&r.save&&strcmp(r.screens.current(),"main")==0);
