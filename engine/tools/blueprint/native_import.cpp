@@ -333,8 +333,23 @@ namespace nx
                 }
                 return expression(result);
             }
-            // An else-if belongs to the false branch, not to the outer continuation.
-            // Keep its condition lazy and propagate definite returns through the whole chain.
+            struct LocalScope
+            {
+                std::unordered_map<std::string,Value>& live;
+                std::unordered_map<std::string,Value> outer;
+                ~LocalScope(){live.swap(outer);}
+            };
+            // A single controlled statement has the same isolated scope as a braced body.
+            bool body(Flow flow,unsigned depth,bool& returned)
+            {
+                if(depth>32)return fail("Statement nesting limit exceeded.");
+                if(is("{"))return block(flow,depth,&returned);
+                LocalScope scope{locals,locals};
+                returned=false;
+                return statement(flow,depth,returned);
+            }
+            // Parsing the entire controlled statement before testing for else binds it to
+            // the nearest unmatched if, including when the source has no braces.
             bool conditional(Flow& flow,unsigned depth,bool& terminal)
             {
                 if(depth>=32)return fail("Statement nesting limit exceeded.");
@@ -342,158 +357,157 @@ namespace nx
                 size_t branch;if(!add("branch",branch)||!bind(branch,"condition",condition))return false;
                 chain(flow,branch);
                 bool yes=false,no=false;
-                if(!block({branch,"true"},depth+1,&yes))return false;
-                if(take("else"))
-                {
-                    if(take("if"))
-                    {
-                        Flow alternative{branch,"false"};
-                        if(!conditional(alternative,depth+1,no))return false;
-                    }
-                    else if(!block({branch,"false"},depth+1,&no))return false;
-                }
+                if(!body({branch,"true"},depth+1,yes))return false;
+                if(take("else")&&!body({branch,"false"},depth+1,no))return false;
                 terminal=yes&&no;
                 return true;
             }
             bool block(Flow flow,unsigned depth,bool* returned=nullptr)
             {
-                struct Scope
-                {
-                    std::unordered_map<std::string,Value>& live;
-                    std::unordered_map<std::string,Value> outer;
-                    ~Scope(){live.swap(outer);}
-                } scope{locals,locals};
+                LocalScope scope{locals,locals};
                 bool terminal=false;
                 if(depth>32||!expect("{"))return fail("Statement nesting limit or missing block.");
                 while(!take("}"))
                 {
                     if(peek().kind==Kind::End)return fail("Unclosed method.");
                     if(terminal)return fail("Statements after an unconditional return cannot be imported.");
-                    if(take("return"))
-                    {
-                        const auto& g=doc.graphs[graph];
-                        if(g.kind!="function")return fail("Early returns from lifecycle methods are not supported.");
-                        Value result;
-                        if(g.returnType!="void"&&!directValue(result,flow))return false;
-                        if(!expect(";"))return false;
-                        size_t n;if(!add("return:function",n))return false;
-                        if(g.returnType!="void"&&!bind(n,"value",result))return false;
-                        chain(flow,n);terminal=true;continue;
-                    }
-                    if(take("for"))
-                    {
-                        // Only the exact, statically bounded zero-based idiom has the same
-                        // semantics as Repeat. Never clamp an imported dynamic loop silently.
-                        std::string index,condition,increment;
-                        if(!expect("(")||!expect("int")||!name(index)||!expect("=")||!expect("0")||
-                            !expect(";")||!name(condition)||condition!=index||!expect("<"))
-                            return fail("Use a zero-based int loop with a constant upper bound.");
-                        if(peek().kind!=Kind::Number)return fail("Loop limit must be a decimal integer constant.");
-                        const auto limit=peek().text;
-                        if(limit.empty()||limit.size()>5||limit.find_first_not_of("0123456789")!=std::string::npos||
-                            (limit.size()>1&&limit[0]=='0'))return fail("Invalid decimal loop limit.");
-                        unsigned count=0;for(char c:limit)count=count*10+static_cast<unsigned>(c-'0');
-                        if(count>10000)return fail("Loop limit exceeds the native Repeat maximum of 10000.");
-                        ++at;
-                        if(!expect(";"))return false;
-                        if(take("++")){if(!name(increment))return false;}
-                        else if(!name(increment)||!expect("++"))return false;
-                        if(increment!=index||!expect(")"))return fail("Loop increment must advance its own index.");
-                        const auto& params=doc.graphs[graph].parameters;
-                        if(locals.count(index)||fields.count(index)||index==eventArg||
-                            std::any_of(params.begin(),params.end(),[&](const BlueprintPin& p){return p.name==index;}))
-                            return fail("Loop index shadowing is not supported.");
-                        size_t n;if(!add("repeat",n)||!bind(n,"count",Value{"int",limit,"",static_cast<size_t>(-1)}))return false;
-                        chain(flow,n);locals.emplace(index,Value{"int","","index",n});
-                        if(!block({n,"body"},depth+1))return false;
-                        locals.erase(index);continue;
-                    }
-                    if(take("if"))
-                    {
-                        if(!conditional(flow,depth,terminal))return false;
-                        continue;
-                    }
-                    const bool handleAssignment=take("@");
-                    std::string id;if(!name(id)||!qualified(id))return false;
-                    // A local declaration creates an execution-ordered capture, not an instance field.
-                    if(id=="Entity"&&take("@"))id+="@";
-                    if(!handleAssignment&&blueprintSpec("capture:"+id)&&peek().kind==Kind::Name)
-                    {
-                        const auto type=id;std::string local;
-                        if(!name(local))return false;
-                        const auto& params=doc.graphs[graph].parameters;
-                        if(locals.count(local)||fields.count(local)||local==eventArg||
-                            std::any_of(params.begin(),params.end(),[&](const BlueprintPin& p){return p.name==local;}))
-                            return fail("Local shadowing is not supported: "+local+".");
-                        Value v;if(!expect("=")||!directValue(v,flow)||!expect(";"))return false;
-                        size_t n;if(!add("capture:"+type,n,local)||!bind(n,"value",v))return false;
-                        chain(flow,n);locals.emplace(local,Value{type,"","result",n});continue;
-                    }
-                    Value target;const Value* member=nullptr;
-                    if(take(".")){if(!field(id,target)||!name(id))return false;member=&target;}
-                    const bool increment=is("++")||is("--");
-                    const bool compound=is("+=")||is("-=")||is("*=")||is("/=")||is("%=");
-                    if(is("=")||increment||compound)
-                    {
-                        const auto op=peek().text;++at;
-                        Value v;
-                        if(increment||compound)
-                        {
-                            // Compound operations are supported only for plain locals/fields. Do not
-                            // move an effectful getter or receiver across a native action call.
-                            if(member||id.find("::")!=std::string::npos||handleAssignment)
-                                return fail("Compound property or handle assignment is not supported.");
-                            Value before;if(!field(id,before))return false;
-                            if(increment)
-                            {
-                                if(before.type!="int"&&before.type!="uint"&&before.type!="float"&&before.type!="double")
-                                    return fail("Increment requires a numeric local or field.");
-                                v={before.type,"1","",static_cast<size_t>(-1)};
-                            }
-                            else if(!expression(v))return false;
-                            const char* operation=op[0]=='+'?"add":op[0]=='-'?"subtract":op[0]=='*'?"multiply":op[0]=='/'?"divide":"mod";
-                            const auto kind=std::string(operation)+":"+before.type;
-                            const auto* spec=blueprintSpec(kind);
-                            if(!spec||v.type!=before.type||spec->result!=before.type)return fail("Unsupported compound assignment types.");
-                            size_t n;if(!add(kind,n)||!bind(n,"a",before)||!bind(n,"b",v))return false;
-                            v={spec->result,"","result",n};
-                        }
-                        else if(!directValue(v,flow))return false;
-                        if(!expect(";"))return false;
-                        if(!member&&id.find("::")==std::string::npos)
-                        {
-                            const auto local=locals.find(id);
-                            if(local!=locals.end())
-                            {
-                                const auto& ref=local->second;
-                                if(ref.pin=="index")return fail("The imported loop index cannot be reassigned.");
-                                if(handleAssignment!=(ref.type=="Entity@"))return fail("Entity handle reassignment requires explicit @; scalar assignment must not use @.");
-                                size_t n;if(!add("local:set:"+ref.type,n)||!bind(n,"local",Value{"local:"+ref.type,"","local",ref.node})||!bind(n,"value",v))return false;
-                                chain(flow,n);continue;
-                            }
-                            if(handleAssignment)return fail("Handle assignment requires a declared entity local.");
-                            const auto found=fields.find(id);
-                            const auto& params=doc.graphs[graph].parameters;
-                            if(found==fields.end()||id==eventArg||std::any_of(params.begin(),params.end(),[&](const BlueprintPin& p){return p.name==id;}))
-                                return fail("Assignment requires a declared instance field, not a method parameter.");
-                            size_t n;if(!add("var:set:"+found->second,n,id)||!bind(n,"value",v))return false;
-                            chain(flow,n);
-                        }
-                        else
-                        {
-                            if(handleAssignment)return fail("Handle property assignment is not supported.");
-                            Value unused;if(!api(id,{v},member,false,"set",unused,&flow))return false;
-                        }
-                        continue;
-                    }
-                    if(handleAssignment)return fail("Expected explicit handle reassignment.");
-                    std::vector<Value> args;Value unused;
-                    if(!arguments(args)||!expect(";"))return false;
-                    if(!member&&doc.function("Screen",id))
-                    {if(!functionCall(id,args,flow,unused))return false;}
-                    else if(!api(id,args,member,false,"",unused,&flow))return false;
+                    if(!statement(flow,depth,terminal))return false;
                 }
                 if(returned)*returned=terminal;
+                return true;
+            }
+            bool statement(Flow& flow,unsigned depth,bool& terminal)
+            {
+                if(take(";"))return true;
+                if(take("return"))
+                {
+                    const auto& g=doc.graphs[graph];
+                    if(g.kind!="function")return fail("Early returns from lifecycle methods are not supported.");
+                    Value result;
+                    if(g.returnType!="void"&&!directValue(result,flow))return false;
+                    if(!expect(";"))return false;
+                    size_t n;if(!add("return:function",n))return false;
+                    if(g.returnType!="void"&&!bind(n,"value",result))return false;
+                    chain(flow,n);terminal=true;return true;
+                }
+                if(take("for"))
+                {
+                    // Only the exact, statically bounded zero-based idiom has the same
+                    // semantics as Repeat. Never clamp an imported dynamic loop silently.
+                    std::string index,condition,increment;
+                    if(!expect("(")||!expect("int")||!name(index)||!expect("=")||!expect("0")||
+                        !expect(";")||!name(condition)||condition!=index||!expect("<"))
+                        return fail("Use a zero-based int loop with a constant upper bound.");
+                    if(peek().kind!=Kind::Number)return fail("Loop limit must be a decimal integer constant.");
+                    const auto limit=peek().text;
+                    if(limit.empty()||limit.size()>5||limit.find_first_not_of("0123456789")!=std::string::npos||
+                        (limit.size()>1&&limit[0]=='0'))return fail("Invalid decimal loop limit.");
+                    unsigned count=0;for(char c:limit)count=count*10+static_cast<unsigned>(c-'0');
+                    if(count>10000)return fail("Loop limit exceeds the native Repeat maximum of 10000.");
+                    ++at;
+                    if(!expect(";"))return false;
+                    if(take("++")){if(!name(increment))return false;}
+                    else if(!name(increment)||!expect("++"))return false;
+                    if(increment!=index||!expect(")"))return fail("Loop increment must advance its own index.");
+                    const auto& params=doc.graphs[graph].parameters;
+                    if(locals.count(index)||fields.count(index)||index==eventArg||
+                        std::any_of(params.begin(),params.end(),[&](const BlueprintPin& p){return p.name==index;}))
+                        return fail("Loop index shadowing is not supported.");
+                    size_t n;if(!add("repeat",n)||!bind(n,"count",Value{"int",limit,"",static_cast<size_t>(-1)}))return false;
+                    chain(flow,n);locals.emplace(index,Value{"int","","index",n});
+                    bool bodyReturned=false;
+                    if(!body({n,"body"},depth+1,bodyReturned))return false;
+                    locals.erase(index);return true;
+                }
+                if(take("if"))
+                {
+                    if(!conditional(flow,depth,terminal))return false;
+                    return true;
+                }
+                std::string prefix;
+                if(is("++")||is("--")){prefix=peek().text;++at;}
+                const bool handleAssignment=take("@");
+                std::string id;if(!name(id)||!qualified(id))return false;
+                if(!prefix.empty()&&(handleAssignment||id.find("::")!=std::string::npos||!is(";")))
+                    return fail("Prefix increment requires a standalone plain local or field.");
+                // A local declaration creates an execution-ordered capture, not an instance field.
+                if(id=="Entity"&&take("@"))id+="@";
+                if(!handleAssignment&&blueprintSpec("capture:"+id)&&peek().kind==Kind::Name)
+                {
+                    const auto type=id;std::string local;
+                    if(!name(local))return false;
+                    const auto& params=doc.graphs[graph].parameters;
+                    if(locals.count(local)||fields.count(local)||local==eventArg||
+                        std::any_of(params.begin(),params.end(),[&](const BlueprintPin& p){return p.name==local;}))
+                        return fail("Local shadowing is not supported: "+local+".");
+                    Value v;if(!expect("=")||!directValue(v,flow)||!expect(";"))return false;
+                    size_t n;if(!add("capture:"+type,n,local)||!bind(n,"value",v))return false;
+                    chain(flow,n);locals.emplace(local,Value{type,"","result",n});return true;
+                }
+                Value target;const Value* member=nullptr;
+                if(take(".")){if(!field(id,target)||!name(id))return false;member=&target;}
+                const bool increment=!prefix.empty()||is("++")||is("--");
+                const bool compound=is("+=")||is("-=")||is("*=")||is("/=")||is("%=");
+                if(is("=")||increment||compound)
+                {
+                    const auto op=prefix.empty()?peek().text:prefix;
+                    if(prefix.empty())++at;
+                    Value v;
+                    if(increment||compound)
+                    {
+                        // Compound operations are supported only for plain locals/fields. Do not
+                        // move an effectful getter or receiver across a native action call.
+                        if(member||id.find("::")!=std::string::npos||handleAssignment)
+                            return fail("Compound property or handle assignment is not supported.");
+                        Value before;if(!field(id,before))return false;
+                        if(increment)
+                        {
+                            if(before.type!="int"&&before.type!="uint"&&before.type!="float"&&before.type!="double")
+                                return fail("Increment requires a numeric local or field.");
+                            v={before.type,"1","",static_cast<size_t>(-1)};
+                        }
+                        else if(!expression(v))return false;
+                        const char* operation=op[0]=='+'?"add":op[0]=='-'?"subtract":op[0]=='*'?"multiply":op[0]=='/'?"divide":"mod";
+                        const auto kind=std::string(operation)+":"+before.type;
+                        const auto* spec=blueprintSpec(kind);
+                        if(!spec||v.type!=before.type||spec->result!=before.type)return fail("Unsupported compound assignment types.");
+                        size_t n;if(!add(kind,n)||!bind(n,"a",before)||!bind(n,"b",v))return false;
+                        v={spec->result,"","result",n};
+                    }
+                    else if(!directValue(v,flow))return false;
+                    if(!expect(";"))return false;
+                    if(!member&&id.find("::")==std::string::npos)
+                    {
+                        const auto local=locals.find(id);
+                        if(local!=locals.end())
+                        {
+                            const auto& ref=local->second;
+                            if(ref.pin=="index")return fail("The imported loop index cannot be reassigned.");
+                            if(handleAssignment!=(ref.type=="Entity@"))return fail("Entity handle reassignment requires explicit @; scalar assignment must not use @.");
+                            size_t n;if(!add("local:set:"+ref.type,n)||!bind(n,"local",Value{"local:"+ref.type,"","local",ref.node})||!bind(n,"value",v))return false;
+                            chain(flow,n);return true;
+                        }
+                        if(handleAssignment)return fail("Handle assignment requires a declared entity local.");
+                        const auto found=fields.find(id);
+                        const auto& params=doc.graphs[graph].parameters;
+                        if(found==fields.end()||id==eventArg||std::any_of(params.begin(),params.end(),[&](const BlueprintPin& p){return p.name==id;}))
+                            return fail("Assignment requires a declared instance field, not a method parameter.");
+                        size_t n;if(!add("var:set:"+found->second,n,id)||!bind(n,"value",v))return false;
+                        chain(flow,n);
+                    }
+                    else
+                    {
+                        if(handleAssignment)return fail("Handle property assignment is not supported.");
+                        Value unused;if(!api(id,{v},member,false,"set",unused,&flow))return false;
+                    }
+                    return true;
+                }
+                if(handleAssignment)return fail("Expected explicit handle reassignment.");
+                std::vector<Value> args;Value unused;
+                if(!arguments(args)||!expect(";"))return false;
+                if(!member&&doc.function("Screen",id))
+                {if(!functionCall(id,args,flow,unused))return false;}
+                else if(!api(id,args,member,false,"",unused,&flow))return false;
                 return true;
             }
             bool parse()

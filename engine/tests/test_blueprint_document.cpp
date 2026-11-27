@@ -586,3 +586,21 @@ NX_TEST(nativeImportElseIfRejectsIncompleteAndOversizedChainsTransactionally)
     NX_EXPECT(!importBlueprintScreen(deep,doc,error)&&error.find("nesting limit")!=std::string::npos);
     NX_EXPECT(doc.serialize(after,error)&&after==saved);
 }
+
+NX_TEST(nativeImportSingleStatementBodiesRejectUnsafeChanges)
+{
+    BlueprintDocument doc;std::string error,generated,saved,after;
+    const std::string valid="class Example : Screen { void onEnter(){ int x=1; if(true) ++x; else --x; for(int i=0;i<2;++i) x+=i; } }";
+    NX_EXPECT(importBlueprintScreen(valid,doc,error)&&compileBlueprint(doc,generated,error));
+    NX_EXPECT(doc.serialize(saved,error));
+    for(const char* invalid:{
+        "class Bad : Screen { void onEnter(){ for(int i=0;i<3;++i) ++i; } }",
+        "class Bad : Screen { void onEnter(){ int x=1; ++x++; } }",
+        "class Bad : Screen { void onEnter(){ int x=1; if(true) x=2; else else x=3; } }",
+        "class Bad : Screen { void onEnter(){ for(int i=0;i<3;++i) ; int x=i; } }",
+        "class Bad : Screen { void onEnter(){ if(true) { int x=1; } ++x; } }"})
+    {
+        NX_EXPECT(!importBlueprintScreen(invalid,doc,error)&&!error.empty());
+        NX_EXPECT(doc.serialize(after,error)&&after==saved);
+    }
+}

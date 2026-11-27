@@ -1386,3 +1386,44 @@ NX_TEST(nativeImportedElseIfChainsMatchOriginalExecution)
         NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("else_if",""),"correct")==0);
     }
 }
+
+NX_TEST(nativeImportedSingleStatementControlFlowMatchesOriginal)
+{
+    const std::string original=R"(class Example : Screen {
+        int score;
+        int Pick(bool flag) {
+            if(flag) return 3;
+            else return 4;
+        }
+        void onEnter() {
+            int total = 0;
+            if(true)
+                if(false) total = 99;
+                else ++total;
+            if(false)
+                if(true) total = 99;
+                else total = 99;
+            for(int i=0;i<3;++i) total += i;
+            for(int j=0;j<0;++j) total = 99;
+            ++score;
+            --score;
+            int picked = Pick(true);
+            int other = Pick(false);
+            if(total == 4 && score == 0 && picked == 3 && other == 4)
+                Save::set("single_statement", "correct");
+        }
+    })";
+    BlueprintDocument doc;std::string error,generated;
+    const bool imported=importBlueprintScreen(original,doc,error);
+    if(!imported)NX_ERROR("Import diagnostic: %s",error.c_str());
+    NX_EXPECT(imported&&compileBlueprint(doc,generated,error));if(generated.empty())return;
+    for(const std::string* source:std::vector<const std::string*>{&original,&generated})
+    {
+        Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+        r.platform.files["showcase/imported/screen.json"]="{\"title\":\"Import\"}";
+        r.platform.files["showcase/imported/main.as"]=*source;
+        if(!r.screens.init(r.services,"showcase","imported")){NX_EXPECT(false);return;}
+        r.step(3);
+        NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("single_statement",""),"correct")==0);
+    }
+}
