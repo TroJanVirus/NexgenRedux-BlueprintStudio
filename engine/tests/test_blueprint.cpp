@@ -2464,3 +2464,17 @@ NX_TEST(nativeStretchAnchorsFillResponsiveStack)
     NX_EXPECT(fabsf(label->h-(stack->h-stack->pad(1)-stack->pad(3)-60))<0.01f);
     view.drawDesign(r.canvas,0,0,960,720);NX_EXPECT(fabsf(wide-label->w-320)<0.01f);
 }
+
+NX_TEST(nativeLinkedWidgetComponentsLoadWithIndependentIDs)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    BlueprintDocument doc;doc.create();std::string page,child,error,source;
+    const bool ok=doc.createVisualAsset("widget",page,error)&&doc.createVisualAsset("widget",child,error)&&
+        doc.appendVisualWidget(child,"button","Reusable",error)&&doc.appendVisualWidget(page,"component",child,error)&&
+        doc.appendVisualWidget(page,"component",child,error)&&doc.connectVisualWidget("Screen",page,error)&&compileBlueprint(doc,source,error);
+    NX_EXPECT(ok);if(!ok)return;
+    r.platform.files["showcase/main/screen.json"]="{\"title\":\"Components\"}";r.platform.files["showcase/main/main.as"]=source;
+    if(!r.screens.init(r.services,"showcase","main")){NX_EXPECT(false);return;}r.step(3);NX_EXPECT(!r.screens.failed());if(!r.services.ui)return;
+    auto* first=r.services.ui->find("item-1/item-1");auto* second=r.services.ui->find("item-2/item-1");
+    NX_EXPECT(first&&second&&first!=second);
+}

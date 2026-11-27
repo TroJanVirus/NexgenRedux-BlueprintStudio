@@ -1535,3 +1535,24 @@ NX_TEST(nativeReusableThemeLinksAndStyleProperties)
     NX_EXPECT(source.find("Ui::loadThemeSource(")==std::string::npos);
     NX_EXPECT(copy.undo()&&compileBlueprint(copy,source,error)&&source.find("#123456")!=std::string::npos);
 }
+
+NX_TEST(nativeLinkedWidgetComponentsExpandAndTrackDefinitions)
+{
+    BlueprintDocument doc;doc.create();std::string page,child,grand,theme,error,source;
+    NX_EXPECT(doc.createVisualAsset("widget",page,error)&&doc.createVisualAsset("widget",child,error)&&doc.createVisualAsset("widget",grand,error));
+    NX_EXPECT(doc.appendVisualWidget(grand,"label","Nested",error));
+    NX_EXPECT(doc.appendVisualWidget(child,"component",grand,error));
+    NX_EXPECT(doc.appendVisualWidget(page,"component",child,error)&&doc.appendVisualWidget(page,"component",child,error));
+    NX_EXPECT(!doc.appendVisualWidget(grand,"component",page,error));
+    NX_EXPECT(!doc.removeVisualAsset(child,error));
+    NX_EXPECT(doc.createVisualAsset("theme",theme,error)&&doc.setVisualTheme(page,theme,error));
+    NX_EXPECT(doc.visualWidgetPage(page,source,error));
+    NX_EXPECT(source.find("item-1/item-1/item-1")!=std::string::npos&&source.find("item-2/item-1/item-1")!=std::string::npos);
+    NX_EXPECT(doc.setVisualWidgetProperty(grand,"item-1","text","Changed",error));
+    NX_EXPECT(doc.visualWidgetPage(page,source,error)&&source.find("Changed")!=std::string::npos);
+    NX_EXPECT(doc.connectVisualWidget("Screen",page,error)&&compileBlueprint(doc,source,error));
+    NX_EXPECT(source.find("item-2/item-1/item-1")!=std::string::npos);
+    NX_EXPECT(doc.removeVisualWidgetComponent(page,"item-1",error)&&doc.removeVisualWidgetComponent(page,"item-2",error));
+    NX_EXPECT(doc.removeVisualAsset(child,error));NX_EXPECT(doc.undo()&&doc.undo());
+    NX_EXPECT(doc.visualWidgetPage(page,source,error)&&source.find("item-2/item-1/item-1")!=std::string::npos);
+}

@@ -79,6 +79,8 @@ namespace nx
         bool renameVisualAsset(const std::string& id,const std::string& title,std::string& error);
         bool removeVisualAsset(const std::string& id,std::string& error);
         bool appendVisualWidget(const std::string& id,const std::string& kind,const std::string& label,std::string& error,const std::string& parent="");
+        bool visualWidgetPage(const std::string& id,std::string& source,std::string& error)const;
+        bool removeVisualWidgetComponent(const std::string& id,const std::string& widget,std::string& error);
         bool setVisualWidgetProperty(const std::string& id,const std::string& widget,const std::string& property,const std::string& value,std::string& error);
         bool positionVisualWidget(const std::string& id,const std::string& widget,const std::string& anchor,float x,float y,std::string& error);
         bool reparentVisualWidget(const std::string& id,const std::string& widget,const std::string& parent,std::string& error);

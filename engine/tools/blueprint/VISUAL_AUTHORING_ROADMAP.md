@@ -117,3 +117,8 @@ Themes are project assets with native theme JSON; a UI page can reference one th
 
 
 The theme editor now exposes minimum width/height, nine-slice size and text alignment, and only displays appearance overrides for non-normal interaction states. Document and runtime regression cases cover the extra style values and reject state-specific layout changes.
+
+
+## Linked widget composition
+
+Add a component from the native widget palette using its reusable asset ID. References expand through the existing document/compiler into native column wrappers; repeated and nested instances receive namespaced IDs. The preview selects the outer instance and supports unlinking it without deleting the original. Cycles, depth and expansion limits are checked; referenced assets cannot be deleted. The owning page's theme applies to all nested widgets. Nested callback methods use the consuming screen's functions and may require relinking the containing page after changes. Per-instance override editors and a dropdown component picker are not yet implemented.

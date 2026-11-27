@@ -516,7 +516,7 @@ namespace nx
     }
     namespace
     {
-        const char* const widgetKinds[]={"column","row","grid","stack","scroll","label","paragraph","image","button","toggle","slider","progress","choice","field","list","tabs","space","line","custom"};
+        const char* const widgetKinds[]={"component","column","row","grid","stack","scroll","label","paragraph","image","button","toggle","slider","progress","choice","field","list","tabs","space","line","custom"};
         const char* widgetKind(const JsonValue& item)
         {
             if(item.type()!=JsonValue::Type::Object)return nullptr;
@@ -549,8 +549,10 @@ namespace nx
     bool BlueprintDocument::appendVisualWidget(const std::string& id,const std::string& kind,const std::string& label,std::string& error,const std::string& parent)
     {
         const bool container=kind=="column"||kind=="row"||kind=="grid"||kind=="stack"||kind=="scroll";
-        if(!container&&kind!="label"&&kind!="button"&&kind!="progress"&&kind!="toggle"&&kind!="slider"&&kind!="field"&&kind!="space")
+        if(!container&&kind!="component"&&kind!="label"&&kind!="button"&&kind!="progress"&&kind!="toggle"&&kind!="slider"&&kind!="field"&&kind!="space")
         {error="Unsupported palette widget.";return false;}
+        if(kind=="component"&&(!visualAsset(label)||visualAsset(label)->kind!="widget"||label==id))
+        {error="Choose a different reusable widget asset ID.";return false;}
         if(label.size()>128||std::any_of(label.begin(),label.end(),[](unsigned char ch){return ch<32||ch==127;}))
         {error="Widget text is too long or contains control characters.";return false;}
         auto next=m_visualAssets;
@@ -586,11 +588,96 @@ namespace nx
                 if(!number(item,kind.c_str(),0.75)||!number(item,"low",0)||!number(item,"high",1))return false;
             }
             else if(kind=="space"){if(!number(item,"space",24))return false;}
+            else if(kind=="component")
+            {
+                if(!text(item,"component",label))return false;
+                if(std::find(a.dependencies.begin(),a.dependencies.end(),label)==a.dependencies.end())a.dependencies.push_back(label);
+            }
             else if(!text(item,kind.c_str(),label.empty()?(kind=="label"?"Text":kind=="button"?"Button":kind=="field"?"":"Toggle"):label))return false;
             auto* added=list->add();if(!added||!added->setCopy(item)){error="Widget hierarchy is too deep.";return false;}
-            a.source=root.write(true);return replaceVisualAssets(next,error);
+            a.source=root.write(true);
+            if(kind=="component")
+            {
+                if(!validVisualAssets(next,error))return false;
+                BlueprintDocument staged;staged.m_visualAssets=next;std::string resolved;
+                if(!staged.visualWidgetPage(id,resolved,error))return false;
+            }
+            return replaceVisualAssets(next,error);
         }
         error="Select a widget page first.";return false;
+    }
+    bool BlueprintDocument::removeVisualWidgetComponent(const std::string& id,const std::string& widget,std::string& error)
+    {
+        auto assets=m_visualAssets;
+        for(auto& page:assets)if(page.id==id&&page.kind=="widget")
+        {
+            JsonValue root;if(!root.parse(page.source.data(),page.source.size(),error))return false;
+            WidgetMatch match;findVisualWidget(root,widget,match);
+            if(match.matches!=1||!match.siblings||!match.item->find("component"))
+            {error="Select a linked widget component.";return false;}
+            const std::string target=match.item->find("component")->text();
+            match.siblings->removeAt(match.index);
+            const auto used=[&](auto&& self,const JsonValue& node)->bool
+            {
+                if(const auto* ref=node.find("component");ref&&ref->text()==target)return true;
+                if(node.type()==JsonValue::Type::Array||node.type()==JsonValue::Type::Object)
+                    for(u32 i=0;i<node.count();++i)if(self(self,*node.at(i)))return true;
+                return false;
+            };
+            if(!used(used,root))page.dependencies.erase(std::remove(page.dependencies.begin(),page.dependencies.end(),target),page.dependencies.end());
+            page.source=root.write(true);return replaceVisualAssets(assets,error);
+        }
+        error="Widget page not found.";return false;
+    }
+    bool BlueprintDocument::visualWidgetPage(const std::string& id,std::string& source,std::string& error)const
+    {
+        unsigned nodes=0;std::unordered_set<std::string> names;
+        const auto expand=[&](auto&& self,const std::string& assetId,const std::string& prefix,unsigned depth,JsonValue& root)->bool
+        {
+            const auto* page=visualAsset(assetId);
+            if(!page||page->kind!="widget"||depth>8){error="Invalid widget component or nesting limit: "+assetId;return false;}
+            if(!root.parse(page->source.data(),page->source.size(),error)||root.type()!=JsonValue::Type::Array)
+            {error="Invalid widget component page: "+assetId;return false;}
+            const auto walk=[&](auto&& visit,JsonValue& node)->bool
+            {
+                if(const auto* kind=widgetKind(node);kind)
+                {
+                    if(++nodes>256){error="Expanded widget count exceeds 256.";return false;}
+                    auto* name=node.find("id");
+                    std::string qualified;
+                    if(name&&name->type()==JsonValue::Type::String&&!name->text().empty())
+                    {
+                        qualified=prefix+name->text();
+                        if(qualified.size()>128||!names.insert(qualified).second){error="Duplicate or excessive expanded widget ID: "+qualified;return false;}
+                        name->setText(qualified);
+                    }
+                    if(std::string(kind)=="component")
+                    {
+                        const auto* ref=node.find("component");
+                        if(qualified.empty()||!ref||ref->type()!=JsonValue::Type::String||
+                            std::find(page->dependencies.begin(),page->dependencies.end(),ref->text())==page->dependencies.end())
+                        {error="Widget component requires a stable ID and declared dependency.";return false;}
+                        const std::string target=ref->text();JsonValue nested;
+                        if(!self(self,target,qualified+"/",depth+1,nested))return false;
+                        node.remove("component");
+                        auto* content=node.put("column");
+                        if(!content||!content->setCopy(nested)){error="Expanded widget nesting limit exceeded.";return false;}
+                        return true;
+                    }
+                }
+                if(node.type()==JsonValue::Type::Array||node.type()==JsonValue::Type::Object)
+                    for(u32 i=0;i<node.count();++i)if(!visit(visit,*node.at(i)))return false;
+                return true;
+            };
+            return walk(walk,root);
+        };
+        const auto* page=visualAsset(id);
+        if(!page||page->kind!="widget"){error="Select a widget page.";return false;}
+        const bool nested=std::any_of(page->dependencies.begin(),page->dependencies.end(),[&](const std::string& dep){const auto* a=visualAsset(dep);return a&&a->kind=="widget";});
+        if(!nested){source=page->source;error.clear();return true;}
+        JsonValue root;if(!expand(expand,id,"",0,root))return false;
+        source=root.write(true);if(source.size()>64*1024){error="Expanded widget page exceeds 64 KiB.";return false;}
+        error.clear();return true;
     }
     bool BlueprintDocument::setVisualWidgetProperty(const std::string& id,const std::string& widget,const std::string& property,const std::string& value,std::string& error)
     {
@@ -800,11 +887,17 @@ namespace nx
         source.clear();
         const auto* page=visualAsset(pageId);
         if(!page||page->kind!="widget"){error="Select a widget page.";return false;}
-        if(page->dependencies.empty()){error.clear();return true;}
-        if(page->dependencies.size()!=1){error="A linked page supports one theme dependency.";return false;}
-        const auto* theme=visualAsset(page->dependencies.front());
-        if(!theme||theme->kind!="theme"){error="Missing theme or unsupported nested widget dependency.";return false;}
-        source=theme->source;error.clear();return true;
+        for(const auto& dependency:page->dependencies)
+        {
+            const auto* asset=visualAsset(dependency);
+            if(!asset||asset->kind=="actor"){error="Invalid widget dependency.";return false;}
+            if(asset->kind=="theme")
+            {
+                if(!source.empty()){error="A linked page supports one theme.";return false;}
+                source=asset->source;
+            }
+        }
+        error.clear();return true;
     }
     bool BlueprintDocument::setVisualTheme(const std::string& pageId,const std::string& themeId,std::string& error)
     {
@@ -816,10 +909,14 @@ namespace nx
         auto assets=m_visualAssets;
         for(auto& page:assets)if(page.id==pageId&&page.kind=="widget")
         {
+            std::vector<std::string> next;
             for(const auto& dependency:page.dependencies)
-                if(!visualAsset(dependency)||visualAsset(dependency)->kind!="theme")
-                {error="Cannot replace unsupported existing widget dependencies.";return false;}
-            const std::vector<std::string> next=themeId.empty()?std::vector<std::string>{}:std::vector<std::string>{themeId};
+            {
+                const auto* existing=visualAsset(dependency);
+                if(!existing||existing->kind=="actor"){error="Invalid existing widget dependency.";return false;}
+                if(existing->kind=="widget")next.push_back(dependency);
+            }
+            if(!themeId.empty())next.push_back(themeId);
             if(page.dependencies==next){error.clear();return true;}
             page.dependencies=next;return replaceVisualAssets(assets,error);
         }
@@ -891,23 +988,23 @@ namespace nx
     }
     bool BlueprintDocument::visualWidgetForOwner(const std::string& id,const std::string& owner,std::string& json,std::string& error)const
     {
-        const auto* page=visualAsset(id);
-        std::string theme;if(!visualWidgetTheme(id,theme,error))return false;
-        JsonTree tree;if(!tree.parse(page->source.data(),page->source.size())){error="Invalid widget JSON.";return false;}
+        std::string theme;if(!visualWidgetTheme(id,theme,error)||!visualWidgetPage(id,json,error))return false;
+        JsonTree tree;if(!tree.parse(json.data(),json.size())){error="Invalid widget JSON.";return false;}
         std::vector<WidgetHandler> handlers;widgetHandlers(tree.root(),handlers);
         for(const auto& handler:handlers)
         {
             const auto* graph=handler.method.rfind("bp_fn_",0)==0?function(owner,handler.method.substr(6)):nullptr;
             if(!graph||!handlerSignature(*graph,handler.event)){error="Missing or incompatible widget "+handler.event+" callback: "+handler.method;return false;}
         }
-        json=page->source;error.clear();return true;
+        error.clear();return true;
     }
     bool BlueprintDocument::visualWidgetUsesFunction(const std::string& owner,const std::string& functionName)const
     {
         for(const auto& page:m_visualAssets)if(page.kind=="widget"&&
             std::any_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==owner&&linksWidgetPage(g,page.id);}))
         {
-            JsonTree tree;if(!tree.parse(page.source.data(),page.source.size()))continue;
+            std::string resolved,error;if(!visualWidgetPage(page.id,resolved,error))continue;
+            JsonTree tree;if(!tree.parse(resolved.data(),resolved.size()))continue;
             std::vector<WidgetHandler> handlers;widgetHandlers(tree.root(),handlers);
             for(const auto& handler:handlers)if(handler.method=="bp_fn_"+functionName)return true;
         }
@@ -977,8 +1074,7 @@ namespace nx
     }
     bool BlueprintDocument::connectVisualWidget(const std::string& owner,const std::string& id,std::string& error)
     {
-        const auto* page=visualAsset(id);
-        std::string theme;if(!visualWidgetTheme(id,theme,error))return false;
+        std::string theme,resolved;if(!visualWidgetTheme(id,theme,error)||!visualWidgetPage(id,resolved,error))return false;
         size_t enter=static_cast<size_t>(-1),draw=enter;
         for(size_t i=0;i<graphs.size();++i)if(graphs[i].owner==owner)
         {
@@ -1056,7 +1152,7 @@ namespace nx
             if(canvas==staged.graphs[draw].nodes.size()&&!staged.addNode(draw,"event:canvas",node.x,node.y+180,error))return false;
             if(!staged.connect(draw,canvas,"value",target,"canvas",error))return false;
         }
-        if(!ensureWidgetHandlers(staged,owner,page->source,true,error))return false;
+        if(!ensureWidgetHandlers(staged,owner,resolved,true,error))return false;
         if(linked&&drawn&&staged.graphs.size()==graphs.size()){error.clear();return true;}
         std::string verified;
         if(!staged.serialize(verified,error))return false;

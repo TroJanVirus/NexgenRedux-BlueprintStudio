@@ -544,16 +544,17 @@ namespace nx
         if(!page||page->kind!="widget"||screen.empty()||m_document.assetRoot.empty())
         {m_status="Select a widget page and a named screen.";return false;}
         if(!blueprintEnsureAssetFolder(*s.platform,m_document.assetRoot,screen,m_status))return false;
+        std::string resolved;if(!m_document.visualWidgetPage(page->id,resolved,m_status))return false;
         const auto filename="ui_"+page->id+".json";
         const auto path="own/"+m_document.assetRoot+"/"+screen+"/asset/"+filename;
         if(s.platform->fileTime(path.c_str()))
         {
             FileData old;
-            if(!s.platform->readFile(path.c_str(),old,MemTag::General)||old.size!=page->source.size()||
-                std::memcmp(old.data,page->source.data(),old.size)!=0)
+            if(!s.platform->readFile(path.c_str(),old,MemTag::General)||old.size!=resolved.size()||
+                std::memcmp(old.data,resolved.data(),old.size)!=0)
             {m_status="Page already exists with different contents. Existing file preserved.";return false;}
         }
-        else if(!writeVerified(s,path,page->source))return false;
+        else if(!writeVerified(s,path,resolved))return false;
         if(!blueprintListAssets(*s.platform,m_document.assetRoot,screen,m_assetFiles,m_status))return false;
         m_status="Copied asset:"+filename+". Use Ui::load and Ui::draw in your graph.";
         return true;
@@ -699,7 +700,7 @@ namespace nx
             snprintf(value,sizeof(value),"#%02X%02X%02X%02X",byte(color.r),byte(color.g),byte(color.b),byte(color.a));return value;
         }
         struct DesignRow {std::string id,kind,label;unsigned depth;};
-        constexpr const char* designPalette[]={"column","row","grid","stack","scroll","label","button","toggle","slider","progress","field","space"};
+        constexpr const char* designPalette[]={"column","row","grid","stack","scroll","label","button","toggle","slider","progress","field","space","component"};
         constexpr const char* designEvents[]={"click","change","focus","done","draw","makeRow"};
         constexpr const char* designProps[]={"text","width","height","gap","padding","grow","align","justify","self","style","value","visible"};
         void designRows(JsonTree::Value value,std::vector<DesignRow>& rows,unsigned depth)
@@ -712,7 +713,7 @@ namespace nx
             }
             if(!value.isObject())return;
             const char* kind=nullptr;
-            for(const char* candidate:{"column","row","grid","stack","scroll","label","paragraph","image","button","toggle","slider","progress","choice","field","list","tabs","space","line","custom"})
+            for(const char* candidate:{"component","column","row","grid","stack","scroll","label","paragraph","image","button","toggle","slider","progress","choice","field","list","tabs","space","line","custom"})
                 if(value[candidate].exists()){kind=candidate;break;}
             if(!kind)return;
             const auto main=value[kind];
@@ -746,7 +747,8 @@ namespace nx
         if(!m_document.visualWidgetTheme(m_visualSelection,theme,m_designPreviewError))return;
         if(!theme.empty()&&!m_designUi->loadThemeSource(theme.data(),theme.size()))
         {m_designPreviewError=m_designUi->error();return;}
-        if(!m_designUi->loadPage(page->source.data(),page->source.size(),m_designUi->root(),nullptr,"designer",true))
+        std::string resolved;if(!m_document.visualWidgetPage(m_visualSelection,resolved,m_designPreviewError))return;
+        if(!m_designUi->loadPage(resolved.data(),resolved.size(),m_designUi->root(),nullptr,"designer",true))
             m_designPreviewError=m_designUi->error();
     }
     void BlueprintWorkspace::updateWidgetDesigner(Services& s,float x,float y,bool left,bool click)
@@ -813,6 +815,8 @@ namespace nx
             };
             if(auto* item=hit(hit,m_designUi->root()))
             {
+                const auto slash=item->id.find('/');
+                if(slash!=std::string::npos)if(auto* outer=m_designUi->find(item->id.substr(0,slash).c_str()))item=outer;
                 m_widgetSelection=item->id;
                 if(item->parent&&item->parent->kind==WidgetKind::Stack&&item->anchor>=9)
                 {m_status="Stretch anchor selected. Edit inset / offset in Anchors.";}
@@ -843,6 +847,8 @@ namespace nx
             if(row>=count)return;
             if(m_widgetPalette)
             {
+                if(std::string(designPalette[row])=="component")
+                {m_visualProperty="Reusable widget ID";m_visualText.clear();m_visualInput=8;s.input->setTyping(true);m_status="Enter the reusable widget asset ID from the library.";return;}
                 if(m_document.appendVisualWidget(m_visualSelection,designPalette[row],"",m_status,m_widgetSelection))
                 {m_status="Added widget to selected container.";m_widgetPalette=false;m_widgetFirst=0;}
             }
@@ -908,6 +914,8 @@ namespace nx
         {
             const size_t column=static_cast<size_t>((x-630)/123.34f),row=static_cast<size_t>((y-439)/36);
             const size_t prop=row*3+column;if(prop>=sizeof(designProps)/sizeof(designProps[0]))return;
+            if(prop==0&&std::any_of(rows.begin(),rows.end(),[&](const DesignRow& row){return row.id==m_widgetSelection&&row.kind=="component";}))
+            {if(m_document.removeVisualWidgetComponent(m_visualSelection,m_widgetSelection,m_status)){m_widgetSelection.clear();m_status="Unlinked component; original definition preserved.";}return;}
             m_visualProperty=designProps[prop];
             JsonTree::Value selected;
             const auto find=[&](auto&& self,JsonTree::Value node)->void
@@ -986,7 +994,7 @@ namespace nx
             c.text(*m_font,"Link page to screen before opening events.",630,558,muted);
         }
         else for(size_t i=0;i<sizeof(designProps)/sizeof(designProps[0]);++i)
-            button(630+123.34f*static_cast<float>(i%3),439+36*static_cast<float>(i/3),119,designProps[i]);
+            button(630+123.34f*static_cast<float>(i%3),439+36*static_cast<float>(i/3),119,i==0&&std::any_of(rows.begin(),rows.end(),[&](const DesignRow& row){return row.id==m_widgetSelection&&row.kind=="component";})?"Unlink":designProps[i]);
     }
     void BlueprintWorkspace::updateVisualLibrary(Services& s,float x,float y,bool left,bool click,unsigned pressed)
     {
@@ -1033,6 +1041,11 @@ namespace nx
                         m_themeStyle=m_visualText;
                     }
                     if(m_visualInput==7&&!m_document.setVisualThemeProperty(m_visualSelection,m_themeStyle,themeStates[m_themeState],m_visualProperty,m_visualText,m_status))break;
+                    if(m_visualInput==8)
+                    {
+                        if(!m_document.appendVisualWidget(m_visualSelection,"component",m_visualText,m_status,m_widgetSelection))break;
+                        m_widgetPalette=false;m_widgetFirst=0;
+                    }
                     m_visualInput=0;input.setTyping(false);m_status="Text applied.";break;
                 }
                 else if(ch>=32)appendCharacter(m_visualText,ch,128);
