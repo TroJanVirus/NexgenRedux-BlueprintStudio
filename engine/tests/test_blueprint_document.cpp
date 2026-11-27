@@ -443,7 +443,7 @@ NX_TEST(nativeSourceImportCreatesEditableTypedGraphsAndRejectsLoss)
     NX_EXPECT(doc.serialize(saved,error));
     for(const char* unsupported:{
         "class Bad : Screen { void onEnter() { int local = 1; local = true; } }",
-        "class Bad : Screen { int score = 1; }",
+        "class Bad : Screen { int score = 1 + 2; }",
         "class Bad : Screen { void onEnter() { Save::set(\"a\", 5); } }",
         "class Bad : Screen { void onEnter() { while(true) {} } }",
         "#include \"global:scene.as\"\nclass Bad : Screen {}",
@@ -844,4 +844,20 @@ NX_TEST(nativeImportedProjectMergesIndependentBehavioursAndRemapsConflicts)
     std::vector<BlueprintScreenOutput> output;NX_EXPECT(compileBlueprintProject(project,output,error)&&output.size()==3);
     NX_EXPECT(!merge("main","other"));
     std::string after;NX_EXPECT(project.serialize(after,error)&&after==bytes);
+}
+
+NX_TEST(nativeImportedPrimitiveFieldsPreserveDeclarationsAndInitialValues)
+{
+    BlueprintDocument doc;std::string error,source,bytes;
+    const char* code=R"(class Counter : Behaviour {int count=7;void start(){if(count==7){Save::set("counter","ok");}}}
+        class Example : Screen {int unused;int score=-4;string label="initial";float speed=1.5f;bool flag=true;uint count=3u;double precise=1.25;void onEnter(){Save::set("label",label);}})";
+    NX_EXPECT(importBlueprintScreen(code,doc,error)&&doc.serialize(bytes,error));
+    BlueprintDocument restored;NX_EXPECT(restored.load(bytes.data(),bytes.size(),error)&&compileBlueprint(restored,source,error));
+    NX_EXPECT(source.find("int bp_var_unused;")!=std::string::npos&&source.find("int bp_var_score = int(-4);")!=std::string::npos);
+    NX_EXPECT(source.find("string bp_var_label = \"initial\";")!=std::string::npos&&source.find("int bp_var_count = int(7);")!=std::string::npos);
+    for(const char* invalid:{"class Bad : Screen {int x=1.0f;}", "class Bad : Screen {int x=2+3;}", "class Bad : Screen {uint x=-1u;}", "class Bad : Screen {int x=999999999999;}"})
+    {
+        NX_EXPECT(!importBlueprintScreen(invalid,doc,error));
+        std::string after;NX_EXPECT(doc.serialize(after,error)&&after==bytes);
+    }
 }

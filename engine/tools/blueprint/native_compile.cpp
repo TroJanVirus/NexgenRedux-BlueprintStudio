@@ -436,7 +436,20 @@ namespace nx
         result+=behaviour?"class BP_Behaviour_"+classOwner.substr(10)+" : Behaviour\n{\n":"class BP_NativeScreen : Screen\n{\n";
         if(!behaviour&&usesLevel)result+="    Level bp_level;\n";
         if(!document.variables(vars,error,classOwner))return false;
-        for(const auto& v:vars)result+="    "+v.type+" bp_var_"+v.name+";\n";
+        for(const auto& v:vars)
+        {
+            result+="    "+v.type+" bp_var_"+v.name;
+            for(const auto& g:document.graphs)if(g.owner==classOwner)for(const auto& f:g.fields)
+                if(f.name==v.name&&f.initialized)
+                {
+                    std::string literal;
+                    // Reuse the node literal emitter for precisely the same type and escaping rules.
+                    Emitter e{document,g,result,error,{}, {},0,location,spans};
+                    if(!e.literalValue(0,f.type,f.value,literal))return false;
+                    result+=" = "+literal;
+                }
+            result+=";\n";
+        }
         for(size_t graphIndex=0;graphIndex<document.graphs.size();++graphIndex)
         {
             const auto& graph=document.graphs[graphIndex];

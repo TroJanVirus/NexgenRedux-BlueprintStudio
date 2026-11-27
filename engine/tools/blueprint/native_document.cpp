@@ -341,6 +341,22 @@ namespace nx
             g.returnType=value["returnType"].text("void");
             if(!validSignature(g.parameters,g.returnType)||(g.kind!="function"&&(!g.parameters.empty()||g.returnType!="void")))
             {error="Invalid function signature in "+g.name;return false;}
+            const auto declarations=value["fields"];
+            if(declarations.exists())
+            {
+                if(g.name!=(behaviourOwner(owner)?"start":"onEnter")||g.kind!="event"||!declarations.isArray()||declarations.count()>256)
+                {error="Invalid field declarations.";return false;}
+                std::unordered_set<std::string> names;
+                for(auto f=declarations.first();f.exists();f=f.next())
+                {
+                    Field field{f["name"].text(),f["type"].text(),f["value"].text(),f["value"].exists()};
+                    if(!f.isObject()||!identifier(field.name)||!blueprintLiteralType(field.type)||!names.insert(field.name).second||
+                        (behaviourOwner(owner)&&field.name=="entity")||
+                        (field.initialized&&(!f["value"].isString()||!literal("literal:"+field.type,field.value))))
+                    {error="Invalid or duplicate field declaration.";return false;}
+                    g.fields.push_back(std::move(field));
+                }
+            }
             candidate.graphs.push_back(std::move(g));
         }
         size_t graphIndex=0;
@@ -450,6 +466,15 @@ namespace nx
                 for(const auto& p:g.parameters)
                 {
                     auto* item=parameters->add();if(!item||!text(*item,"name",p.name)||!text(*item,"type",p.type))return fail();
+                }
+            }
+            if(!g.fields.empty())
+            {
+                auto* fields=v->put("fields");if(!fields)return fail();fields->setArray();
+                for(const auto& f:g.fields)
+                {
+                    auto* item=fields->add();if(!item||!text(*item,"name",f.name)||!text(*item,"type",f.type))return fail();
+                    if(f.initialized&&!text(*item,"value",f.value))return fail();
                 }
             }
             auto* ns=v->put("nodes");if(!ns)return fail();ns->setArray();
@@ -590,6 +615,12 @@ namespace nx
     bool BlueprintDocument::variables(std::vector<BlueprintPin>& values,std::string& error,const std::string& owner)const
     {
         std::vector<BlueprintPin> result;
+        for(const auto& graph:graphs)if(graph.owner==owner)for(const auto& field:graph.fields)
+        {
+            if(!identifier(field.name)||!blueprintLiteralType(field.type)||std::any_of(result.begin(),result.end(),[&](const BlueprintPin& p){return p.name==field.name;}))
+            {error="Invalid or duplicate declared field: "+field.name;return false;}
+            result.push_back({field.name,field.type});
+        }
         for(const auto& graph:graphs)if(graph.owner==owner)for(const auto& node:graph.nodes)
         {
             if(!variableKind(node.kind))continue;

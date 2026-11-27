@@ -1949,3 +1949,20 @@ NX_TEST(nativeImportedDirectAttachmentRunsThroughScreenLifecycle)
         NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("actor","missing"),"started")==0);
     }
 }
+
+NX_TEST(nativeImportedInitializersRunAtInstanceConstruction)
+{
+    BlueprintDocument doc;std::string error,source;
+    const char* original=R"(class Actor : Behaviour {int count=5;void start(){count++;if(count==6){Save::set(entity.name,"ok");}}}
+        class Example : Screen {int count=7;void onEnter(){if(count==7){Save::set("screen","ok");}count++;Entity@ a=Scene::spawn(Vec2(0.0f,0.0f));a.name="first";a.add(Actor());Entity@ b=Scene::spawn(Vec2(1.0f,0.0f));b.name="second";b.add(Actor());}})";
+    if(!importBlueprintScreen(original,doc,error)||!compileBlueprint(doc,source,error)){NX_ERROR("Initializer import: %s",error.c_str());NX_EXPECT(false);return;}
+    for(const auto& code:std::vector<std::string>{original,source})
+    {
+        Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+        r.platform.files["project/main/screen.json"]="{\"title\":\"Initializers\"}";
+        r.platform.files["project/main/main.as"]=code;
+        if(!r.screens.init(r.services,"project","main")){NX_EXPECT(false);return;}
+        r.step(5);
+        NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("screen","missing"),"ok")==0&&strcmp(r.save.get("first","missing"),"ok")==0&&strcmp(r.save.get("second","missing"),"ok")==0);
+    }
+}

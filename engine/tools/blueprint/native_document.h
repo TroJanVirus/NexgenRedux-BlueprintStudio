@@ -33,6 +33,7 @@ namespace nx
         struct InputValue { std::string pin,value; };
         struct Node { std::string id, kind, ref; float x=0,y=0; std::vector<InputValue> values{}; bool watch=false; };
         struct Link { size_t from=0,to=0; std::string output,input; };
+        struct Field { std::string name,type,value; bool initialized=false; };
         struct Graph
         {
             std::string owner,name,kind;
@@ -40,6 +41,8 @@ namespace nx
             std::vector<Link> links;
             std::vector<BlueprintPin> parameters{};
             std::string returnType="void";
+            // Explicit imported fields live on the owner lifecycle entry graph.
+            std::vector<Field> fields{};
         };
         std::string name;
         std::string assetRoot; // external project directory, separate from graph history

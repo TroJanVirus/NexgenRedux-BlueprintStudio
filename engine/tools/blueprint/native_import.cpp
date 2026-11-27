@@ -565,11 +565,26 @@ namespace nx
                     auto& declaredFields=classFields[owner];
                     const bool behaviour=owner.rfind("behaviour:",0)==0;
                     std::string type,id;if(!name(type)||!name(id))return false;
-                    if(take(";"))
+                    if(is(";")||is("="))
                     {
                         if(standalone)return fail("Global variables are not supported.");
-                        if(!blueprintLiteralType(type)||(behaviour&&id=="entity")||!declaredFields.emplace(id,type).second)return fail("Only unique, uninitialized primitive instance fields are supported.");
-                        return true;
+                        if(!blueprintLiteralType(type)||(behaviour&&id=="entity")||!declaredFields.emplace(id,type).second)return fail("Only unique primitive instance fields are supported.");
+                        BlueprintDocument::Field field{id,type,"",false};
+                        if(take("="))
+                        {
+                            field.initialized=true;
+                            const bool negative=take("-");Value v;
+                            if(peek().kind==Kind::Number){if(!numeric(v))return false;}
+                            else if(!negative&&peek().kind==Kind::String){v.type="string";v.literal=peek().text;++at;}
+                            else if(!negative&&(is("true")||is("false"))){v.type="bool";v.literal=peek().text;++at;}
+                            else return fail("Field initializer must be a supported typed literal.");
+                            if(v.type!=type||(negative&&(type=="uint"||type=="bool"||type=="string")))return fail("Field initializer requires an exact literal type.");
+                            field.value=(negative?"-":"")+v.literal;
+                        }
+                        if(!expect(";"))return false;
+                        const auto entry=std::find_if(doc.graphs.begin(),doc.graphs.end(),[&](const auto& g){return g.owner==owner&&g.name==(behaviour?"start":"onEnter");});
+                        if(entry==doc.graphs.end()||entry->fields.size()>=256)return fail("Field declaration limit exceeded.");
+                        entry->fields.push_back(std::move(field));return true;
                     }
                     if(!methods.insert(owner+"/"+id).second)return fail("Overloaded or duplicate method "+id+".");
                     const auto found=std::find_if(doc.graphs.begin(),doc.graphs.end(),[&](const BlueprintDocument::Graph& g){return g.owner==owner&&g.name==id;});
@@ -736,7 +751,12 @@ namespace nx
                 if(found==right.end())return false;
                 const auto& y=**found;
                 if(x->kind!=y.kind||x->returnType!=y.returnType||x->parameters.size()!=y.parameters.size()||
-                    x->nodes.size()!=y.nodes.size()||x->links.size()!=y.links.size())return false;
+                    x->nodes.size()!=y.nodes.size()||x->links.size()!=y.links.size()||x->fields.size()!=y.fields.size())return false;
+                for(size_t i=0;i<x->fields.size();++i)
+                {
+                    const auto& f=x->fields[i];const auto& h=y.fields[i];
+                    if(f.name!=h.name||f.type!=h.type||f.initialized!=h.initialized||f.value!=h.value)return false;
+                }
                 for(size_t i=0;i<x->parameters.size();++i)
                     if(x->parameters[i].name!=y.parameters[i].name||x->parameters[i].type!=y.parameters[i].type)return false;
                 for(size_t i=0;i<x->nodes.size();++i)
