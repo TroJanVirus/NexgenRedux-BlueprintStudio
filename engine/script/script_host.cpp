@@ -59,11 +59,14 @@ namespace nx
         return result >= 0;
     }
 
-    void ScriptHost::messageCallback(const void* data, void*)
+    void ScriptHost::messageCallback(const void* data, void* self)
     {
         const asSMessageInfo* message = static_cast<const asSMessageInfo*>(data);
         const LogLevel level = message->type == asMSGTYPE_ERROR ? LogLevel::Error : message->type == asMSGTYPE_WARNING ? LogLevel::Warning : LogLevel::Info;
         log(level, "%s (%d, %d): %s", message->section, message->row, message->col, message->message);
+        auto* host=static_cast<ScriptHost*>(self);
+        if(host&&message->type==asMSGTYPE_ERROR&&!host->m_error[0])
+            snprintf(host->m_error,sizeof(host->m_error),"%s:%d: %s",message->section,message->row,message->message);
     }
 
     bool ScriptHost::init()
@@ -156,6 +159,7 @@ namespace nx
 
     bool ScriptHost::compile(const char* module, const char* file, const char* code, size_t length)
     {
+        m_error[0]=0;
         asIScriptModule* m = m_engine->GetModule(module, asGM_ALWAYS_CREATE);
         bool added = m != nullptr;
         for (const auto& section : m_sections)
@@ -165,7 +169,7 @@ namespace nx
         m_sections.clear();
         if (!added || (m_prelude && m->AddScriptSection("engine", m_prelude) < 0) || m->AddScriptSection(file, code, length) < 0 || m->Build() < 0)
         {
-            snprintf(m_error, sizeof(m_error), "%s did not compile", file);
+            if(!m_error[0])snprintf(m_error, sizeof(m_error), "%s did not compile", file);
             discard(module);
             return false;
         }

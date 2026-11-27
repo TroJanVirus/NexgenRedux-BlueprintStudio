@@ -2,6 +2,7 @@
 #include "tools/blueprint/native_document.h"
 #include "tools/blueprint/native_compile.h"
 #include <cstring>
+#include <algorithm>
 
 using namespace nx;
 NX_TEST(nativeCatalogueContainsReferenceAPI)
@@ -206,4 +207,28 @@ NX_TEST(nativeInputValuesAreTypedUndoableAndWiresTakePrecedence)
     NX_EXPECT(copy.clearInputValue(0,1,"value")&&!compileBlueprint(copy,source,error));
     NX_EXPECT(copy.undo()&&compileBlueprint(copy,source,error));
     NX_EXPECT(copy.addNode(0,"repeat",0,0,error)&&!copy.setInputValue(0,3,"count","1.5",error)&&copy.setInputValue(0,3,"count","5",error));
+}
+
+NX_TEST(nativeCompilerDiagnosticsAndSourceMapLocateExactGraphNodes)
+{
+    BlueprintDocument doc;doc.create();std::string error,source="unchanged";
+    BlueprintLocation location;BlueprintSourceMap map;
+    NX_EXPECT(doc.addNode(0,"branch",0,0,error)&&doc.connect(0,0,"then",1,"in",error));
+    NX_EXPECT(!compileBlueprint(doc,source,error,&location,&map)&&source=="unchanged"&&map.empty());
+    NX_EXPECT(location.graph==0&&location.node==1);
+    NX_EXPECT(doc.setInputValue(0,1,"condition","true",error));
+    NX_EXPECT(doc.addNode(0,"api:Save:Save::set:string,string",0,0,error)&&doc.connect(0,1,"true",2,"in",error));
+    NX_EXPECT(doc.setInputValue(0,2,"key","hello",error)&&doc.setInputValue(0,2,"value","world",error));
+    NX_EXPECT(compileBlueprint(doc,source,error,&location,&map));
+    const auto pos=source.find("Save::set(");
+    if(pos==std::string::npos){NX_EXPECT(false);return;}
+    const size_t line=1+static_cast<size_t>(std::count(source.begin(),source.begin()+static_cast<std::ptrdiff_t>(pos),'\n'));
+    const auto result=blueprintSourceLocation(map,line);
+    NX_EXPECT(result.graph==0&&result.node==2);
+    NX_EXPECT(blueprintErrorLine("Preview error: __blueprint_preview/main.as:"+std::to_string(line)+": Null pointer","__blueprint_preview/main.as")==line);
+    NX_EXPECT(blueprintErrorLine("unrelated.as:7: error","blueprint.as")==0);
+    NX_EXPECT(blueprintSourceLocation(map,999999).node==static_cast<size_t>(-1));
+    const auto old=source;const auto count=map.size();
+    NX_EXPECT(doc.clearInputValue(0,2,"key")&&!compileBlueprint(doc,source,error,&location,&map));
+    NX_EXPECT(source==old&&map.size()==count&&location.node==2);
 }

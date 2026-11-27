@@ -640,3 +640,13 @@ NX_TEST(nativeBlueprintWorkspaceAuthorsSavesAndRunsThroughMouseAndKeyboard)
     }
 }
 #endif
+
+NX_TEST(nativeScriptCompileErrorRetainsSourceLine)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    const char invalid[]="class Broken : Screen {\n void onEnter() {\n invalid_call();\n }\n}";
+    NX_EXPECT(!r.host.compile("broken","blueprint.as",invalid,strlen(invalid)));
+    NX_EXPECT(blueprintErrorLine(r.host.lastError(),"blueprint.as")==3);
+    NX_EXPECT(compile(r.host,"class Valid : Screen {}"));
+    NX_EXPECT(r.host.lastError()[0]==0);
+}

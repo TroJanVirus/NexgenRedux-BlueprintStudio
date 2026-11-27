@@ -1,5 +1,5 @@
 #pragma once
-#include "tools/blueprint/native_document.h"
+#include "tools/blueprint/native_compile.h"
 
 namespace nx
 {
@@ -33,6 +33,9 @@ namespace nx
         bool saveCurrent(Services& services);
         bool writeVerified(Services& services,const std::string& path,const std::string& bytes);
         bool compileAndExport(Services& services);
+        void focusDiagnostic(BlueprintLocation location);
+        BlueprintSourceMap m_previewMap;
+        BlueprintLocation m_diagnostic;
         void cancelDrag() { m_drag = false; }
         struct NodePins { std::vector<std::string> inputs, outputs, inputTypes, outputTypes; float height = 72; };
         struct WirePins { size_t output, input; };

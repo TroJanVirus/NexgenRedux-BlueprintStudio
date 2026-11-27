@@ -20,15 +20,24 @@ namespace nx
             }
             return result+"\"";
         }
+        struct ByteSpan { size_t begin,end; BlueprintLocation location; };
         struct Emitter
         {
             const Graph& graph;
             std::string& source;
             std::string& error;
             std::vector<bool> emitted,available;
+            size_t graphIndex;
+            BlueprintLocation* location;
+            std::vector<ByteSpan>& spans;
             size_t budget=8192;
+            void mark(size_t start,size_t node)
+            {
+                if(source.size()>start)spans.push_back({start,source.size(),{graphIndex,node}});
+            }
             bool fail(size_t node,const std::string& why)
             {
+                if(location)*location={graphIndex,node};
                 error=graph.name+" / "+(node<graph.nodes.size()?graph.nodes[node].id:"?")+": "+why;
                 return false;
             }
@@ -157,12 +166,13 @@ namespace nx
                 --budget;emitted[to]=true;
                 const auto& n=graph.nodes[to];const auto* spec=blueprintSpec(n.kind);
                 const std::string pad(indent*4,' ');
+                const size_t start=source.size();
                 if(n.kind=="branch")
                 {
                     std::string condition;
                     if(!value(to,"condition",condition,0))return false;
                     const auto outer=available;
-                    source+=pad+"if ("+condition+")\n"+pad+"{\n";
+                    source+=pad+"if ("+condition+")\n"+pad+"{\n";mark(start,to);
                     if(!flow(to,"true",indent+1,depth+1))return false;
                     available=outer;
                     source+=pad+"}\n"+pad+"else\n"+pad+"{\n";
@@ -173,12 +183,12 @@ namespace nx
                 if(n.kind.rfind("var:set:",0)==0)
                 {
                     std::string v;if(!value(to,"value",v,0))return false;
-                    source+=pad+(n.kind.ends_with("@")?"@":"")+"bp_var_"+n.ref+" = "+v+";\n";
+                    source+=pad+(n.kind.ends_with("@")?"@":"")+"bp_var_"+n.ref+" = "+v+";\n";mark(start,to);
                     return flow(to,"then",indent,depth+1);
                 }
                 if(n.kind=="call:function")
                 {
-                    source+=pad+"bp_fn_"+n.ref+"();\n";
+                    source+=pad+"bp_fn_"+n.ref+"();\n";mark(start,to);
                     return flow(to,"then",indent,depth+1);
                 }
                 if(n.kind=="sequence")
@@ -201,7 +211,7 @@ namespace nx
                     source+=pad+"{\n"+pad+"    int "+limit+" = "+count+";\n"+
                         pad+"    if ("+limit+" > 10000) "+limit+" = 10000;\n"+
                         pad+"    for (int "+index+" = 0; "+index+" < "+limit+"; ++"+index+")\n"+pad+"    {\n";
-                    available[to]=true;
+                    mark(start,to);available[to]=true;
                     if(!flow(to,"body",indent+2,depth+1))return false;
                     available=outer;source+=pad+"    }\n"+pad+"}\n";
                     return flow(to,"then",indent,depth+1);
@@ -219,13 +229,16 @@ namespace nx
                 }
                 else source+=pad+statement+";\n";
                 if(spec->hasOut)available[to]=true;
+                mark(start,to);
                 if(source.size()>1024*1024)return fail(to,"Generated source exceeds the size limit.");
                 return flow(to,"then",indent,depth+1);
             }
         };
     }
-    bool compileBlueprint(const BlueprintDocument& document,std::string& source,std::string& error)
+    bool compileBlueprint(const BlueprintDocument& document,std::string& source,std::string& error,BlueprintLocation* location,BlueprintSourceMap* map)
     {
+        if(location)*location={};
+        std::vector<ByteSpan> spans;
         // Validate the public graph model before reading any endpoints.
         std::string checked;
         if(!document.serialize(checked,error))return false;
@@ -233,24 +246,57 @@ namespace nx
         std::vector<BlueprintPin> vars;
         if(!document.variables(vars,error))return false;
         for(const auto& v:vars)result+="    "+v.type+" bp_var_"+v.name+";\n";
-        for(const auto& graph:document.graphs)
+        for(size_t graphIndex=0;graphIndex<document.graphs.size();++graphIndex)
         {
+            const auto& graph=document.graphs[graphIndex];
             const auto entry=std::find_if(graph.nodes.begin(),graph.nodes.end(),[](const BlueprintDocument::Node& n){return n.kind=="entry";});
             if(entry==graph.nodes.end()){error="Missing event entry.";return false;}
             const auto index=static_cast<size_t>(entry-graph.nodes.begin());
             const auto signature=graph.name=="update"?"float dt":graph.name=="draw"?"Canvas@ canvas":"";
+            const size_t start=result.size();
             result+="    void "+(graph.kind=="function"?"bp_fn_"+graph.name:graph.name)+"("+signature+")\n    {\n";
-            Emitter e{graph,result,error,std::vector<bool>(graph.nodes.size(),false),std::vector<bool>(graph.nodes.size(),false)};
+            spans.push_back({start,result.size(),{graphIndex,index}});
+            Emitter e{graph,result,error,std::vector<bool>(graph.nodes.size(),false),std::vector<bool>(graph.nodes.size(),false),graphIndex,location,spans};
             if(!e.flow(index,"then",2,0))return false;
             result+="    }\n";
             if(result.size()>1024*1024){error="Generated source exceeds the size limit.";return false;}
         }
-        result+="}\n";source.swap(result);error.clear();return true;
+        result+="}\n";
+        if(map)
+        {
+            BlueprintSourceMap lines;lines.reserve(spans.size());size_t cursor=0,line=1;
+            for(const auto& span:spans)
+            {
+                while(cursor<span.begin){if(result[cursor]=='\n')++line;++cursor;}
+                const size_t first=line;
+                while(cursor<span.end){if(result[cursor]=='\n')++line;++cursor;}
+                lines.push_back({first,line-1,span.location});
+            }
+            map->swap(lines);
+        }
+        source.swap(result);error.clear();return true;
     }
-    bool compileBlueprintScreen(const BlueprintDocument& document,std::string& source,std::string& manifest,std::string& error)
+    BlueprintLocation blueprintSourceLocation(const BlueprintSourceMap& map,size_t line)
     {
-        std::string code;
-        if(!compileBlueprint(document,code,error))return false;
+        for(const auto& span:map)if(line>=span.firstLine&&line<=span.lastLine)return span.location;
+        return {};
+    }
+    size_t blueprintErrorLine(const std::string& error,const std::string& section)
+    {
+        const auto at=error.find(section+":");
+        if(at==std::string::npos)return 0;
+        size_t i=at+section.size()+1,line=0,start=i;
+        while(i<error.size()&&error[i]>='0'&&error[i]<='9')
+        {
+            if(line>1000000)return 0;
+            line=line*10+static_cast<size_t>(error[i++]-'0');
+        }
+        return i>start&&i<error.size()&&error[i]==':'?line:0;
+    }
+    bool compileBlueprintScreen(const BlueprintDocument& document,std::string& source,std::string& manifest,std::string& error,BlueprintLocation* location,BlueprintSourceMap* map)
+    {
+        std::string code;BlueprintSourceMap lines;
+        if(!compileBlueprint(document,code,error,location,map?&lines:nullptr))return false;
         JsonValue info;
         auto* title=info.put("title");if(!title){error="Cannot allocate screen manifest.";return false;}
         title->setText(document.name);
@@ -259,6 +305,6 @@ namespace nx
         auto* description=info.put("description");if(!description){error="Cannot allocate screen manifest.";return false;}
         description->setText("Generated by native Blueprint Studio");
         auto json=info.write(false);
-        source.swap(code);manifest.swap(json);error.clear();return true;
+        source.swap(code);manifest.swap(json);if(map)map->swap(lines);error.clear();return true;
     }
 }

@@ -129,7 +129,7 @@ namespace nx
     void BlueprintWorkspace::selectGraph(size_t index)
     {
         if (index >= m_document.graphs.size()) return;
-        cancelDrag();clearWire();
+        cancelDrag();clearWire();m_diagnostic={};
         m_graph = index; m_selection = static_cast<size_t>(-1);
         rebuildPins();fitGraph();filterCatalogue();
         if (index < m_first) m_first = index;
@@ -275,13 +275,28 @@ namespace nx
         m_status="Saved "+m_document.name;return true;
     }
 
+    void BlueprintWorkspace::focusDiagnostic(BlueprintLocation location)
+    {
+        m_diagnostic={};
+        if(location.graph>=m_document.graphs.size()||location.node>=m_document.graphs[location.graph].nodes.size())return;
+        selectGraph(location.graph);m_selection=location.node;m_diagnostic=location;
+        const auto& n=m_document.graphs[m_graph].nodes[m_selection];
+        m_zoom=1;m_x=(kRight-kLeft-kNodeWidth)*0.5f-n.x;
+        m_y=(kBottom-kTop-m_rows[m_selection].height)*0.5f-n.y;
+    }
+
     bool BlueprintWorkspace::compileAndExport(Services& s)
     {
-        std::string source,manifest;
-        if(!compileBlueprintScreen(m_document,source,manifest,m_status))return false;
+        std::string source,manifest;BlueprintLocation location;BlueprintSourceMap map;
+        m_diagnostic={};
+        if(!compileBlueprintScreen(m_document,source,manifest,m_status,&location,&map)){focusDiagnostic(location);return false;}
         const char* module="bp_native_validation";
         const bool valid=s.host->compile(module,"blueprint.as",source.data(),source.size())&&s.host->findClass(module,"Screen");
-        if(!valid)m_status=std::string("AngelScript validation failed: ")+s.host->lastError();
+        if(!valid)
+        {
+            m_status=std::string("AngelScript validation failed: ")+s.host->lastError();
+            focusDiagnostic(blueprintSourceLocation(map,blueprintErrorLine(m_status,"blueprint.as")));
+        }
         s.host->discard(module);
         if(!valid)return false;
         static unsigned sequence=0;
@@ -323,6 +338,7 @@ namespace nx
             const std::string error=s.screens->error();
             stopPreview(s);
             m_status="Preview error: "+error;
+            focusDiagnostic(blueprintSourceLocation(m_previewMap,blueprintErrorLine(error,"__blueprint_preview/main.as")));
             NX_ERROR("Blueprint Studio: %s",m_status.c_str());
         }
     }
@@ -428,7 +444,7 @@ namespace nx
                         if(!m_document.addFunction(m_edit,m_status))break;
                         selectGraph(m_document.graphs.size()-1);
                     }
-                    m_focus=0;input.setTyping(false);if(focus!=5)m_status="Ready.";break;
+                    m_focus=0;input.setTyping(false);if(focus!=5){m_status="Ready.";if(focus!=1)m_diagnostic={};}break;
                 }
             }
             if(changed&&focus==1)filterCatalogue();
@@ -448,11 +464,16 @@ namespace nx
             if(m_document.graphs.empty()){m_left=left;return;}
             if(click&&in(x,y,504,39,604,69))
             {
-                std::string source;
+                std::string source;BlueprintLocation location;m_diagnostic={};m_previewMap.clear();
                 checkpoint(s,true);
-                if(compileBlueprint(m_document,source,m_status)&&s.screens->startPreview(source,m_status))
+                if(!compileBlueprint(m_document,source,m_status,&location,&m_previewMap))focusDiagnostic(location);
+                else if(s.screens->startPreview(source,m_status))
                 {m_playing=true;clearWire();m_status="Playing. Escape returns to Studio.";}
-                else {s.input->setWantsPointer(true);s.input->setTyping(false);}
+                else
+                {
+                    focusDiagnostic(blueprintSourceLocation(m_previewMap,blueprintErrorLine(m_status,"__blueprint_preview/main.as")));
+                    s.input->setWantsPointer(true);s.input->setTyping(false);
+                }
                 m_left=left;return;
             }
             if(click&&in(x,y,610,39,742,69))compileAndExport(s);
@@ -485,7 +506,7 @@ namespace nx
             {
                 const size_t row=m_paletteFirst+static_cast<size_t>((y-kTop-80)/26);
                 if(row<m_palette.size()&&m_document.addNode(m_graph,m_palette[row]->id,(kRight-kLeft)*0.5f/m_zoom-m_x/m_zoom,(kBottom-kTop)*0.4f/m_zoom-m_y/m_zoom,m_status))
-                {clearWire();rebuildPins();m_selection=m_document.graphs[m_graph].nodes.size()-1;m_status="Added "+m_palette[row]->title;}
+                {m_diagnostic={};clearWire();rebuildPins();m_selection=m_document.graphs[m_graph].nodes.size()-1;m_status="Added "+m_palette[row]->title;}
                 m_left=left;return;
             }
             if(click&&m_selection<m_document.graphs[m_graph].nodes.size())
@@ -493,7 +514,7 @@ namespace nx
                 const auto& n=m_document.graphs[m_graph].nodes[m_selection];
                 if(in(x,y,kRight+8,kTop+456,kWidth-8,kTop+486)&&(n.kind.rfind("literal:",0)==0||n.kind.rfind("var:",0)==0||n.kind=="call:function"))
                 {m_edit=n.ref;m_focus=n.kind.rfind("literal:",0)==0?2:3;input.setTyping(true);}
-                else if(in(x,y,kRight+8,kBottom-40,kWidth-8,kBottom-8)&&m_document.deleteNode(m_graph,m_selection,m_status)){clearWire();m_selection=static_cast<size_t>(-1);rebuildPins();m_status="Deleted node.";}
+                else if(in(x,y,kRight+8,kBottom-40,kWidth-8,kBottom-8)&&m_document.deleteNode(m_graph,m_selection,m_status)){m_diagnostic={};clearWire();m_selection=static_cast<size_t>(-1);rebuildPins();m_status="Deleted node.";}
             }
             m_left=left;return;
         }
@@ -519,11 +540,11 @@ namespace nx
                     {
                         if(std::abs(x-px)>9||std::abs(y-(ny+pinY(p)*m_zoom))>9)continue;
                         m_selection=i-1;
-                        if(control){if(m_document.disconnect(m_graph,i-1,pins[p],side!=0)){rebuildPins();m_status="Disconnected pin.";}clearWire();}
+                        if(control){if(m_document.disconnect(m_graph,i-1,pins[p],side!=0)){m_diagnostic={};rebuildPins();m_status="Disconnected pin.";}clearWire();}
                         else if(side){m_pending=i-1;m_pendingPin=pins[p];m_status="Connect "+pins[p]+" ("+row.outputTypes[p]+") to a matching input."; }
                         else if(m_pending!=static_cast<size_t>(-1))
                         {
-                            if(m_document.connect(m_graph,m_pending,m_pendingPin,i-1,pins[p],m_status)){rebuildPins();clearWire();m_status="Connected pins.";}
+                            if(m_document.connect(m_graph,m_pending,m_pendingPin,i-1,pins[p],m_status)){m_diagnostic={};rebuildPins();clearWire();m_status="Connected pins.";}
                         }
                         else if(blueprintLiteralType(row.inputTypes[p]))
                         {
@@ -654,7 +675,8 @@ namespace nx
                 if(x+w<kLeft||x>kRight||y+h<kTop||y>kBottom) continue;
                 c.roundRect(x,y,w,h,5,{0.15f,0.20f,0.27f,1});
                 c.rect(x,y,w,24*m_zoom,n.kind=="entry"?Color{0.54f,0.20f,0.25f,1}:Color{0.19f,0.35f,0.53f,1});
-                if(i==m_selection)c.roundLine(x,y,w,h,5,2,accent);
+                if(m_diagnostic.graph==m_graph&&m_diagnostic.node==i)c.roundLine(x,y,w,h,5,3,{0.98f,0.35f,0.38f,1});
+                else if(i==m_selection)c.roundLine(x,y,w,h,5,2,accent);
                 // Draw only the visible rows of tall nodes.
                 const size_t first=static_cast<size_t>(std::max(0.0f,std::floor(((kTop-y)/m_zoom-kPinStart)/kPinStep)-1));
                 const size_t last=static_cast<size_t>(std::max(0.0f,std::ceil(((kBottom-y)/m_zoom-kPinStart)/kPinStep)+2));

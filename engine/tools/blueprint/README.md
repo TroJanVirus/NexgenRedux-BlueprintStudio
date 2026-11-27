@@ -277,3 +277,5 @@ The project window lists unconverted screens separately and lets you export thei
 To test the Cook integration with the actual native executable, set `NEXGEN_COOK` to its absolute path and run `node test_cook_package.js` and `python test_cook_browser.py`. The browser test can use `BLUEPRINT_FORWARD_HTTP=1` on a restricted host; that forwards the request through Python to the real local bridge.
 
 Native regression coverage includes a simulated mouse/keyboard authoring session through the actual workspace on Redux's null GPU, including node insertion, typed pin entry, save, preview and external-file conflict recovery. Desktop CI also starts the native window independently of the runtime test outcome.
+
+Compiler diagnostics select and centre the failing graph node. Generated executable statements have an editor-only source map; AngelScript compile/runtime errors with a known generated section and line can highlight the corresponding action node. This is diagnostic navigation, not a live breakpoint debugger. Exported scripts remain ordinary AngelScript.
