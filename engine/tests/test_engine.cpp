@@ -464,6 +464,49 @@ NX_TEST(screensOpenAndComeBack)
     NX_EXPECT(w.screens.quitRequested());
 }
 
+NX_TEST(blueprintStudioIsAnOptionalHomeMenuAction)
+{
+    Rig w;
+    NX_EXPECT(w.screens.init(w.services, "showcase", "main"));
+    w.step(5);
+    static int launched = 0;
+    static bool succeeds = false;
+    launched = 0;
+    succeeds = false;
+    w.screens.setBlueprintLauncher([]() { ++launched; return succeeds; });
+
+    // A failed launch stays in the menu, with no restart or quit.
+    w.press(Action::Menu);
+    w.press(Action::Down);
+    w.press(Action::Down);
+    w.press(Action::Accept);
+    NX_EXPECT(launched == 1 && w.screens.menuOpen() && !w.screens.quitRequested());
+    NX_EXPECT(w.screens.depth() == 1 && strcmp(w.screens.current(), "main") == 0);
+
+    // Retrying the selected item closes the menu only on success.
+    succeeds = true;
+    w.press(Action::Accept);
+    NX_EXPECT(launched == 2 && !w.screens.menuOpen() && !w.screens.quitRequested());
+
+    // Inside a game the old menu is unchanged: Resume, Restart, Main menu.
+    w.press(Action::Accept);
+    w.step(5);
+    NX_EXPECT(w.screens.depth() == 2);
+    w.press(Action::Menu);
+    w.press(Action::Down);
+    w.press(Action::Down);
+    w.press(Action::Accept);
+    NX_EXPECT(launched == 2 && w.screens.depth() == 1 && !w.screens.menuOpen());
+
+    // A host without a launcher retains its old menu.
+    w.screens.setBlueprintLauncher(nullptr);
+    w.press(Action::Menu);
+    w.press(Action::Down);
+    w.press(Action::Down);
+    w.press(Action::Accept);
+    NX_EXPECT(launched == 2 && w.screens.quitRequested());
+}
+
 NX_TEST(brokenScreensDontStopTheApp)
 {
     Rig w;
