@@ -330,6 +330,8 @@ namespace nx
                 {error="Invalid node in "+g.name;return false;}
                 if(kind=="entry")++entries;
                 Node node{n["id"].text(),kind,ref,x,y};
+                if(n["watch"].exists()&&n["watch"].type()!=JsonTree::Type::Bool){error="Invalid node watch flag.";return false;}
+                node.watch=n["watch"].flag();
                 BlueprintNodeSpec resolved;
                 if(!candidate.nodeSpec(g,node,resolved)){error="Invalid function node in "+g.name;return false;}
                 const auto values=n["values"];
@@ -404,6 +406,7 @@ namespace nx
             {
                 auto* j=ns->add();if(!j||!text(*j,"id",n.id)||!text(*j,"kind",n.kind)||!number(*j,"x",n.x)||!number(*j,"y",n.y))return fail();
                 if((n.kind.rfind("literal:",0)==0||variableKind(n.kind)||n.kind=="call:function"||(n.kind=="attach:behaviour"||n.kind=="level:attach"))&&!text(*j,"value",n.ref))return fail();
+                if(n.watch){auto* watch=j->put("watch");if(!watch)return fail();watch->setFlag(true);}
                 if(!n.values.empty())
                 {
                     auto* values=j->put("values");if(!values)return fail();
@@ -492,6 +495,15 @@ namespace nx
         const auto match=[&](const Link& l){return output?l.from==node&&l.output==pin:l.to==node&&l.input==pin;};
         if(std::none_of(g.links.begin(),g.links.end(),match))return false;
         record(graph);g.links.erase(std::remove_if(g.links.begin(),g.links.end(),match),g.links.end());return true;
+    }
+    bool BlueprintDocument::toggleWatch(size_t graph,size_t node)
+    {
+        if(graph>=graphs.size()||node>=graphs[graph].nodes.size())return false;
+        BlueprintNodeSpec spec;const auto& g=graphs[graph];
+        if(!nodeSpec(g,g.nodes[node],spec))return false;
+        const auto exec=[](const BlueprintPin& p){return p.type=="exec";};
+        if(!std::any_of(spec.inputs.begin(),spec.inputs.end(),exec)&&!std::any_of(spec.outputs.begin(),spec.outputs.end(),exec))return false;
+        record(graph);graphs[graph].nodes[node].watch=!graphs[graph].nodes[node].watch;return true;
     }
     bool BlueprintDocument::setLiteral(size_t graph,size_t node,const std::string& value,std::string& error)
     {

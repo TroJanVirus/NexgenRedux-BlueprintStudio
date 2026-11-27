@@ -2,6 +2,7 @@
 #include "tools/blueprint/native_compile.h"
 #include "tools/blueprint/native_assets.h"
 #include "script/script_host.h"
+#include "script/debugger.h"
 #include "screens/screens.h"
 #include "bindings/bindings.h"
 #include "assets/assets.h"
@@ -399,10 +400,69 @@ namespace nx
         NX_INFO("Blueprint Studio: %s",m_status.c_str());return true;
     }
 
+    bool BlueprintWorkspace::startTrace(Services& s)
+    {
+        stopTrace();m_traceHits.clear();m_traceValues.clear();m_traceLocation={};m_traceBudget=128;
+        if(!m_traceEnabled)return true;
+        if(!s.debugger||!s.debugger->startLocalTrace(*s.host,[](void* user,const char* section,int line,u32 run,asIScriptContext* context)
+        {static_cast<BlueprintWorkspace*>(user)->traceLine(section,line,run,context);},this))
+        {m_status="Local trace unavailable while the external script debugger is active.";return false;}
+        m_traceDebugger=s.debugger;return true;
+    }
+
+    void BlueprintWorkspace::stopTrace()
+    {
+        if(m_traceDebugger)m_traceDebugger->stopLocalTrace();
+        m_traceDebugger=nullptr;m_tracePaused=false;m_tracePending=false;m_traceStep=false;m_traceKey=false;
+    }
+
+    void BlueprintWorkspace::traceLine(const char* section,int line,unsigned run,asIScriptContext* context)
+    {
+        if(!m_traceDebugger||m_tracePaused||line<=0)return;
+        BlueprintLocation location;
+        for(const auto& screen:m_previewOutputs)
+            if(screen.id+"/main.as"==section){location=blueprintSourceLocation(screen.map,static_cast<size_t>(line));break;}
+        if(location.graph>=m_document.graphs.size()||location.node>=m_document.graphs[location.graph].nodes.size())return;
+        const auto& node=m_document.graphs[location.graph].nodes[location.node];
+        const bool firstWatch=node.watch&&!m_tracePending;
+        if(!firstWatch&&!m_traceBudget)return;
+        if(!m_traceHits.empty())
+        {
+            const auto& last=m_traceHits.back();
+            if(!firstWatch&&last.location.graph==location.graph&&last.location.node==location.node&&last.run==run&&last.line==line)return;
+        }
+        if(m_traceBudget)--m_traceBudget;
+        if(m_traceHits.size()>=32)m_traceHits.erase(m_traceHits.begin());
+        m_traceHits.push_back({location,line,run});
+        // Snapshot first watched statement before it executes. Otherwise keep the last sampled node.
+        if(!m_tracePending)
+        {
+            m_traceLocation=location;m_traceDebugger->traceValues(context,m_traceValues);
+            if(firstWatch)m_tracePending=true;
+        }
+    }
+
+    void BlueprintWorkspace::pauseTrace(Services& s)
+    {
+        m_tracePaused=true;m_tracePending=false;m_traceStep=false;
+        s.screens->setDevelopmentPaused(true);
+        s.input->setWantsPointer(true);s.input->setTyping(false);s.platform->lockMouse(false);s.input->consume();
+        focusDiagnostic(m_traceLocation);m_diagnostic={};
+        m_left=s.input->raw().mouseButtons[0];
+        m_status="Trace paused at a safe update boundary. Values were sampled before the highlighted statement.";
+    }
+
+    void BlueprintWorkspace::resumeTrace(Services& s,bool step)
+    {
+        m_tracePaused=false;m_tracePending=false;m_traceStep=step;m_traceBudget=128;
+        s.input->consume();s.screens->setDevelopmentPaused(false);
+    }
+
     void BlueprintWorkspace::stopPreview(Services& s)
     {
         if(!m_playing)return;
         const bool scene=m_sceneEditor;
+        stopTrace();
         s.screens->stopPreview();
         m_playing=false;m_sceneEditor=false;m_sceneExit=false;
         s.input->setWantsPointer(true);
@@ -441,7 +501,27 @@ namespace nx
         }
         else if(s.input->pressed(Action::Menu)||s.input->raw().keys[static_cast<size_t>(Key::Escape)])
         {stopPreview(s);return;}
+        else if(m_traceDebugger)
+        {
+            const auto& raw=s.input->raw();
+            const bool key=raw.keys[static_cast<size_t>(Key::Control)]&&raw.keys[static_cast<size_t>(Key::T)];
+            const bool toggle=key&&!m_traceKey;m_traceKey=key;
+            if(m_tracePaused)
+            {
+                const bool left=raw.mouseButtons[0],click=left&&!m_left;m_left=left;
+                const auto& canvas=*s.canvas;const float scale=std::min(canvas.pixelWidth()/kWidth,canvas.pixelHeight()/kHeight);
+                const float x=scale>0?(raw.mouseX-(canvas.pixelWidth()-kWidth*scale)*0.5f)/scale:0;
+                const float y=scale>0?(raw.mouseY-(canvas.pixelHeight()-kHeight*scale)*0.5f)/scale:0;
+                if(toggle||s.input->pressed(Action::Accept)||(click&&in(x,y,270,624,450,660)))resumeTrace(s,false);
+                else if(click&&in(x,y,462,624,670,660))resumeTrace(s,true);
+                else if(click&&in(x,y,682,624,890,660))stopPreview(s);
+                return;
+            }
+            if(toggle||m_tracePending){pauseTrace(s);return;}
+            m_traceBudget=128;
+        }
         s.screens->update(dt);
+        if(m_traceStep){m_traceStep=false;m_tracePending=true;}
         if(s.screens->failed())
         {
             const std::string error=s.screens->error();const bool scene=m_sceneEditor;
@@ -454,6 +534,27 @@ namespace nx
 
     void BlueprintWorkspace::drawPreviewOverlay(Canvas& c)
     {
+        if(tracePaused()&&m_font)
+        {
+            c.design(kWidth,kHeight);c.noClip();
+            c.roundRect(252,412,756,256,8,{0.10f,0.14f,0.20f,0.98f});
+            c.text(*m_font,"EXECUTION TRACE  /  FRAME-BOUNDARY PAUSE",270,422,accent);
+            c.text(*m_font,"Sampled before statement (not the current paused VM state)",270,448,muted);
+            c.clip(270,475,345,136);
+            const size_t first=m_traceHits.size()>6?m_traceHits.size()-6:0;
+            for(size_t i=first;i<m_traceHits.size();++i)
+            {
+                const auto& hit=m_traceHits[i];const auto& graph=m_document.graphs[hit.location.graph];
+                c.text(*m_font,shorten(graph.name+" / "+title(graph.nodes[hit.location.node]),38).c_str(),270,475+22*static_cast<float>(i-first),text);
+            }
+            c.noClip();c.clip(626,475,364,136);
+            for(size_t i=0;i<std::min<size_t>(6,m_traceValues.size());++i)c.text(*m_font,shorten(m_traceValues[i],42).c_str(),626,475+22*static_cast<float>(i),text);
+            if(m_traceValues.empty())c.text(*m_font,"No scalar values sampled",626,475,muted);
+            c.noClip();
+            for(float x:{270.f,462.f,682.f})c.roundRect(x,624,x==270.f?180:208,36,4,{0.19f,0.33f,0.50f,1});
+            c.text(*m_font,"Continue",360,631,text,Align::Center);c.text(*m_font,"Step update",566,631,text,Align::Center);c.text(*m_font,"Stop preview",786,631,text,Align::Center);
+            return;
+        }
         if(!m_sceneEditor||!m_sceneExit||!m_font)return;
         c.design(kWidth,kHeight);c.noClip();
         c.rect(0,0,kWidth,kHeight,{0,0,0,0.72f});
@@ -633,6 +734,14 @@ namespace nx
             if(click&&in(x,y,740,5,850,33)){browseFiles(s);m_left=left;return;}
             if(click&&in(x,y,856,5,966,33)){m_edit.clear();m_focus=5;input.setTyping(true);m_status="Type a new Blueprint name and press Enter.";m_left=left;return;}
             if(click&&in(x,y,972,5,1082,33)){browseAssets(s);m_left=left;return;}
+            if(click&&in(x,y,1088,5,1174,33))
+            {
+                if(m_document.toggleWatch(m_graph,m_selection)){m_traceEnabled=true;m_status="Toggled pause-after-node watch. Trace enabled.";}
+                else m_status="Select an execution node to watch.";
+                m_left=left;return;
+            }
+            if(click&&in(x,y,1180,5,1268,33))
+            {m_traceEnabled=!m_traceEnabled;m_status=m_traceEnabled?"Trace enabled. Ctrl+T pauses during play test.":"Trace disabled.";m_left=left;return;}
             if(m_document.graphs.empty()){m_left=left;return;}
             if(click&&in(x,y,504,39,604,69))
             {
@@ -653,8 +762,16 @@ namespace nx
                     const auto owner=selected.rfind("behaviour:",0)==0?m_document.screens().front():selected;
                     if(!m_document.assetRoot.empty()&&!s.platform->fileTime(("own/"+m_document.assetRoot).c_str()))
                         m_status="Project asset folder is missing. Restore it before play testing.";
-                    else if(s.screens->startProjectPreview(screens,owner,m_status,m_document.assetRoot))
-                    {m_playing=true;clearWire();m_status="Playing "+owner+". Escape returns to Studio.";}
+                    else if(startTrace(s))
+                    {
+                        if(s.screens->startProjectPreview(screens,owner,m_status,m_document.assetRoot))
+                        {m_playing=true;clearWire();m_status="Playing "+owner+(m_traceDebugger?". Ctrl+T pauses trace; Escape stops.":". Escape returns to Studio.");}
+                        else
+                        {
+                            stopTrace();focusPreviewError(m_status);
+                            s.input->setWantsPointer(true);s.input->setTyping(false);
+                        }
+                    }
                     else
                     {
                         focusPreviewError(m_status);
@@ -843,7 +960,9 @@ namespace nx
         c.rect(0,0,kWidth,kHeight,{0.06f,0.08f,0.12f,1});
         c.rect(0,0,kWidth,kTop,{0.12f,0.16f,0.22f,1});
         c.text(*m_font,"NEXGEN  /  BLUEPRINT STUDIO",18,13,text);
-        c.text(*m_font,"Native editor",1260,13,muted,Align::Right);
+        c.roundRect(1088,5,86,28,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Watch",1131,9,text,Align::Center);
+        c.roundRect(1180,5,88,28,4,m_traceEnabled?Color{0.23f,0.48f,0.29f,1}:Color{0.19f,0.33f,0.50f,1});
+        c.text(*m_font,m_traceEnabled?"Trace on":"Trace off",1224,9,text,Align::Center);
         if(!m_document.graphs.empty()&&m_document.graphs[m_graph].kind=="function")
         {c.roundRect(410,5,150,28,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Signature",485,9,text,Align::Center);}
         else if(m_graph<m_document.graphs.size()&&m_document.graphs[m_graph].owner.rfind("behaviour:",0)!=0)
@@ -904,7 +1023,9 @@ namespace nx
                 if(x+w<kLeft||x>kRight||y+h<kTop||y>kBottom) continue;
                 c.roundRect(x,y,w,h,5,{0.15f,0.20f,0.27f,1});
                 c.rect(x,y,w,24*m_zoom,n.kind=="entry"?Color{0.54f,0.20f,0.25f,1}:Color{0.19f,0.35f,0.53f,1});
-                if(m_diagnostic.graph==m_graph&&m_diagnostic.node==i)c.roundLine(x,y,w,h,5,3,{0.98f,0.35f,0.38f,1});
+                if(n.watch)c.circle(x+w-12*m_zoom,y+12*m_zoom,5*m_zoom,{1,0.72f,0.22f,1});
+                if(tracePaused()&&m_traceLocation.graph==m_graph&&m_traceLocation.node==i)c.roundLine(x,y,w,h,5,3,{1,0.72f,0.22f,1});
+                else if(m_diagnostic.graph==m_graph&&m_diagnostic.node==i)c.roundLine(x,y,w,h,5,3,{0.98f,0.35f,0.38f,1});
                 else if(i==m_selection)c.roundLine(x,y,w,h,5,2,accent);
                 // Draw only the visible rows of tall nodes.
                 const size_t first=static_cast<size_t>(std::max(0.0f,std::floor(((kTop-y)/m_zoom-kPinStart)/kPinStep)-1));

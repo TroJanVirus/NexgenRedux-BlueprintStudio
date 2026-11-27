@@ -713,7 +713,7 @@ namespace
                     {
                         canvas.begin();
 #ifdef NX_DESKTOP_BLUEPRINT
-                        if (studio.active() && !studio.previewing()) studio.draw(canvas);
+                        if (studio.active() && (!studio.previewing()||studio.tracePaused())) studio.draw(canvas);
                         else
 #endif
                         screens.draw();

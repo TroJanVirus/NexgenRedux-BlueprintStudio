@@ -1,11 +1,14 @@
 #pragma once
 #include "tools/blueprint/native_compile.h"
 
+class asIScriptContext;
+
 namespace nx
 {
     struct Services;
     class Canvas;
     struct Asset;
+    class ScriptDebugger;
 
     // A desktop-only workspace in the existing Redux window.
     class BlueprintWorkspace
@@ -16,6 +19,7 @@ namespace nx
         void close(Services& services);
         void update(Services& services);
         bool previewing() const { return m_playing; }
+        bool tracePaused() const { return m_playing&&m_tracePaused; }
         void updatePreview(Services& services, float dt);
         void stopPreview(Services& services);
         void draw(Canvas& canvas);
@@ -45,6 +49,18 @@ namespace nx
         bool validateProject(Services& services,const std::vector<BlueprintScreenOutput>& screens);
         void focusDiagnostic(BlueprintLocation location);
         void focusPreviewError(const std::string& error);
+        bool startTrace(Services& services);
+        void stopTrace();
+        void pauseTrace(Services& services);
+        void resumeTrace(Services& services,bool step);
+        void traceLine(const char* section,int line,unsigned run,asIScriptContext* context);
+        struct TraceHit { BlueprintLocation location; int line; unsigned run; };
+        ScriptDebugger* m_traceDebugger=nullptr;
+        bool m_traceEnabled=false,m_tracePaused=false,m_tracePending=false,m_traceStep=false,m_traceKey=false;
+        unsigned m_traceBudget=0;
+        std::vector<TraceHit> m_traceHits;
+        BlueprintLocation m_traceLocation;
+        std::vector<std::string> m_traceValues;
         std::vector<BlueprintScreenOutput> m_previewOutputs;
         BlueprintLocation m_diagnostic;
         void cancelDrag() { m_drag = false; }

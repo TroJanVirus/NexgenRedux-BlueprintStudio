@@ -5,6 +5,7 @@
 #include "tools/blueprint/native_compile.h"
 #ifdef NX_DESKTOP_BLUEPRINT
 #include "app/blueprint_workspace.h"
+#include "script/debugger.h"
 #include "tools/blueprint/native_assets.h"
 #endif
 
@@ -1098,3 +1099,25 @@ NX_TEST(nativeBehaviourAttachmentWithNullEntityReturnsFalse)
     if(!r.screens.init(r.services,"showcase","attach")){NX_EXPECT(false);return;}
     r.step(3);NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("null_attachment","missing"),"safe")==0);
 }
+
+#ifdef NX_DESKTOP_BLUEPRINT
+NX_TEST(nativeDebuggerLocalTraceUsesRealStatementCallbacksWithoutNetwork)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    ScriptDebugger debugger;
+    struct Trace { ScriptDebugger* debugger; unsigned hits=0; bool found=false; } trace{&debugger};
+    NX_EXPECT(debugger.startLocalTrace(r.host,[](void* user,const char* section,int line,u32,asIScriptContext* context)
+    {
+        auto& state=*static_cast<Trace*>(user);
+        if(strcmp(section,"blueprint.as")||line<=0)return;
+        ++state.hits;std::vector<std::string> values;state.debugger->traceValues(context,values);
+        for(const auto& v:values)if(v=="amount = 42")state.found=true;
+    },&trace));
+    NX_EXPECT(!debugger.listening()&&!debugger.connected());
+    NX_EXPECT(compile(r.host,"void check() { int amount = 42;\n Save::set(\"traced\", \"yes\");\n }"));
+    NX_EXPECT(r.host.call(r.host.find("blueprint","void check()")));
+    NX_EXPECT(trace.hits>0&&trace.found&&strcmp(r.save.get("traced","missing"),"yes")==0);
+    debugger.stopLocalTrace();const auto hits=trace.hits;
+    NX_EXPECT(r.host.call(r.host.find("blueprint","void check()"))&&trace.hits==hits);
+}
+#endif

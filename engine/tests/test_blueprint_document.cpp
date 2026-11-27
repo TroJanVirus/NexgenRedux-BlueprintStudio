@@ -404,3 +404,13 @@ NX_TEST(nativeAgentCallbacksRejectUnsafeVisibilityMutation)
     NX_EXPECT(doc.addLevelEvents("Screen",error)&&doc.addNode(7,"level:show",0,0,error)&&doc.connect(7,0,"then",1,"in",error));
     NX_EXPECT(!compileBlueprint(doc,source,error,&location)&&location.graph==7&&location.node==1);
 }
+
+NX_TEST(nativeTraceWatchesAreUndoableAndDoNotChangeGeneratedSource)
+{
+    BlueprintDocument doc;doc.create();std::string error,source,after,saved;
+    NX_EXPECT(doc.addNode(0,"literal:int",0,0,error)&&!doc.toggleWatch(0,1));
+    NX_EXPECT(compileBlueprint(doc,source,error)&&doc.toggleWatch(0,0)&&doc.graphs[0].nodes[0].watch);
+    NX_EXPECT(compileBlueprint(doc,after,error)&&source==after);
+    NX_EXPECT(doc.serialize(saved,error));BlueprintDocument copy;NX_EXPECT(copy.load(saved.data(),saved.size(),error)&&copy.graphs[0].nodes[0].watch);
+    NX_EXPECT(doc.undo()&&!doc.graphs[0].nodes[0].watch&&doc.redo()&&doc.graphs[0].nodes[0].watch);
+}

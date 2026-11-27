@@ -31,7 +31,7 @@ namespace nx
     struct BlueprintDocument
     {
         struct InputValue { std::string pin,value; };
-        struct Node { std::string id, kind, ref; float x=0,y=0; std::vector<InputValue> values{}; };
+        struct Node { std::string id, kind, ref; float x=0,y=0; std::vector<InputValue> values{}; bool watch=false; };
         struct Link { size_t from=0,to=0; std::string output,input; };
         struct Graph
         {
@@ -53,6 +53,7 @@ namespace nx
         bool connect(size_t graph,size_t from,const std::string& output,size_t to,const std::string& input,std::string& error);
         bool disconnect(size_t graph,size_t node,const std::string& pin,bool output);
         bool setLiteral(size_t graph,size_t node,const std::string& value,std::string& error);
+        bool toggleWatch(size_t graph,size_t node);
         bool setInputValue(size_t graph,size_t node,const std::string& pin,const std::string& value,std::string& error);
         bool clearInputValue(size_t graph,size_t node,const std::string& pin);
         bool setReference(size_t graph,size_t node,const std::string& value,std::string& error);

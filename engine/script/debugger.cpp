@@ -71,6 +71,9 @@ namespace nx
 
     bool ScriptDebugger::start(ScriptHost& host, u16 port, bool onlyHere)
     {
+ #ifdef NX_DESKTOP_BLUEPRINT
+        if(m_localHost)return false;
+ #endif
         if (!netStart())
         {
             NX_ERROR("debugger: no network");
@@ -107,6 +110,9 @@ namespace nx
 
     void ScriptDebugger::stop()
     {
+#ifdef NX_DESKTOP_BLUEPRINT
+        stopLocalTrace();
+#endif
         if (m_host == nullptr)
         {
             return;
@@ -325,8 +331,69 @@ namespace nx
         return found;
     }
 
+#ifdef NX_DESKTOP_BLUEPRINT
+    bool ScriptDebugger::startLocalTrace(ScriptHost& host,TraceCallback callback,void* user)
+    {
+        if(m_host||m_localHost||!callback)return false;
+        m_localHost=&host;m_trace=callback;m_traceUser=user;
+        m_stringType=host.engine()->GetTypeIdByDecl("string");
+        host.setWatcher(this);return true;
+    }
+
+    void ScriptDebugger::stopLocalTrace()
+    {
+        if(!m_localHost)return;
+        m_localHost->setWatcher(nullptr);
+        m_localHost=nullptr;m_trace=nullptr;m_traceUser=nullptr;
+    }
+
+    void ScriptDebugger::traceValues(asIScriptContext* context,std::vector<std::string>& values)
+    {
+        values.clear();if(!m_localHost||!context)return;
+        // Reuse the native debugger's scalar formatter. Never run property getters,
+        // retain VM pointers, traverse object graphs or evaluate user expressions here.
+        auto add=[&](const char* name,int type,void* address)
+        {
+            if(!name||!*name||!address||values.size()>=24)return;
+            if(type!=m_stringType&&(type<asTYPEID_BOOL||type>asTYPEID_DOUBLE))return;
+            JsonValue item;describe(item,name,type,address);
+            const auto* value=item.find("value");if(!value)return;
+            std::string display=name;
+            if(display.rfind("bp_var_",0)==0)display=display.substr(7);
+            else if(display.rfind("bp_arg_",0)==0)display=display.substr(7);
+            display+=" = "+value->text();
+            for(char& c:display)if(static_cast<unsigned char>(c)<32)c=' ';
+            values.push_back(display);
+        };
+        if(void* self=context->GetThisPointer(0))
+        {
+            if(context->GetThisTypeId(0)&asTYPEID_SCRIPTOBJECT)
+            {
+                auto* object=static_cast<asIScriptObject*>(self);
+                for(asUINT i=0;i<object->GetPropertyCount()&&values.size()<24;++i)
+                    add(object->GetPropertyName(i),object->GetPropertyTypeId(i),object->GetAddressOfProperty(i));
+            }
+        }
+        for(int i=0;i<context->GetVarCount(0)&&values.size()<24;++i)
+        {
+            const char* name=nullptr;int type=0;
+            if(context->IsVarInScope(i,0)&&context->GetVar(i,0,&name,&type)>=0)
+                add(name,type,context->GetAddressOfVar(i,0));
+        }
+    }
+#endif
+
     void ScriptDebugger::line(asIScriptContext* context)
     {
+#ifdef NX_DESKTOP_BLUEPRINT
+        if(m_localHost&&m_trace)
+        {
+            const char* section=nullptr;
+            const int line=context->GetLineNumber(0,nullptr,&section);
+            if(section&&line>0)m_trace(m_traceUser,section,line,m_localHost->runs(),context);
+            return;
+        }
+#endif
         if (m_paused || m_client.state() != TcpState::Open)
         {
             return;
@@ -510,7 +577,13 @@ namespace nx
 
     bool ScriptDebugger::describe(JsonValue& out, const char* name, int typeId, void* address)
     {
-        asIScriptEngine* engine = m_host->engine();
+        asIScriptEngine* engine = m_host ? m_host->engine()
+#ifdef NX_DESKTOP_BLUEPRINT
+            : m_localHost->engine()
+#else
+            : nullptr
+#endif
+            ;
         putText(out, "name", name);
         asITypeInfo* type = engine->GetTypeInfoById(typeId);
         const char* declaration = engine->GetTypeDeclaration(typeId, true);
