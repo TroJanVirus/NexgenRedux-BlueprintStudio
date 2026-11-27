@@ -1,6 +1,7 @@
 #include "app/blueprint_workspace.h"
 #include "tools/blueprint/native_compile.h"
 #include "tools/blueprint/native_assets.h"
+#include "tools/blueprint/native_import.h"
 #include "script/script_host.h"
 #include "script/debugger.h"
 #include "screens/screens.h"
@@ -218,6 +219,29 @@ namespace nx
         {m_status="Could not verify written file. Changes remain in memory.";return false;}
         return true;
     }
+    bool BlueprintWorkspace::importSource(Services& s,const std::string& file)
+    {
+        if(m_document.dirty()){m_status="Save changes before importing source.";return false;}
+        if(file.size()>128||!file.ends_with(".as")||file.find_first_of("/\\:")!=std::string::npos||file.find("..")!=std::string::npos)
+        {m_status="Drop a standalone AngelScript .as file.";return false;}
+        FileData data;
+        if(!s.platform->readFile(("own/"+file).c_str(),data,MemTag::General)||data.size>512*1024)
+        {m_status="Cannot read source or file exceeds import limit.";return false;}
+        const std::string source(reinterpret_cast<const char*>(data.data),data.size);
+        BlueprintDocument candidate;
+        if(!importBlueprintScreen(source,candidate,m_status))return false;
+        // Validate the original as well as the conversion using the installed engine.
+        if(!s.screens->validateBlueprintSource(source,m_status)){m_status="Original source: "+m_status;return false;}
+        std::vector<BlueprintScreenOutput> output;
+        if(!compileBlueprintProject(candidate,output,m_status))return false;
+        for(const auto& screen:output)
+            if(!s.screens->validateBlueprintSource(screen.source,m_status)){m_status="Converted source: "+m_status;return false;}
+        m_document=std::move(candidate);m_filePath.clear();m_fileBaseline.clear();
+        m_checkpointRevision=static_cast<size_t>(-1);m_first=0;selectGraph(0);m_browsing=false;
+        m_status="Imported "+file+" as editable graphs. Save as a new project.";
+        checkpoint(s,true);return true;
+    }
+
     bool BlueprintWorkspace::openFile(Services& s,const std::string& file,bool managed)
     {
         if(m_document.dirty()){m_status="Save changes before opening another Blueprint.";return false;}
@@ -622,6 +646,7 @@ namespace nx
         {
             if(m_assetBrowser)importAsset(s,dropped);
             else if(blueprintFileName(dropped))openFile(s,dropped,false);
+            else if(dropped.ends_with(".as"))importSource(s,dropped);
             else m_status="Open Assets before dropping a scene or media file.";
         }
         auto& canvas = *s.canvas;
@@ -994,7 +1019,7 @@ namespace nx
             c.line(kLeft,gy,kRight,gy,1,{0.12f,0.15f,0.20f,1});
         if (m_document.graphs.empty())
         {
-            c.text(*m_font,"Drop a Blueprint or project JSON file",630,330,text,Align::Center);
+            c.text(*m_font,"Drop a Blueprint JSON or supported .as source file",630,330,text,Align::Center);
             c.text(*m_font,"The original file is never modified.",630,360,muted,Align::Center);
         }
         else

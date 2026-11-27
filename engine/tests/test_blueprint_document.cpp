@@ -1,6 +1,7 @@
 #include "test.h"
 #include "tools/blueprint/native_document.h"
 #include "tools/blueprint/native_compile.h"
+#include "tools/blueprint/native_import.h"
 #include <cstring>
 #include <algorithm>
 
@@ -413,4 +414,41 @@ NX_TEST(nativeTraceWatchesAreUndoableAndDoNotChangeGeneratedSource)
     NX_EXPECT(compileBlueprint(doc,after,error)&&source==after);
     NX_EXPECT(doc.serialize(saved,error));BlueprintDocument copy;NX_EXPECT(copy.load(saved.data(),saved.size(),error)&&copy.graphs[0].nodes[0].watch);
     NX_EXPECT(doc.undo()&&!doc.graphs[0].nodes[0].watch&&doc.redo()&&doc.graphs[0].nodes[0].watch);
+}
+
+NX_TEST(nativeSourceImportCreatesEditableTypedGraphsAndRejectsLoss)
+{
+    BlueprintDocument doc;doc.create();std::string error,generated,saved;
+    const std::string source=R"(// imported original
+        class Example : Screen {
+            void onEnter() {
+                score = 2;
+                Save::set("status", "ready");
+            }
+            int score;
+            void update(float elapsed) {
+                if (score < 4 && elapsed > 0.0f) {
+                    score = score + 1;
+                } else {
+                    Save::set("status", "done");
+                }
+                Save::set("after", "yes");
+            }
+        })";
+    NX_EXPECT(importBlueprintScreen(source,doc,error));
+    NX_EXPECT(doc.name=="Example"&&doc.dirty()&&doc.graphs[0].nodes.size()>1&&doc.graphs[1].nodes.size()>1);
+    NX_EXPECT(compileBlueprint(doc,generated,error)&&generated.find("bp_var_score")!=std::string::npos&&generated.find("if (")!=std::string::npos);
+    NX_EXPECT(doc.serialize(saved,error));
+    for(const char* unsupported:{
+        "class Bad : Screen { void onEnter() { int local = 1; } }",
+        "class Bad : Screen { int score = 1; }",
+        "class Bad : Screen { void onEnter() { Save::set(\"a\", 5); } }",
+        "class Bad : Screen { void onEnter() { while(true) {} } }",
+        "#include \"global:scene.as\"\nclass Bad : Screen {}",
+        "class Bad : Screen { void onEnter() { Save::set(\"a\", \"\\q\"); } }",
+        "class Bad : Screen {} class Other {}"})
+    {
+        NX_EXPECT(!importBlueprintScreen(unsupported,doc,error)&&!error.empty());
+        std::string after;NX_EXPECT(doc.serialize(after,error)&&after==saved);
+    }
 }

@@ -34,6 +34,7 @@ namespace nx
         void clearWire(){m_pending=static_cast<size_t>(-1);m_pendingPin.clear();}
         bool saveNamed(Services& services,const std::string& name);
         bool openFile(Services& services,const std::string& file,bool managed);
+        bool importSource(Services& services,const std::string& file);
         void browseFiles(Services& services);
         void browseAssets(Services& services);
         void launchSceneEditor(Services& services);

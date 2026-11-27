@@ -3,6 +3,7 @@
 #include "blueprint_fixtures.h"
 #include "scene/world.h"
 #include "tools/blueprint/native_compile.h"
+#include "tools/blueprint/native_import.h"
 #ifdef NX_DESKTOP_BLUEPRINT
 #include "app/blueprint_workspace.h"
 #include "script/debugger.h"
@@ -1178,3 +1179,27 @@ NX_TEST(nativeWorkspaceWatchPausesAtBoundaryAndStepsWithoutRunningWhilePaused)
     NX_EXPECT(strcmp(r.save.get("watch_test","missing"),"missing")==0);
 }
 #endif
+
+NX_TEST(nativeImportedScreenAndOriginalProduceSameState)
+{
+    const std::string original=R"(class Original : Screen {
+        int score;
+        void onEnter() { score = 1; Save::set("start", "yes"); }
+        void update(float elapsed) {
+            if (score < 3 && elapsed > 0.0f) { score = score + 1; }
+            else { Save::set("result", "done"); }
+            Save::set("after", "yes");
+        }
+    })";
+    BlueprintDocument doc;std::string error,generated;
+    NX_EXPECT(importBlueprintScreen(original,doc,error)&&compileBlueprint(doc,generated,error));if(generated.empty())return;
+    for(const std::string* code:std::vector<const std::string*>{&original,&generated})
+    {
+        Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+        r.platform.files["showcase/imported/screen.json"]="{\"title\":\"Import\"}";
+        r.platform.files["showcase/imported/main.as"]=*code;
+        if(!r.screens.init(r.services,"showcase","imported")){NX_EXPECT(false);return;}
+        r.step(8);
+        NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("start",""),"yes")==0&&strcmp(r.save.get("result",""),"done")==0&&strcmp(r.save.get("after",""),"yes")==0);
+    }
+}
