@@ -774,6 +774,34 @@ namespace nx
             }
         }
         if(usesLevel)result+="#include \"global:scene.as\"\n\n";
+        // Typed bounded collections compile to ordinary AngelScript classes using
+        // the existing native array add-on. Only emit classes the project uses.
+        for(const std::string collection:{"Map","Set"})for(const std::string element:{"Int","String"})
+        {
+            const bool map=collection=="Map";
+            const std::string type="BP_"+collection+element,scalar=element=="Int"?"int":"string",key=map?"string":scalar;
+            bool used=false;
+            for(const auto& g:document.graphs)
+            {
+                for(const auto& f:g.fields)if(f.type==type)used=true;
+                for(const auto& f:g.globals)if(f.type==type)used=true;
+                for(const auto& n:g.nodes)if(n.kind=="var:get:"+type||n.kind=="global:get:"+type||n.kind.rfind("collection:"+type+":",0)==0)used=true;
+            }
+            if(!used)continue;
+            result+="class "+type+"\n{\n    private array<"+key+"> keys;\n";
+            if(map)result+="    private array<"+scalar+"> values;\n";
+            result+="    private int bp_find("+key+" key) { for (uint i = 0; i < keys.length(); ++i) if (keys[i] == key) return int(i); return -1; }\n";
+            result+="    uint bp_length() { return keys.length(); }\n    bool bp_contains("+key+" key) { return bp_find(key) >= 0; }\n";
+            result+="    void bp_clear() { keys.resize(0);"+std::string(map?" values.resize(0);":"")+" }\n";
+            result+="    bool bp_remove("+key+" key) { int at = bp_find(key); if (at < 0) return false; keys.removeAt(uint(at));"+std::string(map?" values.removeAt(uint(at));":"")+" return true; }\n";
+            if(map)
+            {
+                result+="    "+scalar+" bp_get(string key, "+scalar+" fallback) { int at = bp_find(key); if (at < 0) return fallback; return values[uint(at)]; }\n";
+                result+="    bool bp_set(string key, "+scalar+" value) { int at = bp_find(key); if (at >= 0) { values[uint(at)] = value; return true; } if (keys.length() >= 4096) return false; keys.insertLast(key); values.insertLast(value); return true; }\n";
+            }
+            else result+="    bool bp_add("+key+" key) { if (bp_find(key) >= 0 || keys.length() >= 4096) return false; keys.insertLast(key); return true; }\n";
+            result+="}\n";
+        }
         for(const auto& f:document.moduleGlobals(owner))
         {
             result+=f.type+" bp_global_"+f.name;

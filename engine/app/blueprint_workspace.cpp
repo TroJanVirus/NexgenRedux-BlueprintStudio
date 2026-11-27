@@ -35,7 +35,7 @@ namespace nx
         constexpr size_t kRows = 8;
         constexpr float kVariableTop=350,kVariableBottom=443;
         constexpr size_t kVariableRows=3;
-        constexpr const char* variableTypes[]={"bool","int","uint","float","double","string","Playlist@","WebSocket@","Widget@","array<int>","array<uint>","array<float>","array<bool>","array<string>","array<Vec2>","array<Color>"};
+        constexpr const char* variableTypes[]={"bool","int","uint","float","double","string","Playlist@","WebSocket@","Widget@","array<int>","array<uint>","array<float>","array<bool>","array<string>","array<Vec2>","array<Color>","BP_MapInt","BP_MapString","BP_SetInt","BP_SetString"};
         constexpr Color text = {0.88f, 0.91f, 0.96f, 1};
         constexpr Color muted = {0.57f, 0.65f, 0.76f, 1};
         constexpr Color accent = {0.27f, 0.65f, 0.98f, 1};
@@ -2612,7 +2612,7 @@ namespace nx
             {
                 if(m_variableTypes&&in(x,y,650,302,1100,302+8*28))
                 {
-                    const size_t i=static_cast<size_t>((y-302)/28)+(x>=875?8:0);
+                    const size_t i=static_cast<size_t>((y-302)/28)+8*static_cast<size_t>((x-650)/150);
                     if(i<sizeof(variableTypes)/sizeof(variableTypes[0])){m_variableType=variableTypes[i];if(!blueprintLiteralType(m_variableType)){m_variableInitialized=false;m_variableValue.clear();}}
                     m_variableTypes=false;
                 }
@@ -3428,7 +3428,7 @@ namespace nx
                         selected&&selectedField->explicitField&&!selectedField->inheritedExposure&&blueprintLiteralType(selectedField->field.type));
                 }
                 if(m_variableTypes)for(size_t i=0;i<sizeof(variableTypes)/sizeof(variableTypes[0]);++i)
-                {const float yy=302+28*static_cast<float>(i%8),xx=650+225*static_cast<float>(i/8);c.rect(xx,yy,225,28,{0.24f,0.35f,0.48f,1});c.text(*m_font,variableTypes[i],xx+10,yy+3,text);}
+                {const float yy=302+28*static_cast<float>(i%8),xx=650+150*static_cast<float>(i/8);c.rect(xx,yy,150,28,{0.24f,0.35f,0.48f,1});c.text(*m_font,variableTypes[i],xx+10,yy+3,text);}
                 c.clip(170,576,940,25);c.text(*m_font,m_status.c_str(),170,576,text);c.noClip();
                 c.text(*m_font,"Enter applies | Escape closes",640,601,muted,Align::Center);
             }

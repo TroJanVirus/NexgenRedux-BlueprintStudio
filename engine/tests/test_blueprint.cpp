@@ -2825,3 +2825,30 @@ NX_TEST(nativeDispatcherBindingAndActorCastExecution)
     NX_EXPECT(strcmp(r.save.get("dispatcher","missing"),"bound")==0);
     NX_EXPECT(strcmp(r.save.get("cast","missing"),"yes")==0&&strcmp(r.save.get("null_cast","missing"),"yes")==0);
 }
+
+NX_TEST(nativeTypedMapAndSetExecution)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    BlueprintDocument doc;doc.create();std::string error,source;
+    bool ok=doc.editVariableDeclaration("Screen","field scores:BP_MapInt",error)&&doc.editVariableDeclaration("Screen","field names:BP_SetString",error);
+    auto add=[&](const char* kind){const auto n=doc.graphs[0].nodes.size();ok=ok&&doc.addNode(0,kind,0,0,error);return n;};
+    auto wire=[&](size_t from,const char* output,size_t to,const char* input){ok=ok&&doc.connect(0,from,output,to,input,error);};
+    auto input=[&](size_t n,const char* pin,const char* value){ok=ok&&doc.setInputValue(0,n,pin,value,error);};
+    const auto map=add("var:get:BP_MapInt"),set=add("var:get:BP_SetString");
+    ok=ok&&doc.setReference(0,map,"scores",error)&&doc.setReference(0,set,"names",error);
+    const auto put=add("collection:BP_MapInt:set");wire(0,"then",put,"in");wire(map,"value",put,"target");input(put,"key","player");input(put,"value","7");
+    const auto replace=add("collection:BP_MapInt:set");wire(put,"then",replace,"in");wire(map,"value",replace,"target");input(replace,"key","player");input(replace,"value","42");
+    const auto insert=add("collection:BP_SetString:add");wire(replace,"then",insert,"in");wire(set,"value",insert,"target");input(insert,"key","Alice");
+    const auto duplicate=add("collection:BP_SetString:add");wire(insert,"then",duplicate,"in");wire(set,"value",duplicate,"target");input(duplicate,"key","Alice");
+    const auto get=add("collection:BP_MapInt:get");wire(map,"value",get,"target");input(get,"key","player");input(get,"value","0");
+    const auto eq=add("equal:int");wire(get,"result",eq,"a");input(eq,"b","42");
+    const auto length=add("collection:BP_SetString:length");wire(set,"value",length,"target");
+    const auto count=add("equal:uint");wire(length,"result",count,"a");input(count,"b","1");
+    const auto both=add("and:bool");wire(eq,"result",both,"a");wire(count,"result",both,"b");
+    const auto branch=add("branch");wire(duplicate,"then",branch,"in");wire(both,"result",branch,"condition");
+    const auto save=add("api:Save:Save::set:string,string");wire(branch,"true",save,"in");input(save,"key","collections");input(save,"value","yes");
+    if(!ok||!compileBlueprint(doc,source,error)){NX_ERROR("Typed collections: %s",error.c_str());NX_EXPECT(false);return;}
+    r.platform.files["project/main/screen.json"]="{\"title\":\"Collections\"}";r.platform.files["project/main/main.as"]=source;
+    if(!r.screens.init(r.services,"project","main")){NX_EXPECT(false);return;}
+    r.step(3);NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("collections","missing"),"yes")==0);
+}

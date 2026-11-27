@@ -9,7 +9,7 @@
 using namespace nx;
 NX_TEST(nativeCatalogueContainsReferenceAPI)
 {
-    NX_EXPECT(blueprintCatalogue().size()==1203);
+    NX_EXPECT(blueprintCatalogue().size()==1233);
     const auto* save=blueprintSpec("api:Save:Save::set:string,string");
     NX_EXPECT(save&&save->inputs.size()==3&&save->outputs.size()==1);
     if(save&&save->inputs.size()==3)NX_EXPECT(save->inputs[0].type=="exec"&&save->inputs[2].type=="string");
@@ -1789,4 +1789,16 @@ NX_TEST(nativeCustomEventDispatcherPinsAndClassCastRoundTrip)
     NX_EXPECT(compileBlueprint(copy,source,error));
     NX_EXPECT(source.find("if (bp_bound_OnScore) bp_fn_OnScore")!=std::string::npos&&source.find("cast<BP_Behaviour_Target>")!=std::string::npos);
     NX_EXPECT(!copy.editFunctionSignature(g,"int(amount:int)",error));
+}
+
+NX_TEST(nativeTypedCollectionsRoundTrip)
+{
+    BlueprintDocument doc;doc.create();std::string error,source,bytes;
+    NX_EXPECT(doc.editVariableDeclaration("Screen","field scores:BP_MapInt",error));
+    NX_EXPECT(doc.addNode(0,"var:get:BP_MapInt",0,0,error)&&doc.setReference(0,1,"scores",error));
+    NX_EXPECT(doc.addNode(0,"collection:BP_MapInt:set",0,0,error)&&doc.connect(0,0,"then",2,"in",error)&&doc.connect(0,1,"value",2,"target",error));
+    NX_EXPECT(doc.setInputValue(0,2,"key","player",error)&&doc.setInputValue(0,2,"value","42",error));
+    NX_EXPECT(doc.serialize(bytes,error));BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error));
+    NX_EXPECT(compileBlueprint(copy,source,error));
+    NX_EXPECT(source.find("class BP_MapInt")!=std::string::npos&&source.find("bp_var_scores")!=std::string::npos);
 }

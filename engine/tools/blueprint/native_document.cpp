@@ -291,7 +291,7 @@ namespace nx
         const auto element=type.substr(6,type.size()-7);
         return element=="int"||element=="uint"||element=="float"||element=="bool"||element=="string"||element=="Vec2"||element=="Color"?element:"";
     }
-    bool blueprintVariableType(const std::string& type){return blueprintLiteralType(type)||!blueprintArrayElement(type).empty()||type=="Playlist@"||type=="WebSocket@"||type=="Widget@";}
+    bool blueprintVariableType(const std::string& type){return blueprintLiteralType(type)||!blueprintArrayElement(type).empty()||type=="Playlist@"||type=="WebSocket@"||type=="Widget@"||type=="BP_MapInt"||type=="BP_MapString"||type=="BP_SetInt"||type=="BP_SetString";}
     bool blueprintLosslessConversion(const std::string& from,const std::string& to)
     {return arrayBorrow(from,to)||(to=="double"&&(from=="int"||from=="uint"||from=="float"));}
     bool blueprintInvokesFunction(const std::string& kind)
@@ -392,6 +392,32 @@ namespace nx
                     if(op=="resize")spec.inputs.push_back({"size","uint"});
                     if(pure){spec.result=op=="length"?"uint":element;spec.outputs.push_back({"result",spec.result});}
                     else {spec.result="void";spec.outputs.push_back({"then","exec"});}
+                    result.push_back(std::move(spec));
+                }
+            }
+            for(const std::string collection:{"Map","Set"})for(const std::string element:{"Int","String"})
+            {
+                const bool map=collection=="Map";
+                const std::string type="BP_"+collection+element,scalar=element=="Int"?"int":"string";
+                const std::string label=map?"Map (string -> "+scalar+")":"Set ("+scalar+")";
+                for(const std::string scope:{"var","global"})
+                {
+                    BlueprintNodeSpec getter;getter.id=scope+":get:"+type;getter.title="Get "+label+(scope=="global"?" global":" field");getter.category="Collections";
+                    getter.outputs={{"value",type}};getter.pure=true;getter.result=type;result.push_back(std::move(getter));
+                }
+                std::vector<std::string> operations={"length","contains","remove","clear",map?"set":"add"};
+                if(map)operations.push_back("get");
+                for(const auto& op:operations)
+                {
+                    BlueprintNodeSpec spec;spec.id="collection:"+type+":"+op;spec.title=label+" "+op;spec.category="Collections";
+                    spec.pure=op=="length"||op=="contains"||op=="get";spec.member=true;spec.call="bp_"+op;
+                    spec.result=op=="length"?"uint":op=="get"?scalar:op=="clear"?"void":"bool";
+                    if(!spec.pure)spec.inputs.push_back({"in","exec"});
+                    spec.inputs.push_back({"target",type});
+                    if(op!="length"&&op!="clear"){spec.inputs.push_back({"key",map?"string":scalar});spec.arguments.push_back({"in","key"});}
+                    if(op=="set"||op=="get"){spec.inputs.push_back({"value",scalar});spec.arguments.push_back({"in","value"});}
+                    if(!spec.pure)spec.outputs.push_back({"then","exec"});
+                    if(spec.result!="void")spec.outputs.push_back({"result",spec.result});
                     result.push_back(std::move(spec));
                 }
             }
