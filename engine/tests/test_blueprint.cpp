@@ -2703,12 +2703,14 @@ NX_TEST(nativeActorClassOverridesAndConstructionExecuteBeforeStart)
         doc.ensureActorBehaviour(child,derived,error)&&doc.ensureActorBehaviour(base,parent,error)&&
         doc.editVariableDeclaration(parent,"field health:int=100",error)&&doc.setActorFieldExposed(parent,"health",true,error)&&
         doc.editVariableDeclaration(derived,"field health:int=75",error)&&
-        doc.addFunction("Construction",error,parent)&&doc.addFunction("Record",error,parent)&&doc.addFunction("Record",error,derived);
+        doc.addFunction("Construction",error,parent)&&doc.addFunction("Record",error,parent)&&doc.addFunction("Record",error,derived)&&doc.addFunction("Construction",error,derived);
     if(!ok){NX_ERROR("Actor inheritance: %s",error.c_str());NX_EXPECT(false);return;}
     auto graph=[&](const std::string& owner,const char* label)
     {for(size_t i=0;i<doc.graphs.size();++i)if(doc.graphs[i].owner==owner&&doc.graphs[i].name==label)return i;return doc.graphs.size();};
     const auto setup=graph(parent,"Construction");
     ok=ok&&doc.addNode(setup,"call:function",0,0,error,"Record")&&doc.connect(setup,0,"then",1,"in",error);
+    const auto childSetup=graph(derived,"Construction");
+    ok=ok&&doc.addNode(childSetup,"call:parent",0,0,error)&&doc.connect(childSetup,0,"then",1,"in",error);
     for(const auto& owner:std::vector<std::string>{parent,derived})
     {
         const auto g=graph(owner,"Record");

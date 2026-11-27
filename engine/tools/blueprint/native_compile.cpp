@@ -319,9 +319,9 @@ namespace nx
                         source+=pad+"    if ("+instance+" !is null)\n"+pad+"    {\n";
                         for(const auto& field:fields)
                         {
-                            const auto pin="spawn_"+field.name;
-                            if(!incoming(to,pin)&&std::none_of(n.values.begin(),n.values.end(),[&](const BlueprintDocument::InputValue& v){return v.pin==pin;}))continue;
-                            std::string expr;if(!value(to,pin,expr,0))return false;
+                            const auto spawnPin="spawn_"+field.name;
+                            if(!incoming(to,spawnPin)&&std::none_of(n.values.begin(),n.values.end(),[&](const BlueprintDocument::InputValue& v){return v.pin==spawnPin;}))continue;
+                            std::string expr;if(!value(to,spawnPin,expr,0))return false;
                             source+=pad+"        "+instance+".bp_var_"+field.name+" = "+expr+";\n";
                         }
                         if(construction)source+=pad+"        "+instance+".bp_fn_Construction();\n";
