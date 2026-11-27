@@ -136,12 +136,17 @@ namespace nx
                 {
                     if(id==eventArg&&!eventArg.empty())
                     {
-                        size_t n;if(!add(eventType=="float"?"event:delta":"event:canvas",n))return false;
+                        size_t n;if(!add(eventType=="float"?"event:delta":eventType=="Entity@"?"event:other":"event:canvas",n))return false;
                         v={eventType,"","value",n};return true;
                     }
                     const auto local=locals.find(id);if(local!=locals.end()){v=local->second;return true;}
                     const auto& g=doc.graphs[graph];
                     for(const auto& p:g.parameters)if(p.name==id){v={p.type,"","arg_"+p.name,0};return true;}
+                }
+                if(!inFreeFunction&&doc.graphs[graph].owner.rfind("behaviour:",0)==0&&id=="entity")
+                {
+                    size_t n;if(!add("event:entity",n))return false;
+                    v={"Entity@","","value",n};return true;
                 }
                 const auto found=fields.find(id);
                 if(found==fields.end())return fail("Unknown field or unsupported expression: "+id+".");
@@ -305,10 +310,10 @@ namespace nx
             }
             bool functionCall(const std::string& id,const std::vector<Value>& args,Flow& flow,Value& result,bool instanceOnly=false)
             {
-                const bool standalone=freeFunctions.count(id)!=0;
+                const bool standalone=doc.graphs[graph].owner=="Screen"&&freeFunctions.count(id)!=0;
                 if((inFreeFunction&&!standalone)||(instanceOnly&&(inFreeFunction||standalone)))
                     return fail("Function call crosses unsupported standalone/instance scope: "+id+".");
-                const auto* fn=doc.function("Screen",id);
+                const auto* fn=doc.function(doc.graphs[graph].owner,id);
                 if(!fn||args.size()!=fn->parameters.size())return fail("Unsupported function arguments: "+id+".");
                 size_t n;if(!add("call:function",n,id))return false;
                 for(size_t i=0;i<args.size();++i)if(!bind(n,"arg_"+fn->parameters[i].name,args[i]))return false;
@@ -318,7 +323,7 @@ namespace nx
             {
                 size_t methodAt=at;
                 if(is("this")&&at+3<tokens.size()&&tokens[at+1].text==".")methodAt=at+2;
-                if(tokens[methodAt].kind==Kind::Name&&methodAt+1<tokens.size()&&tokens[methodAt+1].text=="("&&doc.function("Screen",tokens[methodAt].text))
+                if(tokens[methodAt].kind==Kind::Name&&methodAt+1<tokens.size()&&tokens[methodAt+1].text=="("&&doc.function(doc.graphs[graph].owner,tokens[methodAt].text))
                 {
                     const bool instanceOnly=methodAt!=at;
                     const auto id=tokens[methodAt].text;at=methodAt+1;
@@ -528,7 +533,7 @@ namespace nx
                 if(handleAssignment)return fail("Expected explicit handle reassignment.");
                 std::vector<Value> args;Value unused;
                 if(!arguments(args)||!expect(";"))return false;
-                if(!member&&doc.function("Screen",id))
+                if(!member&&doc.function(doc.graphs[graph].owner,id))
                 {if(!functionCall(id,args,flow,unused,instanceOnly))return false;}
                 else
                 {
@@ -543,17 +548,21 @@ namespace nx
                 // Register all declarations before converting any body, including forward calls.
                 struct Method {size_t graph,body,end;std::string arg,type;bool standalone;};
                 std::vector<Method> bodies;
-                auto declaration=[&](bool standalone)
+                std::unordered_map<std::string,std::unordered_map<std::string,std::string>> classFields;
+                std::unordered_set<std::string> classNames;
+                auto declaration=[&](bool standalone,const std::string& owner)
                 {
+                    auto& declaredFields=classFields[owner];
+                    const bool behaviour=owner.rfind("behaviour:",0)==0;
                     std::string type,id;if(!name(type)||!name(id))return false;
                     if(take(";"))
                     {
                         if(standalone)return fail("Global variables are not supported.");
-                        if(!blueprintLiteralType(type)||!fields.emplace(id,type).second)return fail("Only unique, uninitialized primitive instance fields are supported.");
+                        if(!blueprintLiteralType(type)||(behaviour&&id=="entity")||!declaredFields.emplace(id,type).second)return fail("Only unique, uninitialized primitive instance fields are supported.");
                         return true;
                     }
-                    if(!methods.insert(id).second)return fail("Overloaded or duplicate method "+id+".");
-                    const auto found=std::find_if(doc.graphs.begin(),doc.graphs.end(),[&](const BlueprintDocument::Graph& g){return g.name==id;});
+                    if(!methods.insert(owner+"/"+id).second)return fail("Overloaded or duplicate method "+id+".");
+                    const auto found=std::find_if(doc.graphs.begin(),doc.graphs.end(),[&](const BlueprintDocument::Graph& g){return g.owner==owner&&g.name==id;});
                     const bool event=found!=doc.graphs.end();
                     if(standalone&&event)return fail("Standalone functions cannot use a lifecycle event name.");
                     if(standalone)freeFunctions.insert(id);
@@ -569,6 +578,11 @@ namespace nx
                             if(id=="draw"&&!expect("@"))return false;
                             if(!name(arg))return false;
                             argType=id=="update"?"float":"Canvas@";
+                        }
+                        else if(behaviour&&(id=="onHit"||id=="onLeave"))
+                        {
+                            if(!expect("Entity")||!expect("@")||!name(arg)||arg=="entity")return fail("Expected collision partner Entity@ parameter.");
+                            argType="Entity@";
                         }
                     }
                     else
@@ -590,7 +604,7 @@ namespace nx
                                 parameters.push_back(std::move(p));
                             }while(take(","));
                         }
-                        if(!doc.addFunction(id,error))return false;
+                        if(!doc.addFunction(id,error,owner))return false;
                         auto& g=doc.graphs[methodGraph];g.parameters=std::move(parameters);g.returnType=type;
                     }
                     if(!expect(")")||!is("{"))return fail("Expected method body.");
@@ -610,27 +624,36 @@ namespace nx
                 {
                     if(take("class"))
                     {
-                        if(sawScreen)return fail("Additional classes are not supported.");
-                        std::string className;
-                        if(!name(className)||!expect(":")||!expect("Screen")||!expect("{"))return false;
-                        doc.name=className;sawScreen=true;
-                        while(!take("}"))if(!declaration(false))return false;
+                        std::string className,base;
+                        if(!name(className)||!expect(":")||!name(base)||!expect("{"))return false;
+                        if(!classNames.insert(className).second)return fail("Duplicate class name.");
+                        std::string owner;
+                        if(base=="Screen")
+                        {
+                            if(sawScreen)return fail("Only one Screen class is supported.");
+                            owner="Screen";doc.name=className;sawScreen=true;
+                        }
+                        else if(base=="Behaviour")
+                        {
+                            if(!doc.addBehaviour(className,error))return false;
+                            owner="behaviour:"+className;
+                        }
+                        else return fail("Only Screen and Behaviour classes are supported.");
+                        while(!take("}"))if(!declaration(false,owner))return false;
                         take(";");
                     }
-                    else if(!declaration(true))return false;
+                    else if(!declaration(true,"Screen"))return false;
                 }
                 if(!sawScreen)return fail("Expected one Screen class.");
-                for(const auto& id:freeFunctions)if(fields.count(id))return fail("Standalone function and Screen field have the same name: "+id+".");
+                for(const auto& id:freeFunctions)if(classFields["Screen"].count(id))return fail("Standalone function and Screen field have the same name: "+id+".");
                 for(const auto& method:bodies)
                 {
                     graph=method.graph;at=method.body;eventArg=method.arg;eventType=method.type;locals.clear();
                     inFreeFunction=method.standalone;
                     // A standalone function has no implicit instance state. Lower it to an
                     // owner-local function graph only when its entire body is convertible.
-                    std::unordered_map<std::string,std::string> instanceFields;
-                    if(inFreeFunction)fields.swap(instanceFields);
+                    fields=inFreeFunction?std::unordered_map<std::string,std::string>{}:classFields[doc.graphs[graph].owner];
                     const bool ok=block({},0)&&at==method.end;
-                    if(inFreeFunction)fields.swap(instanceFields);
                     if(!ok)return fail("Method body could not be converted completely.");
                 }
                 return true;

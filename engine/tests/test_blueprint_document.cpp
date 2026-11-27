@@ -788,3 +788,25 @@ NX_TEST(nativeImportStandaloneFunctionsRetainScopeAndForwardCalls)
         std::string after;NX_EXPECT(doc.serialize(after,error)&&after==saved);
     }
 }
+
+NX_TEST(nativeImportBehaviourClassesKeepIndependentOwnerScopes)
+{
+    BlueprintDocument doc;std::string error,source,saved;
+    const char* code=R"(class Counter : Behaviour {
+        int count;
+        void start(){count=1;Record();}
+        void Record(){if(count==1){Save::set(entity.name,"started");}}
+        void onHit(Entity@ partner){Save::set(partner.name,entity.name);}
+    }
+    class Example : Screen {int count;void Record(){count=2;}void onEnter(){Record();}})";
+    NX_EXPECT(importBlueprintScreen(code,doc,error)&&compileBlueprint(doc,source,error));
+    NX_EXPECT(doc.behaviours()==std::vector<std::string>{"Counter"});
+    NX_EXPECT(doc.function("behaviour:Counter","Record")&&doc.function("Screen","Record"));
+    NX_EXPECT(source.find("class BP_Behaviour_Counter : Behaviour")!=std::string::npos&&source.find("(other).name")!=std::string::npos);
+    NX_EXPECT(doc.serialize(saved,error));
+    for(const char* invalid:{"class A : Behaviour {} class B : Screen {} class A : Behaviour {}", "class A : Behaviour {int entity;} class B : Screen {}", "class A : Behaviour {void start(){Record();}} class B : Screen {void Record(){}}", "class A : Behaviour {void onHit(int other){}} class B : Screen {}"})
+    {
+        NX_EXPECT(!importBlueprintScreen(invalid,doc,error));
+        std::string after;NX_EXPECT(doc.serialize(after,error)&&after==saved);
+    }
+}

@@ -345,7 +345,9 @@ namespace nx
             {m_status=owner+": "+error;return false;}
             if(candidate.graphs.size()+screen.graphs.size()>64)
             {m_status="Project exceeds 64 graph limit.";return false;}
-            for(auto& graph:screen.graphs){graph.owner=owner;candidate.graphs.push_back(std::move(graph));}
+            if(owners.size()>1&&!screen.behaviours().empty())
+            {m_status=owner+": Behaviour imports currently require a single-screen project.";return false;}
+            for(auto& graph:screen.graphs){if(graph.owner=="Screen")graph.owner=owner;candidate.graphs.push_back(std::move(graph));}
             const auto manifestPath=base+"/"+owner+"/screen.json";
             if(s.platform->fileTime(manifestPath.c_str()))
             {

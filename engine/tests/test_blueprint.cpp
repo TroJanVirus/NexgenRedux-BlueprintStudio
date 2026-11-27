@@ -1892,3 +1892,28 @@ NX_TEST(nativeWorkspaceImportsNativeExportScreensAndTheirAssets)
     }
 }
 #endif
+
+NX_TEST(nativeImportedBehaviourExecutesInOriginalWorld)
+{
+    BlueprintDocument doc;std::string error,source;
+    const char* code=R"(class Counter : Behaviour {
+        int count;
+        void start(){count=1;Record();}
+        void Record(){if(count==1){Save::set(entity.name,"started");}}
+        void onHit(Entity@ partner){Save::set(partner.name,entity.name);}
+    }
+    class Example : Screen {})";
+    if(!importBlueprintScreen(code,doc,error)||!compileBlueprint(doc,source,error)){NX_EXPECT(false);return;}
+    source+=R"(void setup(){
+        Entity@ a=Scene::spawn(Vec2(0,0)); a.name="imported"; a.circle(10,1,1 << 2); a.add(BP_Behaviour_Counter());
+        Entity@ b=Scene::spawn(Vec2(0,0)); b.name="partner"; b.circle(10,2,0);
+    })";
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    World world(r.assets,r.host,"blueprint",64,32);world.space().init(&r.solids,&r.audio);r.services.world=&world;
+    if(!compile(r.host,source.c_str())){NX_EXPECT(false);r.services.world=nullptr;return;}
+    NX_EXPECT(r.host.call(r.host.find("blueprint","void setup()")));
+    NX_EXPECT(world.update(1.0f/60));NX_EXPECT(world.update(1.0f/60));
+    NX_EXPECT(strcmp(r.save.get("imported","missing"),"started")==0);
+    NX_EXPECT(strcmp(r.save.get("partner","missing"),"imported")==0);
+    r.services.world=nullptr;
+}
