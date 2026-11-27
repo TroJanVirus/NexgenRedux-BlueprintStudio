@@ -121,6 +121,26 @@ Run `nexgen --screen blueprint_arcade`. Add `--dev` to use Nexgen's script reloa
 
 Most scripts work with the existing engine. Interface messages use the new `Entity.behaviourAt(uint)` binding; rebuild Nexgen from this branch before running them.
 
+### Cook a release package
+
+Use the original [Nexgen Cook](../cook-ui/README.md) command to prepare images and sounds for desktop or original Xbox. Start the local bridge with the `cook` executable from a Nexgen Cook release (not the `nexgen-cook` window):
+
+```sh
+node debug_bridge.js --cook /path/to/cook
+```
+
+Open the bridge address, choose **File > Package**, then choose a cooked desktop or original Xbox release. This compiles the graphs, stages a snapshot of the media in a private temporary folder and invokes the existing native Cook tool. The download contains cooked media, normal scripts, metadata and the unchanged editable Blueprint sources. A failed conversion does not produce a package. Original source assets, existing game installations and the open project are never changed. Normal release/debug exports still work without Cook. You can combine `--cook` and `--preview-engine` when starting the bridge.
+
+Models are copied unchanged in this integration: the native model importer can follow external file references, so use the existing Nexgen Cook window or command separately for trusted models and their dependencies before importing them into Studio. No second image, sound or model converter is included. Output paths are preserved; the internal `.cooked` marker is not packaged. Output is limited to 128 MiB of cooked media, with a two-minute limit per run.
+
+For the same workflow without the browser:
+
+```sh
+node cli.js project Game.bp.project.json --out Game-xbox.zip --cook /path/to/cook --platform xboxog
+```
+
+Use `--platform desktop` for a desktop package. Cooked packages are release builds, not debug builds. Check the resulting game on the target hardware; cooking does not guarantee that its assets fit in console memory.
+
 ### Play test from Studio
 
 To avoid exporting files by hand each time, make a separate copy of a desktop Nexgen release for testing. Keep its `media/showcase` folder. Start the local bridge from the Blueprint tools directory:
@@ -245,3 +265,5 @@ Choose **File > Import Nexgen folder**. Select a single screen folder, `showcase
 The original files are never written to. The project retains screen metadata, assets, extra script files and selected `media/global` files under their original paths. The unconverted main script of each edited screen is kept in the package's `blueprints/` folder as an exact backup. Other files outside supported folders are listed as excluded. Limits are 128 screens and 64 MiB / 4096 files, including original source backups. Screen IDs must follow the existing Studio ID rules.
 
 The project window lists unconverted screens separately and lets you export their original files. They are packaged unchanged, not compiled, edited or traced by Studio. Converted screens still need native compilation and gameplay testing. Play test can start either converted or original screens. It stages original screens and imported global files at their native paths in the dedicated test copy, with isolated saves. Any existing screen or top-level global file or folder (even a case-only match) is refused before staging; Studio never merges into an existing folder. Use a clean test copy or install a package manually if paths conflict. Update scripts only replaces generated Blueprint main scripts; changes to original scripts, dependencies, metadata or assets require a restart. Stop removes newly staged files and folders. Native scene editing still requires a manual setup for projects with imported global files. A complete project with no convertible screen, arbitrary directory layouts, and conversion of multiple classes or include chains are not supported yet.
+
+To test the Cook integration with the actual native executable, set `NEXGEN_COOK` to its absolute path and run `node test_cook_package.js` and `python test_cook_browser.py`. The browser test can use `BLUEPRINT_FORWARD_HTTP=1` on a restricted host; that forwards the request through Python to the real local bridge.

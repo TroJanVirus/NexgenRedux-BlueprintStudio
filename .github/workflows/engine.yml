@@ -182,6 +182,7 @@ jobs:
         "$cook" --quiet --platform xboxog NexgenRedux-Media/media cooked
         "$cook" --quiet --platform xboxog NexgenRedux-Media/media cooked | grep "^0 cooked, 0 copied"
         echo "COOK=$cook" >> "$GITHUB_ENV"
+        NEXGEN_COOK="$PWD/$cook" node engine/tools/blueprint/test_cook_package.js
 
     - name: Package
       run: |

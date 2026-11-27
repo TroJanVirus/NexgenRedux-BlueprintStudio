@@ -1,5 +1,9 @@
 # Changes
 
+## Cook release packages
+
+- Use the original Nexgen Cook to prepare images and sounds for desktop or original Xbox when exporting a release. Keep source media and scripts untouched, preserve paths, and refuse failed or conflicting conversions. Models are copied unchanged; use the native tool separately for model dependencies. The same export is available in the command-line tool.
+
 ## Imported project play testing
 
 - Run original or converted screens from a mixed project in a clean desktop test copy. Stage imported global files at their native paths and refuse existing screen and global entries, including case-only matches. Keep original scripts outside live Blueprint reloads. Remove staged files on exit.
