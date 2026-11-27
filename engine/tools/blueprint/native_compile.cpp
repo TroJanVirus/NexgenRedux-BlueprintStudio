@@ -449,6 +449,31 @@ namespace nx
                     if(graph.returnType!="void"&&!value(to,"value",v,0))return false;
                     source+=pad+(v.empty()?"return;":"return "+v+";")+"\n";mark(start,to);return true;
                 }
+                if(n.kind=="flow:do-once"||n.kind=="flow:do-n"||n.kind=="flow:gate")
+                {
+                    const auto outer=available;
+                    if(n.kind=="flow:gate")
+                    {
+                        std::string open;if(!value(to,"open",open,0))return false;
+                        source+=pad+"if ("+open+")\\n";
+                    }
+                    else
+                    {
+                        if(graph.inlineMacro)return fail(to,"Stateful flow nodes belong in events or functions, not inline macros.");
+                        std::string reset,count="1";
+                        if(!value(to,"reset",reset,0)||(n.kind=="flow:do-n"&&!value(to,"count",count,0)))return false;
+                        const auto state="bp_flow_state_"+std::to_string(graphIndex)+"_"+std::to_string(to);
+                        source+=pad+"if ("+reset+") "+state+" = 0;\\n";
+                        source+=pad+"if ("+state+" < clamp("+count+", 0, 10000))\\n";
+                    }
+                    source+=pad+"{\\n";
+                    if(n.kind!="flow:gate")
+                        source+=pad+"    ++bp_flow_state_"+std::to_string(graphIndex)+"_"+std::to_string(to)+";\\n";
+                    mark(start,to);
+                    if(!flow(to,"body",indent+1,depth+1))return false;
+                    available=outer;source+=pad+"}\\n";
+                    return flow(to,"then",indent,depth+1);
+                }
                 if(n.kind=="sequence")
                 {
                     // First and second execute in order, in separate scopes.
@@ -614,8 +639,14 @@ namespace nx
         for(size_t gi=0;gi<document.graphs.size();++gi)
         {
             const auto& g=document.graphs[gi];if(g.owner!=classOwner)continue;
-            for(size_t ni=0;ni<g.nodes.size();++ni)if(g.nodes[ni].kind=="time:timeline"||g.nodes[ni].kind=="camera:orbit-timed")
-                result+="    float bp_timeline_state_"+std::to_string(gi)+"_"+std::to_string(ni)+" = 0;\n";
+            for(size_t ni=0;ni<g.nodes.size();++ni)
+            {
+                const auto& kind=g.nodes[ni].kind;
+                if(kind=="time:timeline"||kind=="camera:orbit-timed")
+                    result+="    float bp_timeline_state_"+std::to_string(gi)+"_"+std::to_string(ni)+" = 0;\n";
+                else if(kind=="flow:do-once"||kind=="flow:do-n")
+                    result+="    int bp_flow_state_"+std::to_string(gi)+"_"+std::to_string(ni)+" = 0;\n";
+            }
         }
         for(size_t graphIndex=0;graphIndex<document.graphs.size();++graphIndex)
         {

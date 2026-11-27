@@ -2552,3 +2552,23 @@ NX_TEST(nativeActorCameraSelectionIsInstanceScoped)
     world.destroyEntity(a);
     NX_EXPECT(!space.activateActorCamera(a,"Camera2"));
 }
+
+NX_TEST(nativeActorComponentLookupIsScopedAndRejectsAmbiguity)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    BlueprintDocument doc;doc.create();std::string id,error,source;
+    NX_EXPECT(doc.createVisualAsset("actor",id,error)&&doc.appendVisualActorComponent(id,0,"box","0,1,0",error));
+    NX_EXPECT(doc.appendVisualActorComponent(id,1,"sphere","0,2,0",error)&&doc.visualActorSource(id,source,error));
+    JsonTree tree;NX_EXPECT(tree.parse(source.data(),source.size()));
+    World world(r.assets,r.host,"blueprint",64,32);auto& space=world.space();space.init(&r.solids,&r.audio);
+    const u32 first=space.makeActor(tree.root(),"showcase/main",{0,0,0}),second=space.makeActor(tree.root(),"showcase/main",{10,0,0});
+    NX_EXPECT(first&&second);if(!first||!second)return;
+    const auto a=world.findComponent(first,"Component2"),b=world.findComponent(second,"Component2");
+    NX_EXPECT(a&&b&&a!=b&&world.parentOf(world.parentOf(a))==first&&world.parentOf(world.parentOf(b))==second);
+    NX_EXPECT(!world.findComponent(first,"Root")&&!world.findComponent(first,"Missing"));
+    const auto duplicate=space.makeActor(tree.root(),"showcase/main",{0,0,0});NX_EXPECT(duplicate);if(!duplicate)return;
+    world.setParent(duplicate,first);
+    NX_EXPECT(!world.findComponent(first,"Component2"));
+    world.destroyEntity(duplicate);
+    NX_EXPECT(world.findComponent(first,"Component2")==a);
+}

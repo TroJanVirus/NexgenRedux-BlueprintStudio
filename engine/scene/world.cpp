@@ -259,6 +259,24 @@ namespace nx
         return 0;
     }
 
+    u32 World::findComponent(u32 root,const char* name) const
+    {
+        if(!alive(root)||!name||!*name)return 0;
+        u32 result=0;
+        eachEntity([&](u32 id,const Entity& entity)
+        {
+            if(id==root||strcmp(entity.name,name)!=0)return;
+            for(u32 parent=parentOf(id);parent;parent=parentOf(parent))
+                if(parent==root)
+                {
+                    // Once ambiguous, never select a later candidate.
+                    if(result!=0)result=0xffffffffu;else result=id;
+                    break;
+                }
+        });
+        return result==0xffffffffu?0:result;
+    }
+
     void World::clearParticles()
     {
         for (auto& particles : m_particles)

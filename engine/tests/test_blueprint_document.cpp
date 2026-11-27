@@ -9,7 +9,7 @@
 using namespace nx;
 NX_TEST(nativeCatalogueContainsReferenceAPI)
 {
-    NX_EXPECT(blueprintCatalogue().size()==1120);
+    NX_EXPECT(blueprintCatalogue().size()==1125);
     const auto* save=blueprintSpec("api:Save:Save::set:string,string");
     NX_EXPECT(save&&save->inputs.size()==3&&save->outputs.size()==1);
     if(save&&save->inputs.size()==3)NX_EXPECT(save->inputs[0].type=="exec"&&save->inputs[2].type=="string");
@@ -1656,4 +1656,23 @@ NX_TEST(nativeDerivedComponentsKeepIdentityWhenParentAddsComponents)
     NX_EXPECT(tree.root()["entities"][3u]["mass"].number()==11);
     NX_EXPECT(copy.undo()&&copy.visualActorSource(grand,actual,error)&&actual==source);
     NX_EXPECT(copy.placeVisualActor("Screen",grand,"0,0,0",error)&&compileBlueprint(copy,actual,error));
+}
+
+NX_TEST(nativeComponentReferenceAndFlowControlsCompile)
+{
+    BlueprintDocument doc;doc.create();std::string id,error,source,bytes;
+    NX_EXPECT(doc.createVisualAsset("actor",id,error)&&doc.appendVisualActorComponent(id,0,"box","0,1,0",error));
+    NX_EXPECT(doc.placeVisualActor("Screen",id,"0,0,0",error));
+    NX_EXPECT(doc.addNode(0,"actor:component",400,160,error));
+    NX_EXPECT(doc.connect(0,1,"result",2,"actor",error)&&doc.setInputValue(0,2,"component","Component1",error));
+    NX_EXPECT(doc.addNode(0,"actor:valid",600,160,error)&&doc.connect(0,2,"result",3,"entity",error));
+    NX_EXPECT(doc.addConnectedNode(0,1,"then","flow:gate",800,60,error)&&doc.connect(0,3,"result",4,"open",error));
+    NX_EXPECT(doc.addConnectedNode(0,4,"body","flow:do-once",1000,60,error));
+    NX_EXPECT(doc.addConnectedNode(0,5,"body","flow:do-n",1200,60,error));
+    NX_EXPECT(doc.setInputValue(0,6,"count","3",error));
+    NX_EXPECT(compileBlueprint(doc,source,error));
+    NX_EXPECT(source.find("Space::actorComponent(")!=std::string::npos&&source.find("Space::validEntity(")!=std::string::npos);
+    NX_EXPECT(source.find("int bp_flow_state_0_5 = 0;")!=std::string::npos&&source.find("++bp_flow_state_0_6;")!=std::string::npos);
+    NX_EXPECT(doc.serialize(bytes,error));BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error));
+    std::string again;NX_EXPECT(compileBlueprint(copy,again,error)&&again==source);
 }

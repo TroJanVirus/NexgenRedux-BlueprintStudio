@@ -203,6 +203,8 @@ namespace nx
         u32 count() const { return m_live; }
         u32 countGroup(u32 group) const;
         u32 findNamed(const char* name) const;
+        // Search within one live hierarchy; absent or ambiguous names return 0.
+        u32 findComponent(u32 root,const char* name) const;
         // Everything but what was loaded.
         void clear();
 
