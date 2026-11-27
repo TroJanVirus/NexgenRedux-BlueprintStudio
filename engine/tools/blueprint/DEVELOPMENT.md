@@ -4,6 +4,19 @@ Blueprint Studio supplements Nexgen Redux. The aim is to make game logic easier 
 
 Before starting a feature, read the [engine guide](../../../docs/Guide.md), [script reference](../../../docs/ScriptReference.md) and the relevant original tool. If Nexgen already does the job, use its API, file format or tool. Put visual controls in Studio only where they make that workflow easier. Do not add a second runtime for graphics, physics, animation, networking, audio, assets or UI. Keep changes to the native engine small and explain why they are needed.
 
+## Keep up with upstream
+
+At the start of every Blueprint Studio development request, even a short "continue", check the current `main` of [Team Resurgent's Nexgen Redux](https://github.com/Team-Resurgent/NexgenRedux), the fork's `main`, and the latest Blueprint review branch. Do this before changing any code.
+
+- Keep the fork's `main` a clean upstream mirror. Fast-forward it only when GitHub confirms the old head is an ancestor of upstream. Never force-push it or mix Blueprint changes into it.
+- If upstream has changed, inspect its commits, API changes, build files and pinned submodule revisions. Keep the media and documentation submodules at the revisions chosen by upstream, not their independent latest branches.
+- Integrate upstream into a separate review branch from the current Blueprint head, preserving both histories and all existing Blueprint work. Resolve conflicts against the real source; do not blindly take one side.
+- Refresh the native node catalogue and integrations when upstream APIs change. Check generated scripts, old project files, native tools and platform build compatibility.
+- Run the compiler, JavaScript, browser and native tests where available. Do not publish an unverified integration as a working build; explain any failed or unavailable tests and retain the previous working review branch.
+- Report the upstream and Blueprint revisions and whether an update was necessary. If they are already aligned, avoid unnecessary merge commits or builds.
+
+Do not push changes to Team Resurgent's repository. If a safe merge cannot be completed with the available tools, keep the current working branch intact and report the blocker instead of overwriting source.
+
 ## What Studio adds
 
 | Area | Use from Nexgen | What Studio adds |
