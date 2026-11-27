@@ -19,9 +19,9 @@ function put(P,p,namespace,files,replace=false){
  if(!replace&&m.assets.some(a=>keys.has(a.path.toLowerCase())))throw Error('A shared file already exists at that path.');
  // Preserve exact case on replacement so existing paths keep working on case-sensitive systems.
  const old=new Map(m.assets.map(a=>[a.path.toLowerCase(),a.path]));
- const next={...p,sharedMedia:{...m,assets:[...m.assets.filter(a=>!keys.has(a.path.toLowerCase())),...files.map(a=>({path:old.get(a.path.toLowerCase())||a.path,data:a.data}))]}};stats(P,next);return next;
+ const next={...p,sharedMedia:{...m,assets:[...m.assets.filter(a=>!keys.has(a.path.toLowerCase())),...files.map(a=>({path:old.get(a.path.toLowerCase())||a.path,data:a.data}))]}};stats(P,next);if(P.assetStats)P.assetStats(next);return next;
 }
-function remove(P,p,path){if(!p.sharedMedia?.assets.some(a=>a.path===path))throw Error('Shared file not found.');const next={...p,sharedMedia:{...p.sharedMedia,assets:p.sharedMedia.assets.filter(a=>a.path!==path)}};stats(P,next);return next;}
+function remove(P,p,path){if(!p.sharedMedia?.assets.some(a=>a.path===path))throw Error('Shared file not found.');const next={...p,sharedMedia:{...p.sharedMedia,assets:p.sharedMedia.assets.filter(a=>a.path!==path)}};stats(P,next);if(P.assetStats)P.assetStats(next);return next;}
 // Only report references we can identify without evaluating script code.
 function references(p,name){const hits=new Set();function contains(v){if(v===name)return true;if(Array.isArray(v))return v.some(contains);return !!v&&typeof v==='object'&&Object.values(v).some(contains);}
  for(const s of p.screens){if(contains(s.blueprint))hits.add(s.title);for(const a of s.assets||[]){if(!a.path.endsWith('.json')||a.data.length>2*1024*1024)continue;try{const bytes=typeof Buffer!=='undefined'?Buffer.from(a.data,'base64'):Uint8Array.from(atob(a.data),c=>c.charCodeAt(0));if(contains(JSON.parse(new TextDecoder().decode(bytes))))hits.add(s.title+' / '+a.path);}catch{}}}for(const b of p.sharedBehaviours||[])if(contains(b))hits.add(b.name);return [...hits];}

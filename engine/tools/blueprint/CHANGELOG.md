@@ -1,5 +1,9 @@
 # Changes
 
+## Import existing project folders
+
+- Review each existing screen before converting it. Keep unchecked or unsupported screens as original files. Preserve metadata, assets, extra scripts and global paths, with exact original main-script backups. Refuse automatic test staging when it could overwrite installed files.
+
 ## Mixed scripts and graphs
 
 - Optionally retain unsupported function bodies when importing a supported class. Call handwritten methods from graph nodes, edit their bodies, and keep the original source. Protect imported names and signatures while handwritten functions remain. Use Nexgen to check the resulting script.

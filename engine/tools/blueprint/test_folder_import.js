@@ -1,0 +1,16 @@
+'use strict';
+const assert=require('node:assert/strict'),P=require('./project'),F=require('./folder_import');
+const file=(path,data)=>({path,data:Buffer.from(data).toString('base64')});
+const main='class Demo : Screen { void onEnter() { Save::set("x", "yes"); } }\r\n';
+const raw='#include "global:helper.as"\nclass Complex : Screen { void onEnter() { helper(); } }\n';
+const meta='{"title":"Demo","category":"Old","order":3,"custom":true}\r\n';
+const files=[file('game/media/showcase/demo/main.as',main),file('game/media/showcase/demo/screen.json',meta),file('game/media/showcase/demo/asset/img.bin',Buffer.from([0,255,12])),file('game/media/showcase/demo/extra.as','// kept'),file('game/media/showcase/complex/main.as',raw),file('game/media/showcase/complex/screen.json','{"title":"Complex"}'),file('game/media/global/helper.as','void helper() {}'),file('game/README.md','not game content')];
+const review=F.read(P,files);assert.equal(review.screens.length,2);assert.ok(review.screens[0].candidate);assert.equal(review.screens[1].candidate,null);assert.equal(review.ignored.length,1);assert.equal(review.global.length,1);
+assert.throws(()=>F.build(P,review,[],'Game'),/Choose/);assert.throws(()=>F.build(P,review,['complex'],'Game'),/Cannot convert/);
+const p=F.build(P,review,['demo'],'Game');const round=JSON.parse(JSON.stringify(p));P.validateProject(round);const entries=P.projectEntries(round).entries;const get=path=>entries.find(e=>e.path===path).data;assert.equal(Buffer.from(get('media/showcase/demo/screen.json')).toString(),meta);assert.equal(Buffer.from(get('media/showcase/complex/main.as')).toString(),raw);assert.equal(Buffer.from(get('media/global/helper.as')).toString(),'void helper() {}');assert.equal(Buffer.from(get('blueprints/demo.original.as')).toString(),main);assert.deepEqual([...get('media/showcase/demo/asset/img.bin')],[0,255,12]);assert.equal(Buffer.from(get('media/showcase/demo/extra.as')).toString(),'// kept');assert.equal(new Set(entries.map(e=>e.path.toLowerCase())).size,entries.length);
+assert.throws(()=>P.validateProject({...p,nativeScreens:[{...p.nativeScreens[0],id:'demo'}]}),/Invalid imported screen/);
+assert.throws(()=>F.read(P,[...files,file('game/media/showcase/demo/../bad','x')]),/Unsafe/);
+assert.throws(()=>P.validateProject({...p,sharedMedia:{namespace:'demo',assets:[]},nativeGlobal:{assets:[file('blueprint_demo/foo','x')]}}),/conflict/);
+const single=F.read(P,[file('demo/main.as',main),file('demo/screen.json',meta)]);assert.equal(single.screens[0].id,'demo');
+const changed=JSON.parse(JSON.stringify(p));changed.screens[0].title='New';assert.equal(JSON.parse(P.projectEntries(changed).entries.find(e=>e.path==='media/showcase/demo/screen.json').data).custom,true);
+console.log('PASS folder import, opt-in conversion, original screen and global paths, binary assets, metadata, source backup and collision checks');
