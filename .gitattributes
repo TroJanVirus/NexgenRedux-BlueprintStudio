@@ -1,3 +1,3 @@
-# Blueprint compiler fixtures and generated sources are compared byte-for-byte.
-# Keep text in this tree canonical on Windows as well as Unix; leave binary assets untouched.
-engine/tools/blueprint/** text=auto eol=lf
+# Engine source, Blueprint tooling and generated native fixtures must agree byte-for-byte.
+# Canonical LF for engine text on every host; Git auto-detects and preserves binary files.
+engine/** text=auto eol=lf
