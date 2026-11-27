@@ -9,6 +9,8 @@
 #endif
 
 #include <math.h>
+#include <chrono>
+#include <thread>
 #include <stdlib.h>
 #include <string.h>
 
@@ -583,7 +585,7 @@ NX_TEST(nativeBlueprintWorkspaceAuthorsSavesAndRunsThroughMouseAndKeyboard)
         else studio.update(r.services);
         studio.checkpoint(r.services);
         r.device->beginFrame({});r.canvas.begin();
-        if(studio.previewing())r.screens.draw();else studio.draw(r.canvas);
+        if(studio.previewing()){r.screens.draw();studio.drawPreviewOverlay(r.canvas);}else studio.draw(r.canvas);
         r.canvas.end();r.device->endFrame();
     };
     auto click=[&](float x,float y)
@@ -616,6 +618,21 @@ NX_TEST(nativeBlueprintWorkspaceAuthorsSavesAndRunsThroughMouseAndKeyboard)
     click(1027,18);r.platform.dropped="test_scene.json";frame();
     const auto assetPath="own/"+doc.assetRoot+"/Screen/asset/test_scene.json";
     NX_EXPECT(r.platform.files.count(assetPath)&&r.platform.files[assetPath]=="{\"objects\":[]}");
+    // The real UI launches the installed editor session and requires confirmation before returning.
+    r.platform.files["showcase/editor/main.as"]="class Editor : Screen { void onEnter() { Assets::write(\"asset:scene.json\", \"{}\"); } }";
+    click(614,133);
+    NX_EXPECT(studio.previewing()&&r.services.sceneEditorAssets);
+    if(studio.previewing())
+    {
+        for(int i=0;i<4;++i)frame();
+        state.keys[static_cast<size_t>(Key::Escape)]=true;frame();
+        state.keys[static_cast<size_t>(Key::Escape)]=false;frame();
+        NX_EXPECT(studio.previewing());
+        state.keys[static_cast<size_t>(Key::Enter)]=true;frame();
+        state.keys[static_cast<size_t>(Key::Enter)]=false;frame();
+        NX_EXPECT(!studio.previewing()&&!r.services.sceneEditorAssets);
+    }
+    NX_EXPECT(r.platform.files["own/"+doc.assetRoot+"/Screen/asset/scene.json"]=="{}");
     click(930,133);click(675,53);
     bool exported=false;
     for(const auto& item:r.platform.files)
@@ -951,5 +968,42 @@ NX_TEST(nativeSceneEditorSessionUsesInstalledScriptAndWritesOnlyProjectScenes)
     r.platform.files[base+"scenes.json"]="{\"scenes\":[{\"name\":\"bad\",\"file\":\"../other\"}]}";
     NX_EXPECT(!blueprintPrepareSceneEditor(r.platform,root,"Screen",error));
     NX_EXPECT(r.platform.files[base+"scene.json"]=="{\"ground\":2}");
+}
+#endif
+
+#ifdef NX_DESKTOP_BLUEPRINT
+NX_TEST(nativeInstalledSceneEditorOpensAndSavesRealScene)
+{
+    Rig r(128*1024*1024);NX_EXPECT(r.ok);if(!r.ok)return;
+    r.host.setStatementLimit(5000000);
+    r.platform.workspaceFiles=true;
+    r.platform.files["showcase/main/screen.json"]="{\"title\":\"Home\"}";
+    r.platform.files["showcase/main/main.as"]="class Home : Screen {}";
+    if(!r.screens.init(r.services,"showcase","main")){NX_EXPECT(false);return;}
+    r.step(3);r.screens.setDevelopmentPaused(true);
+    std::string root,error;
+    if(!blueprintCreateAssetRoot(r.platform,root,error)||!blueprintPrepareSceneEditor(r.platform,root,"Screen",error))
+    {NX_EXPECT(false);return;}
+    // Do not substitute the script or theme: use the media submodule selected by Redux.
+    NX_EXPECT(r.screens.startSceneEditor(root,"Screen",error));
+    if(!r.screens.previewing())return;
+    for(int i=0;i<1000&&r.screens.loading()&&!r.screens.failed();++i)
+    {
+        r.step();
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    NX_EXPECT(!r.screens.failed()&&!r.screens.loading());
+    if(!r.screens.failed()&&!r.screens.loading())
+    {
+        r.step(2);
+        auto* object=r.screens.object();
+        auto* method=object?object->GetObjectType()->GetMethodByDecl("void onSave(Widget@)"):nullptr;
+        NX_EXPECT(method&&r.host.callMethod(object,method,static_cast<void*>(nullptr)));
+        const auto path="own/"+root+"/Screen/asset/scene.json";
+        NX_EXPECT(r.platform.files.count(path)&&r.platform.files[path].find("\"entities\"")!=std::string::npos);
+        NX_EXPECT(r.platform.files.count("own/"+root+"/Screen/asset/.scene.json.backup"));
+    }
+    r.screens.stopPreview();
+    NX_EXPECT(r.screens.depth()==1&&r.services.save==&r.save&&!r.services.sceneEditorAssets);
 }
 #endif

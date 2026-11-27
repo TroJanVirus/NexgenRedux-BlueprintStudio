@@ -19,6 +19,7 @@ namespace nx
         void updatePreview(Services& services, float dt);
         void stopPreview(Services& services);
         void draw(Canvas& canvas);
+        void drawPreviewOverlay(Canvas& canvas);
         void recover(Services& services);
         void checkpoint(Services& services,bool force=false);
     private:
@@ -31,6 +32,8 @@ namespace nx
         bool openFile(Services& services,const std::string& file,bool managed);
         void browseFiles(Services& services);
         void browseAssets(Services& services);
+        void launchSceneEditor(Services& services);
+        bool m_sceneEditor=false,m_sceneExit=false;
         void importAsset(Services& services,const std::string& file);
         std::string assetScreen() const;
         bool m_assetBrowser=false;

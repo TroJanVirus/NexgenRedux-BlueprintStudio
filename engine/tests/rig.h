@@ -96,6 +96,7 @@ namespace nx::test
             {
                 if(item.first.compare(0,prefix.size(),prefix)!=0)continue;
                 const auto relative=item.first.substr(prefix.size());
+                if(relative.empty()||relative.front()=='.')continue;
                 const auto slash=relative.find('/');
                 if(folders&&slash!=std::string::npos&&slash>0)emit(relative.substr(0,slash));
                 else if(!folders&&slash==std::string::npos&&!relative.empty())emit(relative);

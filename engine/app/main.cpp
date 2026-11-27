@@ -717,6 +717,9 @@ namespace
                         else
 #endif
                         screens.draw();
+#ifdef NX_DESKTOP_BLUEPRINT
+                        if(studio.active()&&studio.previewing())studio.drawPreviewOverlay(canvas);
+#endif
                         // Where nothing else shows the pointer, it is drawn here: an arrow, outlined.
                         if ((platform.drawsPointer() && input.raw().hasMouse) || input.stickPointing())
                         {

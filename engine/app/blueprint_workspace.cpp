@@ -264,6 +264,22 @@ namespace nx
         m_assetBrowser=true;m_assetFirst=0;clearWire();cancelDrag();
         m_status="Drop a native asset or scene JSON into this window.";
     }
+    void BlueprintWorkspace::launchSceneEditor(Services& s)
+    {
+        const auto screen=assetScreen();
+        if(screen.empty()||m_filePath.empty()||m_document.assetRoot.empty())
+        {m_status="Save a named project and select its screen first.";return;}
+        checkpoint(s,true);
+        if(!blueprintPrepareSceneEditor(*s.platform,m_document.assetRoot,screen,m_status))return;
+        if(!s.screens->startSceneEditor(m_document.assetRoot,screen,m_status))
+        {
+            s.input->setWantsPointer(true);s.input->setTyping(false);s.platform->lockMouse(false);
+            return;
+        }
+        m_sceneEditor=true;m_sceneExit=false;m_playing=true;
+        m_left=s.input->raw().mouseButtons[0];
+        m_status="Scene editor: Save your scene, then Escape to return.";
+    }
     void BlueprintWorkspace::importAsset(Services& s,const std::string& file)
     {
         const auto screen=assetScreen();
@@ -271,7 +287,7 @@ namespace nx
         {m_status="Save as a named project and select a screen before importing assets.";return;}
         if(!blueprintImportAsset(*s.platform,m_document.assetRoot,screen,file,m_status))return;
         if(!blueprintListAssets(*s.platform,m_document.assetRoot,screen,m_assetFiles,m_status))return;
-        m_status="Imported asset:"+file;
+        m_status="Imported asset:"+blueprintAssetImportPath(file);
     }
     bool BlueprintWorkspace::saveNamed(Services& s,const std::string& name)
     {
@@ -382,29 +398,68 @@ namespace nx
     void BlueprintWorkspace::stopPreview(Services& s)
     {
         if(!m_playing)return;
+        const bool scene=m_sceneEditor;
         s.screens->stopPreview();
-        m_playing=false;
+        m_playing=false;m_sceneEditor=false;m_sceneExit=false;
         s.input->setWantsPointer(true);
         s.input->setTyping(false);
         s.platform->lockMouse(false);
         s.input->consume();
         m_left=s.input->raw().mouseButtons[0];
-        m_status="Preview stopped. Graph and original save unchanged.";
+        if(scene)
+        {
+            browseAssets(s);
+            if(m_assetBrowser)m_status="Returned from Scene editor. Saved scene files are ready.";
+        }
+        else m_status="Preview stopped. Graph and original save unchanged.";
     }
 
     void BlueprintWorkspace::updatePreview(Services& s,float dt)
     {
         if(!m_playing)return;
-        if(s.input->pressed(Action::Menu)||s.input->raw().keys[static_cast<size_t>(Key::Escape)]){stopPreview(s);return;}
+        if(m_sceneEditor)
+        {
+            auto& input=*s.input;const auto& raw=input.raw();
+            const bool left=raw.mouseButtons[0],click=left&&!m_left;m_left=left;
+            if(m_sceneExit)
+            {
+                const auto& canvas=*s.canvas;
+                const float scale=std::min(canvas.pixelWidth()/kWidth,canvas.pixelHeight()/kHeight);
+                const float x=scale>0?(raw.mouseX-(canvas.pixelWidth()-kWidth*scale)*0.5f)/scale:0;
+                const float y=scale>0?(raw.mouseY-(canvas.pixelHeight()-kHeight*scale)*0.5f)/scale:0;
+                if(input.pressed(Action::Accept)||(click&&in(x,y,650,392,960,442)))
+                {stopPreview(s);return;}
+                if(input.pressed(Action::Menu)||input.pressed(Action::Cancel)||(click&&in(x,y,320,392,630,442)))
+                {m_sceneExit=false;input.consume();}
+                return;
+            }
+            if(input.pressed(Action::Menu)){m_sceneExit=true;input.consume();return;}
+        }
+        else if(s.input->pressed(Action::Menu)||s.input->raw().keys[static_cast<size_t>(Key::Escape)])
+        {stopPreview(s);return;}
         s.screens->update(dt);
         if(s.screens->failed())
         {
-            const std::string error=s.screens->error();
+            const std::string error=s.screens->error();const bool scene=m_sceneEditor;
             stopPreview(s);
-            m_status="Preview error: "+error;
-            focusPreviewError(error);
+            m_status=(scene?"Scene editor error: ":"Preview error: ")+error;
+            if(!scene)focusPreviewError(error);
             NX_ERROR("Blueprint Studio: %s",m_status.c_str());
         }
+    }
+
+    void BlueprintWorkspace::drawPreviewOverlay(Canvas& c)
+    {
+        if(!m_sceneEditor||!m_sceneExit||!m_font)return;
+        c.design(kWidth,kHeight);c.noClip();
+        c.rect(0,0,kWidth,kHeight,{0,0,0,0.72f});
+        c.roundRect(300,250,680,220,9,{0.12f,0.16f,0.22f,1});
+        c.text(*m_font,"Return to Blueprint Studio?",640,276,text,Align::Center);
+        c.paragraph(*m_font,"Only scenes saved using the original editor's Save button are kept. Unsaved scene edits will be discarded.",320,316,640,muted);
+        c.roundRect(320,392,310,50,6,{0.19f,0.33f,0.50f,1});
+        c.text(*m_font,"Keep editing (Esc / B)",475,407,text,Align::Center);
+        c.roundRect(650,392,310,50,6,{0.32f,0.19f,0.23f,1});
+        c.text(*m_font,"Return (Enter / A)",805,407,text,Align::Center);
     }
 
     void BlueprintWorkspace::checkpoint(Services& s,bool force)
@@ -482,6 +537,7 @@ namespace nx
             if(input.wheel()>0&&m_assetFirst)--m_assetFirst;
             if(click&&in(x,y,860,116,1000,150))m_assetBrowser=false;
             if(click&&in(x,y,704,116,850,150))browseAssets(s);
+            if(click&&in(x,y,534,116,694,150))launchSceneEditor(s);
             m_left=left;return;
         }
         if(m_browsing)
@@ -921,6 +977,7 @@ namespace nx
             {
                 c.roundRect(260,100,760,525,9,{0.12f,0.16f,0.22f,1});
                 c.text(*m_font,("ASSETS / "+assetScreen()).c_str(),280,122,accent);
+                c.roundRect(534,116,160,34,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Scene editor",614,123,text,Align::Center);
                 c.roundRect(704,116,146,34,4,{0.22f,0.31f,0.43f,1});c.text(*m_font,"Refresh",777,123,text,Align::Center);
                 c.roundRect(860,116,140,34,4,{0.22f,0.31f,0.43f,1});c.text(*m_font,"Close",930,123,text,Align::Center);
                 c.clip(280,155,720,26);c.text(*m_font,("own/"+m_document.assetRoot+"/"+assetScreen()+"/asset").c_str(),280,160,muted);c.noClip();
@@ -931,7 +988,7 @@ namespace nx
                     c.clip(286,y,708,33);c.text(*m_font,("asset:"+m_assetFiles[m_assetFirst+i]).c_str(),290,y+8,text);c.noClip();
                 }
                 if(m_assetFiles.empty())c.text(*m_font,"Drop a file here to import it.",640,330,muted,Align::Center);
-                c.text(*m_font,"Native scene files, models, textures, sounds and UI JSON",640,565,muted,Align::Center);
+                c.text(*m_font,"Import media here; Scene editor opens Redux\x27s original tool.",640,565,muted,Align::Center);
                 c.clip(280,591,720,26);c.text(*m_font,m_status.c_str(),280,595,text);c.noClip();
             }
             else if(m_browsing)
