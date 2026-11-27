@@ -351,6 +351,20 @@ with menu_log.open("wb") as out:
         click(720, 293, window)
         click(910, 293, window)
         click(720, 334, window)
+        # Open native UI Designer: add a container, nest a label, edit its
+        # width, and switch the native-rendered preview to 4:3 and back.
+        click(445, 564, window)
+        click(445, 172, window)
+        click(445, 220, window)
+        click(445, 380, window)
+        click(445, 172, window)
+        click(445, 420, window)
+        click(445, 420, window)
+        click(810, 455, window)
+        enter_text("320")
+        click(910, 172, window)
+        click(910, 172, window)
+        click(720, 172, window)
         click(720, 564, window)
         click(910, 564, window)
         click(360, 172, window)
@@ -405,6 +419,8 @@ with menu_log.open("wb") as out:
         page = json.loads(widget["source"])
         assert page[0]["label"] == "Health" and page[1]["button"] == "Button"
         assert page[2]["progress"] == 0.75
+        assert page[3]["column"][0]["label"] == "Text"
+        assert page[3]["column"][0]["width"] == 320
         actor_data = json.loads(actor["source"])
         assert actor_data["parents"] == [-1, 0]
         assert actor_data["entities"][0]["shape"] == "box"
