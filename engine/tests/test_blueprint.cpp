@@ -495,3 +495,32 @@ NX_TEST(nativeBlueprintStateSurvivesAcrossRealScreenEvents)
     if(object)r.host.release(object);
     if(fresh)r.host.release(fresh);
 }
+
+#ifdef NX_DESKTOP_BLUEPRINT
+NX_TEST(nativeBlueprintPreviewUsesOriginalScreenStackAndIsolatedSave)
+{
+    Rig r; NX_EXPECT(r.ok); if(!r.ok)return;
+    r.platform.files["showcase/main/screen.json"]="{\"title\":\"Home\"}";
+    r.platform.files["showcase/main/main.as"]="class Home : Screen {}";
+    if(!r.screens.init(r.services,"showcase","main")){NX_EXPECT(false);return;}
+    r.step(3);
+    r.save.set("preview_key","original");
+    r.screens.setDevelopmentPaused(true);
+    const std::string code="class Preview : Screen { void onEnter() { Save::set(\"preview_key\", \"temporary\"); } void update(float dt) { Save::set(\"updated\", \"yes\"); } }";
+    std::string error;
+    NX_EXPECT(r.screens.startPreview(code,error));
+    if(!r.screens.previewing())return;
+    r.step(3);
+    NX_EXPECT(r.screens.depth()==2 && r.services.save!=&r.save);
+    NX_EXPECT(strcmp(r.services.save->get("preview_key","missing"),"temporary")==0);
+    NX_EXPECT(strcmp(r.services.save->get("updated","missing"),"yes")==0);
+    r.screens.home();r.step(1);
+    NX_EXPECT(r.screens.depth()==2);
+    r.screens.stopPreview();
+    NX_EXPECT(r.screens.depth()==1 && r.services.save==&r.save && r.screens.menuOpen());
+    NX_EXPECT(strcmp(r.save.get("preview_key","missing"),"original")==0);
+    NX_EXPECT(strcmp(r.save.get("updated","missing"),"missing")==0);
+    NX_EXPECT(!r.screens.startPreview("not valid AngelScript",error));
+    NX_EXPECT(!r.screens.previewing() && r.services.save==&r.save && r.screens.depth()==1);
+}
+#endif

@@ -1,6 +1,7 @@
 #include "app/blueprint_workspace.h"
 #include "tools/blueprint/native_compile.h"
 #include "script/script_host.h"
+#include "screens/screens.h"
 #include "bindings/bindings.h"
 #include "assets/assets.h"
 #include "base/log.h"
@@ -105,6 +106,7 @@ namespace nx
     void BlueprintWorkspace::close(Services& s)
     {
         if (!active()) return;
+        stopPreview(s);
         cancelDrag();clearWire();m_focus=0;s.input->setTyping(m_previousTyping);
         s.assets->release(m_font);
         m_font = nullptr;
@@ -227,6 +229,33 @@ namespace nx
         m_status="Compiled and exported: "+path;NX_INFO("Blueprint Studio: %s",m_status.c_str());return true;
     }
 
+    void BlueprintWorkspace::stopPreview(Services& s)
+    {
+        if(!m_playing)return;
+        s.screens->stopPreview();
+        m_playing=false;
+        s.input->setWantsPointer(true);
+        s.input->setTyping(false);
+        s.platform->lockMouse(false);
+        s.input->consume();
+        m_left=s.input->raw().mouseButtons[0];
+        m_status="Preview stopped. Graph and original save unchanged.";
+    }
+
+    void BlueprintWorkspace::updatePreview(Services& s,float dt)
+    {
+        if(!m_playing)return;
+        if(s.input->pressed(Action::Menu)){stopPreview(s);return;}
+        s.screens->update(dt);
+        if(s.screens->failed())
+        {
+            const std::string error=s.screens->error();
+            stopPreview(s);
+            m_status="Preview error: "+error;
+            NX_ERROR("Blueprint Studio: %s",m_status.c_str());
+        }
+    }
+
     void BlueprintWorkspace::recover(Services& s)
     {
         // Called on normal Redux shutdown, even if the workspace is no longer visible.
@@ -311,6 +340,14 @@ namespace nx
         {
             if(click&&in(x,y,1134,39,1266,69)){close(s);return;}
             if(m_document.graphs.empty()){m_left=left;return;}
+            if(click&&in(x,y,504,39,604,69))
+            {
+                std::string source;
+                if(compileBlueprint(m_document,source,m_status)&&s.screens->startPreview(source,m_status))
+                {m_playing=true;clearWire();m_status="Playing. Escape returns to Studio.";}
+                else {s.input->setWantsPointer(true);s.input->setTyping(false);}
+                m_left=left;return;
+            }
             if(click&&in(x,y,610,39,742,69))compileAndExport(s);
             if((pressed&1u)||(click&&in(x,y,748,39,858,69)))saveCopy(s);
             if(((pressed&2u)||(click&&in(x,y,864,39,948,69)))&&m_document.undo()){selectGraph(std::min(m_graph,m_document.graphs.size()-1));m_status="Undid graph change.";}
@@ -452,11 +489,12 @@ namespace nx
         c.text(*m_font,"NEXGEN  /  BLUEPRINT STUDIO",18,13,text);
         c.text(*m_font,"Native Blueprint editor",1260,13,muted,Align::Right);
         const std::string titleText=(m_document.name.empty()?"No document open":m_document.name)+(m_document.dirty()?" *":"");
-        c.clip(12,38,590,34);c.text(*m_font,shorten(titleText,65).c_str(),18,43,accent);c.noClip();
+        c.clip(12,38,480,34);c.text(*m_font,shorten(titleText,65).c_str(),18,43,accent);c.noClip();
         const auto button=[&](float x,float width,const char* label,bool enabled){
             c.roundRect(x,39,width,30,5,enabled?Color{0.19f,0.33f,0.50f,1}:Color{0.14f,0.18f,0.24f,1});
             c.text(*m_font,label,x+width*0.5f,44,enabled?text:muted,Align::Center);
         };
+        button(504,100,"Play test",!m_document.graphs.empty());
         button(610,132,"Compile / export",!m_document.graphs.empty());button(748,110,"Save copy",!m_document.graphs.empty());button(864,84,"Undo",m_document.canUndo());
         button(954,84,"Redo",m_document.canRedo());button(1044,84,"Fit",!m_document.graphs.empty());button(1134,132,"Return",true);
         c.rect(0,kTop,kLeft,kBottom-kTop,{0.10f,0.13f,0.18f,1});

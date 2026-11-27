@@ -4,6 +4,7 @@
 #include "base/log.h"
 #include "bindings/bindings.h"
 #include "video/video.h"
+#include "save/save.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -59,6 +60,9 @@ namespace nx
         {
             return;
         }
+#ifdef NX_DESKTOP_BLUEPRINT
+        stopPreview();
+#endif
         while (m_depth)
         {
             close(true);
@@ -110,10 +114,71 @@ namespace nx
         return nullptr;
     }
 
+#ifdef NX_DESKTOP_BLUEPRINT
+    bool Screens::startPreview(const std::string& source, std::string& error)
+    {
+        if (!m_services || m_depth != 1 || previewing() || source.empty() || source.size() > 1024*1024 ||
+            findInfo("__blueprint_preview"))
+        {
+            error = "Preview requires the home screen and a valid generated script.";
+            return false;
+        }
+        m_previewSave = create<Save>(MemTag::General);
+        if (!m_previewSave) { error = "Not enough memory for preview."; return false; }
+        m_previewSave->setReadOnly(); // No platform or filename: entirely transient.
+        m_originalSave = m_services->save;
+        m_previewRandom = m_services->random;
+        m_previewDevelopment = m_services->development;
+        m_previewSource = source;
+        m_services->save = m_previewSave;
+        m_services->development = false;
+        m_change = Change::None;
+        // Home was already paused by the workspace. Do not run its suspend/resume
+        // callbacks against the temporary save or generated module.
+        m_services->audio->pauseGroup(m_stack[0].group, true);
+        m_menuOpen = false;
+        ScreenInfo info;
+        snprintf(info.id, sizeof(info.id), "__blueprint_preview");
+        snprintf(info.title, sizeof(info.title), "Blueprint play test");
+        if (!open(info))
+        {
+            error = this->error();
+            stopPreview();
+            return false;
+        }
+        m_services->input->consume();
+        error.clear();
+        return true;
+    }
+
+    void Screens::stopPreview()
+    {
+        if (!previewing()) return;
+        // Screen navigation is blocked during preview, so this is always its own entry.
+        if (m_depth > 1) close(true);
+        m_change = Change::None;
+        m_services->save = m_originalSave;
+        m_originalSave = nullptr;
+        m_services->random = m_previewRandom;
+        m_services->development = m_previewDevelopment;
+        destroy(m_previewSave);
+        m_previewSave = nullptr;
+        m_previewSource.clear();
+        if (m_depth) enter(m_stack[m_depth-1]);
+        m_menuOpen = false;
+        setMenu(true); // The workspace is visible again; keep the home screen paused.
+        m_services->input->consume();
+    }
+#endif
+
     // --- Requests ---
 
     void Screens::request(Change change, const char* id)
     {
+#ifdef NX_DESKTOP_BLUEPRINT
+        // The preview is a single temporary screen, not the host project's navigation stack.
+        if (previewing()) { NX_WARN("Screen navigation is unavailable during Blueprint preview."); return; }
+#endif
         m_change = change;
         snprintf(m_changeId, sizeof(m_changeId), "%s", id);
     }
@@ -239,6 +304,16 @@ namespace nx
         snprintf(path, sizeof(path), "%s/main.as", m_services->folder);
         FileData source;
         entry.scriptTime = m_services->platform->fileTime(path);
+#ifdef NX_DESKTOP_BLUEPRINT
+        if (previewing() && strcmp(entry.info.id, "__blueprint_preview") == 0)
+        {
+            auto* bytes = static_cast<u8*>(memAlloc(m_previewSource.size()+1, MemTag::Script));
+            if (!bytes) { entry.failed = true; snprintf(entry.error, sizeof(entry.error), "Cannot allocate preview source"); return false; }
+            memcpy(bytes, m_previewSource.data(), m_previewSource.size());
+            source.take(bytes, m_previewSource.size());
+        }
+        else
+#endif
         if (!m_services->platform->readFile(path, source, MemTag::Script))
         {
             entry.failed = true;
@@ -367,6 +442,9 @@ namespace nx
 
     void Screens::reloadChanged()
     {
+#ifdef NX_DESKTOP_BLUEPRINT
+        if (previewing()) return;
+#endif
         if (m_depth == 0 || m_stack[m_depth - 1].loading)
         {
             return;

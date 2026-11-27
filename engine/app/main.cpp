@@ -675,7 +675,8 @@ namespace
 #ifdef NX_DESKTOP_BLUEPRINT
                         if (studio.active())
                         {
-                            studio.update(services);
+                            if (studio.previewing()) studio.updatePreview(services, kStep);
+                            else studio.update(services);
                             if (!studio.active()) screens.setDevelopmentPaused(false);
                         }
                         else
@@ -711,7 +712,7 @@ namespace
                     {
                         canvas.begin();
 #ifdef NX_DESKTOP_BLUEPRINT
-                        if (studio.active()) studio.draw(canvas);
+                        if (studio.active() && !studio.previewing()) studio.draw(canvas);
                         else
 #endif
                         screens.draw();
@@ -771,6 +772,7 @@ namespace
                 }
             }
 #ifdef NX_DESKTOP_BLUEPRINT
+            studio.stopPreview(services);
             studio.recover(services);
             studio.close(services);
 #endif

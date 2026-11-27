@@ -15,6 +15,9 @@ namespace nx
         void open(Services& services);
         void close(Services& services);
         void update(Services& services);
+        bool previewing() const { return m_playing; }
+        void updatePreview(Services& services, float dt);
+        void stopPreview(Services& services);
         void draw(Canvas& canvas);
         void recover(Services& services);
     private:
@@ -45,5 +48,6 @@ namespace nx
         std::vector<const BlueprintNodeSpec*> m_palette;
         int m_focus=0; // 1 catalogue search, 2 literal, 3 reference, 4 new function
         bool m_previousTyping=false;
+        bool m_playing=false;
     };
 }

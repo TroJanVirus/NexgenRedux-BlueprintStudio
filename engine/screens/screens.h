@@ -64,6 +64,13 @@ namespace nx
         // The desktop workspace takes input while the home screen stays paused.
         void setDevelopmentPaused(bool paused) { setMenu(paused); }
 
+#ifdef NX_DESKTOP_BLUEPRINT
+        // Desktop authoring only: transient screen, no files staged or replaced.
+        bool startPreview(const std::string& source, std::string& error);
+        void stopPreview();
+        bool previewing() const { return m_previewSave != nullptr; }
+#endif
+
         u32 count() const { return m_count; }
         const ScreenInfo* info(u32 index) const { return index < m_count ? &m_infos[index] : nullptr; }
 
@@ -133,5 +140,12 @@ namespace nx
         bool (*m_blueprintLauncher)() = nullptr;
         bool m_blueprintError = false;
         std::vector<std::string> m_included;
+#ifdef NX_DESKTOP_BLUEPRINT
+        std::string m_previewSource;
+        Save* m_previewSave = nullptr;
+        Save* m_originalSave = nullptr;
+        u32 m_previewRandom = 0;
+        bool m_previewDevelopment = false;
+#endif
     };
 }
