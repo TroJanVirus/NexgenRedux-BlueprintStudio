@@ -134,6 +134,8 @@ namespace nx
                     size_t n;if(!add(eventType=="float"?"event:delta":"event:canvas",n))return false;
                     v={eventType,"","value",n};return true;
                 }
+                const auto& g=doc.graphs[graph];
+                for(const auto& p:g.parameters)if(p.name==id){v={p.type,"","arg_"+p.name,0};return true;}
                 const auto found=fields.find(id);
                 if(found==fields.end())return fail("Unknown field or unsupported expression: "+id+".");
                 size_t n;if(!add("var:get:"+found->second,n,id))return false;
@@ -171,7 +173,7 @@ namespace nx
                     if(spec.id.rfind("api:",0)!=0||spec.member!=(target!=nullptr)||spec.property!=property||spec.hasOut||spec.pure!=pure)continue;
                     if((property.empty()?spec.call:propertyName(spec))!=id)continue;
                     // Never guess an overload or silently introduce a numeric/handle conversion.
-                    if(!pure&&spec.result!="void")continue;
+                    if(!pure&&spec.result!="void"&&!blueprintLiteralType(spec.result))continue;
                     if(pure&&(spec.result.empty()||spec.result=="void"))continue;
                     if(target)
                     {
@@ -196,7 +198,7 @@ namespace nx
                     if(selected)return fail("Ambiguous API overload: "+id+".");
                     selected=&spec;
                 }
-                if(!selected)return fail("No exact supported "+std::string(pure?"value":"void action")+" API signature for "+id+".");
+                if(!selected)return fail("No exact supported "+std::string(pure?"value":"action")+" API signature for "+id+".");
                 size_t node;if(!add(selected->id,node))return false;
                 if(target&&!bind(node,"target",*target))return false;
                 for(size_t i=0;i<args.size();++i)if(!bind(node,selected->arguments[i].type,args[i]))return false;
@@ -290,31 +292,65 @@ namespace nx
                 }
                 return true;
             }
-            bool block(Flow flow,unsigned depth)
+            bool functionCall(const std::string& id,const std::vector<Value>& args,Flow& flow,Value& result)
             {
+                const auto* fn=doc.function("Screen",id);
+                if(!fn||args.size()!=fn->parameters.size())return fail("Unsupported function arguments: "+id+".");
+                size_t n;if(!add("call:function",n,id))return false;
+                for(size_t i=0;i<args.size();++i)if(!bind(n,"arg_"+fn->parameters[i].name,args[i]))return false;
+                chain(flow,n);result={fn->returnType,"","result",n};return true;
+            }
+            bool directValue(Value& result,Flow& flow)
+            {
+                if(peek().kind==Kind::Name&&at+1<tokens.size()&&tokens[at+1].text=="("&&doc.function("Screen",peek().text))
+                {
+                    const auto id=peek().text;++at;
+                    std::vector<Value> args;
+                    return arguments(args)&&functionCall(id,args,flow,result);
+                }
+                return expression(result);
+            }
+            bool block(Flow flow,unsigned depth,bool* returned=nullptr)
+            {
+                bool terminal=false;
                 if(depth>32||!expect("{"))return fail("Statement nesting limit or missing block.");
                 while(!take("}"))
                 {
                     if(peek().kind==Kind::End)return fail("Unclosed method.");
+                    if(terminal)return fail("Statements after an unconditional return cannot be imported.");
+                    if(take("return"))
+                    {
+                        const auto& g=doc.graphs[graph];
+                        if(g.kind!="function")return fail("Early returns from lifecycle methods are not supported.");
+                        Value result;
+                        if(g.returnType!="void"&&!directValue(result,flow))return false;
+                        if(!expect(";"))return false;
+                        size_t n;if(!add("return:function",n))return false;
+                        if(g.returnType!="void"&&!bind(n,"value",result))return false;
+                        chain(flow,n);terminal=true;continue;
+                    }
                     if(take("if"))
                     {
                         Value condition;if(!expect("(")||!expression(condition)||!expect(")"))return false;
                         size_t branch;if(!add("branch",branch)||!bind(branch,"condition",condition))return false;
                         chain(flow,branch);
-                        if(!block({branch,"true"},depth+1))return false;
-                        if(take("else")&&!block({branch,"false"},depth+1))return false;
-                        continue;
+                        bool yes=false,no=false;
+                        if(!block({branch,"true"},depth+1,&yes))return false;
+                        if(take("else")&&!block({branch,"false"},depth+1,&no))return false;
+                        terminal=yes&&no;continue;
                     }
                     std::string id;if(!name(id)||!qualified(id))return false;
                     Value target;const Value* member=nullptr;
                     if(take(".")){if(!field(id,target)||!name(id))return false;member=&target;}
                     if(take("="))
                     {
-                        Value v;if(!expression(v)||!expect(";"))return false;
+                        Value v;if(!directValue(v,flow)||!expect(";"))return false;
                         if(!member&&id.find("::")==std::string::npos)
                         {
                             const auto found=fields.find(id);
-                            if(found==fields.end()||id==eventArg)return fail("Assignment requires a declared instance field.");
+                            const auto& params=doc.graphs[graph].parameters;
+                            if(found==fields.end()||id==eventArg||std::any_of(params.begin(),params.end(),[&](const BlueprintPin& p){return p.name==id;}))
+                                return fail("Assignment requires a declared instance field, not a method parameter.");
                             size_t n;if(!add("var:set:"+found->second,n,id)||!bind(n,"value",v))return false;
                             chain(flow,n);
                         }
@@ -322,8 +358,12 @@ namespace nx
                         continue;
                     }
                     std::vector<Value> args;Value unused;
-                    if(!arguments(args)||!expect(";")||!api(id,args,member,false,"",unused,&flow))return false;
+                    if(!arguments(args)||!expect(";"))return false;
+                    if(!member&&doc.function("Screen",id))
+                    {if(!functionCall(id,args,flow,unused))return false;}
+                    else if(!api(id,args,member,false,"",unused,&flow))return false;
                 }
+                if(returned)*returned=terminal;
                 return true;
             }
             bool parse()
@@ -342,19 +382,46 @@ namespace nx
                         if(!blueprintLiteralType(type)||!fields.emplace(id,type).second)return fail("Only unique, uninitialized primitive instance fields are supported.");
                         continue;
                     }
-                    if(type!="void")return fail("Only native void lifecycle methods and uninitialized fields are supported.");
+                    if(!methods.insert(id).second)return fail("Overloaded or duplicate method "+id+".");
                     const auto found=std::find_if(doc.graphs.begin(),doc.graphs.end(),[&](const BlueprintDocument::Graph& g){return g.name==id;});
-                    if(found==doc.graphs.end()||!methods.insert(id).second)return fail("Unsupported or duplicate method "+id+".");
+                    const bool event=found!=doc.graphs.end();
+                    const size_t methodGraph=event?static_cast<size_t>(found-doc.graphs.begin()):doc.graphs.size();
                     if(!expect("("))return false;
                     std::string arg,argType;
-                    if(id=="update"||id=="draw")
+                    if(event)
                     {
-                        if(!expect(id=="update"?"float":"Canvas"))return false;
-                        if(id=="draw"&&!expect("@"))return false;
-                        if(!name(arg))return false;
-                        argType=id=="update"?"float":"Canvas@";
+                        if(type!="void")return fail("Lifecycle methods must return void.");
+                        if(id=="update"||id=="draw")
+                        {
+                            if(!expect(id=="update"?"float":"Canvas"))return false;
+                            if(id=="draw"&&!expect("@"))return false;
+                            if(!name(arg))return false;
+                            argType=id=="update"?"float":"Canvas@";
+                        }
                     }
-                    if(!expect(")")||!is("{"))return fail("Expected lifecycle method body.");
+                    else
+                    {
+                        // Preserve only types supported by the native function signature model.
+                        const auto supported=[](const std::string& t)
+                        {return blueprintLiteralType(t)||t=="Vec2"||t=="Vec3"||t=="Color";};
+                        if(type!="void"&&!supported(type))return fail("Unsupported function return type.");
+                        std::vector<BlueprintPin> parameters;
+                        if(!is(")"))
+                        {
+                            do
+                            {
+                                BlueprintPin p;
+                                if(parameters.size()>=8||!name(p.type)||!name(p.name)||!supported(p.type))
+                                    return fail("Unsupported function parameter.");
+                                if(std::any_of(parameters.begin(),parameters.end(),[&](const BlueprintPin& q){return q.name==p.name;}))
+                                    return fail("Duplicate function parameter.");
+                                parameters.push_back(std::move(p));
+                            }while(take(","));
+                        }
+                        if(!doc.addFunction(id,error))return false;
+                        auto& g=doc.graphs[methodGraph];g.parameters=std::move(parameters);g.returnType=type;
+                    }
+                    if(!expect(")")||!is("{"))return fail("Expected method body.");
                     const size_t body=at;unsigned braces=0;
                     do
                     {
@@ -363,14 +430,14 @@ namespace nx
                         if(is("}"))--braces;
                         ++at;
                     }while(braces);
-                    bodies.push_back({static_cast<size_t>(found-doc.graphs.begin()),body,at,arg,argType});
+                    bodies.push_back({methodGraph,body,at,arg,argType});
                 }
                 take(";");
                 if(peek().kind!=Kind::End)return fail("Additional declarations or classes are not supported.");
                 for(const auto& method:bodies)
                 {
                     graph=method.graph;at=method.body;eventArg=method.arg;eventType=method.type;
-                    if(!block({},0)||at!=method.end)return false;
+                    if(!block({},0)||at!=method.end)return fail("Method body could not be converted completely.");
                 }
                 return true;
             }
@@ -381,7 +448,12 @@ namespace nx
         error.clear();std::vector<Token> tokens;
         if(!lex(source,tokens,error))return false;
         Parser parser{{},tokens,error,0,0,0,{},{},{},{}};
-        if(!parser.parse())return false;
+        if(!parser.parse())
+        {
+            if(error.empty())error="Source conversion failed.";
+            if(error.rfind("Source line ",0)!=0)error="Source line "+std::to_string(parser.peek().line)+": "+error;
+            return false;
+        }
         std::string json,generated;
         if(!parser.doc.serialize(json,error)||!compileBlueprint(parser.doc,generated,error))
         {error="Imported graph cannot be represented safely: "+error;return false;}

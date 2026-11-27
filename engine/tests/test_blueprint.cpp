@@ -1203,3 +1203,48 @@ NX_TEST(nativeImportedScreenAndOriginalProduceSameState)
         NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("start",""),"yes")==0&&strcmp(r.save.get("result",""),"done")==0&&strcmp(r.save.get("after",""),"yes")==0);
     }
 }
+
+#ifdef NX_DESKTOP_BLUEPRINT
+NX_TEST(nativeWorkspaceImportsSourceWithoutOverwritingOriginal)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    r.platform.workspaceFiles=true;
+    r.platform.files["showcase/main/screen.json"]="{\"title\":\"Home\"}";
+    r.platform.files["showcase/main/main.as"]="class Home : Screen {}";
+    if(!r.screens.init(r.services,"showcase","main")){NX_EXPECT(false);return;}
+    r.step(3);r.screens.setDevelopmentPaused(true);
+    const std::string original="class Imported : Screen { int amount; void onEnter() { amount = Pick(true); if (amount == 7) { Save::set(\"imported\", \"yes\"); } } int Pick(bool flag) { if(flag) {return 7;} return 0; } }";
+    r.platform.files["own/original.as"]=original;
+    BlueprintWorkspace studio;studio.open(r.services);NX_EXPECT(studio.active());if(!studio.active())return;
+    auto& state=r.platform.state;state.hasMouse=true;
+    auto frame=[&]()
+    {
+        r.assets.finish();r.input.update(state,1.0f/60);r.platform.now+=1.0/60;
+        if(studio.previewing())studio.updatePreview(r.services,1.0f/60);else studio.update(r.services);
+        studio.checkpoint(r.services);
+        r.device->beginFrame({});r.canvas.begin();
+        if(!studio.previewing()||studio.tracePaused())studio.draw(r.canvas);else r.screens.draw();
+        if(studio.previewing())studio.drawPreviewOverlay(r.canvas);
+        r.canvas.end();r.device->endFrame();
+    };
+    auto click=[&](float x,float y){state.mouseX=x;state.mouseY=y;state.mouseButtons[0]=true;frame();state.mouseButtons[0]=false;frame();};
+    r.platform.dropped="original.as";frame();
+    const auto recovery=r.platform.files.find("own/blueprint-recovery.bp.json");
+    NX_EXPECT(recovery!=r.platform.files.end());
+    if(recovery!=r.platform.files.end())
+    {
+        BlueprintDocument imported;std::string error;
+        NX_EXPECT(imported.load(recovery->second.data(),recovery->second.size(),error)&&imported.function("Screen","Pick"));
+    }
+    click(553,53);
+    NX_EXPECT(studio.previewing());
+    if(studio.previewing())
+    {
+        for(int i=0;i<4;++i)frame();
+        NX_EXPECT(strcmp(r.services.save->get("imported","missing"),"yes")==0);
+        studio.stopPreview(r.services);
+    }
+    NX_EXPECT(r.platform.files["own/original.as"]==original&&strcmp(r.save.get("imported","missing"),"missing")==0);
+    studio.close(r.services);
+}
+#endif

@@ -55,3 +55,5 @@ References: [original scene editor](https://github.com/Team-Resurgent/NexgenRedu
 ## Native verification branch
 
 The dedicated draft pull request from `blueprint/review-native-ui` into `blueprint/verification-base` runs only the focused native Blueprint workflow. Keep this PR open for ongoing verification; do not merge it into the upstream mirror. Use the PR's actual head SHA and job logs to distinguish failed builds from missing results. One branch update should trigger one focused workflow, not a duplicate push workflow or the full release matrix.
+
+Reverse conversion starts with a bounded strict native source importer for standalone screens. Reject unsupported statements and ambiguous types instead of producing incomplete graphs. Validate both source forms through the existing engine; keep originals untouched and require Save as for the converted project. Whole-project discovery, includes and local/complex object state still require dedicated work.

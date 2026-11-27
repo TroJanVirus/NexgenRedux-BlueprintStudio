@@ -452,3 +452,22 @@ NX_TEST(nativeSourceImportCreatesEditableTypedGraphsAndRejectsLoss)
         std::string after;NX_EXPECT(doc.serialize(after,error)&&after==saved);
     }
 }
+
+NX_TEST(nativeSourceImportSupportsTypedForwardMethodsAndEarlyReturns)
+{
+    BlueprintDocument doc;std::string error,source;
+    const char* code=R"(class Example : Screen {
+        int score;
+        void onEnter() { score = Pick(true, 7); Record(score); }
+        void Record(int amount) { if(amount == 7) { Save::set("picked","yes"); } }
+        int Pick(bool flag, int amount) { if(flag) { return amount; } return 8; }
+    })";
+    NX_EXPECT(importBlueprintScreen(code,doc,error));
+    NX_EXPECT(doc.function("Screen","Pick")&&doc.function("Screen","Record"));
+    NX_EXPECT(compileBlueprint(doc,source,error)&&source.find("bp_fn_Pick(true, int(7))")!=std::string::npos);
+    NX_EXPECT(source.find("int bp_fn_Pick(bool bp_arg_flag, int bp_arg_amount)")!=std::string::npos);
+    const auto good=source;
+    NX_EXPECT(!importBlueprintScreen("class Bad : Screen { int BadCall() { return BadCall(); } }",doc,error));
+    NX_EXPECT(!importBlueprintScreen("class Bad : Screen { int score; void onEnter() { score = F() + 1; } int F(){return 3;} }",doc,error));
+    NX_EXPECT(compileBlueprint(doc,source,error)&&source==good);
+}
