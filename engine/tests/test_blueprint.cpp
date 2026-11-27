@@ -3,6 +3,9 @@
 #include "blueprint_fixtures.h"
 #include "scene/world.h"
 #include "tools/blueprint/native_compile.h"
+#ifdef NX_DESKTOP_BLUEPRINT
+#include "app/blueprint_workspace.h"
+#endif
 
 #include <math.h>
 #include <stdlib.h>
@@ -559,3 +562,81 @@ NX_TEST(nativeBlueprintInlineInputsRunOnRealEngine)
     if(!r.screens.init(r.services,"showcase","inline_values")){NX_EXPECT(false);return;}
     r.step(3);NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("inline_test","missing"),"works")==0);
 }
+
+#ifdef NX_DESKTOP_BLUEPRINT
+NX_TEST(nativeBlueprintWorkspaceAuthorsSavesAndRunsThroughMouseAndKeyboard)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    r.platform.workspaceFiles=true;
+    r.platform.files["showcase/main/screen.json"]="{\"title\":\"Home\"}";
+    r.platform.files["showcase/main/main.as"]="class Home : Screen {}";
+    if(!r.screens.init(r.services,"showcase","main")){NX_EXPECT(false);return;}
+    r.step(3);r.screens.setDevelopmentPaused(true);
+    BlueprintWorkspace studio;studio.open(r.services);
+    NX_EXPECT(studio.active());if(!studio.active())return;
+    auto& state=r.platform.state;state.hasMouse=true;
+    auto frame=[&]()
+    {
+        r.assets.finish();r.input.update(state,1.0f/60);r.platform.now+=1.0/60;
+        if(studio.previewing())studio.updatePreview(r.services,1.0f/60);
+        else studio.update(r.services);
+        studio.checkpoint(r.services);
+        r.device->beginFrame({});r.canvas.begin();
+        if(studio.previewing())r.screens.draw();else studio.draw(r.canvas);
+        r.canvas.end();r.device->endFrame();
+    };
+    auto click=[&](float x,float y)
+    {
+        state.mouseX=x;state.mouseY=y;state.mouseButtons[0]=true;frame();
+        state.mouseButtons[0]=false;frame();
+    };
+    auto type=[&](const char* value)
+    {
+        for(const char* p=value;*p;++p){state.type(static_cast<u32>(*p));frame();}
+        state.type(13);frame();
+    };
+    frame();
+    // Search the real library, insert its first result, and connect it to onEnter.
+    click(1100,130);type("api:Save:Save::set:string,string");click(1100,167);
+    click(468,138);click(630,353);
+    click(630,375);type("workspace_key");
+    click(630,397);type("first");
+    click(900,18);type("Workspace Test");
+    const std::string path="own/blueprint-project-Workspace Test.bp.json";
+    auto found=r.platform.files.find(path);
+    NX_EXPECT(found!=r.platform.files.end());
+    if(found==r.platform.files.end()){studio.close(r.services);return;}
+    BlueprintDocument doc;std::string source,error;
+    NX_EXPECT(doc.load(found->second.data(),found->second.size(),error));
+    NX_EXPECT(compileBlueprint(doc,source,error)&&source.find("Save::set(\"workspace_key\", \"first\")")!=std::string::npos);
+    // Run what the user actually authored, through the workspace Play button.
+    click(553,53);
+    NX_EXPECT(studio.previewing());
+    if(studio.previewing())
+    {
+        for(int i=0;i<4;++i)frame();
+        NX_EXPECT(strcmp(r.services.save->get("workspace_key","missing"),"first")==0);
+        state.keys[static_cast<size_t>(Key::Escape)]=true;frame();
+        state.keys[static_cast<size_t>(Key::Escape)]=false;frame();
+        NX_EXPECT(!studio.previewing());
+        NX_EXPECT(strcmp(r.save.get("workspace_key","missing"),"missing")==0);
+    }
+    // Modify the saved file out-of-band, edit a pin, and ensure Save never overwrites it.
+    const std::string external=found->second+"\n";
+    r.platform.files[path]=external;
+    click(630,397);
+    for(int i=0;i<5;++i){state.type(8);frame();}
+    type("second");
+    click(800,53);
+    NX_EXPECT(r.platform.files[path]==external);
+    studio.close(r.services);
+    const auto recovered=r.platform.files.find("own/blueprint-recovery.bp.json");
+    NX_EXPECT(recovered!=r.platform.files.end()&&!recovered->second.empty());
+    if(recovered!=r.platform.files.end())
+    {
+        BlueprintDocument draft;
+        NX_EXPECT(draft.load(recovered->second.data(),recovered->second.size(),error)&&
+            compileBlueprint(draft,source,error)&&source.find("\"second\"")!=std::string::npos);
+    }
+}
+#endif

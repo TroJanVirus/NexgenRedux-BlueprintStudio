@@ -46,6 +46,8 @@ jobs:
       - name: Run native document and engine tests
         run: ctest --test-dir build --output-on-failure --timeout 300 -R '^(blueprint_runtime|blueprint_native_document)$'
       - name: Start editor with null GPU
-        run: build/showcase/nexgen --blueprint-studio --null --frames 10
+        if: ${{ !cancelled() }}
+        run: build/showcase/nexgen --blueprint-studio --null --frames 10 --saves "$RUNNER_TEMP/bp-null-saves"
       - name: Start editor with native desktop renderer
-        run: xvfb-run -a -s "-screen 0 1280x720x24" build/showcase/nexgen --blueprint-studio --hidden --frames 10
+        if: ${{ !cancelled() }}
+        run: xvfb-run -a -s "-screen 0 1280x720x24" build/showcase/nexgen --blueprint-studio --hidden --frames 10 --saves "$RUNNER_TEMP/bp-desktop-saves"

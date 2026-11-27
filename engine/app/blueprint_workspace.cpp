@@ -98,7 +98,8 @@ namespace nx
         if(m_document.graphs.empty())
         {
             FileData recovery;
-            const bool found=s.platform->readFile("own/blueprint-recovery.bp.json",recovery,MemTag::General)&&recovery.size>0;
+            const bool found=s.platform->fileTime("own/blueprint-recovery.bp.json")&&
+                s.platform->readFile("own/blueprint-recovery.bp.json",recovery,MemTag::General)&&recovery.size>0;
             if(found&&m_document.load(reinterpret_cast<const char*>(recovery.data),recovery.size,m_status))
             {
                 m_document.markRecovered();m_checkpointPresent=true;m_checkpointRevision=m_document.revision();
