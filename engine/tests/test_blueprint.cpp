@@ -2370,3 +2370,25 @@ NX_TEST(nativeNestedWidgetDesignerCompilesIntoLiveRuntime)
     const auto* design=view.find("design-only");
     NX_EXPECT(design&&design->events[static_cast<size_t>(UiEvent::Click)]==nullptr);
 }
+
+NX_TEST(nativeWidgetButtonEventGraphExecutesThroughReduxUi)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    BlueprintDocument doc;doc.create();std::string id,error,source;size_t callback=0;
+    const bool ok=doc.createVisualAsset("widget",id,error)&&doc.appendVisualWidget(id,"button","Play",error)&&
+        doc.connectVisualWidget("Screen",id,error)&&doc.openVisualWidgetEvent("Screen",id,"item-1","click",callback,error)&&
+        doc.addConnectedNode(callback,0,"then","api:Save:Save::set:string,string",260,60,error)&&
+        doc.setInputValue(callback,1,"key","widget_clicked",error)&&doc.setInputValue(callback,1,"value","yes",error)&&compileBlueprint(doc,source,error);
+    NX_EXPECT(ok);if(!ok)return;
+    r.platform.files["showcase/main/screen.json"]="{\"title\":\"Widget event graph\"}";
+    r.platform.files["showcase/main/main.as"]=source;
+    if(!r.screens.init(r.services,"showcase","main")){NX_EXPECT(false);return;}
+    r.step(3);NX_EXPECT(!r.screens.failed());
+    if(!r.services.ui){NX_EXPECT(false);return;}
+    auto* button=r.services.ui->find("item-1");
+    NX_EXPECT(button);if(!button)return;
+    r.services.ui->focus(button);
+    r.press(Action::Accept);
+    r.step(3);NX_EXPECT(!r.screens.failed());
+    NX_EXPECT(strcmp(r.save.get("widget_clicked","missing"),"yes")==0);
+}

@@ -62,7 +62,7 @@ namespace nx
         void updateVisualPlacement(float x,float y,bool left,bool click);
         void drawVisualPlacement(Canvas& canvas);
         void cancelVisualPlacement(){m_placementDragging=false;m_placementAsset.clear();m_placementGraph=m_placementNode=static_cast<size_t>(-1);}
-        bool m_widgetDesigner=false,m_widgetPalette=false,m_widgetFourThree=false;
+        bool m_widgetDesigner=false,m_widgetPalette=false,m_widgetFourThree=false,m_widgetEvents=false,m_widgetUnbind=false;
         std::string m_widgetSelection,m_designPreviewAsset,m_designPreviewError;
         size_t m_widgetFirst=0,m_designRevision=static_cast<size_t>(-1);
         Ui* m_designUi=nullptr;

@@ -1417,3 +1417,29 @@ NX_TEST(nativeWidgetDesignerHierarchyAndPropertyEdits)
     NX_EXPECT(source.find("Player health")!=std::string::npos&&source.find("320")!=std::string::npos);
     NX_EXPECT(doc.undo()&&doc.redo());
 }
+
+NX_TEST(nativeWidgetEventsAreTypedAndSharedAcrossScreenLinks)
+{
+    BlueprintDocument doc;doc.create();std::string id,error,bytes,source;size_t graph=0;
+    NX_EXPECT(doc.createVisualAsset("widget",id,error)&&doc.appendVisualWidget(id,"button","Play",error));
+    NX_EXPECT(!doc.openVisualWidgetEvent("Screen",id,"item-1","click",graph,error));
+    NX_EXPECT(doc.connectVisualWidget("Screen",id,error));
+    NX_EXPECT(doc.openVisualWidgetEvent("Screen",id,"item-1","click",graph,error));
+    const auto callback=doc.graphs[graph].name;
+    NX_EXPECT(doc.graphs[graph].parameters.size()==1&&doc.graphs[graph].parameters[0].type=="Widget@");
+    NX_EXPECT(!doc.renameFunction(graph,"Renamed",error)&&!doc.removeFunction(graph,error));
+    NX_EXPECT(!doc.editFunctionSignature(graph,"void()",error)&&!doc.setInlineMacro(graph,true,error));
+    const auto revision=doc.revision();size_t same=0;
+    NX_EXPECT(doc.openVisualWidgetEvent("Screen",id,"item-1","click",same,error)&&same==graph&&doc.revision()==revision);
+    NX_EXPECT(doc.addScreen("other",error)&&doc.connectVisualWidget("other",id,error));
+    NX_EXPECT(doc.function("other",callback)!=nullptr);
+    NX_EXPECT(doc.openVisualWidgetEvent("other",id,"item-1","draw",same,error));
+    NX_EXPECT(doc.graphs[same].parameters.size()==2&&doc.graphs[same].parameters[0].type=="Canvas@");
+    NX_EXPECT(doc.serialize(bytes,error));
+    BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error));
+    NX_EXPECT(compileBlueprintOwner(copy,"other",source,error)&&source.find("bp_fn_"+callback)!=std::string::npos);
+    NX_EXPECT(copy.clearVisualWidgetEvent(id,"item-1","click",error));
+    NX_EXPECT(copy.removeFunction(graph,error));
+    NX_EXPECT(copy.undo()&&copy.undo());
+    NX_EXPECT(!copy.removeFunction(graph,error));
+}

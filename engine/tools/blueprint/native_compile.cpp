@@ -282,10 +282,10 @@ namespace nx
                 {
                     if(incoming(to,"id"))return fail(to,"A linked widget ID must be a constant asset reference.");
                     const auto it=std::find_if(n.values.begin(),n.values.end(),[](const BlueprintDocument::InputValue& v){return v.pin=="id";});
-                    const auto* page=it==n.values.end()?nullptr:document.visualAsset(it->value);
-                    if(!page||page->kind!="widget"||!page->dependencies.empty())return fail(to,"Missing or unsupported linked widget page.");
-                    std::string json;
-                    if(!literalValue(to,"string",page->source,json))return false;
+                    std::string page,json,why;
+                    if(it==n.values.end()||!document.visualWidgetForOwner(it->value,graph.owner,page,why))
+                        return fail(to,why.empty()?"Select a linked widget page.":why);
+                    if(!literalValue(to,"string",page,json))return false;
                     source+=pad+"Ui::loadPage("+json+");\n";
                     if(source.size()>1024*1024)return fail(to,"Generated source exceeds the size limit.");
                     mark(start,to);return flow(to,"then",indent,depth+1);

@@ -81,6 +81,11 @@ namespace nx
         bool appendVisualWidget(const std::string& id,const std::string& kind,const std::string& label,std::string& error,const std::string& parent="");
         bool setVisualWidgetProperty(const std::string& id,const std::string& widget,const std::string& property,const std::string& value,std::string& error);
         bool moveVisualWidget(const std::string& id,const std::string& widget,int direction,std::string& error);
+        // Native callbacks are ordinary typed screen function graphs.
+        bool openVisualWidgetEvent(const std::string& owner,const std::string& id,const std::string& widget,const std::string& event,size_t& graph,std::string& error);
+        bool clearVisualWidgetEvent(const std::string& id,const std::string& widget,const std::string& event,std::string& error);
+        bool visualWidgetForOwner(const std::string& id,const std::string& owner,std::string& json,std::string& error)const;
+        bool visualWidgetUsesFunction(const std::string& owner,const std::string& functionName)const;
         bool connectVisualWidget(const std::string& owner,const std::string& id,std::string& error);
         // Linked actor definitions use native entity JSON and a parent-first hierarchy.
         bool visualActorRoot(const std::string& id,std::string& json,std::string& error)const;

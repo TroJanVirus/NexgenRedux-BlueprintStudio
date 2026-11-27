@@ -675,6 +675,7 @@ namespace nx
     {
         struct DesignRow {std::string id,kind,label;unsigned depth;};
         constexpr const char* designPalette[]={"column","row","grid","stack","scroll","label","button","toggle","slider","progress","field","space"};
+        constexpr const char* designEvents[]={"click","change","focus","done","draw","makeRow"};
         constexpr const char* designProps[]={"text","width","height","gap","padding","grow","align","justify","self","style","value","visible"};
         void designRows(JsonTree::Value value,std::vector<DesignRow>& rows,unsigned depth)
         {
@@ -752,6 +753,28 @@ namespace nx
         {if(m_document.moveVisualWidget(m_visualSelection,m_widgetSelection,-1,m_status))m_status="Moved widget up.";return;}
         if(!m_widgetSelection.empty()&&in(x,y,450,548,610,581))
         {if(m_document.moveVisualWidget(m_visualSelection,m_widgetSelection,1,m_status))m_status="Moved widget down.";return;}
+        if(in(x,y,630,420,1000,438)){m_widgetEvents=!m_widgetEvents;m_widgetUnbind=false;return;}
+        if(m_widgetEvents)
+        {
+            if(in(x,y,630,520,1000,553)){m_widgetUnbind=!m_widgetUnbind;return;}
+            if(m_widgetSelection.empty()||!in(x,y,630,439,1000,511))return;
+            const size_t index=static_cast<size_t>((y-439)/36)*3+static_cast<size_t>((x-630)/123.34f);
+            if(index>=sizeof(designEvents)/sizeof(designEvents[0]))return;
+            if(m_widgetUnbind)
+            {
+                if(m_document.clearVisualWidgetEvent(m_visualSelection,m_widgetSelection,designEvents[index],m_status))m_status="Event unbound; function graph preserved.";
+            }
+            else
+            {
+                size_t target=0;
+                if(m_document.openVisualWidgetEvent(assetScreen(),m_visualSelection,m_widgetSelection,designEvents[index],target,m_status))
+                {
+                    m_widgetDesigner=false;m_assetBrowser=false;releaseWidgetPreview();selectGraph(target);
+                    m_status="Widget callback graph opened. Connect actions to its entry.";
+                }
+            }
+            return;
+        }
         if(!m_widgetSelection.empty()&&in(x,y,630,439,1000,583))
         {
             const size_t column=static_cast<size_t>((x-630)/123.34f),row=static_cast<size_t>((y-439)/36);
@@ -809,8 +832,16 @@ namespace nx
         {
             c.clip(636,207,358,208);c.text(*m_font,m_designPreviewError.empty()?"Native preview":m_designPreviewError.c_str(),640,225,muted);c.noClip();
         }
-        c.text(*m_font,"Native layout / selected widget properties",630,421,muted);
-        for(size_t i=0;i<sizeof(designProps)/sizeof(designProps[0]);++i)
+        c.rect(630,420,370,18,{0.19f,0.33f,0.50f,1});
+        c.text(*m_font,m_widgetEvents?"EVENTS  /  click to show properties":"PROPERTIES  /  click to show events",630,420,text);
+        if(m_widgetEvents)
+        {
+            for(size_t i=0;i<sizeof(designEvents)/sizeof(designEvents[0]);++i)
+                button(630+123.34f*static_cast<float>(i%3),439+36*static_cast<float>(i/3),119,designEvents[i]);
+            button(630,520,370,m_widgetUnbind?"Mode: unbind event":"Mode: open event graph");
+            c.text(*m_font,"Link page to screen before opening events.",630,558,muted);
+        }
+        else for(size_t i=0;i<sizeof(designProps)/sizeof(designProps[0]);++i)
             button(630+123.34f*static_cast<float>(i%3),439+36*static_cast<float>(i/3),119,designProps[i]);
     }
     void BlueprintWorkspace::updateVisualLibrary(Services& s,float x,float y,bool left,bool click,unsigned pressed)
@@ -987,7 +1018,7 @@ namespace nx
             return;
         }
         if(selected->kind!="widget")return;
-        if(in(x,y,280,548,610,581)){m_widgetDesigner=true;m_widgetPalette=false;m_widgetSelection.clear();m_widgetFirst=0;return;}
+        if(in(x,y,280,548,610,581)){m_widgetDesigner=true;m_widgetPalette=false;m_widgetEvents=m_widgetUnbind=false;m_widgetSelection.clear();m_widgetFirst=0;return;}
         if(in(x,y,630,232,1000,266))
         {m_visualInput=2;input.setTyping(true);m_status="Enter the next widget label, then press Enter.";return;}
         const char* kind=nullptr;

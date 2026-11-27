@@ -172,7 +172,7 @@ namespace nx
                 (kind!="attach:behaviour"||!behaviour)&&(!behaviour||kind.rfind("level:",0)!=0);
         }
         bool signatureType(const std::string& type)
-        {return blueprintLiteralType(type)||type=="Vec2"||type=="Vec3"||type=="Color"||type=="Entity@"||type=="Playlist@"||type=="WebSocket@"||type=="Widget@";}
+        {return blueprintLiteralType(type)||type=="Vec2"||type=="Vec3"||type=="Color"||type=="Entity@"||type=="Playlist@"||type=="WebSocket@"||type=="Widget@"||type=="Canvas@";}
         bool validSignature(const std::vector<BlueprintPin>& parameters,const std::string& result)
         {
             if(parameters.size()>8||(result!="void"&&!signatureType(result)))return false;
@@ -652,6 +652,154 @@ namespace nx
         }
         error="Select a widget page.";return false;
     }
+    namespace
+    {
+        bool widgetEvent(const std::string& event)
+        {return event=="click"||event=="change"||event=="focus"||event=="done"||event=="draw"||event=="makeRow";}
+        std::vector<BlueprintPin> widgetEventParameters(const std::string& event)
+        {
+            if(event=="draw")return {{"canvas","Canvas@"},{"widget","Widget@"}};
+            if(event=="makeRow")return {{"widget","Widget@"},{"index","int"}};
+            return {{"widget","Widget@"}};
+        }
+        struct WidgetHandler {std::string event,method;};
+        void widgetHandlers(JsonTree::Value item,std::vector<WidgetHandler>& out)
+        {
+            if(item.isArray()||item.isObject())
+            {
+                if(item.isObject())
+                {
+                    bool widget=false;
+                    for(const char* kind:widgetKinds)if(item[kind].exists()){widget=true;break;}
+                    if(widget)for(const char* event:{"click","change","focus","done","draw","makeRow"})
+                        if(item[event].exists())out.push_back({event,item[event].text()});
+                }
+                for(auto child=item.first();child.exists();child=child.next())widgetHandlers(child,out);
+            }
+        }
+        bool linksWidgetPage(const BlueprintDocument::Graph& g,const std::string& id)
+        {
+            for(const auto& n:g.nodes)if(n.kind=="ui:load-asset")
+                for(const auto& v:n.values)if(v.pin=="id"&&v.value==id)return true;
+            return false;
+        }
+        bool handlerSignature(const BlueprintDocument::Graph& g,const std::string& event)
+        {
+            const auto params=widgetEventParameters(event);
+            if(g.kind!="function"||g.inlineMacro||g.returnType!="void"||g.parameters.size()!=params.size())return false;
+            for(size_t i=0;i<params.size();++i)if(g.parameters[i].type!=params[i].type)return false;
+            return true;
+        }
+        // Page names are actual native method names. Blueprint functions are
+        // emitted with bp_fn_ prefixes; imported callbacks must be mapped explicitly.
+        bool ensureWidgetHandlers(BlueprintDocument& doc,const std::string& owner,const std::string& source,bool create,std::string& error)
+        {
+            JsonTree tree;if(!tree.parse(source.data(),source.size())){error="Invalid widget JSON.";return false;}
+            std::vector<WidgetHandler> handlers;widgetHandlers(tree.root(),handlers);
+            for(const auto& handler:handlers)
+            {
+                if(handler.method.rfind("bp_fn_",0)!=0||!identifier(handler.method.substr(6)))
+                {error="Widget "+handler.event+" callback must reference a Blueprint function: "+handler.method;return false;}
+                const auto functionName=handler.method.substr(6);
+                const auto* graph=doc.function(owner,functionName);
+                if(!graph)
+                {
+                    if(!create){error="Missing widget callback "+functionName+" on "+owner;return false;}
+                    if(!doc.addFunction(functionName,error,owner)||
+                        !doc.setFunctionSignature(doc.graphs.size()-1,widgetEventParameters(handler.event),"void",error))return false;
+                }
+                else if(!handlerSignature(*graph,handler.event))
+                {error="Incompatible widget callback signature: "+functionName;return false;}
+            }
+            return true;
+        }
+    }
+    bool BlueprintDocument::visualWidgetForOwner(const std::string& id,const std::string& owner,std::string& json,std::string& error)const
+    {
+        const auto* page=visualAsset(id);
+        if(!page||page->kind!="widget"||!page->dependencies.empty()){error="Missing or unsupported linked widget page.";return false;}
+        JsonTree tree;if(!tree.parse(page->source.data(),page->source.size())){error="Invalid widget JSON.";return false;}
+        std::vector<WidgetHandler> handlers;widgetHandlers(tree.root(),handlers);
+        for(const auto& handler:handlers)
+        {
+            const auto* graph=handler.method.rfind("bp_fn_",0)==0?function(owner,handler.method.substr(6)):nullptr;
+            if(!graph||!handlerSignature(*graph,handler.event)){error="Missing or incompatible widget "+handler.event+" callback: "+handler.method;return false;}
+        }
+        json=page->source;error.clear();return true;
+    }
+    bool BlueprintDocument::visualWidgetUsesFunction(const std::string& owner,const std::string& functionName)const
+    {
+        for(const auto& page:m_visualAssets)if(page.kind=="widget"&&
+            std::any_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==owner&&linksWidgetPage(g,page.id);}))
+        {
+            JsonTree tree;if(!tree.parse(page.source.data(),page.source.size()))continue;
+            std::vector<WidgetHandler> handlers;widgetHandlers(tree.root(),handlers);
+            for(const auto& handler:handlers)if(handler.method=="bp_fn_"+functionName)return true;
+        }
+        return false;
+    }
+    bool BlueprintDocument::openVisualWidgetEvent(const std::string& owner,const std::string& id,const std::string& widget,const std::string& event,size_t& graph,std::string& error)
+    {
+        if(!widgetEvent(event)||widget.empty()){error="Select a widget and event.";return false;}
+        const auto* page=visualAsset(id);
+        if(!page||page->kind!="widget"){error="Select a widget page.";return false;}
+        if(std::none_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==owner&&linksWidgetPage(g,id);}))
+        {error="Link this page to the selected screen before authoring callbacks.";return false;}
+        JsonValue root;if(!root.parse(page->source.data(),page->source.size(),error))return false;
+        WidgetMatch match;findVisualWidget(root,widget,match);
+        if(match.matches!=1){error="Select a widget with a unique ID.";return false;}
+        const auto* existing=match.item->find(event.c_str());
+        std::string functionName;
+        if(existing)
+        {
+            const auto method=existing->text();
+            if(method.rfind("bp_fn_",0)!=0||!identifier(method.substr(6)))
+            {error="Imported callback is not a Blueprint function; clear the binding first.";return false;}
+            functionName=method.substr(6);
+        }
+        else
+        {
+            std::string base="ui_"+id+"_"+widget+"_"+event;
+            for(char& ch:base)if(!((ch>='a'&&ch<='z')||(ch>='A'&&ch<='Z')||(ch>='0'&&ch<='9')||ch=='_'))ch='_';
+            if(base.size()>52)base.resize(52);
+            functionName=base;
+            unsigned serial=0;
+            while(std::any_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.name==functionName;}))
+                functionName=base+"_"+std::to_string(++serial);
+            if(!text(*match.item,event.c_str(),"bp_fn_"+functionName))return false;
+        }
+        BlueprintDocument staged;staged.name=name;staged.assetRoot=assetRoot;staged.graphs=graphs;staged.manifests=manifests;
+        staged.m_visualAssets=m_visualAssets;staged.m_visualSerial=m_visualSerial;staged.m_nextId=m_nextId;
+        const std::string source=existing?page->source:root.write(true);
+        const auto owners=screens();
+        for(const auto& screen:owners)
+            if(std::any_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==screen&&linksWidgetPage(g,id);}))
+                if(!ensureWidgetHandlers(staged,screen,source,true,error))return false;
+        const auto* target=staged.function(owner,functionName);
+        if(!target){error="Cannot locate widget handler.";return false;}
+        graph=static_cast<size_t>(target-staged.graphs.data());
+        if(existing&&staged.graphs.size()==graphs.size()){error.clear();return true;}
+        for(auto& a:staged.m_visualAssets)if(a.id==id)a.source=source;
+        std::string checked;
+        if(!validVisualAssets(staged.m_visualAssets,error)||!staged.serialize(checked,error))return false;
+        recordGraphList();graphs.swap(staged.graphs);m_visualAssets.swap(staged.m_visualAssets);m_nextId=staged.m_nextId;error.clear();return true;
+    }
+    bool BlueprintDocument::clearVisualWidgetEvent(const std::string& id,const std::string& widget,const std::string& event,std::string& error)
+    {
+        if(!widgetEvent(event)||widget.empty()){error="Select a widget and event.";return false;}
+        auto assets=m_visualAssets;
+        for(auto& page:assets)if(page.id==id&&page.kind=="widget")
+        {
+            JsonValue root;if(!root.parse(page.source.data(),page.source.size(),error))return false;
+            WidgetMatch match;findVisualWidget(root,widget,match);
+            if(match.matches!=1){error="Select a widget with a unique ID.";return false;}
+            if(!match.item->find(event.c_str())){error.clear();return true;}
+            match.item->remove(event.c_str());page.source=root.write(true);
+            // Leave the callback graph intact: other references may still use it.
+            return replaceVisualAssets(assets,error);
+        }
+        error="Widget page not found.";return false;
+    }
     bool BlueprintDocument::connectVisualWidget(const std::string& owner,const std::string& id,std::string& error)
     {
         const auto* page=visualAsset(id);
@@ -734,7 +882,8 @@ namespace nx
             if(canvas==staged.graphs[draw].nodes.size()&&!staged.addNode(draw,"event:canvas",node.x,node.y+180,error))return false;
             if(!staged.connect(draw,canvas,"value",target,"canvas",error))return false;
         }
-        if(linked&&drawn){error.clear();return true;}
+        if(!ensureWidgetHandlers(staged,owner,page->source,true,error))return false;
+        if(linked&&drawn&&staged.graphs.size()==graphs.size()){error.clear();return true;}
         std::string verified;
         if(!staged.serialize(verified,error))return false;
         recordGraphList();graphs.swap(staged.graphs);m_nextId=staged.m_nextId;error.clear();return true;
@@ -1943,6 +2092,8 @@ namespace nx
         if(graph>=graphs.size()||graphs[graph].kind!="function"||!validSignature(parameters,returnType))
         {error="Invalid signature: up to eight uniquely named typed parameters.";return false;}
         auto& g=graphs[graph];
+        if(visualWidgetUsesFunction(g.owner,g.name))
+        {if(g.returnType!=returnType||g.parameters.size()!=parameters.size()||!std::equal(g.parameters.begin(),g.parameters.end(),parameters.begin(),[](const BlueprintPin& a,const BlueprintPin& b){return a.type==b.type;})){error="Unbind the widget callback before changing its signature.";return false;}}
         if(g.inlineMacro&&returnType!="void"){error="Inline macros currently require a void signature.";return false;}
         const auto old=g.parameters;const auto oldReturn=g.returnType;
         if(oldReturn==returnType&&old.size()==parameters.size()&&
@@ -2005,6 +2156,7 @@ namespace nx
     {
         if(graph>=graphs.size()||graphs[graph].kind!="function"){error="Select a reusable graph.";return false;}
         auto& g=graphs[graph];
+        if(enabled&&visualWidgetUsesFunction(g.owner,g.name)){error="Widget callbacks must remain callable functions.";return false;}
         if(enabled&&(g.returnType!="void"||std::any_of(g.nodes.begin(),g.nodes.end(),[](const Node& n){return n.kind=="return:function";})))
         {error="Inline macros require a void signature and no return nodes.";return false;}
         if(g.inlineMacro!=enabled){record(graph);g.inlineMacro=enabled;}error.clear();return true;
@@ -2015,6 +2167,7 @@ namespace nx
         {error="Choose a valid function name.";return false;}
         const auto owner=graphs[graph].owner,old=graphs[graph].name;
         if(old==functionName){error.clear();return true;}
+        if(visualWidgetUsesFunction(owner,old)){error="Unbind the widget callback before renaming it.";return false;}
         if(std::any_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==owner&&g.name==functionName;}))
         {error="A graph already uses that name.";return false;}
         recordGraphList();graphs[graph].name=functionName;
@@ -2166,6 +2319,7 @@ namespace nx
     {
         if(graph>=graphs.size()||graphs[graph].kind!="function")
         {error="Only function graphs can be deleted.";return false;}
+        if(visualWidgetUsesFunction(graphs[graph].owner,graphs[graph].name)){error="Unbind the widget callback before deleting it.";return false;}
         for(const auto& g:graphs)if(g.owner==graphs[graph].owner)for(const auto& n:g.nodes)
             if(n.kind=="call:function"&&n.ref==graphs[graph].name)
             {error="Remove calls to this function before deleting it.";return false;}
