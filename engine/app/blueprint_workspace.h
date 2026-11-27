@@ -34,7 +34,8 @@ namespace nx
         bool writeVerified(Services& services,const std::string& path,const std::string& bytes);
         bool compileAndExport(Services& services);
         void focusDiagnostic(BlueprintLocation location);
-        BlueprintSourceMap m_previewMap;
+        void focusPreviewError(const std::string& error);
+        std::vector<BlueprintScreenOutput> m_previewOutputs;
         BlueprintLocation m_diagnostic;
         void cancelDrag() { m_drag = false; }
         struct NodePins { std::vector<std::string> inputs, outputs, inputTypes, outputTypes; float height = 72; };

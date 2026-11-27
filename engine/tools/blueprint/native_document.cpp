@@ -86,7 +86,7 @@ namespace nx
         bool screenId(const std::string& s)
         {
             if(s=="Screen")return true; // Initial screen, retained for native v2 drafts.
-            if(s.empty()||s.size()>40||s=="main"||s.front()<'a'||s.front()>'z')return false;
+            if(s.empty()||s.size()>40||s=="main"||s=="screen"||s.front()<'a'||s.front()>'z')return false;
             return std::all_of(s.begin(),s.end(),[](char c){return (c>='a'&&c<='z')||(c>='0'&&c<='9')||c=='_'||c=='-';});
         }
         std::string scoped(const std::string& owner,const std::string& name){return owner+"/"+name;}

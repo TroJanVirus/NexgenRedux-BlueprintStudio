@@ -5,6 +5,7 @@
 #include "bindings/bindings.h"
 #include "video/video.h"
 #include "save/save.h"
+#include <algorithm>
 
 #include <stdio.h>
 #include <string.h>
@@ -102,8 +103,29 @@ namespace nx
         m_infos[m_count++] = info;
     }
 
+    u32 Screens::count() const
+    {
+#ifdef NX_DESKTOP_BLUEPRINT
+        if(previewing())return static_cast<u32>(m_previewScreens.size());
+#endif
+        return m_count;
+    }
+    const ScreenInfo* Screens::info(u32 index) const
+    {
+#ifdef NX_DESKTOP_BLUEPRINT
+        if(previewing())return index<m_previewScreens.size()?&m_previewScreens[index].info:nullptr;
+#endif
+        return index<m_count?&m_infos[index]:nullptr;
+    }
     const ScreenInfo* Screens::findInfo(const char* id) const
     {
+#ifdef NX_DESKTOP_BLUEPRINT
+        if(previewing())
+        {
+            for(const auto& screen:m_previewScreens)if(strcmp(screen.info.id,id)==0)return &screen.info;
+            return nullptr;
+        }
+#endif
         for (u32 i = 0; i < m_count; i++)
         {
             if (strcmp(m_infos[i].id, id) == 0)
@@ -117,11 +139,31 @@ namespace nx
 #ifdef NX_DESKTOP_BLUEPRINT
     bool Screens::startPreview(const std::string& source, std::string& error)
     {
-        if (!m_services || m_depth != 1 || !m_menuOpen || previewing() || source.empty() || source.size() > 1024*1024 ||
-            findInfo("__blueprint_preview"))
+        PreviewScreen screen;
+        snprintf(screen.info.id,sizeof(screen.info.id),"__blueprint_preview");
+        snprintf(screen.info.title,sizeof(screen.info.title),"Blueprint play test");
+        screen.source=source;
+        const bool valid=startProjectPreview({screen},screen.info.id,error);
+        if(valid)m_previewNavigation=false;
+        return valid;
+    }
+
+    bool Screens::startProjectPreview(const std::vector<PreviewScreen>& screens,const std::string& start,std::string& error)
+    {
+        const auto selected=std::find_if(screens.begin(),screens.end(),[&](const PreviewScreen& s){return start==s.info.id;});
+        if (!m_services || m_depth != 1 || !m_menuOpen || previewing() || screens.empty() ||
+            screens.size()>kMaxScreens || selected==screens.end())
         {
             error = "Preview requires the home screen and a valid generated script.";
             return false;
+        }
+        for(size_t i=0;i<screens.size();++i)
+        {
+            const auto& p=screens[i];
+            if(!p.info.id[0]||p.source.empty()||p.source.size()>1024*1024)
+            {error="Invalid preview screen.";return false;}
+            for(size_t j=0;j<i;++j)if(strcmp(p.info.id,screens[j].info.id)==0)
+            {error="Duplicate preview screen ID.";return false;}
         }
         m_previewSave = create<Save>(MemTag::General);
         m_previewSettings = create<Save>(MemTag::General);
@@ -136,7 +178,7 @@ namespace nx
         saveSettings(*m_services); // Snapshot settings without writing to the real save.
         m_previewRandom = m_services->random;
         m_previewDevelopment = m_services->development;
-        m_previewSource = source;
+        m_previewScreens=screens;m_previewNavigation=true;
         m_services->save = m_previewSave;
         m_services->development = false;
         m_change = Change::None;
@@ -144,10 +186,7 @@ namespace nx
         // callbacks against the temporary save or generated module.
         m_services->audio->pauseGroup(m_stack[0].group, true);
         m_menuOpen = false;
-        ScreenInfo info;
-        snprintf(info.id, sizeof(info.id), "__blueprint_preview");
-        snprintf(info.title, sizeof(info.title), "Blueprint play test");
-        if (!open(info))
+        if (!open(selected->info))
         {
             error = this->error();
             stopPreview();
@@ -161,8 +200,8 @@ namespace nx
     void Screens::stopPreview()
     {
         if (!previewing()) return;
-        // Screen navigation is blocked during preview, so this is always its own entry.
-        if (m_depth > 1) close(true);
+        // Never close or resume the original home while preview state is active.
+        while (m_depth > 1) close(true);
         m_change = Change::None;
         m_services->save = m_previewSettings;
         loadSettings(*m_services);
@@ -173,7 +212,7 @@ namespace nx
         m_services->development = m_previewDevelopment;
         destroy(m_previewSave);
         m_previewSave = nullptr;
-        m_previewSource.clear();
+        m_previewScreens.clear();m_previewNavigation=false;
         if (m_depth) enter(m_stack[m_depth-1]);
         m_menuOpen = false;
         setMenu(true); // The workspace is visible again; keep the home screen paused.
@@ -186,8 +225,17 @@ namespace nx
     void Screens::request(Change change, const char* id)
     {
 #ifdef NX_DESKTOP_BLUEPRINT
-        // The preview is a single temporary screen, not the host project's navigation stack.
-        if (previewing()) { NX_WARN("Screen navigation is unavailable during Blueprint preview."); return; }
+        if (previewing())
+        {
+            if(!m_previewNavigation)return;
+            if((change==Change::Push||change==Change::Replace)&&!findInfo(id))
+            {NX_WARN("Screen %s is not in this preview project",id);return;}
+            if((change==Change::Pop&&m_depth<=2)||change==Change::Home)
+            {
+                if(change==Change::Pop)return;
+                // Home within the preview means its root, not the original Redux home.
+            }
+        }
 #endif
         m_change = change;
         snprintf(m_changeId, sizeof(m_changeId), "%s", id);
@@ -220,6 +268,10 @@ namespace nx
                 return;
             }
         }
+        u32 floor=1;
+#ifdef NX_DESKTOP_BLUEPRINT
+        if(previewing())floor=2;
+#endif
         switch (change)
         {
         case Change::Push:
@@ -233,7 +285,7 @@ namespace nx
             open(*next);
             break;
         case Change::Pop:
-            if (m_depth > 1)
+            if (m_depth > floor)
             {
                 close(true);
                 m_services->audio->pauseGroup(m_stack[m_depth - 1].group, false);
@@ -245,14 +297,14 @@ namespace nx
             open(*next);
             break;
         case Change::Home:
-            if (m_depth > 1)
+            if (m_depth > floor)
             {
-                while (m_depth > 1)
+                while (m_depth > floor)
                 {
                     close(true);
                 }
-                m_services->audio->pauseGroup(m_stack[0].group, false);
-                callOptional(m_stack[0], "void onResume()");
+                m_services->audio->pauseGroup(m_stack[floor-1].group, false);
+                callOptional(m_stack[floor-1], "void onResume()");
             }
             break;
         case Change::Restart:
@@ -319,12 +371,15 @@ namespace nx
         FileData source;
         entry.scriptTime = m_services->platform->fileTime(path);
 #ifdef NX_DESKTOP_BLUEPRINT
-        if (previewing() && strcmp(entry.info.id, "__blueprint_preview") == 0)
+        if (previewing())
         {
-            auto* bytes = static_cast<u8*>(memAlloc(m_previewSource.size()+1, MemTag::Script));
-            if (!bytes) { entry.failed = true; snprintf(entry.error, sizeof(entry.error), "Cannot allocate preview source"); return false; }
-            memcpy(bytes, m_previewSource.data(), m_previewSource.size());
-            source.take(bytes, m_previewSource.size());
+            const auto found=std::find_if(m_previewScreens.begin(),m_previewScreens.end(),[&](const PreviewScreen& p){return strcmp(p.info.id,entry.info.id)==0;});
+            if(found==m_previewScreens.end()){entry.failed=true;snprintf(entry.error,sizeof(entry.error),"Missing preview source");return false;}
+            const auto& code=found->source;
+            auto* bytes=static_cast<u8*>(memAlloc(code.size()+1,MemTag::Script));
+            if(!bytes){entry.failed=true;snprintf(entry.error,sizeof(entry.error),"Cannot allocate preview source");return false;}
+            memcpy(bytes,code.data(),code.size());bytes[code.size()]=0;
+            source.take(bytes,code.size());
         }
         else
 #endif

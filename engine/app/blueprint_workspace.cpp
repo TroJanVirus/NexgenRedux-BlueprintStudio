@@ -23,7 +23,7 @@ namespace nx
         constexpr float kNodeWidth = 196, kNodeHeight = 72;
         // Each native pin is provided by the generated catalogue.
         constexpr float kPinStart=38, kPinStep=22;
-        constexpr size_t kRows = 15;
+        constexpr size_t kRows = 13;
         constexpr Color text = {0.88f, 0.91f, 0.96f, 1};
         constexpr Color muted = {0.57f, 0.65f, 0.76f, 1};
         constexpr Color accent = {0.27f, 0.65f, 0.98f, 1};
@@ -285,34 +285,50 @@ namespace nx
         m_y=(kBottom-kTop-m_rows[m_selection].height)*0.5f-n.y;
     }
 
+    void BlueprintWorkspace::focusPreviewError(const std::string& error)
+    {
+        for(const auto& screen:m_previewOutputs)
+        {
+            const size_t line=blueprintErrorLine(error,screen.id+"/main.as");
+            if(line){focusDiagnostic(blueprintSourceLocation(screen.map,line));return;}
+        }
+    }
+
     bool BlueprintWorkspace::compileAndExport(Services& s)
     {
-        std::string source,manifest;BlueprintLocation location;BlueprintSourceMap map;
-        m_diagnostic={};
-        if(!compileBlueprintScreen(m_document,source,manifest,m_status,&location,&map)){focusDiagnostic(location);return false;}
+        std::vector<BlueprintScreenOutput> screens;BlueprintLocation location;m_diagnostic={};
+        if(!compileBlueprintProject(m_document,screens,m_status,&location)){focusDiagnostic(location);return false;}
         const char* module="bp_native_validation";
-        const bool valid=s.host->compile(module,"blueprint.as",source.data(),source.size())&&s.host->findClass(module,"Screen");
-        if(!valid)
+        for(const auto& screen:screens)
         {
-            m_status=std::string("AngelScript validation failed: ")+s.host->lastError();
-            focusDiagnostic(blueprintSourceLocation(map,blueprintErrorLine(m_status,"blueprint.as")));
+            const bool valid=s.host->compile(module,"blueprint.as",screen.source.data(),screen.source.size())&&s.host->findClass(module,"Screen");
+            if(!valid)
+            {
+                m_status=screen.id+": "+s.host->lastError();
+                focusDiagnostic(blueprintSourceLocation(screen.map,blueprintErrorLine(m_status,"blueprint.as")));
+            }
+            s.host->discard(module);if(!valid)return false;
         }
-        s.host->discard(module);
-        if(!valid)return false;
         static unsigned sequence=0;
-        std::string path;
+        std::string root;
         for(unsigned attempt=0;attempt<100;++attempt)
         {
-            const std::string folder="bp-"+std::to_string(static_cast<long long>(std::time(nullptr)))+"-"+std::to_string(++sequence);
-            if(s.platform->createOwnFolder(folder.c_str())){path="own/"+folder;break;}
+            const auto folder="bp-"+std::to_string(static_cast<long long>(std::time(nullptr)))+"-"+std::to_string(++sequence);
+            if(s.platform->createOwnFolder(folder.c_str())){root=folder;break;}
         }
-        if(path.empty()){m_status="Cannot create a new export folder.";return false;}
-        // A screen is discoverable only after its manifest is written last.
-        if(!writeVerified(s,path+"/main.as",source)||!writeVerified(s,path+"/screen.json",manifest))
-        {m_status="Incomplete export in "+path+". Do not install it.";return false;}
-        m_status="Exported "+path+" | Copy folder to media/showcase.";
+        if(root.empty()){m_status="Cannot create a new export folder.";return false;}
+        // Export every script before any screen manifests; install only the complete folder.
+        for(const auto& screen:screens)
+        {
+            const auto folder=root+"/"+screen.id;
+            if(!s.platform->createOwnFolder(folder.c_str())||!writeVerified(s,"own/"+folder+"/main.as",screen.source))
+            {m_status="Incomplete project export. Do not install own/"+root;return false;}
+        }
+        for(const auto& screen:screens)
+            if(!writeVerified(s,"own/"+root+"/"+screen.id+"/screen.json",screen.manifest))
+            {m_status="Incomplete project export. Do not install own/"+root;return false;}
+        m_status="Exported own/"+root+" | Copy screen folders to media/showcase.";
         NX_INFO("Blueprint Studio: %s",m_status.c_str());return true;
-
     }
 
     void BlueprintWorkspace::stopPreview(Services& s)
@@ -338,7 +354,7 @@ namespace nx
             const std::string error=s.screens->error();
             stopPreview(s);
             m_status="Preview error: "+error;
-            focusDiagnostic(blueprintSourceLocation(m_previewMap,blueprintErrorLine(error,"__blueprint_preview/main.as")));
+            focusPreviewError(error);
             NX_ERROR("Blueprint Studio: %s",m_status.c_str());
         }
     }
@@ -439,9 +455,15 @@ namespace nx
                     if(focus==3&&!m_document.setReference(m_graph,m_selection,m_edit,m_status))break;
                     if(focus==5&&!saveNamed(s,m_edit))break;
                     if(focus==6&&!m_document.setInputValue(m_graph,m_selection,m_editPin,m_edit,m_status))break;
+                    if(focus==7)
+                    {
+                        const size_t first=m_document.graphs.size();
+                        if(!m_document.addScreen(m_edit,m_status))break;
+                        selectGraph(first);
+                    }
                     if(focus==4)
                     {
-                        if(!m_document.addFunction(m_edit,m_status))break;
+                        if(!m_document.addFunction(m_edit,m_status,m_document.graphs[m_graph].owner))break;
                         selectGraph(m_document.graphs.size()-1);
                     }
                     m_focus=0;input.setTyping(false);if(focus!=5){m_status="Ready.";if(focus!=1)m_diagnostic={};}break;
@@ -464,15 +486,27 @@ namespace nx
             if(m_document.graphs.empty()){m_left=left;return;}
             if(click&&in(x,y,504,39,604,69))
             {
-                std::string source;BlueprintLocation location;m_diagnostic={};m_previewMap.clear();
+                BlueprintLocation location;m_diagnostic={};m_previewOutputs.clear();
                 checkpoint(s,true);
-                if(!compileBlueprint(m_document,source,m_status,&location,&m_previewMap))focusDiagnostic(location);
-                else if(s.screens->startPreview(source,m_status))
-                {m_playing=true;clearWire();m_status="Playing. Escape returns to Studio.";}
+                if(!compileBlueprintProject(m_document,m_previewOutputs,m_status,&location))focusDiagnostic(location);
                 else
                 {
-                    focusDiagnostic(blueprintSourceLocation(m_previewMap,blueprintErrorLine(m_status,"__blueprint_preview/main.as")));
-                    s.input->setWantsPointer(true);s.input->setTyping(false);
+                    std::vector<Screens::PreviewScreen> screens;
+                    for(const auto& output:m_previewOutputs)
+                    {
+                        Screens::PreviewScreen item;
+                        snprintf(item.info.id,sizeof(item.info.id),"%s",output.id.c_str());
+                        snprintf(item.info.title,sizeof(item.info.title),"%s",output.id.c_str());
+                        item.source=output.source;screens.push_back(std::move(item));
+                    }
+                    const auto owner=m_document.graphs[m_graph].owner;
+                    if(s.screens->startProjectPreview(screens,owner,m_status))
+                    {m_playing=true;clearWire();m_status="Playing "+owner+". Escape returns to Studio.";}
+                    else
+                    {
+                        focusPreviewError(m_status);
+                        s.input->setWantsPointer(true);s.input->setTyping(false);
+                    }
                 }
                 m_left=left;return;
             }
@@ -481,6 +515,16 @@ namespace nx
             if(((pressed&2u)||(click&&in(x,y,864,39,948,69)))&&m_document.undo()){selectGraph(std::min(m_graph,m_document.graphs.size()-1));m_status="Undid graph change.";}
             if(((pressed&4u)||(click&&in(x,y,954,39,1038,69)))&&m_document.redo()){selectGraph(std::min(m_graph,m_document.graphs.size()-1));m_status="Redid graph change.";}
             if(click&&in(x,y,1044,39,1128,69))fitGraph();
+        }
+        if(click&&in(x,y,8,kBottom-188,kLeft-8,kBottom-156))
+        {
+            m_edit.clear();m_focus=7;input.setTyping(true);m_status="Type a lowercase screen ID, then Enter.";m_left=left;return;
+        }
+        if(click&&in(x,y,8,kBottom-151,kLeft-8,kBottom-119))
+        {
+            const std::string owner=m_document.graphs[m_graph].owner;
+            if(m_document.removeScreen(owner,m_status)){m_first=0;selectGraph(0);m_status="Removed screen. Undo restores it.";}
+            m_left=left;return;
         }
         if(click&&in(x,y,8,kBottom-114,kLeft-8,kBottom-82))
         {
@@ -655,7 +699,7 @@ namespace nx
             c.text(*m_font,label,x+width*0.5f,44,enabled?text:muted,Align::Center);
         };
         button(504,100,"Play test",!m_document.graphs.empty());
-        button(610,132,"Export screen",!m_document.graphs.empty());button(748,110,"Save",!m_document.graphs.empty());button(864,84,"Undo",m_document.canUndo());
+        button(610,132,"Export project",!m_document.graphs.empty());button(748,110,"Save",!m_document.graphs.empty());button(864,84,"Undo",m_document.canUndo());
         button(954,84,"Redo",m_document.canRedo());button(1044,84,"Fit",!m_document.graphs.empty());button(1134,132,"Return",true);
         c.rect(0,kTop,kLeft,kBottom-kTop,{0.10f,0.13f,0.18f,1});
         c.rect(kRight,kTop,kWidth-kRight,kBottom-kTop,{0.10f,0.13f,0.18f,1});
@@ -737,6 +781,11 @@ namespace nx
             c.clip(5,y,kLeft-10,31);
             c.text(*m_font,shorten(g.owner+" / "+g.name,32).c_str(),12,y+6,text);c.noClip();
         }
+        c.roundRect(8,kBottom-188,kLeft-16,32,5,{0.19f,0.33f,0.50f,1});
+        c.clip(8,kBottom-188,kLeft-16,32);
+        c.text(*m_font,m_focus==7?(m_edit.empty()?"Type screen ID...":m_edit.c_str()):"New screen",kLeft*0.5f,kBottom-182,text,Align::Center);c.noClip();
+        c.roundRect(8,kBottom-151,kLeft-16,32,5,{0.32f,0.19f,0.23f,1});
+        c.text(*m_font,"Delete screen",kLeft*0.5f,kBottom-145,text,Align::Center);
         c.roundRect(8,kBottom-114,kLeft-16,32,5,{0.19f,0.33f,0.50f,1});
         c.clip(8,kBottom-114,kLeft-16,32);
         c.text(*m_font,m_focus==4?(m_edit.empty()?"Type name...":m_edit.c_str()):"New function",kLeft*0.5f,kBottom-108,text,Align::Center);c.noClip();

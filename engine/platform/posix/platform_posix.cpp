@@ -214,10 +214,16 @@ namespace nx
 
     bool PlatformPosix::createOwnFolder(const char* name)
     {
-        if (!name || !*name || strlen(name) > 64) return false;
-        for (const char* c=name;*c;++c)
-            if (!((*c>='a'&&*c<='z')||(*c>='0'&&*c<='9')||*c=='-'||*c=='_')) return false;
-        char root[kMaxPath], full[kMaxPath], relative[80];
+        if(!name||!*name||strlen(name)>110)return false;
+        unsigned slash=0;bool empty=true;
+        for(const char* c=name;*c;++c)
+        {
+            if(*c=='/'){if(empty||++slash>1)return false;empty=true;continue;}
+            if(!((*c>='a'&&*c<='z')||(*c>='A'&&*c<='Z')||(*c>='0'&&*c<='9')||*c=='-'||*c=='_'))return false;
+            empty=false;
+        }
+        if(empty)return false;
+        char root[kMaxPath], full[kMaxPath], relative[128];
         if (!mediaPath("own",root)) return false;
         makeFolders(root);
         snprintf(relative,sizeof(relative),"own/%s",name);

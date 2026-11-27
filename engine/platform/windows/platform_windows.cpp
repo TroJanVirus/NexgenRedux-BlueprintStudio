@@ -157,10 +157,16 @@ namespace nx
 
     bool PlatformWindows::createOwnFolder(const char* name)
     {
-        if (!name || !*name || strlen(name)>64) return false;
-        for (const char* c=name;*c;++c)
-            if (!((*c>='a'&&*c<='z')||(*c>='0'&&*c<='9')||*c=='-'||*c=='_')) return false;
-        wchar_t root[kMaxPath],full[kMaxPath];char relative[80];
+        if(!name||!*name||strlen(name)>110)return false;
+        unsigned slash=0;bool empty=true;
+        for(const char* c=name;*c;++c)
+        {
+            if(*c=='/'){if(empty||++slash>1)return false;empty=true;continue;}
+            if(!((*c>='a'&&*c<='z')||(*c>='A'&&*c<='Z')||(*c>='0'&&*c<='9')||*c=='-'||*c=='_'))return false;
+            empty=false;
+        }
+        if(empty)return false;
+        wchar_t root[kMaxPath],full[kMaxPath];char relative[128];
         if (!mediaPath("own",L"",root)) return false;
         CreateDirectoryW(m_saves,nullptr);
         if (!CreateDirectoryW(root,nullptr)&&GetLastError()!=ERROR_ALREADY_EXISTS)return false;

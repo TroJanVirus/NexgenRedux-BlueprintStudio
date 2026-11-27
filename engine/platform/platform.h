@@ -139,7 +139,7 @@ namespace nx
         virtual bool loadSave(const char* name, FileData& out) = 0;
         // Over a file in the media, while developing. False where it can't be.
         virtual bool writeFile(const char*, const void*, size_t) { return false; }
-        // Development exports: exclusively create a direct child of own/.
+        // Development exports: exclusively create a child or one nested child of own/.
         virtual bool createOwnFolder(const char*) { return false; }
         virtual bool writeSave(const char* name, const void* data, size_t size) = 0;
         virtual void removeSave(const char* name) = 0;

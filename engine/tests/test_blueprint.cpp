@@ -670,3 +670,35 @@ NX_TEST(nativeBuiltinOperatorsCompileThroughAngelScript)
         }
     }
 }
+
+#ifdef NX_DESKTOP_BLUEPRINT
+NX_TEST(nativeBlueprintProjectPreviewNavigatesWithoutTouchingHostStack)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    r.platform.files["showcase/main/screen.json"]="{\"title\":\"Home\"}";
+    r.platform.files["showcase/main/main.as"]="class Home : Screen {}";
+    if(!r.screens.init(r.services,"showcase","main")){NX_EXPECT(false);return;}
+    r.step(3);r.screens.setDevelopmentPaused(true);
+    BlueprintDocument doc;doc.create();std::string error;
+    const bool authored=doc.addScreen("level",error)&&
+        doc.addNode(0,"api:Screens:Screens::push:string",0,0,error)&&doc.setInputValue(0,1,"id","level",error)&&doc.connect(0,0,"then",1,"in",error)&&
+        doc.addNode(6,"api:Save:Save::set:string,string",0,0,error)&&doc.setInputValue(6,1,"key","level",error)&&doc.setInputValue(6,1,"value","entered",error)&&doc.connect(6,0,"then",1,"in",error);
+    std::vector<BlueprintScreenOutput> output;
+    NX_EXPECT(authored&&compileBlueprintProject(doc,output,error));if(output.size()!=2)return;
+    std::vector<Screens::PreviewScreen> preview;
+    for(const auto& o:output)
+    {
+        Screens::PreviewScreen p;snprintf(p.info.id,sizeof(p.info.id),"%s",o.id.c_str());p.source=o.source;preview.push_back(p);
+    }
+    NX_EXPECT(r.screens.startProjectPreview(preview,"Screen",error));if(!r.screens.previewing())return;
+    r.step(5);
+    NX_EXPECT(r.screens.depth()==3&&strcmp(r.screens.current(),"level")==0&&r.screens.count()==2);
+    NX_EXPECT(strcmp(r.services.save->get("level","missing"),"entered")==0);
+    r.screens.push("main");r.step(1);NX_EXPECT(strcmp(r.screens.current(),"level")==0);
+    r.screens.home();r.step(1);NX_EXPECT(r.screens.depth()==2&&strcmp(r.screens.current(),"Screen")==0);
+    r.screens.pop();r.step(1);NX_EXPECT(r.screens.depth()==2);
+    r.screens.stopPreview();
+    NX_EXPECT(r.screens.depth()==1&&r.services.save==&r.save&&strcmp(r.screens.current(),"main")==0);
+    NX_EXPECT(strcmp(r.save.get("level","missing"),"missing")==0);
+}
+#endif

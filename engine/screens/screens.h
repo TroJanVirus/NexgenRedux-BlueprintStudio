@@ -66,13 +66,15 @@ namespace nx
 
 #ifdef NX_DESKTOP_BLUEPRINT
         // Desktop authoring only: transient screen, no files staged or replaced.
+        struct PreviewScreen { ScreenInfo info; std::string source; };
         bool startPreview(const std::string& source, std::string& error);
+        bool startProjectPreview(const std::vector<PreviewScreen>& screens,const std::string& start,std::string& error);
         void stopPreview();
         bool previewing() const { return m_previewSave != nullptr; }
 #endif
 
-        u32 count() const { return m_count; }
-        const ScreenInfo* info(u32 index) const { return index < m_count ? &m_infos[index] : nullptr; }
+        u32 count() const;
+        const ScreenInfo* info(u32 index) const;
 
     private:
         static constexpr u32 kMaxDepth = 8;
@@ -141,7 +143,8 @@ namespace nx
         bool m_blueprintError = false;
         std::vector<std::string> m_included;
 #ifdef NX_DESKTOP_BLUEPRINT
-        std::string m_previewSource;
+        std::vector<PreviewScreen> m_previewScreens;
+        bool m_previewNavigation=false;
         Save* m_previewSave = nullptr;
         Save* m_previewSettings = nullptr;
         Save* m_originalSave = nullptr;
