@@ -1,20 +1,5 @@
 name: Native Blueprint
 on:
-  push:
-    branches: ["blueprint/review-native-ui"]
-    paths:
-      - "engine/tools/blueprint/native_*"
-      - "engine/tools/blueprint/generate_native_catalog.py"
-      - "engine/tools/blueprint/catalog.js"
-      - "engine/tests/test_blueprint*.cpp"
-      - "engine/app/blueprint_workspace.*"
-      - "engine/app/main.cpp"
-      - "engine/CMakeLists.txt"
-      - "engine/base/**"
-      - "engine/screens/**"
-      - "engine/save/**"
-      - "engine/platform/**"
-      - ".github/workflows/blueprint-native.yml"
   pull_request:
     branches: ["blueprint/verification-base"]
   workflow_dispatch:

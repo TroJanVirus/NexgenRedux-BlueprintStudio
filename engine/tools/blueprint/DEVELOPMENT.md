@@ -51,3 +51,7 @@ References: [original scene editor](https://github.com/Team-Resurgent/NexgenRedu
 - Can users change layout and appearance without changing the generated code?
 - Is the documentation simple, with clear instructions and honest test limits?
 - Test the graph compiler and real engine where possible. Report substitutes and untested platforms as such.
+
+## Native verification branch
+
+The dedicated draft pull request from `blueprint/review-native-ui` into `blueprint/verification-base` runs only the focused native Blueprint workflow. Keep this PR open for ongoing verification; do not merge it into the upstream mirror. Use the PR's actual head SHA and job logs to distinguish failed builds from missing results. One branch update should trigger one focused workflow, not a duplicate push workflow or the full release matrix.

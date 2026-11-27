@@ -725,7 +725,7 @@ namespace nx
                     c.clip(286,y,708,33);c.text(*m_font,m_files[m_fileFirst+i].c_str(),290,y+8,text);c.noClip();
                 }
                 if(m_files.empty())c.text(*m_font,"No saved Blueprints. Save as or drop a .bp.json file.",640,330,muted,Align::Center);
-                c.text(*m_font,"Scroll for more | Escape cancels",640,603,muted,Align::Center);
+                c.clip(280,603,720,22);c.text(*m_font,shorten(m_status,90).c_str(),280,603,muted);c.noClip();
             }
             else
             {
