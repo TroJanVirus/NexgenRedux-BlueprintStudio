@@ -1,0 +1,19 @@
+#pragma once
+#include "tools/blueprint/native_document.h"
+namespace nx
+{
+    class Platform;
+    bool blueprintCreateAssetRoot(Platform& platform,std::string& root,std::string& error);
+    bool blueprintEnsureAssetFolder(Platform& platform,const std::string& root,const std::string& screen,std::string& error);
+    bool blueprintListAssets(Platform& platform,const std::string& root,const std::string& screen,std::vector<std::string>& files,std::string& error);
+    bool blueprintCopySharedAssets(Platform& platform,const std::string& source,const std::string& destination,std::string& error);
+    bool blueprintCopyAssets(Platform& platform,const std::string& source,const std::string& destination,const std::string& screen,std::string& error);
+    bool blueprintPrepareSceneEditor(Platform& platform,const std::string& root,const std::string& screen,std::string& error);
+    std::string blueprintAssetImportPath(const std::string& file);
+    // Recognize explicitly staged projects and native export folders.
+    bool blueprintImportProjectFolderName(const std::string& folder);
+    bool blueprintImportFolderAssets(Platform& platform,const std::string& folder,const std::vector<std::string>& screens,std::string& root,std::string& error);
+    // Copy a standalone source's optional companion own/<stem>/asset tree into a fresh project.
+    bool blueprintImportSourceAssets(Platform& platform,const std::string& sourceFile,std::string& root,std::string& error);
+    bool blueprintImportAsset(Platform& platform,const std::string& root,const std::string& screen,const std::string& file,std::string& error);
+}

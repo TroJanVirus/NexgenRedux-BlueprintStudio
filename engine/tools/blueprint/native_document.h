@@ -14,50 +14,119 @@ namespace nx
         bool member=false,pure=false,hasOut=false;
         // name=in/out is encoded as a pin pair; defaults are trusted generated expressions.
         std::vector<BlueprintPin> arguments, defaults;
+        // Trusted builtin operator or cast from the native catalogue, never from document text.
+        std::string operation{};
     };
     const std::vector<BlueprintNodeSpec>& blueprintCatalogue();
     const BlueprintNodeSpec* blueprintSpec(const std::string& kind);
+    bool blueprintLiteralType(const std::string& type);
+    bool blueprintInputLiteralType(const std::string& type);
+    bool blueprintInputComponents(const std::string& type,const std::string& value,std::vector<std::string>& components);
+    std::vector<std::string> blueprintInputComponentLabels(const std::string& type);
+    std::string blueprintArrayElement(const std::string& type);
+    bool blueprintVariableType(const std::string& type);
+    bool blueprintLosslessConversion(const std::string& from,const std::string& to);
+    // Managed authoring files are direct children of Redux's own folder.
+    bool blueprintFileName(const std::string& file);
+    bool blueprintManagedName(const std::string& name,std::string& file);
+    bool blueprintAssetRoot(const std::string& root);
+    bool blueprintAssetName(const std::string& name,bool folder=false);
 
     // Native version 2: one canonical model. Node indices are internal; persisted links use stable IDs.
     // The pre-release browser format is deliberately not supported.
     struct BlueprintDocument
     {
-        struct Node { std::string id, kind, ref; float x=0,y=0; };
-        struct Link { size_t from=0,to=0; std::string output,input; };
+        struct InputValue { std::string pin,value; };
+        struct Node { std::string id, kind, ref; float x=0,y=0; std::vector<InputValue> values{}; bool watch=false; };
+        struct Point { float x=0,y=0; };
+        struct Link { size_t from=0,to=0; std::string output,input; std::vector<Point> route{}; };
+        struct Comment { std::string title; std::vector<std::string> members; };
+        struct Field { std::string name,type,value; bool initialized=false; };
         struct Graph
         {
             std::string owner,name,kind;
             std::vector<Node> nodes;
             std::vector<Link> links;
+            std::vector<BlueprintPin> parameters{};
+            std::string returnType="void";
+            bool inlineMacro=false;
+            // Explicit imported fields live on the owner lifecycle entry graph.
+            std::vector<Field> fields{};
+            std::vector<Field> globals{};
+            std::vector<Comment> comments{};
+            std::string moduleOwner{}; // optional screen scope on Behaviour start graph
         };
         std::string name;
+        std::string assetRoot; // external project directory, separate from graph history
         std::vector<Graph> graphs;
+        struct ScreenManifest { std::string owner, source; };
+        // Original screen.json bytes, optional for backwards-compatible v2 documents.
+        std::vector<ScreenManifest> manifests;
+        const std::string* screenManifest(const std::string& owner) const;
+        bool importScreenManifest(const std::string& owner,const std::string& source,std::string& error);
         void create();
         bool load(const char* data,size_t size,std::string& error);
         bool serialize(std::string& result,std::string& error) const;
         bool move(size_t graph,size_t node,float x,float y);
-        bool addNode(size_t graph,const std::string& kind,float x,float y,std::string& error);
+        bool moveNodes(size_t graph,const std::vector<size_t>& nodes,float dx,float dy);
+        bool arrange(size_t graph,std::string& error);
+        bool alignNodes(size_t graph,const std::vector<size_t>& nodes,bool horizontal,std::string& error);
+        bool addComment(size_t graph,const std::vector<size_t>& nodes,const std::string& title,std::string& error);
+        bool renameComment(size_t graph,size_t comment,const std::string& title,std::string& error);
+        bool deleteComment(size_t graph,size_t comment);
+        bool insertRoutePoint(size_t graph,size_t link,size_t point,float x,float y);
+        bool moveRoutePoint(size_t graph,size_t link,size_t point,float x,float y);
+        bool deleteRoutePoint(size_t graph,size_t link,size_t point);
+        bool addNode(size_t graph,const std::string& kind,float x,float y,std::string& error,const std::string& functionTarget="");
+        bool placeContextNode(size_t graph,size_t existing,const std::string& pin,bool output,const std::string& kind,const std::string& reference,const std::string& otherPin,float x,float y,std::string& error);
+        bool connectCompatible(size_t graph,size_t from,const std::string& output,size_t to,const std::string& input,std::string& error);
+        bool canCallFunction(size_t graph,const std::string& target) const;
+        bool addConnectedNode(size_t graph,size_t from,const std::string& output,const std::string& kind,float x,float y,std::string& error);
+        bool addVariableNode(size_t graph,const std::string& variableName,bool global,bool setter,float x,float y,std::string& error);
         bool deleteNode(size_t graph,size_t node,std::string& error);
         bool connect(size_t graph,size_t from,const std::string& output,size_t to,const std::string& input,std::string& error);
         bool disconnect(size_t graph,size_t node,const std::string& pin,bool output);
         bool setLiteral(size_t graph,size_t node,const std::string& value,std::string& error);
+        bool toggleWatch(size_t graph,size_t node);
+        bool setInputValue(size_t graph,size_t node,const std::string& pin,const std::string& value,std::string& error);
+        bool clearInputValue(size_t graph,size_t node,const std::string& pin);
         bool setReference(size_t graph,size_t node,const std::string& value,std::string& error);
-        bool addFunction(const std::string& name,std::string& error);
+        bool addFunction(const std::string& name,std::string& error,const std::string& owner="Screen");
+        const Graph* function(const std::string& owner,const std::string& name) const;
+        bool nodeSpec(const Graph& graph,const Node& node,BlueprintNodeSpec& spec) const;
+        bool setFunctionSignature(size_t graph,const std::vector<BlueprintPin>& parameters,const std::string& returnType,std::string& error);
+        bool editFunctionSignature(size_t graph,const std::string& signature,std::string& error);
+        std::string functionSignature(size_t graph) const;
+        bool addScreen(const std::string& id,std::string& error);
+        bool addLevelEvents(const std::string& owner,std::string& error);
+        bool removeScreen(const std::string& id,std::string& error);
+        std::vector<std::string> screens() const;
+        std::vector<std::string> behaviours() const;
+        bool addBehaviour(const std::string& name,std::string& error);
+        bool removeBehaviour(const std::string& name,std::string& error);
         bool removeFunction(size_t graph,std::string& error);
+        bool setInlineMacro(size_t graph,bool enabled,std::string& error);
+        bool renameFunction(size_t graph,const std::string& functionName,std::string& error);
+        bool duplicateFunction(size_t graph,const std::string& functionName,std::string& error);
+        bool collapseToFunction(size_t graph,const std::vector<size_t>& nodes,const std::string& functionName,std::string& error);
         bool functions(std::string& error) const;
-        // Collect named, per-instance variables. A name must have exactly one type across all graphs.
-        bool variables(std::vector<BlueprintPin>& values,std::string& error) const;
+        // Named instance variables and function names are scoped to their owning screen.
+        std::string moduleForOwner(const std::string& owner) const;
+        const std::vector<Field>& moduleGlobals(const std::string& owner="") const;
+        bool canAttach(const std::string& owner,const std::string& behaviour) const;
+        bool editVariableDeclaration(const std::string& owner,const std::string& command,std::string& error);
+        bool variables(std::vector<BlueprintPin>& values,std::string& error,const std::string& owner="Screen") const;
         bool undo();
         bool redo();
         bool dirty()const{return m_revision!=m_savedRevision;}
         bool canUndo()const{return !m_undo.empty();}
         bool canRedo()const{return !m_redo.empty();}
-        bool isProject()const{return false;}
+        bool isProject()const{return screens().size()>1;}
         void markSaved(){m_savedRevision=m_revision;}
         size_t revision()const{return m_revision;}
         void markRecovered(){m_revision=++m_nextRevision;}
     private:
-        struct Edit { size_t graph; Graph state; size_t revision; std::vector<Graph> all; };
+        struct Edit { size_t graph; Graph state; size_t revision; std::vector<Graph> all; std::vector<ScreenManifest> manifests{}; };
         void record(size_t graph);
         void recordGraphList();
         std::vector<Edit> m_undo,m_redo;

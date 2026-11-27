@@ -2,8 +2,11 @@
 #include "base/log.h"
 
 #include <dirent.h>
+#include <fcntl.h>
+#include <sys/file.h>
 #include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <time.h>
@@ -75,6 +78,25 @@ namespace nx
         }
         const bool ok = fwrite(data, 1, size, file) == size;
         return fclose(file) == 0 && ok && rename(fresh, full) == 0;
+    }
+
+    PlatformPosix::~PlatformPosix(){releaseBlueprintLease();}
+
+    bool PlatformPosix::acquireBlueprintLease()
+    {
+        if(m_blueprintLease>=0)return false;
+        char folder[kMaxPath],full[kMaxPath];
+        if(!mediaPath("own",folder)||!mediaPath("own/.blueprint-studio.lock",full))return false;
+        makeFolders(folder);
+        const int fd=open(full,O_CREAT|O_RDWR|O_CLOEXEC|O_NOFOLLOW,0600);
+        if(fd<0)return false;
+        if(flock(fd,LOCK_EX|LOCK_NB)!=0){close(fd);return false;}
+        m_blueprintLease=fd;return true;
+    }
+    void PlatformPosix::releaseBlueprintLease()
+    {
+        // Never unlink: another process could acquire the same inode between close and unlink.
+        if(m_blueprintLease>=0){close(m_blueprintLease);m_blueprintLease=-1;}
     }
 
     bool PlatformPosix::setFolders(const char* media, const char* saves)
@@ -167,6 +189,7 @@ namespace nx
 
     bool PlatformPosix::setSaveFolder(const char* path)
     {
+        if(m_blueprintLease>=0)return false;
         const int length = snprintf(m_saves, sizeof(m_saves), "%s", path);
         return length > 0 && static_cast<size_t>(length) < sizeof(m_saves);
     }
@@ -187,12 +210,43 @@ namespace nx
             return;
         }
         FileData data;
-        char folder[kMaxPath], full[kMaxPath + 64], fresh[kMaxPath + 70];
+        char folder[kMaxPath], full[kMaxPath + 96], fresh[kMaxPath + 102];
         if (!mediaPath("own", folder) || !readWhole(from, data, MemTag::General))
         {
             return;
         }
         makeFolders(folder);
+        if(m_blueprintLease>=0||protectedBlueprintDrop(name))
+        {
+            // Write to an exclusive temporary file, then publish with link()
+            // (which fails rather than replacing an existing destination).
+            // Keep the extension so Studio still recognizes the imported type.
+            char temporary[kMaxPath+32];
+            snprintf(temporary,sizeof(temporary),"%s/.bp-drop-XXXXXX",folder);
+            const int fd=mkstemp(temporary);
+            if(fd<0){NX_WARN("cannot stage dropped Blueprint file");return;}
+            FILE* out=fdopen(fd,"wb");
+            if(!out){close(fd);unlink(temporary);return;}
+            const bool written=fwrite(data.data,1,data.size,out)==data.size;
+            const bool closed=fclose(out)==0;
+            if(written&&closed)
+            {
+                for(unsigned attempt=0;attempt<100;++attempt)
+                {
+                    const auto candidate=blueprintDropName(name,attempt);
+                    snprintf(full,sizeof(full),"%s/%s",folder,candidate.c_str());
+                    if(link(temporary,full)==0)
+                    {m_dropped.push_back(candidate);unlink(temporary);return;}
+                    if(errno!=EEXIST)break;
+                    FileData existing;
+                    if(readWhole(full,existing,MemTag::General)&&existing.size==data.size&&
+                        (!data.size||memcmp(existing.data,data.data,data.size)==0))
+                    {m_dropped.push_back(candidate);unlink(temporary);return;}
+                }
+            }
+            unlink(temporary);
+            NX_WARN("cannot keep dropped Blueprint file without replacing existing data");return;
+        }
         snprintf(full, sizeof(full), "%s/%s", folder, name.c_str());
         snprintf(fresh, sizeof(fresh), "%s.new", full);
         if (swapIn(full, fresh, name.c_str(), data.data, data.size))
@@ -210,6 +264,24 @@ namespace nx
         name = m_dropped.front();
         m_dropped.erase(m_dropped.begin());
         return true;
+    }
+
+    bool PlatformPosix::createOwnFolder(const char* name)
+    {
+        if(!name||!*name||strlen(name)>166)return false;
+        unsigned slash=0;bool empty=true;
+        for(const char* c=name;*c;++c)
+        {
+            if(*c=='/'){if(empty||++slash>7)return false;empty=true;continue;}
+            if(!((*c>='a'&&*c<='z')||(*c>='A'&&*c<='Z')||(*c>='0'&&*c<='9')||*c=='-'||*c=='_'))return false;
+            empty=false;
+        }
+        if(empty)return false;
+        char root[kMaxPath], full[kMaxPath], relative[176];
+        if (!mediaPath("own",root)) return false;
+        makeFolders(root);
+        snprintf(relative,sizeof(relative),"own/%s",name);
+        return mediaPath(relative,full)&&mkdir(full,0755)==0;
     }
 
     bool PlatformPosix::writeFile(const char* path, const void* data, size_t size)

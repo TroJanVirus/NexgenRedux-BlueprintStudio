@@ -18,6 +18,9 @@ namespace nx
         int length;
         if (strncmp(name, "global:", 7) == 0)
         {
+#ifdef NX_DESKTOP_BLUEPRINT
+            if(services.screens&&services.screens->resolvePreviewGlobal(name+7,out,size))return true;
+#endif
             length = snprintf(out, size, "global/%s", name + 7);
         }
         else if (strncmp(name, "asset:", 6) == 0)

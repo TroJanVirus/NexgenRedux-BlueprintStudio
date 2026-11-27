@@ -232,11 +232,37 @@ namespace nx
             return std::string(reinterpret_cast<const char*>(file.data), file.size);
         }
 
+        bool editorSceneName(const std::string& name)
+        {
+            if(name=="asset:scenes.json"||name=="asset:scene.json")return true;
+            return name.size()>16&&name.size()<=22&&name.rfind("asset:scene",0)==0&&
+                name.ends_with(".json")&&name.substr(11,name.size()-16).find_first_not_of("0123456789")==std::string::npos;
+        }
+
         bool writeText(const std::string& name, const std::string& text)
         {
             Services& s = services();
             std::string kept;
             char path[192];
+            if(s.sceneEditorAssets)
+            {
+                // Only the installed scene editor receives this permission, never generated game scripts.
+                if(!editorSceneName(name)||strncmp(s.folder,"own/bpa-",8)!=0||text.size()>kMaxFile||
+                    !resolveAsset(s,name.c_str(),path,sizeof(path)))return false;
+                JsonValue check;std::string error;
+                if(!check.parse(text.data(),text.size(),error)||check.type()!=JsonValue::Type::Object)return false;
+                // Keep a single previous version outside the visible asset list, then atomically replace.
+                FileData old;
+                if(s.platform->readFile(path,old,MemTag::General))
+                {
+                    const std::string backup=std::string(s.folder)+"/asset/."+name.substr(6)+".backup";
+                    if(!s.platform->writeFile(backup.c_str(),old.data,old.size))return false;
+                }
+                if(!s.platform->writeFile(path,text.data(),text.size()))return false;
+                FileData written;
+                return s.platform->readFile(path,written,MemTag::General)&&written.size==text.size()&&
+                    memcmp(written.data,text.data(),text.size())==0;
+            }
             if (!keptName(s, name, kept) || !resolveAsset(s, name.c_str(), path, sizeof(path)))
             {
                 scriptError("only asset: files that end in .json can be written, with short, plain names (" + name + ")");
@@ -269,6 +295,8 @@ namespace nx
         {
             Services& s = services();
             std::vector<std::string> names;
+            // Prevent the editor from offering loose machine-local files as project assets.
+            if(s.sceneEditorAssets&&folder.rfind("own:",0)==0)return texts(names);
             char path[192];
             if (folder.find("..") != std::string::npos || !resolveAsset(s, folder.c_str(), path, sizeof(path)))
             {
@@ -289,7 +317,7 @@ namespace nx
             std::vector<std::string> names;
             for (std::string name; services().platform->takeDropped(name);)
             {
-                names.push_back(name);
+                if(!services().sceneEditorAssets)names.push_back(name);
             }
             return texts(names);
         }
@@ -297,6 +325,7 @@ namespace nx
         void forgetText(const std::string& name)
         {
             Services& s = services();
+            if(s.sceneEditorAssets)return; // Preserve project files; the native scene list controls visibility.
             std::string kept;
             if (!keptName(s, name, kept))
             {
@@ -313,7 +342,7 @@ namespace nx
     {
         std::string kept;
         char path[192];
-        if (!s.development && keptName(s, name, kept) && s.platform->loadSave(kept.c_str(), out))
+        if (!s.development && !s.previewAssets && keptName(s, name, kept) && s.platform->loadSave(kept.c_str(), out))
         {
             return true;
         }

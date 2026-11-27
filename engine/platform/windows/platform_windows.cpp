@@ -78,6 +78,24 @@ namespace nx
         return ok && MoveFileExW(fresh, full, MOVEFILE_REPLACE_EXISTING);
     }
 
+    PlatformWindows::~PlatformWindows(){releaseBlueprintLease();}
+
+    bool PlatformWindows::acquireBlueprintLease()
+    {
+        if(m_blueprintLease)return false;
+        wchar_t folder[kMaxPath],full[kMaxPath];
+        if(!mediaPath("own",L"",folder)||!mediaPath("own/.blueprint-studio.lock",L"",full))return false;
+        CreateDirectoryW(m_saves,nullptr);
+        if(!CreateDirectoryW(folder,nullptr)&&GetLastError()!=ERROR_ALREADY_EXISTS)return false;
+        const HANDLE file=CreateFile2(full,GENERIC_READ|GENERIC_WRITE,0,OPEN_ALWAYS,nullptr);
+        if(file==INVALID_HANDLE_VALUE)return false;
+        m_blueprintLease=file;return true;
+    }
+    void PlatformWindows::releaseBlueprintLease()
+    {
+        if(m_blueprintLease){CloseHandle(m_blueprintLease);m_blueprintLease=nullptr;}
+    }
+
     bool PlatformWindows::setFolders(const wchar_t* base, const wchar_t* saves)
     {
         LARGE_INTEGER value;
@@ -151,8 +169,28 @@ namespace nx
 
     bool PlatformWindows::setSaveFolder(const char* path)
     {
+        if(m_blueprintLease)return false;
         wchar_t full[kMaxPath];
         return MultiByteToWideChar(CP_UTF8, 0, path, -1, full, kMaxPath) > 1 && wcscpy_s(m_saves, full) == 0;
+    }
+
+    bool PlatformWindows::createOwnFolder(const char* name)
+    {
+        if(!name||!*name||strlen(name)>166)return false;
+        unsigned slash=0;bool empty=true;
+        for(const char* c=name;*c;++c)
+        {
+            if(*c=='/'){if(empty||++slash>7)return false;empty=true;continue;}
+            if(!((*c>='a'&&*c<='z')||(*c>='A'&&*c<='Z')||(*c>='0'&&*c<='9')||*c=='-'||*c=='_'))return false;
+            empty=false;
+        }
+        if(empty)return false;
+        wchar_t root[kMaxPath],full[kMaxPath];char relative[176];
+        if (!mediaPath("own",L"",root)) return false;
+        CreateDirectoryW(m_saves,nullptr);
+        if (!CreateDirectoryW(root,nullptr)&&GetLastError()!=ERROR_ALREADY_EXISTS)return false;
+        snprintf(relative,sizeof(relative),"own/%s",name);
+        return mediaPath(relative,L"",full)&&CreateDirectoryW(full,nullptr)!=0;
     }
 
     bool PlatformWindows::writeFile(const char* path, const void* data, size_t size)
@@ -208,7 +246,7 @@ namespace nx
         {
             name += plainLetter(*c < 128 ? static_cast<char>(*c) : '_');
         }
-        if (!GetFileAttributesExW(from, GetFileExInfoStandard, &data) || (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || data.nFileSizeHigh || data.nFileSizeLow > 64 * 1024 * 1024 || name.size() > 60 || name[0] == '.')
+        if (!GetFileAttributesExW(from, GetFileExInfoStandard, &data) || (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || data.nFileSizeHigh || data.nFileSizeLow > 64 * 1024 * 1024 || name.empty() || name.size() > 60 || name[0] == '.')
         {
             NX_WARN("a file that was dropped is too large, or isn't one");
             return;
@@ -222,6 +260,25 @@ namespace nx
         CreateDirectoryW(folder, nullptr);
         COPYFILE2_EXTENDED_PARAMETERS how = {};
         how.dwSize = sizeof(how);
+        if(m_blueprintLease||protectedBlueprintDrop(name))
+        {
+            FileData incoming;
+            if(!readWhole(from,incoming,MemTag::General))return;
+            how.dwCopyFlags=COPY_FILE_FAIL_IF_EXISTS;
+            for(unsigned attempt=0;attempt<100;++attempt)
+            {
+                const auto candidate=blueprintDropName(name,attempt);
+                if(swprintf(full,kMaxPath,L"%ls\\%hs",folder,candidate.c_str())<0)return;
+                const HRESULT copied=CopyFile2(from,full,&how);
+                if(SUCCEEDED(copied)){m_dropped.push_back(candidate);return;}
+                if(copied!=HRESULT_FROM_WIN32(ERROR_FILE_EXISTS)&&copied!=HRESULT_FROM_WIN32(ERROR_ALREADY_EXISTS))break;
+                FileData existing;
+                if(readWhole(full,existing,MemTag::General)&&existing.size==incoming.size&&
+                    (!incoming.size||memcmp(existing.data,incoming.data,incoming.size)==0))
+                {m_dropped.push_back(candidate);return;}
+            }
+            NX_WARN("cannot keep dropped Blueprint file without replacing existing data");return;
+        }
         if (FAILED(CopyFile2(from, full, &how)))
         {
             NX_ERROR("cannot keep %s (%lu)", name.c_str(), GetLastError());

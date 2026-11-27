@@ -10,6 +10,9 @@ namespace nx
     class PlatformWindows : public Platform
     {
     public:
+        ~PlatformWindows() override;
+        bool acquireBlueprintLease() override;
+        void releaseBlueprintLease() override;
         double seconds() override;
         void sleep(double seconds) override;
         bool readFile(const char* path, FileData& out, MemTag tag) override;
@@ -19,6 +22,7 @@ namespace nx
         void removeSave(const char* name) override;
         bool setSaveFolder(const char* path) override;
         bool writeFile(const char* path, const void* data, size_t size) override;
+        bool createOwnFolder(const char* name) override;
         void list(const char* path, bool folders, FolderCallback callback, void* user) override;
 
         // By virtual key code, which both use.
@@ -44,5 +48,6 @@ namespace nx
         std::vector<std::string> m_dropped;
         long long m_frequency = 1;
         long long m_start = 0;
+        void* m_blueprintLease = nullptr;
     };
 }

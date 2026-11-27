@@ -5,6 +5,13 @@
 #include "bindings/bindings.h"
 #include "video/video.h"
 #include "save/save.h"
+#include <algorithm>
+#ifdef NX_DESKTOP_BLUEPRINT
+#include "base/json_tree.h"
+#include <cmath>
+#include <limits>
+#include <utility>
+#endif
 
 #include <stdio.h>
 #include <string.h>
@@ -102,8 +109,29 @@ namespace nx
         m_infos[m_count++] = info;
     }
 
+    u32 Screens::count() const
+    {
+#ifdef NX_DESKTOP_BLUEPRINT
+        if(previewing())return static_cast<u32>(m_previewScreens.size());
+#endif
+        return m_count;
+    }
+    const ScreenInfo* Screens::info(u32 index) const
+    {
+#ifdef NX_DESKTOP_BLUEPRINT
+        if(previewing())return index<m_previewScreens.size()?&m_previewScreens[index].info:nullptr;
+#endif
+        return index<m_count?&m_infos[index]:nullptr;
+    }
     const ScreenInfo* Screens::findInfo(const char* id) const
     {
+#ifdef NX_DESKTOP_BLUEPRINT
+        if(previewing())
+        {
+            for(const auto& screen:m_previewScreens)if(strcmp(screen.info.id,id)==0)return &screen.info;
+            return nullptr;
+        }
+#endif
         for (u32 i = 0; i < m_count; i++)
         {
             if (strcmp(m_infos[i].id, id) == 0)
@@ -115,14 +143,136 @@ namespace nx
     }
 
 #ifdef NX_DESKTOP_BLUEPRINT
+    bool Screens::resolvePreviewGlobal(const char* name,char* out,size_t size) const
+    {
+        if(!previewing()||m_services->sceneEditorAssets||m_previewRoot.rfind("own/",0)!=0||!name||!*name)return false;
+        // Only portable relative paths may resolve inside the private project tree.
+        const std::string relative=name;
+        if(relative.size()>90||relative.front()=='/'||relative.back()=='/'||relative.find("..")!=std::string::npos||relative.find("//")!=std::string::npos||
+            relative.find_first_not_of("abcdefghijklmnopqrstuvwxyz0123456789_-/ .")!=std::string::npos||relative.find(' ')!=std::string::npos)return false;
+        for(size_t at=0;at<relative.size();)
+        {
+            if(relative[at]=='.')return false;
+            const auto slash=relative.find('/',at);if(slash==std::string::npos)break;at=slash+1;
+        }
+        const int length=snprintf(out,size,"%s/_global/%s",m_previewRoot.c_str(),name);
+        return length>0&&static_cast<size_t>(length)<size&&m_services->platform->fileTime(out)!=0;
+    }
     bool Screens::startPreview(const std::string& source, std::string& error)
     {
-        if (!m_services || m_depth != 1 || !m_menuOpen || previewing() || source.empty() || source.size() > 1024*1024 ||
-            findInfo("__blueprint_preview"))
+        PreviewScreen screen;
+        snprintf(screen.info.id,sizeof(screen.info.id),"__blueprint_preview");
+        snprintf(screen.info.title,sizeof(screen.info.title),"Blueprint play test");
+        screen.source=source;
+        const bool valid=startProjectPreview({screen},screen.info.id,error);
+        if(valid){m_previewNavigation=false;m_change=Change::None;}
+        return valid;
+    }
+
+    bool Screens::startProjectPreview(const std::vector<PreviewScreen>& screens,const std::string& start,std::string& error,const std::string& assetRoot)
+    {
+        return startPreviewSession(screens,start,error,assetRoot,false);
+    }
+
+    bool Screens::validateBlueprintSource(const std::string& code,std::string& error)
+    {
+        if(!m_services||previewing()||code.empty()||code.size()>1024*1024)
+        {error="No valid Blueprint source to validate.";return false;}
+        auto& host=*m_services->host;
+        auto* bytes=static_cast<u8*>(memAlloc(code.size()+1,MemTag::Script));
+        if(!bytes){error="Cannot allocate validation source.";return false;}
+        memcpy(bytes,code.data(),code.size());
+        FileData source;source.take(bytes,code.size());
+        m_included.clear();host.clearSections();
+        if(!include(source,"blueprint.as",error,0)){host.clearSections();m_included.clear();return false;}
+        const char* module="bp_native_validation";
+        const bool compiled=host.compile(module,"blueprint.as",reinterpret_cast<const char*>(source.data),source.size);
+        const bool valid=compiled&&host.findClass(module,"Screen");
+        if(!valid)error=compiled?"Generated script needs a Screen class.":host.lastError();
+        else error.clear();
+        host.discard(module);host.clearSections();m_included.clear();return valid;
+    }
+
+    bool Screens::startSceneEditor(const std::string& assetRoot,const std::string& screen,std::string& error)
+    {
+        if(!m_services||assetRoot.empty()||screen.empty()||screen.size()>40||
+            (screen!="Screen"&&screen.find_first_not_of("abcdefghijklmnopqrstuvwxyz0123456789_-")!=std::string::npos))
+        {error="Select a valid project screen.";return false;}
+        // Use the exact original editor shipped with this engine's pinned media, not a forked script.
+        FileData source;
+        if(!m_services->platform->readFile("showcase/editor/main.as",source,MemTag::Script)||!source.size||source.size>1024*1024)
+        {error="The installed Redux scene editor is missing or invalid.";return false;}
+        PreviewScreen item;
+        snprintf(item.info.id,sizeof(item.info.id),"%s",screen.c_str());
+        snprintf(item.info.title,sizeof(item.info.title),"Scene editor");
+        item.source.assign(reinterpret_cast<const char*>(source.data),source.size);
+        return startPreviewSession({item},screen,error,assetRoot,true);
+    }
+
+    namespace
+    {
+        // Match the installed screen menu field limits, without rewriting the original JSON.
+        bool previewManifest(Screens::PreviewScreen& screen,std::string& error)
+        {
+            if(screen.manifest.empty())return true; // Existing standalone/scene-editor callers.
+            JsonTree tree;
+            const auto& source=screen.manifest;
+            if(source.size()>64*1024||source.find('\0')!=std::string::npos||
+                !tree.parse(source.data(),source.size())||!tree.root().isObject()||
+                !tree.root()["title"].isString()||!tree.root()["title"].text()[0])
+            {error=std::string(screen.info.id)+": invalid preview screen.json.";return false;}
+            const auto root=tree.root();
+            auto copy=[](char* dest,size_t capacity,const char* value)
+            {
+                size_t n=std::min(strlen(value),capacity-1);
+                // Do not leave the first bytes of a truncated UTF-8 codepoint.
+                while(n&&(static_cast<unsigned char>(value[n])&0xc0)==0x80)--n;
+                memcpy(dest,value,n);dest[n]=0;
+            };
+            auto& info=screen.info;
+            copy(info.title,sizeof(info.title),root["title"].text());
+            copy(info.description,sizeof(info.description),root["description"].text());
+            copy(info.category,sizeof(info.category),root["category"].text());
+            copy(info.demo,sizeof(info.demo),root["demo"].text());
+            const auto seconds=root["seconds"],order=root["order"];
+            const double duration=seconds.isNumber()?seconds.exact():0.0;
+            const double priority=order.isNumber()?order.exact():1000.0;
+            info.seconds=std::isfinite(duration)&&duration>=0&&duration<=std::numeric_limits<float>::max()?static_cast<float>(duration):0.f;
+            info.order=std::isfinite(priority)&&priority>=std::numeric_limits<int>::min()&&priority<=std::numeric_limits<int>::max()?static_cast<int>(priority):1000;
+            return true;
+        }
+    }
+    bool Screens::startPreviewSession(const std::vector<PreviewScreen>& screens,const std::string& start,std::string& error,const std::string& assetRoot,bool sceneEditor)
+    {
+        const auto selected=std::find_if(screens.begin(),screens.end(),[&](const PreviewScreen& s){return start==s.info.id;});
+        if (!m_services || m_depth != 1 || !m_menuOpen || previewing() || screens.empty() ||
+            screens.size()>kMaxScreens || selected==screens.end())
         {
             error = "Preview requires the home screen and a valid generated script.";
             return false;
         }
+        if(!assetRoot.empty()&&(assetRoot.size()<=4||assetRoot.size()>32||assetRoot.rfind("bpa-",0)!=0||
+            assetRoot[4]<'0'||assetRoot[4]>'9'||assetRoot.back()<'0'||assetRoot.back()>'9'||assetRoot.find_first_not_of("0123456789-",4)!=std::string::npos))
+        {error="Invalid preview asset root.";return false;}
+        for(size_t i=0;i<screens.size();++i)
+        {
+            const auto& p=screens[i];
+            if(!p.info.id[0]||p.source.empty()||p.source.size()>1024*1024)
+            {error="Invalid preview screen.";return false;}
+            for(size_t j=0;j<i;++j)if(strcmp(p.info.id,screens[j].info.id)==0)
+            {error="Duplicate preview screen ID.";return false;}
+        }
+        auto prepared=screens;
+        bool hasManifest=false;
+        for(auto& p:prepared)
+        {
+            hasManifest=hasManifest||!p.manifest.empty();
+            if(!previewManifest(p,error))return false;
+        }
+        if(hasManifest)std::stable_sort(prepared.begin(),prepared.end(),[](const PreviewScreen& a,const PreviewScreen& b)
+        {
+            return a.info.order!=b.info.order?a.info.order<b.info.order:strcmp(a.info.title,b.info.title)<0;
+        });
         m_previewSave = create<Save>(MemTag::General);
         m_previewSettings = create<Save>(MemTag::General);
         if (!m_previewSave || !m_previewSettings)
@@ -136,18 +286,19 @@ namespace nx
         saveSettings(*m_services); // Snapshot settings without writing to the real save.
         m_previewRandom = m_services->random;
         m_previewDevelopment = m_services->development;
-        m_previewSource = source;
+        m_previewScreens=std::move(prepared);m_previewNavigation=!sceneEditor;
+        m_previewRoot=assetRoot.empty()?"__blueprint_preview":"own/"+assetRoot;
         m_services->save = m_previewSave;
-        m_services->development = false;
+        m_services->development = sceneEditor;
+        m_services->sceneEditorAssets = sceneEditor;
+        m_services->previewAssets = true;
         m_change = Change::None;
         // Home must already be paused by the workspace. Do not run its suspend/resume
         // callbacks against the temporary save or generated module.
         m_services->audio->pauseGroup(m_stack[0].group, true);
         m_menuOpen = false;
-        ScreenInfo info;
-        snprintf(info.id, sizeof(info.id), "__blueprint_preview");
-        snprintf(info.title, sizeof(info.title), "Blueprint play test");
-        if (!open(info))
+        const auto* startInfo=findInfo(start.c_str());
+        if (!startInfo || !open(*startInfo))
         {
             error = this->error();
             stopPreview();
@@ -161,8 +312,8 @@ namespace nx
     void Screens::stopPreview()
     {
         if (!previewing()) return;
-        // Screen navigation is blocked during preview, so this is always its own entry.
-        if (m_depth > 1) close(true);
+        // Never close or resume the original home while preview state is active.
+        while (m_depth > 1) close(true);
         m_change = Change::None;
         m_services->save = m_previewSettings;
         loadSettings(*m_services);
@@ -171,9 +322,11 @@ namespace nx
         m_originalSave = nullptr;
         m_services->random = m_previewRandom;
         m_services->development = m_previewDevelopment;
+        m_services->previewAssets = false;
+        m_services->sceneEditorAssets = false;
         destroy(m_previewSave);
         m_previewSave = nullptr;
-        m_previewSource.clear();
+        m_previewScreens.clear();m_previewRoot.clear();m_previewNavigation=false;
         if (m_depth) enter(m_stack[m_depth-1]);
         m_menuOpen = false;
         setMenu(true); // The workspace is visible again; keep the home screen paused.
@@ -186,8 +339,17 @@ namespace nx
     void Screens::request(Change change, const char* id)
     {
 #ifdef NX_DESKTOP_BLUEPRINT
-        // The preview is a single temporary screen, not the host project's navigation stack.
-        if (previewing()) { NX_WARN("Screen navigation is unavailable during Blueprint preview."); return; }
+        if (previewing())
+        {
+            if(!m_previewNavigation)return;
+            if((change==Change::Push||change==Change::Replace)&&!findInfo(id))
+            {NX_WARN("Screen %s is not in this preview project",id);return;}
+            if((change==Change::Pop&&m_depth<=2)||change==Change::Home)
+            {
+                if(change==Change::Pop)return;
+                // Home within the preview means its root, not the original Redux home.
+            }
+        }
 #endif
         m_change = change;
         snprintf(m_changeId, sizeof(m_changeId), "%s", id);
@@ -220,6 +382,10 @@ namespace nx
                 return;
             }
         }
+        u32 floor=1;
+#ifdef NX_DESKTOP_BLUEPRINT
+        if(previewing())floor=2;
+#endif
         switch (change)
         {
         case Change::Push:
@@ -233,7 +399,7 @@ namespace nx
             open(*next);
             break;
         case Change::Pop:
-            if (m_depth > 1)
+            if (m_depth > floor)
             {
                 close(true);
                 m_services->audio->pauseGroup(m_stack[m_depth - 1].group, false);
@@ -245,14 +411,14 @@ namespace nx
             open(*next);
             break;
         case Change::Home:
-            if (m_depth > 1)
+            if (m_depth > floor)
             {
-                while (m_depth > 1)
+                while (m_depth > floor)
                 {
                     close(true);
                 }
-                m_services->audio->pauseGroup(m_stack[0].group, false);
-                callOptional(m_stack[0], "void onResume()");
+                m_services->audio->pauseGroup(m_stack[floor-1].group, false);
+                callOptional(m_stack[floor-1], "void onResume()");
             }
             break;
         case Change::Restart:
@@ -306,7 +472,15 @@ namespace nx
             entry.world->space().init(m_services->solids, m_services->audio);
         }
         char folder[160];
-        snprintf(folder, sizeof(folder), "%s/%s", m_folder, entry.info.id);
+        const char* root=m_folder;
+#ifdef NX_DESKTOP_BLUEPRINT
+        if(previewing())root=m_previewRoot.c_str();
+#endif
+        snprintf(folder, sizeof(folder), "%s/%s", root, entry.info.id);
+#ifdef NX_DESKTOP_BLUEPRINT
+        // The original editor UI theme belongs to the installed tool; scene and media paths belong to the project.
+        if(previewing()&&m_services->sceneEditorAssets)snprintf(folder,sizeof(folder),"showcase/editor");
+#endif
         entry.ui = create<Ui>(MemTag::UI, *m_services->canvas, *m_services->assets, *m_services->audio, *m_services->input, host, *m_services->platform, folder);
         enter(entry);
 #ifdef NX_DESKTOP_BLUEPRINT
@@ -319,12 +493,18 @@ namespace nx
         FileData source;
         entry.scriptTime = m_services->platform->fileTime(path);
 #ifdef NX_DESKTOP_BLUEPRINT
-        if (previewing() && strcmp(entry.info.id, "__blueprint_preview") == 0)
+        if(previewing()&&m_services->sceneEditorAssets)snprintf(path,sizeof(path),"showcase/editor/main.as");
+#endif
+#ifdef NX_DESKTOP_BLUEPRINT
+        if (previewing())
         {
-            auto* bytes = static_cast<u8*>(memAlloc(m_previewSource.size()+1, MemTag::Script));
-            if (!bytes) { entry.failed = true; snprintf(entry.error, sizeof(entry.error), "Cannot allocate preview source"); return false; }
-            memcpy(bytes, m_previewSource.data(), m_previewSource.size());
-            source.take(bytes, m_previewSource.size());
+            const auto found=std::find_if(m_previewScreens.begin(),m_previewScreens.end(),[&](const PreviewScreen& p){return strcmp(p.info.id,entry.info.id)==0;});
+            if(found==m_previewScreens.end()){entry.failed=true;snprintf(entry.error,sizeof(entry.error),"Missing preview source");return false;}
+            const auto& code=found->source;
+            auto* bytes=static_cast<u8*>(memAlloc(code.size()+1,MemTag::Script));
+            if(!bytes){entry.failed=true;snprintf(entry.error,sizeof(entry.error),"Cannot allocate preview source");return false;}
+            memcpy(bytes,code.data(),code.size());bytes[code.size()]=0;
+            source.take(bytes,code.size());
         }
         else
 #endif
@@ -336,11 +516,12 @@ namespace nx
         }
         // `#include "global:scene.as"`: other files, which the screen shares. The line itself is made blank.
         std::string included;
-        m_included.clear();
+        m_included.clear();host.clearSections();
         if (!include(source, shown(entry), included, 0))
         {
             entry.failed = true;
             snprintf(entry.error, sizeof(entry.error), "%s", included.c_str());
+            host.clearSections();m_included.clear();
             return false;
         }
         // Its path is in every error message, so leave out the part that is always the same.
@@ -502,7 +683,11 @@ namespace nx
 
     void Screens::enter(const Entry& entry)
     {
-        snprintf(m_services->folder, sizeof(m_services->folder), "%s/%s", m_folder, entry.info.id);
+        const char* root=m_folder;
+#ifdef NX_DESKTOP_BLUEPRINT
+        if(previewing())root=m_previewRoot.c_str();
+#endif
+        snprintf(m_services->folder, sizeof(m_services->folder), "%s/%s", root, entry.info.id);
         m_services->world = entry.world;
         m_services->ui = entry.ui;
         m_services->audio->setGroup(entry.group);
@@ -547,6 +732,9 @@ namespace nx
         Input& input = *m_services->input;
         if (m_menuOpen || entry.failed)
         {
+#ifdef NX_DESKTOP_BLUEPRINT
+            if(previewing()&&entry.failed)return;
+#endif
             updateMenu();
         }
         else if (input.pressed(Action::Menu))

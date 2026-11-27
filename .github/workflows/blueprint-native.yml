@@ -1,25 +1,15 @@
 name: Native Blueprint
 on:
-  push:
-    branches: ["blueprint/review-native-ui"]
-    paths:
-      - "engine/tools/blueprint/native_*"
-      - "engine/tools/blueprint/generate_native_catalog.py"
-      - "engine/tools/blueprint/catalog.js"
-      - "engine/tests/test_blueprint*.cpp"
-      - "engine/app/blueprint_workspace.*"
-      - "engine/app/main.cpp"
-      - "engine/CMakeLists.txt"
-      - "engine/base/**"
-      - "engine/screens/**"
-      - "engine/save/**"
-      - ".github/workflows/blueprint-native.yml"
+  pull_request:
+    branches: ["blueprint/verification-base"]
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Each distinct revision completes independently. A newer push must not cancel
+  # an older revision's runtime or renderer verification.
+  group: ${{ github.workflow }}-${{ github.sha }}
+  cancel-in-progress: false
 jobs:
   document:
     runs-on: ubuntu-latest
@@ -28,12 +18,14 @@ jobs:
       - uses: actions/checkout@v5
       - name: Check generated catalogue
         run: python3 engine/tools/blueprint/generate_native_catalog.py --check
+      - name: Verify editable orbit fixture matches native test fixture
+        run: python3 -c 'from pathlib import Path; a=Path("engine/tools/blueprint/examples/camera-orbit.bp.json").read_text(); b=Path("engine/tests/blueprint_orbit_fixture.h").read_text(); assert "R\"BP_ORBIT("+a+")BP_ORBIT\"" in b; t=Path("engine/tools/blueprint/examples/camera-orbit-timeline.bp.json").read_text(); assert "R\"BP_TIME("+t+")BP_TIME\"" in b; u=Path("engine/tools/blueprint/examples/camera-orbit-timed.bp.json").read_text(); assert "R\"BP_TIMED("+u+")BP_TIMED\"" in b'
       - name: Compile native document tests with sanitizers
         run: |
           g++ -std=c++20 -Wall -Wextra -Werror -fno-exceptions -fno-rtti -g -O1 \
             -fsanitize=address,undefined -fno-omit-frame-pointer -fno-pie -no-pie \
             -Iengine engine/tests/main.cpp engine/tests/test_blueprint_document.cpp \
-            engine/tools/blueprint/native_document.cpp engine/tools/blueprint/native_compile.cpp engine/base/json_tree.cpp engine/base/json_value.cpp \
+            engine/tools/blueprint/native_document.cpp engine/tools/blueprint/native_compile.cpp engine/tools/blueprint/native_import.cpp engine/base/json_tree.cpp engine/base/json_value.cpp \
             engine/base/memory.cpp engine/base/log.cpp -o /tmp/nx-blueprint-document-tests
       - name: Run regression tests
         env:
@@ -49,15 +41,96 @@ jobs:
       - uses: actions/checkout@v5
         with:
           submodules: true
+          persist-credentials: false
       - name: Install native desktop build dependencies
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libx11-dev libgl-dev xvfb libgl1-mesa-dri xauth
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libx11-dev libgl-dev xvfb libgl1-mesa-dri xauth xdotool python3-xlib ffmpeg
       - name: Configure
         run: cmake -S engine -B build -DCMAKE_BUILD_TYPE=Release
       - name: Build native editor and regression executables
-        run: cmake --build build --target showcase nx_blueprint_tests nx_blueprint_document_tests --parallel 4
+        run: cmake --build build --target showcase nx_blueprint_tests nx_blueprint_document_tests nx_blueprint_platform_tests --parallel 4
       - name: Run native document and engine tests
-        run: ctest --test-dir build --output-on-failure --timeout 300 -R '^(blueprint_runtime|blueprint_native_document)$'
+        run: ctest --test-dir build --output-on-failure --timeout 300 -R '^(blueprint_runtime|blueprint_native_document|blueprint_platform_files)$'
       - name: Start editor with null GPU
-        run: build/showcase/nexgen --blueprint-studio --null --frames 10
+        if: ${{ !cancelled() }}
+        run: build/showcase/nexgen --blueprint-studio --null --frames 180 --saves "$RUNNER_TEMP/bp-null-saves"
       - name: Start editor with native desktop renderer
-        run: xvfb-run -a -s "-screen 0 1280x720x24" build/showcase/nexgen --blueprint-studio --hidden --frames 10
+        if: ${{ !cancelled() }}
+        run: xvfb-run -a -s "-screen 0 1280x720x24 -noreset" build/showcase/nexgen --blueprint-studio --hidden --frames 600 --saves "$RUNNER_TEMP/bp-desktop-saves"
+      - name: Reopen native editor with existing save directory
+        if: ${{ !cancelled() }}
+        run: xvfb-run -a -s "-screen 0 1280x720x24 -noreset" build/showcase/nexgen --blueprint-studio --hidden --frames 120 --saves "$RUNNER_TEMP/bp-desktop-saves"
+      - name: Exercise real X11 input, crash recovery, save, play, export and large graph
+        run: xvfb-run -a -s "-screen 0 1280x720x24 -noreset" /usr/bin/python3 engine/tools/blueprint/test_native_desktop.py build/showcase/nexgen "$RUNNER_TEMP/bp-desktop-operational"
+      - name: Exercise editable 3D camera orbit and capture native frames
+        if: ${{ !cancelled() }}
+        run: xvfb-run -a -s "-screen 0 1280x720x24 -noreset" /usr/bin/python3 engine/tools/blueprint/test_camera_orbit_desktop.py build/showcase/nexgen "$RUNNER_TEMP/bp-camera-orbit"
+      - name: Exercise simplified Timeline orbit and capture native frames
+        if: ${{ !cancelled() }}
+        run: xvfb-run -a -s "-screen 0 1280x720x24 -noreset" /usr/bin/python3 engine/tools/blueprint/test_camera_orbit_desktop.py build/showcase/nexgen "$RUNNER_TEMP/bp-camera-timeline" camera-orbit-timeline.bp.json
+      - name: Author the Timeline orbit from a blank native workspace
+        if: ${{ !cancelled() }}
+        run: xvfb-run -a -s "-screen 0 1280x720x24 -noreset" /usr/bin/python3 engine/tools/blueprint/test_camera_orbit_desktop.py build/showcase/nexgen "$RUNNER_TEMP/bp-camera-authored" camera-orbit-timeline.bp.json --author
+      - name: Exercise timed camera action and capture native frames
+        if: ${{ !cancelled() }}
+        run: xvfb-run -a -s "-screen 0 1280x720x24 -noreset" /usr/bin/python3 engine/tools/blueprint/test_camera_orbit_desktop.py build/showcase/nexgen "$RUNNER_TEMP/bp-camera-timed" camera-orbit-timed.bp.json --record
+      - name: Author the seven-node timed orbit from a blank workspace
+        if: ${{ !cancelled() }}
+        run: xvfb-run -a -s "-screen 0 1280x720x24 -noreset" /usr/bin/python3 engine/tools/blueprint/test_camera_orbit_desktop.py build/showcase/nexgen "$RUNNER_TEMP/bp-camera-timed-authored" camera-orbit-timed.bp.json --author --record
+      - name: Retain native camera orbit evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v5
+        with:
+          name: camera-orbit-native-evidence
+          path: |
+            ${{ runner.temp }}/bp-camera-orbit/
+            ${{ runner.temp }}/bp-camera-timeline/
+            ${{ runner.temp }}/bp-camera-timed/
+            ${{ runner.temp }}/bp-camera-authored/
+            ${{ runner.temp }}/bp-camera-timed-authored/
+          if-no-files-found: ignore
+      - name: Verify native process contention and crash release
+        run: python3 engine/tools/blueprint/test_native_lease.py build/showcase/nexgen "$RUNNER_TEMP/bp-linux-lease"
+      - name: Retain operational test logs
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v5
+        with:
+          name: native-desktop-operational-logs
+          path: |
+            ${{ runner.temp }}/bp-desktop-operational/*.log
+            ${{ runner.temp }}/bp-linux-lease/*.log
+          if-no-files-found: ignore
+
+  portable-desktop:
+    name: Native Studio (${{ matrix.name }})
+    needs: document
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: windows-x64, os: windows-latest, binary: build/showcase/Release/nexgen.exe }
+          - { name: macos-arm64, os: macos-latest, binary: build/showcase/nexgen.app/Contents/MacOS/nexgen }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: true
+          persist-credentials: false
+      - name: Configure
+        run: cmake -S engine -B build -DCMAKE_BUILD_TYPE=Release
+      - name: Build native editor and regression executables
+        run: cmake --build build --config Release --target showcase nx_blueprint_tests nx_blueprint_document_tests nx_blueprint_platform_tests --parallel 4
+      - name: Run native document and runtime tests
+        run: ctest --test-dir build -C Release --output-on-failure --timeout 300 -R '^(blueprint_runtime|blueprint_native_document|blueprint_platform_files)$'
+      - name: Verify native process contention and crash release
+        run: python3 engine/tools/blueprint/test_native_lease.py "${{ matrix.binary }}" "$RUNNER_TEMP/bp-portable-lease"
+      - name: Retain native process logs
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v5
+        with:
+          name: native-lease-${{ matrix.name }}
+          path: ${{ runner.temp }}/bp-portable-lease/*.log
+          if-no-files-found: ignore
