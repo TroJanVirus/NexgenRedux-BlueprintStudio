@@ -26,7 +26,11 @@ namespace nx
         void drawPreviewOverlay(Canvas& canvas);
         void recover(Services& services);
         void checkpoint(Services& services,bool force=false);
+        bool recoveryProtected() const
+        {return !m_document.dirty()||(m_checkpointPresent&&m_checkpointRevision==m_document.revision()&&m_recoveryWarning.empty());}
     private:
+        void returnToRedux(Services& services);
+        void recoveryWarning(const std::string& message);
         void selectGraph(size_t index);
         void fitGraph();
         void rebuildPins();
@@ -93,6 +97,7 @@ namespace nx
         bool m_playing=false;
         bool m_checkpointPresent=false;
         bool m_protectDamagedRecovery=false;
+        std::string m_recoveryWarning;
         std::string m_checkpointBytes; // last recovery bytes read or verified by this workspace
         size_t m_checkpointRevision=static_cast<size_t>(-1);
         double m_nextCheckpoint=0;

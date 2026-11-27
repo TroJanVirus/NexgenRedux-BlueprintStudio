@@ -1546,9 +1546,13 @@ NX_TEST(nativeWorkspaceRepeatedRecoveryPreviewAndFailedCheckpointRetry)
             r.platform.failOwnWrites=true;
             r.platform.dropped="original.as";frame();
             NX_EXPECT(!r.platform.files.count(recovery));
+            NX_EXPECT(!studio.recoveryProtected());
+            click(1200,53);
+            NX_EXPECT(studio.active()&&!studio.recoveryProtected());
             r.platform.failOwnWrites=false;
             studio.checkpoint(r.services,true);
             NX_EXPECT(r.platform.files.count(recovery));
+            NX_EXPECT(studio.recoveryProtected());
             if(!r.platform.files.count(recovery)){studio.close(r.services);return;}
             saved=r.platform.files[recovery];
         }

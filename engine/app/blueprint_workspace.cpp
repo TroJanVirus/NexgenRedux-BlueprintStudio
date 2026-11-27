@@ -621,6 +621,23 @@ namespace nx
         c.text(*m_font,"Return (Enter / A)",805,407,text,Align::Center);
     }
 
+    void BlueprintWorkspace::recoveryWarning(const std::string& message)
+    {
+        if(m_recoveryWarning!=message)NX_WARN("Blueprint Studio: %s",message.c_str());
+        m_recoveryWarning=message;
+    }
+
+    void BlueprintWorkspace::returnToRedux(Services& s)
+    {
+        checkpoint(s,true);
+        if(!recoveryProtected())
+        {
+            m_status="Unsaved graph is not protected. Save as or retry after fixing storage.";
+            return;
+        }
+        close(s);
+    }
+
     void BlueprintWorkspace::checkpoint(Services& s,bool force)
     {
         if(!active()||m_document.graphs.empty())return;
@@ -641,28 +658,29 @@ namespace nx
                 if(!exists||(!m_protectDamagedRecovery&&same&&s.platform->writeFile(path,"",0)))
                 {
                     m_checkpointPresent=false;m_checkpointRevision=static_cast<size_t>(-1);
-                    m_checkpointBytes.clear();m_protectDamagedRecovery=false;
+                    m_checkpointBytes.clear();m_protectDamagedRecovery=false;m_recoveryWarning.clear();
                 }
                 else if(!same||m_protectDamagedRecovery)
                 {
                     m_checkpointPresent=false;m_checkpointRevision=static_cast<size_t>(-1);
                     m_protectDamagedRecovery=true;
-                    NX_WARN("Blueprint Studio: recovery changed outside workspace; original retained");
+                    recoveryWarning("External recovery retained; newer draft not cleared.");
                 }
-                else NX_WARN("Blueprint Studio: could not clear recovery file");
+                else recoveryWarning("Could not clear old recovery; saved project is safe.");
             }
+            else m_recoveryWarning.clear();
             return;
         }
-        if(m_checkpointPresent&&m_checkpointRevision==m_document.revision())return;
+        if(m_checkpointPresent&&m_checkpointRevision==m_document.revision()&&m_recoveryWarning.empty())return;
         std::string output,error;
         if(!m_document.serialize(output,error))
-        {NX_WARN("Blueprint Studio: recovery serialization failed: %s",error.c_str());return;}
+        {recoveryWarning("Recovery serialization failed: "+error);return;}
         // Check the last known bytes before replacing a shared recovery filename.
         // This detects sequential external changes; it is not a cross-process lock.
         FileData damaged;
         const bool exists=s.platform->fileTime(path)!=0;
         if(exists&&!s.platform->readFile(path,damaged,MemTag::General))
-        {NX_WARN("Blueprint Studio: recovery cannot be read; autosave deferred");return;}
+        {recoveryWarning("Cannot read recovery file; autosave deferred.");return;}
         const bool changed=exists&&(damaged.size!=m_checkpointBytes.size()||
             (damaged.size&&std::memcmp(damaged.data,m_checkpointBytes.data(),damaged.size)!=0));
         if(exists&&damaged.size&&(m_protectDamagedRecovery||changed))
@@ -681,23 +699,23 @@ namespace nx
             if(archive.empty()||!s.platform->writeFile(archive.c_str(),damaged.data,damaged.size)||
                 !s.platform->readFile(archive.c_str(),verified,MemTag::General)||verified.size!=damaged.size||
                 (damaged.size&&std::memcmp(verified.data,damaged.data,damaged.size)!=0))
-            {NX_WARN("Blueprint Studio: damaged recovery archive failed; original retained");return;}
+            {recoveryWarning("Recovery archive failed; previous draft retained.");return;}
             NX_WARN("Blueprint Studio: previous recovery archived at %s",archive.c_str());
         }
         m_protectDamagedRecovery=false;
         m_checkpointBytes.clear();
         if(damaged.size)m_checkpointBytes.assign(reinterpret_cast<const char*>(damaged.data),damaged.size);
         if(!s.platform->writeFile(path,output.data(),output.size()))
-        {NX_WARN("Blueprint Studio: recovery checkpoint failed: %s",error.c_str());return;}
+        {recoveryWarning("Recovery write failed; latest edits are only in memory.");return;}
         FileData check;
         if(!s.platform->readFile(path,check,MemTag::General)||check.size!=output.size()||
             std::memcmp(check.data,output.data(),output.size())!=0)
         {
             m_protectDamagedRecovery=true;m_checkpointRevision=static_cast<size_t>(-1);
-            NX_WARN("Blueprint Studio: recovery checkpoint verification failed");return;
+            recoveryWarning("Recovery verification failed; save a named project.");return;
         }
         m_checkpointPresent=true;m_checkpointRevision=m_document.revision();
-        m_checkpointBytes=std::move(output);
+        m_checkpointBytes=std::move(output);m_recoveryWarning.clear();
     }
 
     void BlueprintWorkspace::recover(Services& s)
@@ -716,7 +734,7 @@ namespace nx
             if(m_focus){m_focus=0;input.setTyping(false);m_status="Input cancelled.";return;}
             if(m_pending!=static_cast<size_t>(-1)){clearWire();m_status="Connection cancelled.";return;}
             if(m_drag){cancelDrag();m_left=input.raw().mouseButtons[0];m_status="Drag cancelled.";return;}
-            close(s);return;
+            returnToRedux(s);return;
         }
         std::string dropped;
         if (!m_drag && !m_focus && !m_browsing && s.platform->takeDropped(dropped))
@@ -822,7 +840,7 @@ namespace nx
         }
         if(!m_drag)
         {
-            if(click&&in(x,y,1134,39,1266,69)){close(s);return;}
+            if(click&&in(x,y,1134,39,1266,69)){returnToRedux(s);m_left=left;return;}
             if(click&&in(x,y,410,5,560,33)&&m_graph<m_document.graphs.size()&&m_document.graphs[m_graph].kind=="function")
             {m_edit=m_document.functionSignature(m_graph);m_focus=9;input.setTyping(true);m_status="Edit the typed signature.";m_left=left;return;}
             if(click&&in(x,y,410,5,560,33)&&m_graph<m_document.graphs.size()&&m_document.graphs[m_graph].owner.rfind("behaviour:",0)!=0)
@@ -1214,7 +1232,16 @@ namespace nx
         }
         c.rect(0,kBottom,kWidth,kHeight-kBottom,{0.12f,0.16f,0.22f,1});
         c.text(*m_font,shorten(m_status,110).c_str(),12,kBottom+6,text);
-        c.text(*m_font,"Click output then input: connect | Click input: value | Ctrl+click: disconnect | Ctrl+S: save",12,kBottom+26,muted);
+        if(!m_recoveryWarning.empty())
+            c.text(*m_font,shorten(m_recoveryWarning,105).c_str(),12,kBottom+26,{1.f,0.72f,0.22f,1.f});
+        else
+        {
+            c.clip(12,kBottom+24,900,22);
+            c.text(*m_font,"Click output then input: connect | Click input: value | Ctrl+click: disconnect | Ctrl+S: save",12,kBottom+26,muted);
+            c.noClip();
+            const char* state=!m_document.dirty()?"Saved / clean":recoveryProtected()?"Recovery protected":"Recovery pending";
+            c.text(*m_font,state,kWidth-12,kBottom+26,recoveryProtected()?muted:Color{1.f,0.72f,0.22f,1.f},Align::Right);
+        }
         if(m_assetBrowser||m_browsing||m_focus==5||m_focus==6||m_focus==9)
         {
             c.rect(0,0,kWidth,kHeight,{0,0,0,0.70f});
