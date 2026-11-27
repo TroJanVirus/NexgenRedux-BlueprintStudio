@@ -1,5 +1,9 @@
 # Changes
 
+## Imported project play testing
+
+- Run original or converted screens from a mixed project in a clean desktop test copy. Stage imported global files at their native paths and refuse existing screen and global entries, including case-only matches. Keep original scripts outside live Blueprint reloads. Remove staged files on exit.
+
 ## Convert individual handwritten functions
 
 - Review and convert the current body of a retained function using the same importer, without rebuilding the class or other graphs. Keep the original source and the exact pre-conversion body, protect imported signatures, and undo or redo the conversion. Unsupported code leaves the Blueprint unchanged.
