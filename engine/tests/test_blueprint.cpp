@@ -2416,3 +2416,25 @@ NX_TEST(nativeStackAnchorsAdaptToAspectRatio)
     view.drawDesign(r.canvas,0,0,960,720);
     NX_EXPECT(fabsf(wideX-label->x-320)<0.01f);
 }
+
+NX_TEST(nativeLinkedThemeStylesReachRuntimeWidgets)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    BlueprintDocument doc;doc.create();std::string page,theme,error,source;
+    const bool ok=doc.createVisualAsset("widget",page,error)&&doc.appendVisualWidget(page,"button","Play",error)&&
+        doc.createVisualAsset("theme",theme,error)&&doc.setVisualThemeProperty(theme,"button","normal","back","#123456",error)&&
+        doc.setVisualThemeProperty(theme,"button","focused","radius","7",error)&&doc.setVisualTheme(page,theme,error)&&
+        doc.connectVisualWidget("Screen",page,error)&&compileBlueprint(doc,source,error);
+    NX_EXPECT(ok);if(!ok)return;
+    r.platform.files["showcase/main/screen.json"]="{\"title\":\"Themed UI\"}";
+    r.platform.files["showcase/main/main.as"]=source;
+    if(!r.screens.init(r.services,"showcase","main")){NX_EXPECT(false);return;}
+    r.step(3);NX_EXPECT(!r.screens.failed());if(!r.services.ui)return;
+    const auto* widget=r.services.ui->find("item-1");
+    NX_EXPECT(widget&&widget->style);
+    if(widget&&widget->style)
+    {
+        NX_EXPECT(fabsf(widget->style->looks[0].back.r-18.f/255.f)<0.001f);
+        NX_EXPECT(widget->style->looks[static_cast<size_t>(UiState::Focused)].radius==7);
+    }
+}

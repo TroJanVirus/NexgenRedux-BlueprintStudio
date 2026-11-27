@@ -673,6 +673,8 @@ namespace nx
     }
     namespace
     {
+        constexpr const char* themeStates[]={"normal","hovered","checked","focused","pressed","disabled"};
+        constexpr const char* themeProps[]={"back","text","line","track","radius","lineWidth","scale","shadow","size","padding","gap","seconds"};
         struct DesignRow {std::string id,kind,label;unsigned depth;};
         constexpr const char* designPalette[]={"column","row","grid","stack","scroll","label","button","toggle","slider","progress","field","space"};
         constexpr const char* designEvents[]={"click","change","focus","done","draw","makeRow"};
@@ -717,6 +719,10 @@ namespace nx
         const auto folder="own/"+m_document.assetRoot+"/"+assetScreen();
         m_designUi=create<Ui>(MemTag::UI,*s.canvas,*s.assets,*s.audio,*s.input,*s.host,*s.platform,folder.c_str());
         if(!m_designUi){m_designPreviewError="Cannot allocate widget preview.";return;}
+        std::string theme;
+        if(!m_document.visualWidgetTheme(m_visualSelection,theme,m_designPreviewError))return;
+        if(!theme.empty()&&!m_designUi->loadThemeSource(theme.data(),theme.size()))
+        {m_designPreviewError=m_designUi->error();return;}
         if(!m_designUi->loadPage(page->source.data(),page->source.size(),m_designUi->root(),nullptr,"designer",true))
             m_designPreviewError=m_designUi->error();
     }
@@ -967,6 +973,14 @@ namespace nx
                     if(m_visualInput==1&&!m_document.renameVisualAsset(m_visualSelection,m_visualText,m_status))break;
                     if(m_visualInput==3&&!m_document.setVisualActorProperty(m_visualSelection,m_visualComponent,m_visualProperty,m_visualText,m_status))break;
                     if(m_visualInput==4&&!m_document.setVisualWidgetProperty(m_visualSelection,m_widgetSelection,m_visualProperty,m_visualText,m_status))break;
+                    if(m_visualInput==5&&!m_document.setVisualTheme(m_visualSelection,m_visualText,m_status))break;
+                    if(m_visualInput==6)
+                    {
+                        if(m_visualText.empty()||m_visualText.size()>31||m_visualText.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_")!=std::string::npos||
+                            (m_visualText.front()>='0'&&m_visualText.front()<='9')){m_status="Enter a valid style identifier.";break;}
+                        m_themeStyle=m_visualText;
+                    }
+                    if(m_visualInput==7&&!m_document.setVisualThemeProperty(m_visualSelection,m_themeStyle,themeStates[m_themeState],m_visualProperty,m_visualText,m_status))break;
                     m_visualInput=0;input.setTyping(false);m_status="Text applied.";break;
                 }
                 else if(ch>=32)appendCharacter(m_visualText,ch,128);
@@ -1005,10 +1019,10 @@ namespace nx
         if(!click)return;
         if(in(x,y,860,116,1000,150)){m_assetBrowser=false;m_widgetDesigner=false;releaseWidgetPreview();m_visualPlacement=false;cancelVisualPlacement();return;}
         if(in(x,y,704,116,850,150)){m_assetLibrary=false;m_widgetDesigner=false;releaseWidgetPreview();m_visualPlacement=false;cancelVisualPlacement();return;}
-        if(in(x,y,280,156,439,189)||in(x,y,449,156,610,189))
+        if(in(x,y,280,156,439,189)||in(x,y,449,156,610,189)||in(x,y,566,116,695,150))
         {
             std::string id;
-            if(m_document.createVisualAsset(x<440?"actor":"widget",id,m_status))
+            if(m_document.createVisualAsset(y<150?"theme":x<440?"actor":"widget",id,m_status))
             {
                 m_visualSelection=id;m_visualComponent=m_visualComponentFirst=0;m_visualInspector=false;m_visualPhysics=false;m_visualText.clear();m_visualFirst=m_document.visualAssets().size()>9?m_document.visualAssets().size()-9:0;
                 m_status="Created reusable definition. Ctrl+S saves the project.";
@@ -1029,6 +1043,25 @@ namespace nx
         {
             if(m_document.removeVisualAsset(m_visualSelection,m_status))
             {m_visualSelection.clear();m_visualText.clear();m_status="Removed definition. Ctrl+Z restores it.";}
+            return;
+        }
+        if(selected->kind=="theme")
+        {
+            if(in(x,y,630,232,810,266))
+            {m_visualInput=6;m_visualText=m_themeStyle;input.setTyping(true);m_status="Enter style name (e.g. button or custom).";return;}
+            if(in(x,y,820,232,1000,266)){m_themeState=(m_themeState+1)%6;return;}
+            if(in(x,y,630,277,1000,421))
+            {
+                const size_t index=static_cast<size_t>((y-277)/36)*3+static_cast<size_t>((x-630)/123.34f);
+                if(index>=sizeof(themeProps)/sizeof(themeProps[0]))return;
+                m_visualProperty=themeProps[index];
+                JsonTree tree;if(!tree.parse(selected->source.data(),selected->source.size()))return;
+                const auto style=tree.root()["styles"][m_themeStyle.c_str()];
+                const auto state=m_themeState?style[themeStates[m_themeState]]:style;
+                const auto property=state[m_visualProperty.c_str()];
+                m_visualText=property.isNumber()?std::to_string(property.exact()):property.text();
+                m_visualInput=7;input.setTyping(true);m_status="Edit style value; blank restores default.";return;
+            }
             return;
         }
         if(selected->kind=="actor")
@@ -1123,6 +1156,7 @@ namespace nx
             return;
         }
         if(selected->kind!="widget")return;
+        if(in(x,y,630,510,1000,543)){m_visualInput=5;m_visualText=selected->dependencies.empty()?"":selected->dependencies.front();input.setTyping(true);m_status="Enter theme asset ID or blank for native defaults.";return;}
         if(in(x,y,280,548,610,581)){m_widgetDesigner=true;m_widgetPalette=false;m_widgetEvents=m_widgetUnbind=m_widgetDragging=m_widgetAnchors=m_widgetPreviewDrag=false;m_widgetSelection.clear();m_widgetFirst=0;return;}
         if(in(x,y,630,232,1000,266))
         {m_visualInput=2;input.setTyping(true);m_status="Enter the next widget label, then press Enter.";return;}
@@ -1152,6 +1186,7 @@ namespace nx
         const auto button=[&](float x,float y,float w,const char* label)
         {c.roundRect(x,y,w,33,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,label,x+w*0.5f,y+7,text,Align::Center);};
         c.text(*m_font,"CONTENT / PROJECT LIBRARY",280,122,accent);
+        if(!m_widgetDesigner&&!m_visualPlacement)button(566,116,129,"New theme");
         button(704,116,146,"Media");button(860,116,140,"Close");
         if(m_widgetDesigner)drawWidgetDesigner(c);
         else
@@ -1162,7 +1197,7 @@ namespace nx
         {
             const auto& a=assets[m_visualFirst+i];const float y=198+36*static_cast<float>(i);
             c.rect(280,y,330,33,a.id==m_visualSelection?Color{0.19f,0.33f,0.50f,1}:Color{0.17f,0.22f,0.30f,1});
-            c.clip(287,y,316,33);c.text(*m_font,((a.kind=="actor"?"ACTOR  ":"UI  ")+a.title).c_str(),290,y+8,text);c.noClip();
+            c.clip(287,y,316,33);c.text(*m_font,((a.kind=="actor"?"ACTOR  ":a.kind=="theme"?"THEME  ":"UI  ")+a.title).c_str(),290,y+8,text);c.noClip();
         }
         if(assets.empty())c.text(*m_font,"Create a reusable asset.",290,210,muted);
         const auto* selected=m_document.visualAsset(m_visualSelection);
@@ -1173,7 +1208,17 @@ namespace nx
         {
             button(630,156,175,"Rename");button(815,156,185,"Remove");
             c.clip(630,195,370,32);c.text(*m_font,(selected->id+" / "+selected->title).c_str(),630,201,accent);c.noClip();
-            if(selected->kind=="widget")
+            if(selected->kind=="theme")
+            {
+                button(630,232,180,m_themeStyle.c_str());button(820,232,180,themeStates[m_themeState]);
+                for(size_t i=0;i<sizeof(themeProps)/sizeof(themeProps[0]);++i)
+                    button(630+123.34f*static_cast<float>(i%3),277+36*static_cast<float>(i/3),119,themeProps[i]);
+                c.text(*m_font,"Colours: #RRGGBB or #RRGGBBAA",630,445,muted);
+                c.text(*m_font,"Style states overlay Normal.",630,470,muted);
+                c.text(*m_font,"Assign this theme ID to a UI page.",630,495,muted);
+                c.text(*m_font,"Preview the result in that page designer.",630,520,muted);
+            }
+            else if(selected->kind=="widget")
             {
                 c.rect(630,232,370,34,{0.07f,0.10f,0.15f,1});
                 c.clip(636,232,358,34);c.text(*m_font,m_visualText.empty()?"Next widget text (optional)":m_visualText.c_str(),638,239,muted);c.noClip();
@@ -1194,6 +1239,7 @@ namespace nx
                     }
                     if(tree.root().count()>5)c.text(*m_font,("+"+std::to_string(tree.root().count()-5)+" more widgets").c_str(),630,528,muted);
                 }
+                button(630,510,370,selected->dependencies.empty()?"Assign theme (default)":selected->dependencies.front().c_str());
                 button(630,548,180,"Copy JSON");button(820,548,180,"Link to screen");
             }
             else
@@ -1270,7 +1316,7 @@ namespace nx
         if(m_visualInput)
         {
             c.roundRect(420,286,440,130,6,{0.08f,0.12f,0.18f,1});
-            c.text(*m_font,m_visualInput==1?"RENAME ASSET":m_visualInput>=3?m_visualProperty.c_str():"NEXT WIDGET TEXT",440,300,accent);
+            c.text(*m_font,m_visualInput==1?"RENAME ASSET":m_visualInput==5?"THEME ASSET ID":m_visualInput==6?"STYLE NAME":m_visualInput>=3?m_visualProperty.c_str():"NEXT WIDGET TEXT",440,300,accent);
             c.clip(440,330,400,34);c.text(*m_font,m_visualText.c_str(),440,336,text);c.noClip();
             c.text(*m_font,"Enter applies; Escape cancels.",440,379,muted);
         }

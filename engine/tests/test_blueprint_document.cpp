@@ -1501,3 +1501,25 @@ NX_TEST(nativeWidgetPreviewPositionIsOneUndoableEdit)
     BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error));
     NX_EXPECT(copy.visualAsset(id)->source==moved);
 }
+
+NX_TEST(nativeReusableThemeLinksAndStyleProperties)
+{
+    BlueprintDocument doc;doc.create();std::string page,theme,error,source,bytes;
+    NX_EXPECT(doc.createVisualAsset("widget",page,error)&&doc.appendVisualWidget(page,"button","Play",error));
+    NX_EXPECT(doc.createVisualAsset("theme",theme,error));
+    NX_EXPECT(doc.setVisualThemeProperty(theme,"button","normal","back","#123456",error));
+    NX_EXPECT(doc.setVisualThemeProperty(theme,"button","focused","back","#ffffff",error));
+    NX_EXPECT(doc.setVisualThemeProperty(theme,"button","normal","radius","8",error));
+    NX_EXPECT(!doc.setVisualThemeProperty(theme,"button","focused","padding","3",error));
+    NX_EXPECT(!doc.setVisualThemeProperty(theme,"button","normal","back","#xyz",error));
+    NX_EXPECT(doc.setVisualTheme(page,theme,error)&&doc.connectVisualWidget("Screen",page,error));
+    NX_EXPECT(!doc.removeVisualAsset(theme,error));
+    NX_EXPECT(compileBlueprint(doc,source,error));
+    NX_EXPECT(source.find("Ui::loadThemeSource(")<source.find("Ui::loadPage("));
+    NX_EXPECT(source.find("#123456")!=std::string::npos);
+    NX_EXPECT(doc.serialize(bytes,error));
+    BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error));
+    NX_EXPECT(copy.setVisualTheme(page,"",error)&&compileBlueprint(copy,source,error));
+    NX_EXPECT(source.find("Ui::loadThemeSource(")==std::string::npos);
+    NX_EXPECT(copy.undo()&&compileBlueprint(copy,source,error)&&source.find("#123456")!=std::string::npos);
+}

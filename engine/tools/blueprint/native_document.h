@@ -88,6 +88,9 @@ namespace nx
         bool clearVisualWidgetEvent(const std::string& id,const std::string& widget,const std::string& event,std::string& error);
         bool visualWidgetForOwner(const std::string& id,const std::string& owner,std::string& json,std::string& error)const;
         bool visualWidgetUsesFunction(const std::string& owner,const std::string& functionName)const;
+        bool setVisualTheme(const std::string& page,const std::string& theme,std::string& error);
+        bool visualWidgetTheme(const std::string& page,std::string& source,std::string& error)const;
+        bool setVisualThemeProperty(const std::string& id,const std::string& style,const std::string& state,const std::string& property,const std::string& value,std::string& error);
         bool connectVisualWidget(const std::string& owner,const std::string& id,std::string& error);
         // Linked actor definitions use native entity JSON and a parent-first hierarchy.
         bool visualActorRoot(const std::string& id,std::string& json,std::string& error)const;

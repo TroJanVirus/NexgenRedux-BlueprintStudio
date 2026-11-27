@@ -54,6 +54,8 @@ namespace nx
         bool m_assetBrowser=false,m_assetLibrary=false;
         size_t m_visualFirst=0,m_visualComponent=0,m_visualComponentFirst=0;
         std::string m_visualSelection,m_visualText,m_visualProperty;
+        std::string m_themeStyle="button";
+        size_t m_themeState=0;
         bool m_visualInspector=false,m_visualPhysics=false,m_visualPlacement=false;
         std::string m_placementAsset;
         size_t m_placementGraph=static_cast<size_t>(-1),m_placementNode=static_cast<size_t>(-1);

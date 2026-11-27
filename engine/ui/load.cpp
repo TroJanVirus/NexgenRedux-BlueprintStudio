@@ -120,6 +120,14 @@ namespace nx
         return ok;
     }
 
+    bool Ui::loadThemeSource(const char* data,size_t size)
+    {
+        m_error[0]=0;m_themeReady=true;
+        const bool ok=m_theme.load(m_assets,data,size,"inline UI theme",m_folder);
+        if(!ok)snprintf(m_error,sizeof(m_error),"%s",m_theme.error());
+        for(Widget* widget=m_all;widget;widget=widget->nextAll)restyle(*widget);
+        return ok;
+    }
     bool Ui::words(const char* name)
     {
         FileData file;

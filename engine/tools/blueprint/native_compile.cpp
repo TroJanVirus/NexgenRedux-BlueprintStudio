@@ -285,6 +285,13 @@ namespace nx
                     std::string page,json,why;
                     if(it==n.values.end()||!document.visualWidgetForOwner(it->value,graph.owner,page,why))
                         return fail(to,why.empty()?"Select a linked widget page.":why);
+                    std::string theme;
+                    if(!document.visualWidgetTheme(it->value,theme,why))return fail(to,why);
+                    if(!theme.empty())
+                    {
+                        if(!literalValue(to,"string",theme,json))return false;
+                        source+=pad+"Ui::loadThemeSource("+json+");\n";
+                    }
                     if(!literalValue(to,"string",page,json))return false;
                     source+=pad+"Ui::loadPage("+json+");\n";
                     if(source.size()>1024*1024)return fail(to,"Generated source exceeds the size limit.");

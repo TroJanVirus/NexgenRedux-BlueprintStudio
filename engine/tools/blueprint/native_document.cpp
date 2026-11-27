@@ -414,7 +414,7 @@ namespace nx
             {
                 const auto& a=assets[i];
                 if(!blueprintAssetName(a.id,true)||!ids.emplace(a.id,i).second||
-                    (a.kind!="actor"&&a.kind!="widget")||a.title.empty()||a.title.size()>128||
+                    (a.kind!="actor"&&a.kind!="widget"&&a.kind!="theme")||a.title.empty()||a.title.size()>128||
                     std::any_of(a.title.begin(),a.title.end(),[](unsigned char c){return c<32||c==127;})||
                     a.source.empty()||a.source.size()>64*1024||a.source.find('\0')!=std::string::npos||
                     a.dependencies.size()>32)
@@ -423,7 +423,7 @@ namespace nx
                 if(bytes>512*1024){error="Reusable asset source budget exceeded.";return false;}
                 JsonTree tree;
                 if(!tree.parse(a.source.data(),a.source.size())||
-                    (a.kind=="actor"?!tree.root().isObject():!tree.root().isArray()))
+                    (a.kind=="widget"?!tree.root().isArray():!tree.root().isObject()))
                 {error="Invalid reusable visual asset JSON: "+a.id;return false;}
             }
             for(const auto& a:assets)
@@ -434,8 +434,8 @@ namespace nx
                     const auto found=ids.find(dependency);
                     if(found==ids.end()||!seen.insert(dependency).second)
                     {error="Missing or duplicate visual asset dependency: "+a.id+" -> "+dependency;return false;}
-                    if(a.kind=="widget"&&assets[found->second].kind!="widget")
-                    {error="Widget cannot depend on a world actor: "+a.id;return false;}
+                    if((a.kind=="widget"&&assets[found->second].kind=="actor")||a.kind=="theme")
+                    {error="Invalid visual asset dependency kind: "+a.id;return false;}
                 }
             }
             // Each definition must have a finite dependency tree. Memoize longest
@@ -482,15 +482,15 @@ namespace nx
     }
     bool BlueprintDocument::createVisualAsset(const std::string& kind,std::string& id,std::string& error)
     {
-        if(kind!="actor"&&kind!="widget"){error="Unknown visual asset kind.";return false;}
+        if(kind!="actor"&&kind!="widget"&&kind!="theme"){error="Unknown visual asset kind.";return false;}
         if(m_visualAssets.size()>=128){error="Visual asset limit reached.";return false;}
         // The ID is independent of the user-facing name. At this stage there
         // are no external scene-instance references; dependency links are checked.
         if(m_visualSerial>=999999999){error="Visual asset ID limit reached.";return false;}
         const std::string next=kind+"-"+std::to_string(m_visualSerial+1);
         auto assets=m_visualAssets;
-        assets.push_back({next,kind,kind=="actor"?"New Actor":"New Widget",
-            kind=="actor"?"{\"entities\":[{\"name\":\"Root\",\"shape\":\"box\",\"size\":[1,1,1]}]}":"[]",{}});
+        assets.push_back({next,kind,kind=="actor"?"New Actor":kind=="theme"?"New Theme":"New Widget",
+            kind=="actor"?"{\"entities\":[{\"name\":\"Root\",\"shape\":\"box\",\"size\":[1,1,1]}]}":kind=="theme"?"{\"styles\":{}}":"[]",{}});
         if(!replaceVisualAssets(assets,error))return false;
         id=next;return true;
     }
@@ -795,10 +795,80 @@ namespace nx
             return true;
         }
     }
+    bool BlueprintDocument::visualWidgetTheme(const std::string& pageId,std::string& source,std::string& error)const
+    {
+        source.clear();
+        const auto* page=visualAsset(pageId);
+        if(!page||page->kind!="widget"){error="Select a widget page.";return false;}
+        if(page->dependencies.empty()){error.clear();return true;}
+        if(page->dependencies.size()!=1){error="A linked page supports one theme dependency.";return false;}
+        const auto* theme=visualAsset(page->dependencies.front());
+        if(!theme||theme->kind!="theme"){error="Missing theme or unsupported nested widget dependency.";return false;}
+        source=theme->source;error.clear();return true;
+    }
+    bool BlueprintDocument::setVisualTheme(const std::string& pageId,const std::string& themeId,std::string& error)
+    {
+        if(!themeId.empty())
+        {
+            const auto* theme=visualAsset(themeId);
+            if(!theme||theme->kind!="theme"){error="Choose an existing theme asset ID.";return false;}
+        }
+        auto assets=m_visualAssets;
+        for(auto& page:assets)if(page.id==pageId&&page.kind=="widget")
+        {
+            for(const auto& dependency:page.dependencies)
+                if(!visualAsset(dependency)||visualAsset(dependency)->kind!="theme")
+                {error="Cannot replace unsupported existing widget dependencies.";return false;}
+            const std::vector<std::string> next=themeId.empty()?std::vector<std::string>{}:std::vector<std::string>{themeId};
+            if(page.dependencies==next){error.clear();return true;}
+            page.dependencies=next;return replaceVisualAssets(assets,error);
+        }
+        error="Widget page not found.";return false;
+    }
+    bool BlueprintDocument::setVisualThemeProperty(const std::string& id,const std::string& styleName,const std::string& state,const std::string& property,const std::string& value,std::string& error)
+    {
+        const std::string states="|normal|hovered|checked|focused|pressed|disabled|";
+        const std::string colors="|back|text|line|track|";
+        const std::string looks="|radius|lineWidth|scale|shadow|";
+        const std::string geometry="|size|padding|gap|minWidth|minHeight|seconds|";
+        const auto contains=[](const std::string& list,const std::string& key){return !key.empty()&&key.find('|')==std::string::npos&&list.find("|"+key+"|")!=std::string::npos;};
+        const bool color=contains(colors,property),look=contains(looks,property),metric=contains(geometry,property);
+        if(!identifier(styleName)||styleName.size()>31||!contains(states,state)||
+            (!color&&!look&&!metric)||(metric&&state!="normal"))
+        {error="Invalid style name, state or property.";return false;}
+        if(color&&!value.empty()&&((value.size()!=7&&value.size()!=9)||value.front()!='#'||
+            value.find_first_not_of("0123456789abcdefABCDEF",1)!=std::string::npos))
+        {error="Use #RRGGBB or #RRGGBBAA.";return false;}
+        double n=0;
+        if(!color&&!value.empty())
+        {
+            if(!literal("literal:float",value)){error="Enter a finite number.";return false;}
+            n=std::strtod(value.c_str(),nullptr);
+            if(n<0||n>4096||(property=="size"&&(n<1||n>256||std::floor(n)!=n))||
+                (property=="scale"&&(n<0.05||n>4))||(property=="shadow"&&n>1)||(property=="seconds"&&n>10))
+            {error="Style value outside supported range.";return false;}
+        }
+        auto assets=m_visualAssets;
+        for(auto& theme:assets)if(theme.id==id&&theme.kind=="theme")
+        {
+            JsonValue root;if(!root.parse(theme.source.data(),theme.source.size(),error))return false;
+            auto* styles=root.put("styles");if(!styles)return false;
+            if(styles->type()!=JsonValue::Type::Object&&styles->type()!=JsonValue::Type::Null){error="Invalid styles object.";return false;}
+            if(!styles->find(styleName.c_str())&&styles->count()>=24){error="Custom style limit reached.";return false;}
+            auto* style=styles->put(styleName);if(!style)return false;
+            auto* target=state=="normal"?style:style->put(state);if(!target)return false;
+            if(value.empty())target->remove(property.c_str());
+            else if(color){if(!text(*target,property.c_str(),value))return false;}
+            else if(!number(*target,property.c_str(),n))return false;
+            const auto changed=root.write(true);if(changed==theme.source){error.clear();return true;}
+            theme.source=changed;return replaceVisualAssets(assets,error);
+        }
+        error="Theme not found.";return false;
+    }
     bool BlueprintDocument::visualWidgetForOwner(const std::string& id,const std::string& owner,std::string& json,std::string& error)const
     {
         const auto* page=visualAsset(id);
-        if(!page||page->kind!="widget"||!page->dependencies.empty()){error="Missing or unsupported linked widget page.";return false;}
+        std::string theme;if(!visualWidgetTheme(id,theme,error))return false;
         JsonTree tree;if(!tree.parse(page->source.data(),page->source.size())){error="Invalid widget JSON.";return false;}
         std::vector<WidgetHandler> handlers;widgetHandlers(tree.root(),handlers);
         for(const auto& handler:handlers)
@@ -884,8 +954,7 @@ namespace nx
     bool BlueprintDocument::connectVisualWidget(const std::string& owner,const std::string& id,std::string& error)
     {
         const auto* page=visualAsset(id);
-        if(!page||page->kind!="widget"||!page->dependencies.empty())
-        {error="Select a standalone widget page.";return false;}
+        std::string theme;if(!visualWidgetTheme(id,theme,error))return false;
         size_t enter=static_cast<size_t>(-1),draw=enter;
         for(size_t i=0;i<graphs.size();++i)if(graphs[i].owner==owner)
         {
