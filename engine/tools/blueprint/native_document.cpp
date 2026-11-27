@@ -354,6 +354,9 @@ namespace nx
                     g.parameters.push_back({p["name"].text(),p["type"].text()});
             }
             g.returnType=value["returnType"].text("void");
+            const auto macro=value["inlineMacro"];
+            if(macro.exists()&&(macro.type()!=JsonTree::Type::Bool||g.kind!="function"||g.returnType!="void")){error="Invalid inline macro.";return false;}
+            g.inlineMacro=macro.flag();
             if(!validSignature(g.parameters,g.returnType)||(g.kind!="function"&&(!g.parameters.empty()||g.returnType!="void")))
             {error="Invalid function signature in "+g.name;return false;}
             const auto declarations=value["fields"];
@@ -411,6 +414,7 @@ namespace nx
                     (kind.rfind("literal:",0)==0&&(!n["value"].isString()||!literal(kind,ref)))||
                     ((variableKind(kind)||globalKind(kind)||kind.rfind("capture:",0)==0||kind=="call:function"||(kind=="attach:behaviour"||kind=="attach:direct"||kind=="level:attach"))&&(!n["value"].isString()||!identifier(ref))))
                 {error="Invalid node in "+g.name;return false;}
+                if(g.inlineMacro&&kind=="return:function"){error="Inline macros cannot return from the caller.";return false;}
                 if(kind=="entry")++entries;
                 Node node{n["id"].text(),kind,ref,x,y};
                 if(n["watch"].exists()&&n["watch"].type()!=JsonTree::Type::Bool){error="Invalid node watch flag.";return false;}
@@ -555,6 +559,7 @@ namespace nx
         for(const auto& g:graphs)
         {
             auto* v=gs->add();if(!v||!text(*v,"owner",g.owner)||!text(*v,"name",g.name)||!text(*v,"kind",g.kind))return fail();
+            if(g.inlineMacro){auto* macro=v->put("inlineMacro");if(!macro)return fail();macro->setFlag(true);}
             if(g.kind=="function")
             {
                 if(!text(*v,"returnType",g.returnType))return fail();
@@ -728,6 +733,7 @@ namespace nx
         if(graph>=graphs.size()||!blueprintSpec(kind)||kind=="entry"||!coordinate(x)||!coordinate(y)||graphs[graph].nodes.size()>=kMaxNodes)
         {error="Cannot add this node.";return false;}
         auto& g=graphs[graph];
+        if(kind=="return:function"&&g.inlineMacro){error="Inline macros cannot contain return nodes.";return false;}
         if(kind=="return:function"&&g.kind!="function"){error="Return belongs in a function graph.";return false;}
         if(!context(g.name,kind,g.owner)){error="This event value belongs to a different event graph.";return false;}
         std::string id;
@@ -1112,13 +1118,14 @@ namespace nx
             for(const auto& p:graph.parameters)spec.outputs.push_back({"arg_"+p.name,p.type});
         if(node.kind=="return:function")
         {
-            if(graph.kind!="function")return false;
+            if(graph.kind!="function"||graph.inlineMacro)return false;
             if(graph.returnType!="void")spec.inputs.push_back({"value",graph.returnType});
         }
         if(node.kind=="call:function")
         {
             const auto* target=function(graph.owner,node.ref);if(!target)return false;
             for(const auto& p:target->parameters)spec.inputs.push_back({"arg_"+p.name,p.type});
+            if(target->inlineMacro)spec.title="Macro "+target->name;
             spec.result=target->returnType;
             if(spec.result!="void")spec.outputs.push_back({"result",spec.result});
         }
@@ -1129,6 +1136,7 @@ namespace nx
         if(graph>=graphs.size()||graphs[graph].kind!="function"||!validSignature(parameters,returnType))
         {error="Invalid signature: up to eight uniquely named typed parameters.";return false;}
         auto& g=graphs[graph];
+        if(g.inlineMacro&&returnType!="void"){error="Inline macros currently require a void signature.";return false;}
         const auto old=g.parameters;const auto oldReturn=g.returnType;
         if(oldReturn==returnType&&old.size()==parameters.size()&&
             std::equal(old.begin(),old.end(),parameters.begin(),[](const BlueprintPin& a,const BlueprintPin& b){return a.name==b.name&&a.type==b.type;}))
@@ -1186,6 +1194,14 @@ namespace nx
         g.nodes.push_back({"entry","entry","",24,60});graphs.push_back(std::move(g));
         error.clear();return true;
     }
+    bool BlueprintDocument::setInlineMacro(size_t graph,bool enabled,std::string& error)
+    {
+        if(graph>=graphs.size()||graphs[graph].kind!="function"){error="Select a reusable graph.";return false;}
+        auto& g=graphs[graph];
+        if(enabled&&(g.returnType!="void"||std::any_of(g.nodes.begin(),g.nodes.end(),[](const Node& n){return n.kind=="return:function";})))
+        {error="Inline macros require a void signature and no return nodes.";return false;}
+        if(g.inlineMacro!=enabled){record(graph);g.inlineMacro=enabled;}error.clear();return true;
+    }
     bool BlueprintDocument::renameFunction(size_t graph,const std::string& functionName,std::string& error)
     {
         if(graph>=graphs.size()||graphs[graph].kind!="function"||!identifier(functionName)||ownerEvent(graphs[graph].owner,functionName))
@@ -1213,7 +1229,7 @@ namespace nx
         const auto& original=graphs[graph];const size_t count=original.nodes.size(),none=static_cast<size_t>(-1);
         if(ownerEvent(original.owner,functionName)||std::any_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==original.owner&&g.name==functionName;}))
             return fail("A graph already uses that function name.");
-        std::vector<bool> selected(count,false),action(count,false);
+        std::vector<bool> selected(count,false),action(count,false);bool structured=false;
         std::vector<BlueprintNodeSpec> specs(count);size_t actions=0,selectedCount=0;
         for(const auto i:nodes){if(i>=count)return fail("Invalid selection.");if(!selected[i]){selected[i]=true;++selectedCount;}}
         for(size_t i=0;i<count;++i)
@@ -1228,8 +1244,12 @@ namespace nx
             const auto outputs=std::count_if(specs[i].outputs.begin(),specs[i].outputs.end(),isExec);
             if(inputs||outputs)
             {
-                if(inputs!=1||outputs!=1||!findPin(specs[i].inputs,"in")||!findPin(specs[i].outputs,"then"))
-                    return fail("Collapse requires a contiguous linear execution chain; leave branch, loop and sequence nodes outside.");
+                if(inputs!=1||!findPin(specs[i].inputs,"in")||!findPin(specs[i].outputs,"then"))return fail("Unsupported execution boundary.");
+                if(outputs!=1)
+                {
+                    if(n.kind!="branch"&&n.kind!="sequence"&&n.kind!="repeat")return fail("Unsupported structured flow node.");
+                    structured=true;
+                }
                 action[i]=true;++actions;
             }
         }
@@ -1237,7 +1257,7 @@ namespace nx
         struct Boundary { size_t node;std::string pin,type; };
         std::vector<Boundary> arguments;Boundary returned{none,"","void"};
         const Link* entering=nullptr;const Link* leaving=nullptr;
-        std::vector<size_t> next(count,none);
+        std::vector<size_t> next(count,none);std::vector<std::vector<size_t>> execChildren(count);
         for(const auto& l:original.links)
         {
             if(l.from>=count||l.to>=count)return fail("Invalid graph link.");
@@ -1247,8 +1267,8 @@ namespace nx
             if(source->type=="exec")
             {
                 if(!a&&b){if(entering)return fail("Selection has more than one execution entry.");entering=&l;}
-                else if(a&&!b){if(leaving)return fail("Selection has more than one execution exit.");leaving=&l;}
-                else if(a&&b)next[l.from]=l.to;
+                else if(a&&!b){if(leaving||l.output!="then")return fail("Include all branch and loop bodies; only a single Then continuation may leave.");leaving=&l;}
+                else if(a&&b){execChildren[l.from].push_back(l.to);if(l.output=="then")next[l.from]=l.to;}
                 continue;
             }
             if(!a&&b)
@@ -1271,7 +1291,11 @@ namespace nx
         size_t cursor=entering->to,last=none,visited=0;
         while(cursor!=none&&visited<=actions)
         {if(!action[cursor])return fail("Invalid selected execution chain.");last=cursor;cursor=next[cursor];++visited;}
-        if(visited!=actions||cursor!=none||(leaving&&leaving->from!=last))return fail("Selected actions must form one contiguous execution chain.");
+        if(cursor!=none||(leaving&&leaving->from!=last))return fail("Selected actions must have one outer continuation.");
+        if(structured&&returned.node!=none)return fail("Structured extraction currently requires no outgoing data value.");
+        std::vector<bool> reached(count,false);std::vector<size_t> flowWork{entering->to};reached[entering->to]=true;
+        for(size_t i=0;i<flowWork.size();++i)for(const auto child:execChildren[flowWork[i]])if(!reached[child]){reached[child]=true;flowWork.push_back(child);}
+        if(flowWork.size()!=actions)return fail("Select one connected execution region including all nested bodies.");
         std::vector<bool> used(count,false);std::vector<size_t> work;
         for(size_t i=0;i<count;++i)if(action[i]){used[i]=true;work.push_back(i);}
         std::vector<std::vector<size_t>> predecessors(count);

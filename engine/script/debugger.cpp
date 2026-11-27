@@ -361,16 +361,24 @@ namespace nx
             std::string display=name;
             if(display.rfind("bp_var_",0)==0)display=display.substr(7);
             else if(display.rfind("bp_arg_",0)==0)display=display.substr(7);
+            else if(display.rfind("bp_global_",0)==0)display="global "+display.substr(10);
             display+=" = "+value->text();
             for(char& c:display)if(static_cast<unsigned char>(c)<32)c=' ';
+            if(display.size()>512)display.resize(512);
             values.push_back(display);
         };
+        auto* function=context->GetFunction(0);auto* module=function?function->GetModule():nullptr;
+        for(asUINT i=0;module&&i<module->GetGlobalVarCount()&&values.size()<8;++i)
+        {
+            const char* name=nullptr;int type=0;
+            if(module->GetGlobalVar(i,&name,nullptr,&type)>=0)add(name,type,module->GetAddressOfGlobalVar(i));
+        }
         if(void* self=context->GetThisPointer(0))
         {
             if(context->GetThisTypeId(0)&asTYPEID_SCRIPTOBJECT)
             {
                 auto* object=static_cast<asIScriptObject*>(self);
-                for(asUINT i=0;i<object->GetPropertyCount()&&values.size()<24;++i)
+                for(asUINT i=0;i<object->GetPropertyCount()&&values.size()<16;++i)
                     add(object->GetPropertyName(i),object->GetPropertyTypeId(i),object->GetAddressOfProperty(i));
             }
         }
@@ -379,6 +387,19 @@ namespace nx
             const char* name=nullptr;int type=0;
             if(context->IsVarInScope(i,0)&&context->GetVar(i,0,&name,&type)>=0)
                 add(name,type,context->GetAddressOfVar(i,0));
+        }
+    }
+    void ScriptDebugger::traceStack(asIScriptContext* context,std::vector<std::string>& frames)
+    {
+        frames.clear();if(!m_localHost||!context)return;
+        for(asUINT i=0;i<context->GetCallstackSize()&&frames.size()<12;++i)
+        {
+            auto* function=context->GetFunction(i);if(!function)continue;
+            const char* section=nullptr;const int line=context->GetLineNumber(i,nullptr,&section);
+            std::string frame=function->GetDeclaration(true,true,false);
+            frame+=" : "+std::to_string(line);
+            if(frame.size()>256)frame.resize(256);
+            frames.push_back(std::move(frame));
         }
     }
 #endif

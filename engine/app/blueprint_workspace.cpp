@@ -227,7 +227,7 @@ namespace nx
         const bool hasBehaviours=std::any_of(behaviours.begin(),behaviours.end(),[&](const std::string& name){return m_document.canAttach(graph.owner,name);});
         const auto& globals=m_document.moduleGlobals(graph.owner);
         for(const auto& node:blueprintCatalogue())
-            if((node.id.rfind("global:",0)!=0||std::any_of(globals.begin(),globals.end(),[&](const BlueprintDocument::Field& f){return f.type==node.id.substr(11);}))&&node.id!="entry"&&(node.id!="return:function"||graph.kind=="function")&&(node.id!="event:entity"||behaviour)&&
+            if((node.id.rfind("global:",0)!=0||std::any_of(globals.begin(),globals.end(),[&](const BlueprintDocument::Field& f){return f.type==node.id.substr(11);}))&&node.id!="entry"&&(node.id!="return:function"||(graph.kind=="function"&&!graph.inlineMacro))&&(node.id!="event:entity"||behaviour)&&
                 (node.id!="event:other"||(behaviour&&(graph.name=="onHit"||graph.name=="onLeave")))&&
                 (node.id!="event:levelName"||(!behaviour&&(graph.name=="onLevelTouch"||graph.name=="onLevelAgent")))&&
                 (node.id!="event:levelWho"||(!behaviour&&graph.name=="onLevelTouch"))&&
@@ -257,7 +257,7 @@ namespace nx
                 for(const auto& fn:m_document.graphs)if(fn.owner==graph.owner&&fn.kind=="function"&&m_document.canCallFunction(m_graph,fn.name))
                 {
                     BlueprintNodeSpec resolved;
-                    if(m_document.nodeSpec(graph,{"",base->id,fn.name},resolved))consider(resolved,fn.name,"Call "+fn.name);
+                    if(m_document.nodeSpec(graph,{"",base->id,fn.name},resolved))consider(resolved,fn.name,std::string(fn.inlineMacro?"Macro ":"Call ")+fn.name);
                 }
             }
             else if(base->id=="return:function")
@@ -668,7 +668,7 @@ namespace nx
 
     bool BlueprintWorkspace::startTrace(Services& s)
     {
-        stopTrace();m_traceHits.clear();m_traceValues.clear();m_traceLocation={};m_traceBudget=128;
+        stopTrace();m_traceHits.clear();m_traceValues.clear();m_traceLocation={};m_traceBudget=128;m_traceSelected=m_traceFirst=m_traceDetailFirst=0;m_traceShowStack=false;
         if(!m_traceEnabled)return true;
         if(!s.debugger||!s.debugger->startLocalTrace(*s.host,[](void* user,const char* section,int line,u32 run,asIScriptContext* context)
         {static_cast<BlueprintWorkspace*>(user)->traceLine(section,line,run,context);},this))
@@ -700,22 +700,32 @@ namespace nx
         }
         if(m_traceBudget)--m_traceBudget;
         if(m_traceHits.size()>=32)m_traceHits.erase(m_traceHits.begin());
-        m_traceHits.push_back({location,line,run});
+        TraceHit hit{location,line,run};
+        m_traceDebugger->traceValues(context,hit.values);m_traceDebugger->traceStack(context,hit.stack);
+        m_traceHits.push_back(std::move(hit));
         // Snapshot first watched statement before it executes. Otherwise keep the last sampled node.
         if(!m_tracePending)
         {
-            m_traceLocation=location;m_traceDebugger->traceValues(context,m_traceValues);
+            m_traceLocation=location;m_traceValues=m_traceHits.back().values;
             if(firstWatch)m_tracePending=true;
         }
+    }
+
+    void BlueprintWorkspace::focusTraceNode()
+    {
+        focusDiagnostic(m_traceLocation);m_diagnostic={};
+        if(m_traceLocation.graph==m_graph&&m_traceLocation.node<m_document.graphs[m_graph].nodes.size())
+            m_y=80.f-m_document.graphs[m_graph].nodes[m_traceLocation.node].y*m_zoom;
     }
 
     void BlueprintWorkspace::pauseTrace(Services& s)
     {
         m_tracePaused=true;m_tracePending=false;m_traceStep=false;
+        m_traceSelected=m_traceHits.empty()?0:m_traceHits.size()-1;m_traceFirst=m_traceHits.size()>8?m_traceHits.size()-8:0;m_traceDetailFirst=0;
         m_tracePointer=s.input->wantsPointer();m_traceTyping=s.input->typing();
         s.screens->setDevelopmentPaused(true);
         s.input->setWantsPointer(true);s.input->setTyping(false);s.platform->lockMouse(false);s.input->consume();
-        focusDiagnostic(m_traceLocation);m_diagnostic={};
+        focusTraceNode();
         m_left=s.input->raw().mouseButtons[0];
         m_status="Trace paused at a safe update boundary. Values were sampled before the highlighted statement.";
     }
@@ -786,6 +796,26 @@ namespace nx
                 const auto& canvas=*s.canvas;const float scale=std::min(canvas.pixelWidth()/kWidth,canvas.pixelHeight()/kHeight);
                 const float x=scale>0?(raw.mouseX-(canvas.pixelWidth()-kWidth*scale)*0.5f)/scale:0;
                 const float y=scale>0?(raw.mouseY-(canvas.pixelHeight()-kHeight*scale)*0.5f)/scale:0;
+                const float wheel=s.input->wheel();
+                if(in(x,y,24,415,604,600))
+                {
+                    if(wheel<0&&m_traceFirst+8<m_traceHits.size())++m_traceFirst;
+                    if(wheel>0&&m_traceFirst)--m_traceFirst;
+                    if(click&&y>=424)
+                    {
+                        const auto i=m_traceFirst+static_cast<size_t>((y-424)/22);
+                        if(i<m_traceHits.size()){m_traceSelected=i;m_traceDetailFirst=0;m_traceLocation=m_traceHits[i].location;focusTraceNode();}
+                    }
+                }
+                if(click&&in(x,y,620,382,825,414)){m_traceShowStack=false;m_traceDetailFirst=0;}
+                if(click&&in(x,y,832,382,1037,414)){m_traceShowStack=true;m_traceDetailFirst=0;}
+                if(in(x,y,620,424,1256,600)&&m_traceSelected<m_traceHits.size())
+                {
+                    const auto& hit=m_traceHits[m_traceSelected];const auto& details=m_traceShowStack?hit.stack:hit.values;
+                    if(wheel<0&&m_traceDetailFirst+8<details.size())++m_traceDetailFirst;
+                    if(wheel>0&&m_traceDetailFirst)--m_traceDetailFirst;
+                }
+                if(click&&in(x,y,1044,382,1256,414))focusTraceNode();
                 if(toggle||s.input->pressed(Action::Accept)||(click&&in(x,y,270,624,450,660)))resumeTrace(s,false);
                 else if(click&&in(x,y,462,624,670,660))resumeTrace(s,true);
                 else if(click&&in(x,y,682,624,890,660))stopPreview(s);
@@ -811,19 +841,26 @@ namespace nx
         if(tracePaused()&&m_font)
         {
             c.design(kWidth,kHeight);c.noClip();
-            c.roundRect(252,412,756,256,8,{0.10f,0.14f,0.20f,0.98f});
-            c.text(*m_font,"EXECUTION TRACE  /  FRAME-BOUNDARY PAUSE",270,422,accent);
-            c.text(*m_font,"Sampled before statement (not the current paused VM state)",270,448,muted);
-            c.clip(270,475,345,136);
-            const size_t first=m_traceHits.size()>6?m_traceHits.size()-6:0;
-            for(size_t i=first;i<m_traceHits.size();++i)
+            c.roundRect(12,348,1256,324,8,{0.10f,0.14f,0.20f,0.98f});
+            c.text(*m_font,"EXECUTION TRACE / FRAME-BOUNDARY PAUSE",24,358,accent);
+            c.text(*m_font,"Historical samples, not live VM state",24,386,muted);
+            c.text(*m_font,"Recent statements (scroll and select)",24,407,muted);
+            auto tab=[&](float x,float w,const char* label,bool selected){c.roundRect(x,382,w,32,4,selected?Color{0.19f,0.33f,0.50f,1}:Color{0.16f,0.21f,0.28f,1});c.text(*m_font,label,x+w*0.5f,388,text,Align::Center);};
+            tab(620,205,"Sampled values",!m_traceShowStack);tab(832,205,"Call stack",m_traceShowStack);tab(1044,212,"Focus node",false);
+            c.clip(24,424,580,176);
+            for(size_t i=m_traceFirst;i<std::min(m_traceFirst+8,m_traceHits.size());++i)
             {
-                const auto& hit=m_traceHits[i];const auto& graph=m_document.graphs[hit.location.graph];
-                c.text(*m_font,shorten(graph.name+" / "+title(graph.nodes[hit.location.node]),38).c_str(),270,475+22*static_cast<float>(i-first),text);
+                const auto& hit=m_traceHits[i];const auto& graph=m_document.graphs[hit.location.graph];const float y=424+22*static_cast<float>(i-m_traceFirst);
+                if(i==m_traceSelected)c.rect(24,y,580,22,{0.19f,0.33f,0.50f,1});
+                c.text(*m_font,shorten(graph.name+" / "+title(graph.nodes[hit.location.node])+" : "+std::to_string(hit.line),64).c_str(),30,y+2,text);
             }
-            c.noClip();c.clip(626,475,364,136);
-            for(size_t i=0;i<std::min<size_t>(6,m_traceValues.size());++i)c.text(*m_font,shorten(m_traceValues[i],42).c_str(),626,475+22*static_cast<float>(i),text);
-            if(m_traceValues.empty())c.text(*m_font,"No scalar values sampled",626,475,muted);
+            c.noClip();c.clip(620,424,636,176);
+            if(m_traceSelected<m_traceHits.size())
+            {
+                const auto& hit=m_traceHits[m_traceSelected];const auto& details=m_traceShowStack?hit.stack:hit.values;
+                for(size_t i=m_traceDetailFirst;i<std::min(m_traceDetailFirst+8,details.size());++i)c.text(*m_font,shorten(details[i],72).c_str(),626,424+22*static_cast<float>(i-m_traceDetailFirst),text);
+                if(details.empty())c.text(*m_font,"No sampled details",626,424,muted);
+            }
             c.noClip();
             for(float x:{270.f,462.f,682.f})c.roundRect(x,624,x==270.f?180.f:208.f,36,4,{0.19f,0.33f,0.50f,1});
             c.text(*m_font,"Continue",360,631,text,Align::Center);c.text(*m_font,"Step update",566,631,text,Align::Center);c.text(*m_font,"Stop preview",786,631,text,Align::Center);
@@ -1098,6 +1135,11 @@ namespace nx
                 {m_edit=m_document.graphs[m_graph].name+"_Copy";m_focus=14;input.setTyping(true);m_status="Name the duplicate function.";}
                 else if(in(x,y,300,245,550,275))openSelectedFunction();
                 else if(in(x,y,300,275,550,305))returnToCaller();
+                else if(in(x,y,300,305,550,335)&&m_document.graphs[m_graph].kind=="function")
+                {
+                    const bool enable=!m_document.graphs[m_graph].inlineMacro;
+                    if(m_document.setInlineMacro(m_graph,enable,m_status)){rebuildPins();filterCatalogue();m_status=enable?"Inline macro enabled. Calls expand in place.":"Converted to a callable function.";}
+                }
                 m_layoutMenu=false;
             }
             m_left=left;return;
@@ -1741,7 +1783,13 @@ namespace nx
             for(size_t wire=0;wire<graph.links.size();++wire)
             {
                 const auto& l=graph.links[wire];const auto& pins=m_wirePins[wire];const auto points=wireRoute(wire);
-                const Color color=pinColor(rows[l.from].outputTypes[pins.output]);
+                Color color=pinColor(rows[l.from].outputTypes[pins.output]);
+                if(tracePaused()&&rows[l.from].outputTypes[pins.output]=="exec")
+                    for(size_t i=1;i<m_traceHits.size()&&i<=m_traceSelected;++i)
+                    {
+                        const auto& a=m_traceHits[i-1];const auto& b=m_traceHits[i];
+                        if(a.run==b.run&&a.location.graph==m_graph&&b.location.graph==m_graph&&a.location.node==l.from&&b.location.node==l.to){color={1.f,0.72f,0.22f,1.f};break;}
+                    }
                 for(size_t j=1;j<points.size();++j)
                 {
                     const auto& a=points[j-1];const auto& b=points[j];
@@ -1782,7 +1830,7 @@ namespace nx
                 if(m_zoom>=0.65f)
                 {
                     c.push();c.clip(x+2,y+1,w-4,24*m_zoom);
-                    c.text(*m_font,shorten(title(n),24).c_str(),x+8,y+3,text);c.pop();
+                    c.text(*m_font,shorten(n.kind=="call:function"&&m_document.function(graph.owner,n.ref)&&m_document.function(graph.owner,n.ref)->inlineMacro?"Macro "+n.ref:title(n),24).c_str(),x+8,y+3,text);c.pop();
                     // Clip each column separately to prevent long pin names overlapping.
                     c.push();c.clip(x+6,y+24*m_zoom,w*0.5f-8,h-24*m_zoom);
                     for(size_t p=first;p<std::min(last,rows[i].inputs.size());++p)
@@ -1806,7 +1854,7 @@ namespace nx
             const size_t i=m_first+row;const auto& g=m_document.graphs[i];const float y=kTop+static_cast<float>(row)*31;
             if(i==m_graph)c.rect(4,y+2,kLeft-8,28,{0.19f,0.33f,0.50f,1});
             c.clip(5,y,kLeft-10,31);
-            c.text(*m_font,shorten(g.owner+" / "+g.name,32).c_str(),12,y+6,text);c.noClip();
+            c.text(*m_font,shorten(g.owner+" / "+(g.inlineMacro?"[M] ":"")+g.name,32).c_str(),12,y+6,text);c.noClip();
         }
         c.text(*m_font,"MY BLUEPRINT / VARIABLES",10,330,accent);
         const auto quickRows=variableRows();
@@ -1875,14 +1923,14 @@ namespace nx
         }
         if(m_layoutMenu)
         {
-            c.roundRect(300,35,250,270,5,{0.12f,0.16f,0.22f,1});
-            const char* labels[]={"Arrange graph","Align selected left","Align selected top","Comment selection","Collapse to function","Rename function","Duplicate function","Open selected function","Back to caller"};
+            c.roundRect(300,35,250,300,5,{0.12f,0.16f,0.22f,1});
+            const char* labels[]={"Arrange graph","Align selected left","Align selected top","Comment selection","Collapse to function","Rename function","Duplicate function","Open selected function","Back to caller",m_document.graphs[m_graph].inlineMacro?"Convert to function":"Convert to inline macro"};
             const auto& activeGraph=m_document.graphs[m_graph];
             const bool hasSelection=m_selection<activeGraph.nodes.size()||!m_selectedNodes.empty();
-            for(size_t i=0;i<9;++i)
+            for(size_t i=0;i<10;++i)
             {
                 const bool enabled=i==0||(i<=2&&m_selectedNodes.size()>=2)||((i==3||i==4)&&hasSelection)||((i==5||i==6)&&activeGraph.kind=="function")||
-                    (i==7&&m_selection<activeGraph.nodes.size()&&activeGraph.nodes[m_selection].kind=="call:function")||(i==8&&!m_graphBack.empty());
+                    (i==7&&m_selection<activeGraph.nodes.size()&&activeGraph.nodes[m_selection].kind=="call:function")||(i==8&&!m_graphBack.empty())||(i==9&&activeGraph.kind=="function");
                 const float yy=35+30*static_cast<float>(i);c.rect(304,yy+2,242,26,enabled?Color{0.19f,0.33f,0.50f,1}:Color{0.17f,0.22f,0.30f,1});c.text(*m_font,labels[i],312,yy+5,enabled?text:muted);
             }
         }

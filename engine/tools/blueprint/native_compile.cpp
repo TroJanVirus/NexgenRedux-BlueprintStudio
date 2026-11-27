@@ -291,6 +291,29 @@ namespace nx
                 {
                     const auto* target=document.function(graph.owner,n.ref);
                     if(!target)return fail(to,"Missing function.");
+                    if(target->inlineMacro)
+                    {
+                        if(depth>96||source.size()>1024*1024)return fail(to,"Inline macro expansion limit.");
+                        source+=pad+"{ // inline macro "+n.ref+"\n";
+                        // Evaluate each parameter once, before shadowing caller argument names.
+                        for(size_t i=0;i<target->parameters.size();++i)
+                        {
+                            const auto& p=target->parameters[i];std::string v;if(!value(to,"arg_"+p.name,v,0))return false;
+                            source+=pad+"    "+p.type+" bp_macro_arg_"+std::to_string(i)+" = "+v+";\n";
+                        }
+                        for(size_t i=0;i<target->parameters.size();++i)
+                        {
+                            const auto& p=target->parameters[i];source+=pad+"    "+p.type+" bp_arg_"+p.name+" = bp_macro_arg_"+std::to_string(i)+";\n";
+                        }
+                        mark(start,to);
+                        const auto entry=std::find_if(target->nodes.begin(),target->nodes.end(),[](const BlueprintDocument::Node& item){return item.kind=="entry";});
+                        if(entry==target->nodes.end())return fail(to,"Missing macro entry.");
+                        Emitter inner{document,*target,source,error,std::vector<bool>(target->nodes.size(),false),std::vector<bool>(target->nodes.size(),false),static_cast<size_t>(target-document.graphs.data()),location,spans,budget};
+                        if(!inner.flow(static_cast<size_t>(entry-target->nodes.begin()),"then",indent+1,depth+1))return false;
+                        budget=inner.budget;source+=pad+"}\n";
+                        if(source.size()>1024*1024)return fail(to,"Inline macro generated source exceeds limit.");
+                        return flow(to,"then",indent,depth+1);
+                    }
                     std::string args;
                     for(const auto& p:target->parameters)
                     {
@@ -477,6 +500,16 @@ namespace nx
         {
             const auto& graph=document.graphs[graphIndex];
             if(graph.owner!=classOwner)continue;
+            if(graph.inlineMacro)
+            {
+                // Validate even unused macro bodies, without emitting a callable method.
+                std::string scratch;std::vector<ByteSpan> ignored;
+                const auto entry=std::find_if(graph.nodes.begin(),graph.nodes.end(),[](const BlueprintDocument::Node& item){return item.kind=="entry";});
+                if(entry==graph.nodes.end()){error="Missing macro entry.";return false;}
+                Emitter validation{document,graph,scratch,error,std::vector<bool>(graph.nodes.size(),false),std::vector<bool>(graph.nodes.size(),false),graphIndex,location,ignored};
+                if(!validation.flow(static_cast<size_t>(entry-graph.nodes.begin()),"then",2,0))return false;
+                continue;
+            }
             const auto entry=std::find_if(graph.nodes.begin(),graph.nodes.end(),[](const BlueprintDocument::Node& n){return n.kind=="entry";});
             if(entry==graph.nodes.end()){error="Missing event entry.";return false;}
             const auto index=static_cast<size_t>(entry-graph.nodes.begin());

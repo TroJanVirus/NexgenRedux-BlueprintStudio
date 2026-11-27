@@ -1024,3 +1024,24 @@ NX_TEST(nativeCollapseRejectsLiveExternalGetterAndPartialCommentTransactionally)
     NX_EXPECT(!doc.collapseToFunction(0,{1,2},"Partial",error)&&doc.serialize(after,error)&&after==before);
     NX_EXPECT(doc.deleteComment(0,0)&&doc.collapseToFunction(0,{1,2},"Safe",error));
 }
+
+NX_TEST(nativeInlineMacrosExpandWithTypedArgumentsAndNoCallableMethod)
+{
+    BlueprintDocument doc;std::string error,source,bytes;
+    NX_EXPECT(importBlueprintScreen("class Example : Screen {int score;void SetScore(int value){score=value;}void onEnter(){SetScore(3);SetScore(4);}}",doc,error));
+    const auto* fn=doc.function("Screen","SetScore");NX_EXPECT(fn!=nullptr);if(!fn)return;
+    const auto index=static_cast<size_t>(fn-doc.graphs.data());
+    NX_EXPECT(doc.setInlineMacro(index,true,error)&&doc.serialize(bytes,error));
+    BlueprintDocument restored;NX_EXPECT(restored.load(bytes.data(),bytes.size(),error)&&restored.graphs[index].inlineMacro);
+    NX_EXPECT(compileBlueprint(restored,source,error)&&source.find("bp_fn_SetScore")==std::string::npos&&source.find("inline macro SetScore")!=std::string::npos);
+    NX_EXPECT(!restored.setFunctionSignature(index,{},"int",error));
+    NX_EXPECT(restored.setInlineMacro(index,false,error)&&compileBlueprint(restored,source,error)&&source.find("bp_fn_SetScore")!=std::string::npos);
+}
+NX_TEST(nativeCollapseCompleteBranchRegionWithSingleContinuation)
+{
+    BlueprintDocument doc;std::string error,source;
+    NX_EXPECT(importBlueprintScreen("class Example : Screen {int score;void onEnter(){if(score==0){score=7;}else{score=9;}}}",doc,error));
+    std::vector<size_t> nodes;for(size_t i=0;i<doc.graphs[0].nodes.size();++i)if(doc.graphs[0].nodes[i].kind!="entry")nodes.push_back(i);
+    NX_EXPECT(doc.collapseToFunction(0,nodes,"Decision",error)&&compileBlueprint(doc,source,error));
+    NX_EXPECT(doc.setInlineMacro(doc.graphs.size()-1,true,error)&&compileBlueprint(doc,source,error)&&source.find("inline macro Decision")!=std::string::npos);
+}

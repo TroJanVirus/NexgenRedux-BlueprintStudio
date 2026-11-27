@@ -56,6 +56,7 @@ namespace nx
         bool startLocalTrace(ScriptHost& host,TraceCallback callback,void* user);
         void stopLocalTrace();
         void traceValues(asIScriptContext* context,std::vector<std::string>& values);
+        void traceStack(asIScriptContext* context,std::vector<std::string>& frames);
 #endif
 
         void line(asIScriptContext* context) override;

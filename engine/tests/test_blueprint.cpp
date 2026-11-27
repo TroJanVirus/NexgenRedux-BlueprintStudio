@@ -1117,18 +1117,20 @@ NX_TEST(nativeDebuggerLocalTraceUsesRealStatementCallbacksWithoutNetwork)
 {
     Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
     ScriptDebugger debugger;
-    struct Trace { ScriptDebugger* debugger; unsigned hits=0; bool found=false; } trace{&debugger};
+    struct Trace { ScriptDebugger* debugger; unsigned hits=0; bool found=false,global=false,stack=false; } trace{&debugger};
     NX_EXPECT(debugger.startLocalTrace(r.host,[](void* user,const char* section,int line,u32,asIScriptContext* context)
     {
         auto& state=*static_cast<Trace*>(user);
         if(strcmp(section,"blueprint.as")||line<=0)return;
         ++state.hits;std::vector<std::string> values;state.debugger->traceValues(context,values);
-        for(const auto& v:values)if(v=="amount = 42")state.found=true;
+        for(const auto& v:values){if(v=="amount = 42")state.found=true;if(v=="global counter = 7")state.global=true;}
+        std::vector<std::string> frames;state.debugger->traceStack(context,frames);
+        if(frames.size()>=2&&frames[0].find("sample")!=std::string::npos&&frames[1].find("check")!=std::string::npos)state.stack=true;
     },&trace));
     NX_EXPECT(!debugger.listening()&&!debugger.connected());
-    NX_EXPECT(compile(r.host,"void check() { int amount = 42;\n Save::set(\"traced\", amount==42 ? \"yes\" : \"no\");\n }"));
+    NX_EXPECT(compile(r.host,"int bp_global_counter=7; void sample() { int amount = 42;\n Save::set(\"traced\", amount==42 ? \"yes\" : \"no\");\n } void check(){sample();}"));
     NX_EXPECT(r.host.call(r.host.find("blueprint","void check()")));
-    NX_EXPECT(trace.hits>0&&trace.found&&strcmp(r.save.get("traced","missing"),"yes")==0);
+    NX_EXPECT(trace.hits>0&&trace.found&&trace.global&&trace.stack&&strcmp(r.save.get("traced","missing"),"yes")==0);
     debugger.stopLocalTrace();const auto hits=trace.hits;
     NX_EXPECT(r.host.call(r.host.find("blueprint","void check()"))&&trace.hits==hits);
 }
@@ -1178,6 +1180,7 @@ NX_TEST(nativeWorkspaceWatchPausesAtBoundaryAndStepsWithoutRunningWhilePaused)
         NX_EXPECT(strcmp(r.services.save->get("watch_test","missing"),"executed")==0);
         const auto stopped=r.host.runs();
         frame();frame();NX_EXPECT(r.host.runs()==stopped);
+        click(934,398);click(120,435);click(1140,398);click(720,398);NX_EXPECT(r.host.runs()==stopped&&studio.tracePaused());
         click(566,640);
         for(int i=0;i<3&&!studio.tracePaused();++i)frame();
         NX_EXPECT(studio.tracePaused()&&r.host.runs()>stopped);
@@ -2092,5 +2095,21 @@ NX_TEST(nativeCollapsedFunctionExecutesLikeOriginalSource)
         r.platform.files["project/main/screen.json"]="{\"title\":\"Collapse\"}";r.platform.files["project/main/main.as"]=code;
         if(!r.screens.init(r.services,"project","main")){NX_EXPECT(false);return;}
         r.step(5);NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("collapse","missing"),"ok")==0);
+    }
+}
+
+NX_TEST(nativeInlineMacrosPreserveRuntimeAcrossRepeatedCalls)
+{
+    const std::string original=R"(class Example : Screen {int score=1;void Add(int amount){score=score+amount;}void onEnter(){Add(2);Add(4);if(score==7){Save::set("macro","ok");}}})";
+    BlueprintDocument doc;std::string error,source;
+    if(!importBlueprintScreen(original,doc,error)){NX_ERROR("Macro import: %s",error.c_str());NX_EXPECT(false);return;}
+    const auto* fn=doc.function("Screen","Add");NX_EXPECT(fn);if(!fn)return;
+    if(!doc.setInlineMacro(static_cast<size_t>(fn-doc.graphs.data()),true,error)||!compileBlueprint(doc,source,error)){NX_ERROR("Macro compile: %s",error.c_str());NX_EXPECT(false);return;}
+    for(const auto& code:std::vector<std::string>{original,source})
+    {
+        Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+        r.platform.files["project/main/screen.json"]="{\"title\":\"Macro\"}";r.platform.files["project/main/main.as"]=code;
+        if(!r.screens.init(r.services,"project","main")){NX_EXPECT(false);return;}
+        r.step(5);NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("macro","missing"),"ok")==0);
     }
 }

@@ -63,12 +63,15 @@ namespace nx
         void pauseTrace(Services& services);
         void resumeTrace(Services& services,bool step);
         void traceLine(const char* section,int line,unsigned run,asIScriptContext* context);
-        struct TraceHit { BlueprintLocation location; int line; unsigned run; };
+        struct TraceHit { BlueprintLocation location; int line; unsigned run; std::vector<std::string> values{},stack{}; };
         ScriptDebugger* m_traceDebugger=nullptr;
         bool m_traceEnabled=false,m_tracePaused=false,m_tracePending=false,m_traceStep=false,m_traceKey=false;
         bool m_tracePointer=false,m_traceTyping=false;
         unsigned m_traceBudget=0;
         std::vector<TraceHit> m_traceHits;
+        size_t m_traceSelected=0,m_traceFirst=0,m_traceDetailFirst=0;
+        bool m_traceShowStack=false;
+        void focusTraceNode();
         BlueprintLocation m_traceLocation;
         std::vector<std::string> m_traceValues;
         std::vector<BlueprintScreenOutput> m_previewOutputs;

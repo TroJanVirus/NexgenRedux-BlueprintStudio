@@ -44,6 +44,7 @@ namespace nx
             std::vector<Link> links;
             std::vector<BlueprintPin> parameters{};
             std::string returnType="void";
+            bool inlineMacro=false;
             // Explicit imported fields live on the owner lifecycle entry graph.
             std::vector<Field> fields{};
             std::vector<Field> globals{};
@@ -99,6 +100,7 @@ namespace nx
         bool addBehaviour(const std::string& name,std::string& error);
         bool removeBehaviour(const std::string& name,std::string& error);
         bool removeFunction(size_t graph,std::string& error);
+        bool setInlineMacro(size_t graph,bool enabled,std::string& error);
         bool renameFunction(size_t graph,const std::string& functionName,std::string& error);
         bool duplicateFunction(size_t graph,const std::string& functionName,std::string& error);
         bool collapseToFunction(size_t graph,const std::vector<size_t>& nodes,const std::string& functionName,std::string& error);

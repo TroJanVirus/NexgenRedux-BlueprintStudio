@@ -763,7 +763,7 @@ namespace nx
                 const auto found=std::find_if(right.begin(),right.end(),[&](const auto* g){return g->name==x->name;});
                 if(found==right.end())return false;
                 const auto& y=**found;
-                if(x->kind!=y.kind||x->returnType!=y.returnType||x->parameters.size()!=y.parameters.size()||
+                if(x->kind!=y.kind||x->inlineMacro!=y.inlineMacro||x->returnType!=y.returnType||x->parameters.size()!=y.parameters.size()||
                     x->nodes.size()!=y.nodes.size()||x->links.size()!=y.links.size()||x->fields.size()!=y.fields.size())return false;
                 for(size_t i=0;i<x->fields.size();++i)
                 {
