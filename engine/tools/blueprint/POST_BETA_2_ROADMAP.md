@@ -18,3 +18,7 @@ Keep Beta 2 release source frozen. Use native Redux APIs, formats and generated 
 | 12 | Multiplayer authoring | Native Room/Message/shared entities; ownership and disconnect tests. |
 
 Final acceptance: from blank, author third-person player and camera, animated movement/combat, enemies, interactables, inventory, menus/HUD, multiple levels and persistent saves. Run/export native desktop and OG Xbox-compatible runtime. Record actual console tests separately. No claim of Unreal parity until acceptance passes.
+
+## Class inheritance first slice
+
+Create child class from a selected actor. Child assets store only root overrides and a parent dependency, resolving the full inherited component hierarchy before native actor compilation and preview. Root edits are independent; reset restores inherited defaults. Inherited non-root components are read-only and child-specific component additions, typed field inheritance, function overrides and construction graphs are still outstanding. This first slice does not add an AngelScript runtime class hierarchy.

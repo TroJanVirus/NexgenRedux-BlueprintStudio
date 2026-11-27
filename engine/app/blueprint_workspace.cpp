@@ -1277,8 +1277,8 @@ namespace nx
         if(m_visualPlacement&&!(click&&(in(x,y,860,116,1000,150)||in(x,y,704,116,850,150)))){updateVisualPlacement(s,x,y,left,click);return;}
         if(const auto* selected=m_document.visualAsset(m_visualSelection);selected&&selected->kind=="actor")
         {
-            JsonTree tree;
-            if(tree.parse(selected->source.data(),selected->source.size()))
+            JsonTree tree;std::string resolved,why;
+            if(m_document.visualActorSource(selected->id,resolved,why)&&tree.parse(resolved.data(),resolved.size()))
             {
                 const auto count=tree.root()["entities"].count();
                 if(m_visualComponent>=count)m_visualComponent=0;
@@ -1349,6 +1349,15 @@ namespace nx
         }
         if(selected->kind=="actor")
         {
+            if(in(x,y,815,193,1000,226))
+            {
+                std::string child;
+                if(m_document.createVisualActorChild(m_visualSelection,child,m_status))
+                {m_visualSelection=child;m_visualComponent=m_visualComponentFirst=0;m_visualInspector=false;m_visualPhysics=false;m_visualFirst=m_document.visualAssets().size()>9?m_document.visualAssets().size()-9:0;m_status="Created linked child class.";}
+                return;
+            }
+            if(!selected->dependencies.empty()&&m_visualInspector&&!m_visualPhysics&&in(x,y,630,400,1000,430))
+            {if(m_document.resetVisualActorOverrides(m_visualSelection,m_status))m_status="Child root overrides cleared.";return;}
             if(in(x,y,280,548,610,581)){m_visualPlacement=true;m_placementOutliner=false;m_placementSelectedId.clear();m_placementSelectedOwner=assetScreen();m_placementFirst=0;cancelVisualPlacement();m_status="Drag actors into placement or open the World outliner.";return;}
             if(in(x,y,630,232,1000,266)){m_visualInspector=!m_visualInspector;m_visualPhysics=false;return;}
             if(m_visualInspector)
@@ -1372,7 +1381,7 @@ namespace nx
                 else if(in(x,y,820,359,1000,392))prop="behaviour";
                 else if(in(x,y,630,520,1000,553))prop="camera";
                 if(!prop)return;
-                JsonTree tree;if(!tree.parse(selected->source.data(),selected->source.size()))return;
+                JsonTree tree;std::string resolved;if(!m_document.visualActorSource(selected->id,resolved,m_status)||!tree.parse(resolved.data(),resolved.size()))return;
                 const auto item=tree.root()["entities"][static_cast<u32>(m_visualComponent)];
                 if(!item.exists()){m_status="Select a component.";return;}
                 const auto v=item[prop];m_visualProperty=prop;
@@ -1417,8 +1426,8 @@ namespace nx
             }
             else if(in(x,y,630,366,1000,498))
             {
-                JsonTree tree;
-                if(tree.parse(selected->source.data(),selected->source.size()))
+                JsonTree tree;std::string resolved;
+                if(m_document.visualActorSource(selected->id,resolved,m_status)&&tree.parse(resolved.data(),resolved.size()))
                 {
                     const auto index=m_visualComponentFirst+static_cast<size_t>((y-366)/33);
                     if(index<tree.root()["entities"].count())m_visualComponent=index;
@@ -1509,7 +1518,8 @@ namespace nx
         else if(selected)
         {
             button(630,156,175,"Rename");button(815,156,185,"Remove");
-            c.clip(630,195,370,32);c.text(*m_font,(selected->id+" / "+selected->title).c_str(),630,201,accent);c.noClip();
+            c.clip(630,195,selected->kind=="actor"?180:370,32);c.text(*m_font,(selected->id+" / "+selected->title).c_str(),630,201,accent);c.noClip();
+            if(selected->kind=="actor")button(815,193,185,"Create child class");
             if(selected->kind=="theme")
             {
                 button(630,232,180,m_themeStyle.c_str());button(820,232,180,themeStates[m_themeState]);
@@ -1565,11 +1575,12 @@ namespace nx
                     button(630,277,180,"Name");button(820,277,180,"Position XYZ");
                     button(630,318,180,"Rotation XYZ");button(820,318,180,"Size XYZ");
                     button(630,359,180,"Model");button(820,359,180,"Behaviour");
-                    JsonTree tree;
-                    if(tree.parse(selected->source.data(),selected->source.size()))
+                    JsonTree tree;std::string resolved,why;
+                    if(m_document.visualActorSource(selected->id,resolved,why)&&tree.parse(resolved.data(),resolved.size()))
                     {
                         const auto item=tree.root()["entities"][static_cast<u32>(m_visualComponent)];
-                        c.clip(630,401,370,28);c.text(*m_font,(std::string("Component: ")+item["name"].text()).c_str(),630,404,accent);c.noClip();
+                        if(!selected->dependencies.empty())button(630,400,370,"Reset inherited root overrides");
+                        else {c.clip(630,401,370,28);c.text(*m_font,(std::string("Component: ")+item["name"].text()).c_str(),630,404,accent);c.noClip();}
                         const auto vec=[&](const char* prop,float fallback)
                         {
                             const auto v=item[prop];std::string value;
@@ -1594,8 +1605,8 @@ namespace nx
                 {
                 button(630,277,180,"Box");button(820,277,180,"Sphere");
                 button(630,318,180,"Capsule");button(820,318,180,"Plane");
-                JsonTree tree;
-                if(tree.parse(selected->source.data(),selected->source.size()))
+                JsonTree tree;std::string resolved,why;
+                if(m_document.visualActorSource(selected->id,resolved,why)&&tree.parse(resolved.data(),resolved.size()))
                 {
                     const auto entries=tree.root()["entities"],parents=tree.root()["parents"];
                     for(size_t i=0;i<4&&i+m_visualComponentFirst<entries.count();++i)
@@ -1608,7 +1619,8 @@ namespace nx
                         c.clip(635,yy,360,31);c.text(*m_font,label.c_str(),638,yy+6,text);c.noClip();
                     }
                 }
-                button(630,505,185,"Add child");button(820,505,180,"Add camera");
+                if(selected->dependencies.empty()){button(630,505,185,"Add child");button(820,505,180,"Add camera");}
+                else {c.clip(630,505,370,33);c.text(*m_font,("Inherits "+selected->dependencies.front()+" (children read-only)").c_str(),630,512,muted);c.noClip();}
                 button(630,548,370,"Add linked actor to screen");
                 }
             }

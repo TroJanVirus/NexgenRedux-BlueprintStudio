@@ -1597,3 +1597,28 @@ NX_TEST(nativeActorOutlinerEditsStableInstanceAndPreservesClass)
     NX_EXPECT(copy.editVisualActorPlacement("Screen",stable,"sizeOverride","",error)&&copy.undo());
     NX_EXPECT(copy.visualActorInstance(id,"Screen",copy.graphs[0].nodes[1].values,second,error)&&first==second);
 }
+
+NX_TEST(nativeActorClassInheritancePropagatesAndResetsRootOverrides)
+{
+    BlueprintDocument doc;doc.create();std::string parent,child,grand,error,source,bytes;
+    NX_EXPECT(doc.createVisualAsset("actor",parent,error));
+    NX_EXPECT(doc.appendVisualActorComponent(parent,0,"camera","0,2,-5",error));
+    NX_EXPECT(doc.createVisualActorChild(parent,child,error)&&doc.createVisualActorChild(child,grand,error));
+    NX_EXPECT(doc.setVisualActorProperty(parent,0,"mass","7",error));
+    NX_EXPECT(doc.setVisualActorProperty(child,0,"size","2,3,4",error));
+    NX_EXPECT(doc.setVisualActorProperty(parent,0,"size","9,9,9",error));
+    NX_EXPECT(doc.setVisualActorProperty(parent,1,"camera","85",error));
+    NX_EXPECT(doc.visualActorSource(grand,source,error));
+    JsonTree tree;NX_EXPECT(tree.parse(source.data(),source.size()));
+    NX_EXPECT(tree.root()["entities"][0u]["mass"].number()==7&&tree.root()["entities"][0u]["size"][0u].number()==2);
+    NX_EXPECT(tree.root()["entities"][1u]["camera"].number()==85);
+    NX_EXPECT(!doc.setVisualActorProperty(child,1,"camera","60",error));
+    NX_EXPECT(!doc.appendVisualActorComponent(child,0,"box","0,0,0",error));
+    NX_EXPECT(!doc.removeVisualAsset(parent,error));
+    NX_EXPECT(doc.placeVisualActor("Screen",grand,"0,0,0",error)&&compileBlueprint(doc,source,error));
+    NX_EXPECT(doc.serialize(bytes,error));BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error));
+    NX_EXPECT(copy.resetVisualActorOverrides(child,error)&&copy.visualActorSource(grand,source,error)&&tree.parse(source.data(),source.size()));
+    NX_EXPECT(tree.root()["entities"][0u]["size"][0u].number()==9);
+    NX_EXPECT(copy.undo()&&copy.visualActorSource(grand,source,error)&&tree.parse(source.data(),source.size()));
+    NX_EXPECT(tree.root()["entities"][0u]["size"][0u].number()==2);
+}
