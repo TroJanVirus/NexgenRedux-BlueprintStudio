@@ -720,6 +720,86 @@ namespace nx
             }
         }
     }
+    namespace
+    {
+        bool attachment(const BlueprintDocument::Node& n)
+        {return n.kind=="attach:direct"||n.kind=="attach:behaviour"||n.kind=="level:attach";}
+        bool sameIndependentBehaviour(const BlueprintDocument& a,const BlueprintDocument& b,const std::string& owner)
+        {
+            std::vector<const BlueprintDocument::Graph*> left,right;
+            for(const auto& g:a.graphs)if(g.owner==owner)left.push_back(&g);
+            for(const auto& g:b.graphs)if(g.owner==owner)right.push_back(&g);
+            if(left.size()!=right.size()||left.empty())return false;
+            for(const auto* x:left)
+            {
+                const auto found=std::find_if(right.begin(),right.end(),[&](const auto* g){return g->name==x->name;});
+                if(found==right.end())return false;
+                const auto& y=**found;
+                if(x->kind!=y.kind||x->returnType!=y.returnType||x->parameters.size()!=y.parameters.size()||
+                    x->nodes.size()!=y.nodes.size()||x->links.size()!=y.links.size())return false;
+                for(size_t i=0;i<x->parameters.size();++i)
+                    if(x->parameters[i].name!=y.parameters[i].name||x->parameters[i].type!=y.parameters[i].type)return false;
+                for(size_t i=0;i<x->nodes.size();++i)
+                {
+                    const auto& n=x->nodes[i];const auto& m=y.nodes[i];
+                    // Do not deduplicate classes with dependencies on other Behaviours.
+                    if(attachment(n)||attachment(m)||n.kind!=m.kind||n.ref!=m.ref||n.watch!=m.watch||n.values.size()!=m.values.size())return false;
+                    for(size_t j=0;j<n.values.size();++j)
+                        if(n.values[j].pin!=m.values[j].pin||n.values[j].value!=m.values[j].value)return false;
+                }
+                for(size_t i=0;i<x->links.size();++i)
+                {
+                    const auto& l=x->links[i];const auto& r=y.links[i];
+                    if(l.from!=r.from||l.to!=r.to||l.output!=r.output||l.input!=r.input)return false;
+                }
+            }
+            return true;
+        }
+    }
+    bool mergeImportedBlueprintScreen(BlueprintDocument& project,BlueprintDocument screen,const std::string& owner,std::string& error)
+    {
+        BlueprintDocument probe;
+        const auto existingScreens=project.screens();
+        if(!probe.addScreen(owner,error)||std::find(existingScreens.begin(),existingScreens.end(),owner)!=existingScreens.end()||
+            screen.screens()!=std::vector<std::string>{"Screen"})
+        {error="Invalid or duplicate imported screen: "+owner;return false;}
+        std::string verified;
+        if(!screen.serialize(verified,error))return false;
+        const auto existing=project.behaviours(),incoming=screen.behaviours();
+        std::unordered_set<std::string> used(existing.begin(),existing.end()),skip;
+        used.insert(incoming.begin(),incoming.end());
+        std::unordered_map<std::string,std::string> names;
+        for(const auto& name:incoming)
+        {
+            names[name]=name;
+            if(std::find(existing.begin(),existing.end(),name)==existing.end())continue;
+            if(sameIndependentBehaviour(project,screen,"behaviour:"+name)){skip.insert(name);continue;}
+            std::string prefix=owner;
+            std::replace(prefix.begin(),prefix.end(),'-','_');
+            for(unsigned suffix=1;;++suffix)
+            {
+                const auto ending="_"+std::to_string(suffix);
+                const auto renamed=(prefix+"_"+name).substr(0,64-ending.size())+ending;
+                if(used.insert(renamed).second){names[name]=renamed;break;}
+            }
+        }
+        std::vector<BlueprintDocument::Graph> additions;
+        for(auto& g:screen.graphs)
+        {
+            if(g.owner=="Screen")g.owner=owner;
+            else
+            {
+                const auto old=g.owner.substr(10);
+                if(skip.count(old))continue;
+                g.owner="behaviour:"+names.at(old);
+            }
+            for(auto& n:g.nodes)if(attachment(n))n.ref=names.at(n.ref);
+            additions.push_back(std::move(g));
+        }
+        if(project.graphs.size()+additions.size()>64){error="Project exceeds 64 graph limit.";return false;}
+        for(auto& g:additions)project.graphs.push_back(std::move(g));
+        error.clear();return true;
+    }
     bool resolveBlueprintIncludes(const std::string& source,const std::string& label,const BlueprintIncludeReader& read,std::string& expanded,std::string& error)
     {
         constexpr size_t limit=512*1024;

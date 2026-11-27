@@ -826,3 +826,22 @@ NX_TEST(nativeImportDirectBehaviourAttachmentPreservesCallSemantics)
         std::string after;NX_EXPECT(doc.serialize(after,error)&&after==saved);
     }
 }
+
+NX_TEST(nativeImportedProjectMergesIndependentBehavioursAndRemapsConflicts)
+{
+    BlueprintDocument project;project.name="Merged";std::string error,bytes;
+    auto merge=[&](const std::string& owner,const std::string& value)
+    {
+        const auto code="class Actor : Behaviour {void start(){Save::set(\"actor\",\""+value+"\");}} class Example : Screen {void onEnter(){Entity@ a=Scene::spawn(Vec2(0.0f,0.0f));a.add(Actor());}}";
+        BlueprintDocument doc;return importBlueprintScreen(code,doc,error)&&mergeImportedBlueprintScreen(project,std::move(doc),owner,error);
+    };
+    NX_EXPECT(merge("main","first")&&merge("intro","first")&&merge("level-two","second"));
+    NX_EXPECT(project.behaviours()==std::vector<std::string>({"Actor","level_two_Actor_1"}));
+    NX_EXPECT(project.screens()==std::vector<std::string>({"main","intro","level-two"}));
+    for(const auto& g:project.graphs)for(const auto& n:g.nodes)if(n.kind=="attach:direct")
+        NX_EXPECT(n.ref==(g.owner=="level-two"?"level_two_Actor_1":"Actor"));
+    NX_EXPECT(project.serialize(bytes,error));
+    std::vector<BlueprintScreenOutput> output;NX_EXPECT(compileBlueprintProject(project,output,error)&&output.size()==3);
+    NX_EXPECT(!merge("main","other"));
+    std::string after;NX_EXPECT(project.serialize(after,error)&&after==bytes);
+}

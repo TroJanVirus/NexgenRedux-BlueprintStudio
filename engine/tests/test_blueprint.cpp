@@ -1793,8 +1793,8 @@ NX_TEST(nativeWorkspaceBrowserRecoversArchivesAndImportsSource)
 #ifdef NX_DESKTOP_BLUEPRINT
 NX_TEST(nativeWorkspaceImportsNativeExportScreensAndTheirAssets)
 {
-    // Ordinary IDs, the default Screen, a single default Screen, and native main.
-    for(int scenario=0;scenario<4;++scenario)
+    // Ordinary IDs, the default Screen, a single default Screen, native main and Behaviour conflicts.
+    for(int scenario=0;scenario<6;++scenario)
     {
         Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
         r.platform.workspaceFiles=true;
@@ -1809,11 +1809,11 @@ NX_TEST(nativeWorkspaceImportsNativeExportScreensAndTheirAssets)
         NX_EXPECT(!blueprintImportProjectFolderName("project-"));
         NX_EXPECT(!blueprintImportProjectFolderName("bpa-1790000000-1"));
         const std::string folder="own/bp-1790000000-1";
-        const std::string firstId=scenario==0?"intro":scenario==3?"main":"Screen";
+        const std::string firstId=scenario==0?"intro":scenario>=3?"main":"Screen";
         const bool multiple=scenario!=2;
         const std::vector<std::string> expected=multiple?std::vector<std::string>{firstId,"level"}:std::vector<std::string>{firstId};
-        const std::string first=scenario==3?"class Start : Screen { void onEnter(){ LaunchLevel(); } }":multiple?"class Start : Screen { void onEnter(){ Screens::push(\"level\"); } }":"class Start : Screen { void onEnter(){ Save::set(\"start\",\"ok\"); } }";
-        const std::string second="class LevelScreen : Screen { void onEnter(){ Save::set(\"level\",\"ok\"); } }";
+        const std::string first=scenario>=4?"class Actor : Behaviour {void start(){Save::set(\"actor\",\"first\");}} class Start : Screen {void onEnter(){Entity@ a=Scene::spawn(Vec2(0.0f,0.0f));a.add(Actor());}}":scenario==3?"class Start : Screen { void onEnter(){ LaunchLevel(); } }":multiple?"class Start : Screen { void onEnter(){ Screens::push(\"level\"); } }":"class Start : Screen { void onEnter(){ Save::set(\"start\",\"ok\"); } }";
+        const std::string second=scenario>=4?std::string("class Actor : Behaviour {void start(){Save::set(\"actor\",\"")+(scenario==4?"first":"second")+"\");}} class LevelScreen : Screen {void onEnter(){Entity@ a=Scene::spawn(Vec2(0.0f,0.0f));a.add(Actor());}}":"class LevelScreen : Screen { void onEnter(){ Save::set(\"level\",\"ok\"); } }";
         const std::string originalManifest="{\n  \"title\": \"Original title\", \"category\": \"Game\", \"order\": 7, \"custom\": [1,2]\n}\n";
         r.platform.files[folder+"/"+firstId+"/screen.json"]=originalManifest;
         r.platform.ownFolders.insert(folder+"/_global");
@@ -1863,6 +1863,21 @@ NX_TEST(nativeWorkspaceImportsNativeExportScreensAndTheirAssets)
             NX_EXPECT(r.platform.files["own/"+project.assetRoot+"/"+screen+"/asset/data.bin"]==r.platform.files[folder+"/"+screen+"/asset/data.bin"]);
         NX_EXPECT(r.platform.files[folder+"/"+firstId+"/main.as"]==entry);
         if(multiple)NX_EXPECT(r.platform.files[folder+"/level/main.as"]==second);
+        if(scenario>=4&&output.size()==2)
+        {
+            NX_EXPECT(project.behaviours().size()==(scenario==4?1u:2u));
+            std::vector<Screens::PreviewScreen> preview;
+            for(const auto& o:output)
+            {
+                Screens::PreviewScreen p;snprintf(p.info.id,sizeof(p.info.id),"%s",o.id.c_str());p.source=o.source;p.manifest=o.manifest;preview.push_back(p);
+            }
+            NX_EXPECT(r.screens.startProjectPreview(preview,"level",error,project.assetRoot));
+            if(r.screens.previewing())
+            {
+                r.step(5);NX_EXPECT(!r.screens.failed()&&strcmp(r.services.save->get("actor","missing"),scenario==4?"first":"second")==0);
+                r.screens.stopPreview();
+            }
+        }
         if(scenario==3&&output.size()==2)
         {
             NX_EXPECT(project.function("main","LaunchLevel"));

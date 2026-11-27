@@ -344,11 +344,8 @@ namespace nx
             if(!expandImportSource(*s.platform,source,owner+"/main.as",base+"/"+owner+"/asset",base+"/_global",expanded,error)||
                 !importBlueprintScreen(expanded,screen,error)||!s.screens->validateBlueprintSource(expanded,error))
             {m_status=owner+": "+error;return false;}
-            if(candidate.graphs.size()+screen.graphs.size()>64)
-            {m_status="Project exceeds 64 graph limit.";return false;}
-            if(owners.size()>1&&!screen.behaviours().empty())
-            {m_status=owner+": Behaviour imports currently require a single-screen project.";return false;}
-            for(auto& graph:screen.graphs){if(graph.owner=="Screen")graph.owner=owner;candidate.graphs.push_back(std::move(graph));}
+            if(!mergeImportedBlueprintScreen(candidate,std::move(screen),owner,m_status))
+            {m_status=owner+": "+m_status;return false;}
             const auto manifestPath=base+"/"+owner+"/screen.json";
             if(s.platform->fileTime(manifestPath.c_str()))
             {
