@@ -129,6 +129,11 @@ namespace nx
                 {
                     for(const auto& p:graph.parameters)if(pin=="arg_"+p.name){result="bp_arg_"+p.name;return true;}
                 }
+                if(n.kind.rfind("capture:",0)==0&&pin=="result")
+                {
+                    if(!available[node])return fail(node,"Captured value used before execution or outside its branch.");
+                    result="bp_local_"+n.ref+"_"+std::to_string(node);return true;
+                }
                 if(n.kind=="call:function"&&pin=="result")
                 {
                     if(!available[node])return fail(node,"Function result used before execution or outside its branch.");
@@ -230,6 +235,12 @@ namespace nx
                         return true;
                     }
                     return flow(to,"then",indent,depth+1);
+                }
+                if(n.kind.rfind("capture:",0)==0)
+                {
+                    std::string v;if(!value(to,"value",v,0))return false;
+                    source+=pad+n.kind.substr(8)+" bp_local_"+n.ref+"_"+std::to_string(to)+" = "+v+";\n";
+                    available[to]=true;mark(start,to);return flow(to,"then",indent,depth+1);
                 }
                 if(n.kind.rfind("var:set:",0)==0)
                 {

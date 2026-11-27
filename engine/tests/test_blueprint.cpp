@@ -1248,3 +1248,35 @@ NX_TEST(nativeWorkspaceImportsSourceWithoutOverwritingOriginal)
     studio.close(r.services);
 }
 #endif
+
+NX_TEST(nativeImportedLocalSnapshotsAndActionResultsMatchOriginal)
+{
+    const std::string original=R"(class Original : Screen {
+        int score;
+        void onEnter() {
+            score = 3;
+            int initial = score;
+            score = 8;
+            string label = Save::get("original", "old");
+            Save::set("original", "new");
+            if(initial == 3) { Save::set("captured", label); }
+            Entity@ actor = Scene::spawn(Vec2(0.0f, 0.0f));
+            actor.name = "imported";
+            Save::set("actor", actor.name);
+        }
+    })";
+    BlueprintDocument doc;std::string error,generated;
+    const bool imported=importBlueprintScreen(original,doc,error);
+    if(!imported)NX_ERROR("Import diagnostic: %s",error.c_str());
+    NX_EXPECT(imported&&compileBlueprint(doc,generated,error));if(generated.empty())return;
+    for(const std::string* source:std::vector<const std::string*>{&original,&generated})
+    {
+        Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+        r.platform.files["showcase/imported/screen.json"]="{\"title\":\"Import\"}";
+        r.platform.files["showcase/imported/main.as"]=*source;
+        if(!r.screens.init(r.services,"showcase","imported")){NX_EXPECT(false);return;}
+        r.step(5);
+        NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("captured",""),"old")==0&&strcmp(r.save.get("original",""),"new")==0);
+        NX_EXPECT(strcmp(r.save.get("actor",""),"imported")==0);
+    }
+}

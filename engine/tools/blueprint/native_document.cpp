@@ -242,6 +242,14 @@ namespace nx
                 for(const std::string target:{"int","uint","float","double"})
                     if(target!=type)operation("cast:"+type+":"+target,"Convert "+type+" to "+target,"Conversions",type,target,"cast",true);
             }
+            for(const std::string type:{"bool","int","uint","float","double","string","Vec2","Vec3","Color","Entity@"})
+            {
+                BlueprintNodeSpec spec;
+                spec.id="capture:"+type;spec.title="Capture "+type;spec.category="Variables";
+                spec.inputs={{"in","exec"},{"value",type}};
+                spec.outputs={{"then","exec"},{"result",type}};
+                spec.result=type;result.push_back(std::move(spec));
+            }
             operation("and:bool","And","Logic","bool","bool","&&");
             operation("or:bool","Or","Logic","bool","bool","||");
             operation("not:bool","Not","Logic","bool","bool","!",true);
@@ -326,7 +334,7 @@ namespace nx
                 if(!validText(n["id"])||!blueprintSpec(kind)||!context(g.name,kind,g.owner)||!n["x"].isNumber()||!n["y"].isNumber()||
                     !coordinate(x)||!coordinate(y)||!ids.emplace(n["id"].text(),g.nodes.size()).second||
                     (kind.rfind("literal:",0)==0&&(!n["value"].isString()||!literal(kind,ref)))||
-                    ((variableKind(kind)||kind=="call:function"||(kind=="attach:behaviour"||kind=="level:attach"))&&(!n["value"].isString()||!identifier(ref))))
+                    ((variableKind(kind)||kind.rfind("capture:",0)==0||kind=="call:function"||(kind=="attach:behaviour"||kind=="level:attach"))&&(!n["value"].isString()||!identifier(ref))))
                 {error="Invalid node in "+g.name;return false;}
                 if(kind=="entry")++entries;
                 Node node{n["id"].text(),kind,ref,x,y};
@@ -405,7 +413,7 @@ namespace nx
             for(const auto& n:g.nodes)
             {
                 auto* j=ns->add();if(!j||!text(*j,"id",n.id)||!text(*j,"kind",n.kind)||!number(*j,"x",n.x)||!number(*j,"y",n.y))return fail();
-                if((n.kind.rfind("literal:",0)==0||variableKind(n.kind)||n.kind=="call:function"||(n.kind=="attach:behaviour"||n.kind=="level:attach"))&&!text(*j,"value",n.ref))return fail();
+                if((n.kind.rfind("literal:",0)==0||variableKind(n.kind)||n.kind.rfind("capture:",0)==0||n.kind=="call:function"||(n.kind=="attach:behaviour"||n.kind=="level:attach"))&&!text(*j,"value",n.ref))return fail();
                 if(n.watch){auto* watch=j->put("watch");if(!watch)return fail();watch->setFlag(true);}
                 if(!n.values.empty())
                 {
@@ -447,6 +455,7 @@ namespace nx
         std::string id;
         do{id="n"+std::to_string(++m_nextId);}while(std::any_of(g.nodes.begin(),g.nodes.end(),[&](const Node& n){return n.id==id;}));
         std::string value=kind=="literal:string"?"":kind=="literal:bool"?"false":kind.rfind("literal:",0)==0?"0":"";
+        if(kind.rfind("capture:",0)==0)value="captured";
         if(variableKind(kind))
         {
             const auto type=kind.substr(8);
@@ -556,10 +565,11 @@ namespace nx
     bool BlueprintDocument::setReference(size_t graph,size_t node,const std::string& value,std::string& error)
     {
         if(graph>=graphs.size()||node>=graphs[graph].nodes.size()||
-            (!variableKind(graphs[graph].nodes[node].kind)&&graphs[graph].nodes[node].kind!="call:function"&&graphs[graph].nodes[node].kind!="attach:behaviour"&&graphs[graph].nodes[node].kind!="level:attach")||!identifier(value))
+            (!variableKind(graphs[graph].nodes[node].kind)&&graphs[graph].nodes[node].kind.rfind("capture:",0)!=0&&graphs[graph].nodes[node].kind!="call:function"&&graphs[graph].nodes[node].kind!="attach:behaviour"&&graphs[graph].nodes[node].kind!="level:attach")||!identifier(value))
         {error="Use a variable name containing letters, digits and underscores.";return false;}
         auto& n=graphs[graph].nodes[node];
         if(n.ref==value){error.clear();return true;}
+        if(n.kind.rfind("capture:",0)==0){record(graph);n.ref=value;error.clear();return true;}
         if((n.kind=="attach:behaviour"||n.kind=="level:attach"))
         {
             const auto names=behaviours();if(std::find(names.begin(),names.end(),value)==names.end()){error="Unknown behaviour "+value;return false;}

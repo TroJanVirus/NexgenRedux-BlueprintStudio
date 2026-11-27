@@ -72,7 +72,7 @@ namespace nx
                 const auto two=source.substr(i,2);
                 if(two=="::"||two=="=="||two=="!="||two=="<="||two==">="||two=="&&"||two=="||")
                 {tokens.push_back({Kind::Symbol,two,atLine});i+=2;continue;}
-                if(std::string("{}();,.=@+-*/%<>!").find(c)!=std::string::npos)
+                if(std::string("{}();:,.=@+-*/%<>!").find(c)!=std::string::npos)
                 {tokens.push_back({Kind::Symbol,std::string(1,c),atLine});++i;continue;}
                 return fail("Unsupported character or directive; source was not converted.");
             }
@@ -95,6 +95,7 @@ namespace nx
             std::unordered_map<std::string,std::string> fields;
             std::unordered_set<std::string> methods;
             std::string eventArg,eventType;
+            std::unordered_map<std::string,Value> locals;
             const Token& peek()const{return tokens[at];}
             bool is(const char* s)const{return peek().kind!=Kind::String&&peek().kind!=Kind::End&&peek().text==s;}
             bool take(const char* s){if(!is(s))return false;++at;return true;}
@@ -134,6 +135,7 @@ namespace nx
                     size_t n;if(!add(eventType=="float"?"event:delta":"event:canvas",n))return false;
                     v={eventType,"","value",n};return true;
                 }
+                const auto local=locals.find(id);if(local!=locals.end()){v=local->second;return true;}
                 const auto& g=doc.graphs[graph];
                 for(const auto& p:g.parameters)if(p.name==id){v={p.type,"","arg_"+p.name,0};return true;}
                 const auto found=fields.find(id);
@@ -173,7 +175,7 @@ namespace nx
                     if(spec.id.rfind("api:",0)!=0||spec.member!=(target!=nullptr)||spec.property!=property||spec.hasOut||spec.pure!=pure)continue;
                     if((property.empty()?spec.call:propertyName(spec))!=id)continue;
                     // Never guess an overload or silently introduce a numeric/handle conversion.
-                    if(!pure&&spec.result!="void"&&!blueprintLiteralType(spec.result))continue;
+                    if(!pure&&spec.result!="void"&&!blueprintSpec("capture:"+spec.result))continue;
                     if(pure&&(spec.result.empty()||spec.result=="void"))continue;
                     if(target)
                     {
@@ -308,10 +310,37 @@ namespace nx
                     std::vector<Value> args;
                     return arguments(args)&&functionCall(id,args,flow,result);
                 }
+                // Direct action calls must be hoisted only when they are the complete value expression.
+                // Leave pure or mixed-classification overload sets to the ordinary expression parser.
+                if(peek().kind==Kind::Name)
+                {
+                    size_t scan=at+1;std::string id=peek().text;
+                    while(scan+1<tokens.size()&&tokens[scan].text=="::"&&tokens[scan+1].kind==Kind::Name)
+                    {id+="::"+tokens[scan+1].text;scan+=2;}
+                    if(scan<tokens.size()&&tokens[scan].text=="("&&id.find("::")!=std::string::npos)
+                    {
+                        bool action=false,pure=false;
+                        for(const auto& spec:blueprintCatalogue())if(!spec.member&&spec.call==id&&spec.property.empty())
+                        {if(spec.pure)pure=true;else action=true;}
+                        if(action&&!pure)
+                        {
+                            at=scan;std::vector<Value> args;
+                            if(!arguments(args)||!api(id,args,nullptr,false,"",result,&flow))return false;
+                            if(result.type=="void")return fail("Void action cannot supply a value.");
+                            return true;
+                        }
+                    }
+                }
                 return expression(result);
             }
             bool block(Flow flow,unsigned depth,bool* returned=nullptr)
             {
+                struct Scope
+                {
+                    std::unordered_map<std::string,Value>& live;
+                    std::unordered_map<std::string,Value> outer;
+                    ~Scope(){live.swap(outer);}
+                } scope{locals,locals};
                 bool terminal=false;
                 if(depth>32||!expect("{"))return fail("Statement nesting limit or missing block.");
                 while(!take("}"))
@@ -340,6 +369,20 @@ namespace nx
                         terminal=yes&&no;continue;
                     }
                     std::string id;if(!name(id)||!qualified(id))return false;
+                    // A local declaration creates an execution-ordered capture, not an instance field.
+                    if(id=="Entity"&&take("@"))id+="@";
+                    if(blueprintSpec("capture:"+id)&&peek().kind==Kind::Name)
+                    {
+                        const auto type=id;std::string local;
+                        if(!name(local))return false;
+                        const auto& params=doc.graphs[graph].parameters;
+                        if(locals.count(local)||fields.count(local)||local==eventArg||
+                            std::any_of(params.begin(),params.end(),[&](const BlueprintPin& p){return p.name==local;}))
+                            return fail("Local shadowing is not supported: "+local+".");
+                        Value v;if(!expect("=")||!directValue(v,flow)||!expect(";"))return false;
+                        size_t n;if(!add("capture:"+type,n,local)||!bind(n,"value",v))return false;
+                        chain(flow,n);locals.emplace(local,Value{type,"","result",n});continue;
+                    }
                     Value target;const Value* member=nullptr;
                     if(take(".")){if(!field(id,target)||!name(id))return false;member=&target;}
                     if(take("="))
@@ -347,6 +390,7 @@ namespace nx
                         Value v;if(!directValue(v,flow)||!expect(";"))return false;
                         if(!member&&id.find("::")==std::string::npos)
                         {
+                            if(locals.count(id))return fail("Reassignment of a captured local is not supported: "+id+".");
                             const auto found=fields.find(id);
                             const auto& params=doc.graphs[graph].parameters;
                             if(found==fields.end()||id==eventArg||std::any_of(params.begin(),params.end(),[&](const BlueprintPin& p){return p.name==id;}))
@@ -436,7 +480,7 @@ namespace nx
                 if(peek().kind!=Kind::End)return fail("Additional declarations or classes are not supported.");
                 for(const auto& method:bodies)
                 {
-                    graph=method.graph;at=method.body;eventArg=method.arg;eventType=method.type;
+                    graph=method.graph;at=method.body;eventArg=method.arg;eventType=method.type;locals.clear();
                     if(!block({},0)||at!=method.end)return fail("Method body could not be converted completely.");
                 }
                 return true;
@@ -447,7 +491,7 @@ namespace nx
     {
         error.clear();std::vector<Token> tokens;
         if(!lex(source,tokens,error))return false;
-        Parser parser{{},tokens,error,0,0,0,{},{},{},{}};
+        Parser parser{{},tokens,error,0,0,0,{},{},{},{},{}};
         if(!parser.parse())
         {
             if(error.empty())error="Source conversion failed.";

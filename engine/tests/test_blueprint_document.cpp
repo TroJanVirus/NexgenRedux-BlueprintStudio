@@ -8,7 +8,7 @@
 using namespace nx;
 NX_TEST(nativeCatalogueContainsReferenceAPI)
 {
-    NX_EXPECT(blueprintCatalogue().size()==928);
+    NX_EXPECT(blueprintCatalogue().size()==938);
     const auto* save=blueprintSpec("api:Save:Save::set:string,string");
     NX_EXPECT(save&&save->inputs.size()==3&&save->outputs.size()==1);
     if(save&&save->inputs.size()==3)NX_EXPECT(save->inputs[0].type=="exec"&&save->inputs[2].type=="string");
@@ -435,12 +435,14 @@ NX_TEST(nativeSourceImportCreatesEditableTypedGraphsAndRejectsLoss)
                 Save::set("after", "yes");
             }
         })";
-    NX_EXPECT(importBlueprintScreen(source,doc,error));
+    const bool imported=importBlueprintScreen(source,doc,error);
+    if(!imported)NX_ERROR("Import diagnostic: %s",error.c_str());
+    NX_EXPECT(imported);
     NX_EXPECT(doc.name=="Example"&&doc.dirty()&&doc.graphs[0].nodes.size()>1&&doc.graphs[1].nodes.size()>1);
     NX_EXPECT(compileBlueprint(doc,generated,error)&&generated.find("bp_var_score")!=std::string::npos&&generated.find("if (")!=std::string::npos);
     NX_EXPECT(doc.serialize(saved,error));
     for(const char* unsupported:{
-        "class Bad : Screen { void onEnter() { int local = 1; } }",
+        "class Bad : Screen { void onEnter() { int local = 1; local = 2; } }",
         "class Bad : Screen { int score = 1; }",
         "class Bad : Screen { void onEnter() { Save::set(\"a\", 5); } }",
         "class Bad : Screen { void onEnter() { while(true) {} } }",
@@ -462,7 +464,9 @@ NX_TEST(nativeSourceImportSupportsTypedForwardMethodsAndEarlyReturns)
         void Record(int amount) { if(amount == 7) { Save::set("picked","yes"); } }
         int Pick(bool flag, int amount) { if(flag) { return amount; } return 8; }
     })";
-    NX_EXPECT(importBlueprintScreen(code,doc,error));
+    const bool imported=importBlueprintScreen(code,doc,error);
+    if(!imported)NX_ERROR("Import diagnostic: %s",error.c_str());
+    NX_EXPECT(imported);
     NX_EXPECT(doc.function("Screen","Pick")&&doc.function("Screen","Record"));
     NX_EXPECT(compileBlueprint(doc,source,error)&&source.find("bp_fn_Pick(true, int(7))")!=std::string::npos);
     NX_EXPECT(source.find("int bp_fn_Pick(bool bp_arg_flag, int bp_arg_amount)")!=std::string::npos);
@@ -470,4 +474,37 @@ NX_TEST(nativeSourceImportSupportsTypedForwardMethodsAndEarlyReturns)
     NX_EXPECT(!importBlueprintScreen("class Bad : Screen { int BadCall() { return BadCall(); } }",doc,error));
     NX_EXPECT(!importBlueprintScreen("class Bad : Screen { int score; void onEnter() { score = F() + 1; } int F(){return 3;} }",doc,error));
     NX_EXPECT(compileBlueprint(doc,source,error)&&source==good);
+}
+
+NX_TEST(nativeCaptureValuesRespectExecutionOrderAndBranchScope)
+{
+    BlueprintDocument doc;doc.create();std::string error,code,saved;
+    NX_EXPECT(doc.addNode(0,"capture:int",0,0,error)&&doc.setReference(0,1,"original",error));
+    NX_EXPECT(doc.setInputValue(0,1,"value","7",error)&&doc.connect(0,0,"then",1,"in",error));
+    NX_EXPECT(doc.addNode(0,"var:set:int",0,0,error)&&doc.connect(0,1,"result",2,"value",error)&&doc.connect(0,1,"then",2,"in",error));
+    NX_EXPECT(compileBlueprint(doc,code,error)&&code.find("int bp_local_original_1 = int(7);")!=std::string::npos);
+    NX_EXPECT(doc.serialize(saved,error));BlueprintDocument copy;NX_EXPECT(copy.load(saved.data(),saved.size(),error)&&copy.graphs[0].nodes[1].ref=="original");
+    NX_EXPECT(copy.disconnect(0,2,"in",false)&&copy.disconnect(0,1,"in",false)&&copy.connect(0,0,"then",2,"in",error));
+    NX_EXPECT(!compileBlueprint(copy,code,error)&&error.find("Captured value used before execution")!=std::string::npos);
+}
+NX_TEST(nativeSourceImportCapturesLocalsOnceAndRejectsEscapingScope)
+{
+    BlueprintDocument doc;std::string error,code;
+    const std::string source=R"(class Example : Screen {
+        int score;
+        void onEnter() {
+            score = 3;
+            int initial = score;
+            score = 8;
+            string label = Save::get("original", "old");
+            Save::set("original", "new");
+            if(initial == 3) { Save::set("captured", label); }
+        }
+    })";
+    const bool imported=importBlueprintScreen(source,doc,error);
+    if(!imported)NX_ERROR("Import diagnostic: %s",error.c_str());
+    NX_EXPECT(imported&&compileBlueprint(doc,code,error));
+    NX_EXPECT(code.find("int bp_local_initial_")!=std::string::npos&&code.find("string bp_local_label_")!=std::string::npos);
+    NX_EXPECT(!importBlueprintScreen("class Bad : Screen { void onEnter() { if(true) { string x = \"a\"; } Save::set(\"x\",x); } }",doc,error));
+    NX_EXPECT(!importBlueprintScreen("class Bad : Screen { void onEnter() { int x = 1; x = 2; } }",doc,error));
 }
