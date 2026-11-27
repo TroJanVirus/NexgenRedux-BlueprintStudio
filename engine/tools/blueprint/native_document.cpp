@@ -37,6 +37,18 @@ namespace nx
             {"level:attach","Attach behaviour to named level entity","Level","in:exec|name:string","then:exec|result:bool"},
             {"attach:behaviour","Attach behaviour","Behaviours","in:exec|target:Entity@","then:exec|result:bool"},
             {"attach:direct","Attach behaviour (direct)","Behaviours","in:exec|target:Entity@","then:exec"},
+            {"global:get:bool","Get bool global","Module variables","","value:bool"},
+            {"global:set:bool","Set bool global","Module variables","in:exec|value:bool","then:exec"},
+            {"global:get:int","Get int global","Module variables","","value:int"},
+            {"global:set:int","Set int global","Module variables","in:exec|value:int","then:exec"},
+            {"global:get:uint","Get uint global","Module variables","","value:uint"},
+            {"global:set:uint","Set uint global","Module variables","in:exec|value:uint","then:exec"},
+            {"global:get:float","Get float global","Module variables","","value:float"},
+            {"global:set:float","Set float global","Module variables","in:exec|value:float","then:exec"},
+            {"global:get:double","Get double global","Module variables","","value:double"},
+            {"global:set:double","Set double global","Module variables","in:exec|value:double","then:exec"},
+            {"global:get:string","Get string global","Module variables","","value:string"},
+            {"global:set:string","Set string global","Module variables","in:exec|value:string","then:exec"},
             {"var:get:bool","Get bool variable","Variables","","value:bool"},
             {"var:set:bool","Set bool variable","Variables","in:exec|value:bool","then:exec"},
             {"var:get:int","Get int variable","Variables","","value:int"},
@@ -101,6 +113,7 @@ namespace nx
         bool coordinate(float v){return std::isfinite(v)&&std::abs(v)<=1000000;}
         bool lifecycle(const std::string& name)
         {return name=="onEnter"||name=="update"||name=="draw"||name=="onSuspend"||name=="onResume"||name=="onExit"||name=="onLevelTouch"||name=="onLevelAgent";}
+        bool globalKind(const std::string& kind){return kind.rfind("global:get:",0)==0||kind.rfind("global:set:",0)==0;}
         bool variableKind(const std::string& kind){return kind.rfind("var:get:",0)==0||kind.rfind("var:set:",0)==0;}
         bool identifier(const std::string& s)
         {
@@ -357,6 +370,21 @@ namespace nx
                     g.fields.push_back(std::move(field));
                 }
             }
+            const auto globals=value["globals"];
+            if(globals.exists())
+            {
+                if(behaviourOwner(owner)||g.name!="onEnter"||g.kind!="event"||!globals.isArray()||globals.count()>256)
+                {error="Invalid module variable declarations.";return false;}
+                std::unordered_set<std::string> names;
+                for(auto f=globals.first();f.exists();f=f.next())
+                {
+                    Field field{f["name"].text(),f["type"].text(),f["value"].text(),f["value"].exists()};
+                    if(!f.isObject()||!identifier(field.name)||!blueprintLiteralType(field.type)||!names.insert(field.name).second||
+                        (field.initialized&&(!f["value"].isString()||!literal("literal:"+field.type,field.value))))
+                    {error="Invalid or duplicate module variable.";return false;}
+                    g.globals.push_back(std::move(field));
+                }
+            }
             candidate.graphs.push_back(std::move(g));
         }
         size_t graphIndex=0;
@@ -372,7 +400,7 @@ namespace nx
                 if(!validText(n["id"])||!blueprintSpec(kind)||!context(g.name,kind,g.owner)||!n["x"].isNumber()||!n["y"].isNumber()||
                     !coordinate(x)||!coordinate(y)||!ids.emplace(n["id"].text(),g.nodes.size()).second||
                     (kind.rfind("literal:",0)==0&&(!n["value"].isString()||!literal(kind,ref)))||
-                    ((variableKind(kind)||kind.rfind("capture:",0)==0||kind=="call:function"||(kind=="attach:behaviour"||kind=="attach:direct"||kind=="level:attach"))&&(!n["value"].isString()||!identifier(ref))))
+                    ((variableKind(kind)||globalKind(kind)||kind.rfind("capture:",0)==0||kind=="call:function"||(kind=="attach:behaviour"||kind=="attach:direct"||kind=="level:attach"))&&(!n["value"].isString()||!identifier(ref))))
                 {error="Invalid node in "+g.name;return false;}
                 if(kind=="entry")++entries;
                 Node node{n["id"].text(),kind,ref,x,y};
@@ -437,6 +465,13 @@ namespace nx
         for(const auto& g:candidate.graphs)for(const auto& n:g.nodes)
             if((n.kind=="attach:behaviour"||n.kind=="attach:direct"||n.kind=="level:attach")&&std::find(behaviours.begin(),behaviours.end(),n.ref)==behaviours.end())
             {error="Missing behaviour "+n.ref;return false;}
+        const auto& globals=candidate.moduleGlobals();
+        for(const auto& g:candidate.graphs)
+        {
+            if(!g.globals.empty()&&candidate.screens().size()!=1){error="Module variables currently require one screen.";return false;}
+            for(const auto& n:g.nodes)if(globalKind(n.kind)&&std::none_of(globals.begin(),globals.end(),[&](const Field& f){return f.name==n.ref&&f.type==n.kind.substr(11);}))
+            {error="Unknown or incompatible module variable: "+n.ref;return false;}
+        }
         if(!candidate.functions(error))return false;
         *this=std::move(candidate);error.clear();return true;
     }
@@ -477,11 +512,20 @@ namespace nx
                     if(f.initialized&&!text(*item,"value",f.value))return fail();
                 }
             }
+            if(!g.globals.empty())
+            {
+                auto* fields=v->put("globals");if(!fields)return fail();fields->setArray();
+                for(const auto& f:g.globals)
+                {
+                    auto* item=fields->add();if(!item||!text(*item,"name",f.name)||!text(*item,"type",f.type))return fail();
+                    if(f.initialized&&!text(*item,"value",f.value))return fail();
+                }
+            }
             auto* ns=v->put("nodes");if(!ns)return fail();ns->setArray();
             for(const auto& n:g.nodes)
             {
                 auto* j=ns->add();if(!j||!text(*j,"id",n.id)||!text(*j,"kind",n.kind)||!number(*j,"x",n.x)||!number(*j,"y",n.y))return fail();
-                if((n.kind.rfind("literal:",0)==0||variableKind(n.kind)||n.kind.rfind("capture:",0)==0||n.kind=="call:function"||(n.kind=="attach:behaviour"||n.kind=="attach:direct"||n.kind=="level:attach"))&&!text(*j,"value",n.ref))return fail();
+                if((n.kind.rfind("literal:",0)==0||variableKind(n.kind)||globalKind(n.kind)||n.kind.rfind("capture:",0)==0||n.kind=="call:function"||(n.kind=="attach:behaviour"||n.kind=="attach:direct"||n.kind=="level:attach"))&&!text(*j,"value",n.ref))return fail();
                 if(n.watch){auto* watch=j->put("watch");if(!watch)return fail();watch->setFlag(true);}
                 if(!n.values.empty())
                 {
@@ -524,6 +568,13 @@ namespace nx
         do{id="n"+std::to_string(++m_nextId);}while(std::any_of(g.nodes.begin(),g.nodes.end(),[&](const Node& n){return n.id==id;}));
         std::string value=kind=="literal:string"?"":kind=="literal:bool"?"false":kind.rfind("literal:",0)==0?"0":"";
         if(kind.rfind("capture:",0)==0)value="captured";
+        if(globalKind(kind))
+        {
+            const auto& globals=moduleGlobals();
+            const auto found=std::find_if(globals.begin(),globals.end(),[&](const Field& f){return f.type==kind.substr(11);});
+            if(found==globals.end()){error="No declared module variable of this type.";return false;}
+            value=found->name;
+        }
         if(variableKind(kind))
         {
             const auto type=kind.substr(8);
@@ -612,6 +663,12 @@ namespace nx
         if(it==values.end())return false;
         record(graph);values.erase(it);return true;
     }
+    const std::vector<BlueprintDocument::Field>& BlueprintDocument::moduleGlobals() const
+    {
+        static const std::vector<Field> empty;
+        for(const auto& g:graphs)if(!g.globals.empty())return g.globals;
+        return empty;
+    }
     bool BlueprintDocument::variables(std::vector<BlueprintPin>& values,std::string& error,const std::string& owner)const
     {
         std::vector<BlueprintPin> result;
@@ -639,10 +696,17 @@ namespace nx
     bool BlueprintDocument::setReference(size_t graph,size_t node,const std::string& value,std::string& error)
     {
         if(graph>=graphs.size()||node>=graphs[graph].nodes.size()||
-            (!variableKind(graphs[graph].nodes[node].kind)&&graphs[graph].nodes[node].kind.rfind("capture:",0)!=0&&graphs[graph].nodes[node].kind!="call:function"&&graphs[graph].nodes[node].kind!="attach:behaviour"&&graphs[graph].nodes[node].kind!="attach:direct"&&graphs[graph].nodes[node].kind!="level:attach")||!identifier(value))
+            (!variableKind(graphs[graph].nodes[node].kind)&&!globalKind(graphs[graph].nodes[node].kind)&&graphs[graph].nodes[node].kind.rfind("capture:",0)!=0&&graphs[graph].nodes[node].kind!="call:function"&&graphs[graph].nodes[node].kind!="attach:behaviour"&&graphs[graph].nodes[node].kind!="attach:direct"&&graphs[graph].nodes[node].kind!="level:attach")||!identifier(value))
         {error="Use a variable name containing letters, digits and underscores.";return false;}
         auto& n=graphs[graph].nodes[node];
         if(n.ref==value){error.clear();return true;}
+        if(globalKind(n.kind))
+        {
+            const auto& globals=moduleGlobals();
+            if(std::none_of(globals.begin(),globals.end(),[&](const Field& f){return f.name==value&&f.type==n.kind.substr(11);}))
+            {error="Unknown or incompatible module variable.";return false;}
+            record(graph);n.ref=value;error.clear();return true;
+        }
         if(n.kind.rfind("capture:",0)==0){record(graph);n.ref=value;error.clear();return true;}
         if((n.kind=="attach:behaviour"||n.kind=="attach:direct"||n.kind=="level:attach"))
         {
@@ -853,6 +917,7 @@ namespace nx
     }
     bool BlueprintDocument::addScreen(const std::string& id,std::string& error)
     {
+        if(!moduleGlobals().empty()){error="Projects with module variables currently require one screen.";return false;}
         if(!screenId(id)||graphs.size()+6>kMaxGraphs||
             std::any_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==id;}))
         {error="Choose a unique lowercase screen ID (letters, digits, hyphens or underscores; not screen).";return false;}

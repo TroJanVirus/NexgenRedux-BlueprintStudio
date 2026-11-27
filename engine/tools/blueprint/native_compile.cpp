@@ -175,6 +175,7 @@ namespace nx
                     }
                     result+=")";return true;
                 }
+                if(n.kind.rfind("global:get:",0)==0&&pin=="value"){result="bp_global_"+n.ref;return true;}
                 if(n.kind.rfind("var:get:",0)==0&&pin=="value"){result="bp_var_"+n.ref;return true;}
                 if(n.kind=="repeat"&&pin=="index")
                 {
@@ -252,6 +253,11 @@ namespace nx
                     std::string v;if(!value(to,"value",v,0))return false;
                     source+=pad+n.kind.substr(8)+" bp_local_"+n.ref+"_"+std::to_string(to)+" = "+v+";\n";
                     available[to]=true;mark(start,to);return flow(to,"then",indent,depth+1);
+                }
+                if(n.kind.rfind("global:set:",0)==0)
+                {
+                    std::string v;if(!value(to,"value",v,0))return false;
+                    source+=pad+"bp_global_"+n.ref+" = "+v+";\n";mark(start,to);return flow(to,"then",indent,depth+1);
                 }
                 if(n.kind.rfind("var:set:",0)==0)
                 {
@@ -427,6 +433,18 @@ namespace nx
             }
         }
         if(usesLevel)result+="#include \"global:scene.as\"\n\n";
+        for(const auto& f:document.moduleGlobals())
+        {
+            result+=f.type+" bp_global_"+f.name;
+            if(f.initialized)
+            {
+                std::string literal;
+                Emitter e{document,document.graphs.front(),result,error,{}, {},0,location,spans};
+                if(!e.literalValue(0,f.type,f.value,literal))return false;
+                result+=" = "+literal;
+            }
+            result+=";\n";
+        }
         std::vector<std::string> classes;
         for(const auto& name:document.behaviours())classes.push_back("behaviour:"+name);
         classes.push_back(owner);

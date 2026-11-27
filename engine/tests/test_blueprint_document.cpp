@@ -8,7 +8,7 @@
 using namespace nx;
 NX_TEST(nativeCatalogueContainsReferenceAPI)
 {
-    NX_EXPECT(blueprintCatalogue().size()==949);
+    NX_EXPECT(blueprintCatalogue().size()==961);
     const auto* save=blueprintSpec("api:Save:Save::set:string,string");
     NX_EXPECT(save&&save->inputs.size()==3&&save->outputs.size()==1);
     if(save&&save->inputs.size()==3)NX_EXPECT(save->inputs[0].type=="exec"&&save->inputs[2].type=="string");
@@ -773,7 +773,7 @@ NX_TEST(nativeImportStandaloneFunctionsRetainScopeAndForwardCalls)
     NX_EXPECT(generated.find("bp_fn_Twice(int(4))")!=std::string::npos&&generated.find("bp_fn_Record(bp_var_value)")!=std::string::npos);
     NX_EXPECT(doc.serialize(saved,error));
     for(const char* invalid:{
-        "int state; class Bad : Screen {}",
+        "int state=1+2; class Bad : Screen {}",
         "int Read(){return x;} class Bad : Screen {int x;}",
         "void Write(){x=1;} class Bad : Screen {int x;}",
         "void Run(){F();} class Bad : Screen {void F(){}}",
@@ -860,4 +860,21 @@ NX_TEST(nativeImportedPrimitiveFieldsPreserveDeclarationsAndInitialValues)
         NX_EXPECT(!importBlueprintScreen(invalid,doc,error));
         std::string after;NX_EXPECT(doc.serialize(after,error)&&after==bytes);
     }
+}
+
+NX_TEST(nativeImportedModuleGlobalsRetainSharedScope)
+{
+    BlueprintDocument doc;std::string error,source,bytes;
+    const char* code=R"(int count=2; void Bump(){count++;} class Actor : Behaviour {void start(){count++;}} class Example : Screen {void onEnter(){Bump();if(count==3){Save::set("global","ok");}}})";
+    NX_EXPECT(importBlueprintScreen(code,doc,error)&&doc.serialize(bytes,error));
+    BlueprintDocument restored;NX_EXPECT(restored.load(bytes.data(),bytes.size(),error)&&compileBlueprint(restored,source,error));
+    NX_EXPECT(restored.moduleGlobals().size()==1&&source.find("int bp_global_count = int(2);")!=std::string::npos);
+    NX_EXPECT(source.find("bp_global_count =")!=std::string::npos&&source.find("bp_var_count")==std::string::npos);
+    NX_EXPECT(!restored.addScreen("level",error));
+    NX_EXPECT(restored.addNode(0,"global:get:int",0,0,error));
+    NX_EXPECT(!restored.setReference(0,restored.graphs[0].nodes.size()-1,"missing",error));
+    NX_EXPECT(restored.undo());
+    std::string after;NX_EXPECT(restored.serialize(after,error)&&after==bytes);
+    NX_EXPECT(!importBlueprintScreen("int state=1+2; class Bad : Screen {}",doc,error));
+    NX_EXPECT(doc.serialize(after,error)&&after==bytes);
 }

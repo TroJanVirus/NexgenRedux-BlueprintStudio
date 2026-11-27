@@ -98,6 +98,7 @@ namespace nx
             std::unordered_map<std::string,Value> locals;
             std::unordered_set<std::string> freeFunctions{};
             bool inFreeFunction=false;
+            std::unordered_map<std::string,std::string> globals{};
             const Token& peek()const{return tokens[at];}
             bool is(const char* s)const{return peek().kind!=Kind::String&&peek().kind!=Kind::End&&peek().text==s;}
             bool take(const char* s){if(!is(s))return false;++at;return true;}
@@ -149,7 +150,13 @@ namespace nx
                     v={"Entity@","","value",n};return true;
                 }
                 const auto found=fields.find(id);
-                if(found==fields.end())return fail("Unknown field or unsupported expression: "+id+".");
+                if(found==fields.end())
+                {
+                    const auto global=globals.find(id);
+                    if(instanceOnly||global==globals.end())return fail("Unknown field or unsupported expression: "+id+".");
+                    size_t n;if(!add("global:get:"+global->second,n,id))return false;
+                    v={global->second,"","value",n};return true;
+                }
                 size_t n;if(!add("var:get:"+found->second,n,id))return false;
                 v={found->second,"","value",n};return true;
             }
@@ -518,9 +525,11 @@ namespace nx
                         if(handleAssignment)return fail("Handle assignment requires a declared entity local.");
                         const auto found=fields.find(id);
                         const auto& params=doc.graphs[graph].parameters;
-                        if(found==fields.end()||(!instanceOnly&&(id==eventArg||std::any_of(params.begin(),params.end(),[&](const BlueprintPin& p){return p.name==id;}))))
-                            return fail("Assignment requires a declared instance field, not a method parameter.");
-                        size_t n;if(!add("var:set:"+found->second,n,id)||!bind(n,"value",v))return false;
+                        if(!instanceOnly&&(id==eventArg||std::any_of(params.begin(),params.end(),[&](const BlueprintPin& p){return p.name==id;})))
+                            return fail("Assignment to method parameters is unsupported.");
+                        const auto global=globals.find(id);
+                        if(found==fields.end()&&(instanceOnly||global==globals.end()))return fail("Assignment requires a declared field or module variable.");
+                        size_t n;if(!add(found==fields.end()?"global:set:"+global->second:"var:set:"+found->second,n,id)||!bind(n,"value",v))return false;
                         chain(flow,n);
                     }
                     else
@@ -567,8 +576,8 @@ namespace nx
                     std::string type,id;if(!name(type)||!name(id))return false;
                     if(is(";")||is("="))
                     {
-                        if(standalone)return fail("Global variables are not supported.");
-                        if(!blueprintLiteralType(type)||(behaviour&&id=="entity")||!declaredFields.emplace(id,type).second)return fail("Only unique primitive instance fields are supported.");
+                        auto& declarations=standalone?globals:declaredFields;
+                        if(!blueprintLiteralType(type)||(behaviour&&id=="entity")||!declarations.emplace(id,type).second)return fail("Only unique primitive variable declarations are supported.");
                         BlueprintDocument::Field field{id,type,"",false};
                         if(take("="))
                         {
@@ -583,8 +592,10 @@ namespace nx
                         }
                         if(!expect(";"))return false;
                         const auto entry=std::find_if(doc.graphs.begin(),doc.graphs.end(),[&](const auto& g){return g.owner==owner&&g.name==(behaviour?"start":"onEnter");});
-                        if(entry==doc.graphs.end()||entry->fields.size()>=256)return fail("Field declaration limit exceeded.");
-                        entry->fields.push_back(std::move(field));return true;
+                        if(entry==doc.graphs.end())return fail("Missing variable declaration owner.");
+                        auto& stored=standalone?entry->globals:entry->fields;
+                        if(stored.size()>=256)return fail("Variable declaration limit exceeded.");
+                        stored.push_back(std::move(field));return true;
                     }
                     if(!methods.insert(owner+"/"+id).second)return fail("Overloaded or duplicate method "+id+".");
                     const auto found=std::find_if(doc.graphs.begin(),doc.graphs.end(),[&](const BlueprintDocument::Graph& g){return g.owner==owner&&g.name==id;});
@@ -670,6 +681,7 @@ namespace nx
                     else if(!declaration(true,"Screen"))return false;
                 }
                 if(!sawScreen)return fail("Expected one Screen class.");
+                for(const auto& id:freeFunctions)if(globals.count(id))return fail("Function and global variable have the same name: "+id+".");
                 for(const auto& id:freeFunctions)if(classFields["Screen"].count(id))return fail("Standalone function and Screen field have the same name: "+id+".");
                 for(const auto& method:bodies)
                 {
@@ -783,6 +795,8 @@ namespace nx
         if(!probe.addScreen(owner,error)||std::find(existingScreens.begin(),existingScreens.end(),owner)!=existingScreens.end()||
             screen.screens()!=std::vector<std::string>{"Screen"})
         {error="Invalid or duplicate imported screen: "+owner;return false;}
+        if(!existingScreens.empty()&&(!project.moduleGlobals().empty()||!screen.moduleGlobals().empty()))
+        {error="Module variable imports currently require one screen.";return false;}
         std::string verified;
         if(!screen.serialize(verified,error))return false;
         const auto existing=project.behaviours(),incoming=screen.behaviours();

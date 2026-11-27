@@ -1966,3 +1966,21 @@ NX_TEST(nativeImportedInitializersRunAtInstanceConstruction)
         NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("screen","missing"),"ok")==0&&strcmp(r.save.get("first","missing"),"ok")==0&&strcmp(r.save.get("second","missing"),"ok")==0);
     }
 }
+
+NX_TEST(nativeImportedModuleGlobalsShareStateAcrossBehaviourInstances)
+{
+    BlueprintDocument doc;std::string error,source;
+    const char* original=R"(int count=2; void Bump(){count++;}
+        class Actor : Behaviour {void start(){count++;if(count==4){Save::set("first","ok");}if(count==5){Save::set("second","ok");}}}
+        class Example : Screen {void onEnter(){Bump();Entity@ a=Scene::spawn(Vec2(0.0f,0.0f));a.add(Actor());Entity@ b=Scene::spawn(Vec2(1.0f,0.0f));b.add(Actor());}})";
+    if(!importBlueprintScreen(original,doc,error)||!compileBlueprint(doc,source,error)){NX_ERROR("Global import: %s",error.c_str());NX_EXPECT(false);return;}
+    for(const auto& code:std::vector<std::string>{original,source})
+    {
+        Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+        r.platform.files["project/main/screen.json"]="{\"title\":\"Globals\"}";
+        r.platform.files["project/main/main.as"]=code;
+        if(!r.screens.init(r.services,"project","main")){NX_EXPECT(false);return;}
+        r.step(5);
+        NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("first","missing"),"ok")==0&&strcmp(r.save.get("second","missing"),"ok")==0);
+    }
+}
