@@ -354,6 +354,25 @@ with menu_log.open("wb") as out:
         click(720, 564, window)
         click(910, 564, window)
         click(360, 172, window)
+        # New actor is selected. Add a child, select it and change its
+        # shape, then open the actual native component inspector.
+        click(815, 521, window)
+        click(815, 414, window)
+        click(910, 293, window)
+        click(815, 249, window)
+        click(720, 293, window)
+        for _ in range(len("Component1")):
+            key("BackSpace")
+        enter_text("Body")
+        click(815, 574, window)
+        click(720, 293, window)
+        for _ in range(len("none")):
+            key("BackSpace")
+        enter_text("sphere:0.5")
+        click(910, 293, window)
+        enter_text("2")
+        click(815, 249, window)
+        click(815, 564, window)
         click(930, 133, window)
         click(800, 53, window)
         def saved_library():
@@ -368,12 +387,19 @@ with menu_log.open("wb") as out:
         page = json.loads(widget["source"])
         assert page[0]["label"] == "Health" and page[1]["button"] == "Button"
         assert page[2]["progress"] == 0.75
-        assert json.loads(actor["source"])["entities"][0]["shape"] == "box"
+        actor_data = json.loads(actor["source"])
+        assert actor_data["parents"] == [-1, 0]
+        assert actor_data["entities"][0]["shape"] == "box"
+        child = actor_data["entities"][1]
+        assert child["name"] == "Body" and child["shape"] == "sphere"
+        assert child["sphere"] == 0.5 and child["mass"] == 2
         saved_root = json.loads(copy.read_text(encoding="utf-8"))["assetRoot"]
         published = authored_own / saved_root / "Screen" / "asset" / ("ui_" + widget["id"] + ".json")
         assert published.read_text(encoding="utf-8") == widget["source"]
         linked_graphs = json.loads(copy.read_text(encoding="utf-8"))["graphs"]
         assert any(n["kind"] == "ui:load-asset" for n in linked_graphs[0]["nodes"])
+        assert any(n["kind"] == "actor:spawn-asset" and n["values"]["id"] == actor["id"]
+                   for n in linked_graphs[0]["nodes"])
         assert any(n["kind"] == "api:Ui:Ui::draw:Canvas@" for n in linked_graphs[2]["nodes"])
         before_preview = menu_log.read_text(errors="replace").count("preview started: Screen")
         click(553, 53, window)
@@ -381,7 +407,7 @@ with menu_log.open("wb") as out:
         time.sleep(1)
         key("Escape")
         assert "Preview error:" not in menu_log.read_text(errors="replace")
-        print("Native Content Browser: actor and UI asset creation, palette and native page copy passed.", flush=True)
+        print("Native Content Browser: actor hierarchy, physics inspector, linked actor and UI authoring passed.", flush=True)
         click(1200, 53, window)
         request_close(window)
         assert process.wait(timeout=20) == 0
