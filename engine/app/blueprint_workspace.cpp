@@ -674,7 +674,8 @@ namespace nx
     namespace
     {
         constexpr const char* themeStates[]={"normal","hovered","checked","focused","pressed","disabled"};
-        constexpr const char* themeProps[]={"back","text","line","track","radius","lineWidth","scale","shadow","size","padding","gap","seconds"};
+        constexpr const char* themeProps[]={"back","text","line","track","radius","lineWidth","scale","shadow","size","padding","gap","seconds","minWidth","minHeight","slice","align"};
+        constexpr size_t themeLookCount=8;
         struct DesignRow {std::string id,kind,label;unsigned depth;};
         constexpr const char* designPalette[]={"column","row","grid","stack","scroll","label","button","toggle","slider","progress","field","space"};
         constexpr const char* designEvents[]={"click","change","focus","done","draw","makeRow"};
@@ -1050,17 +1051,18 @@ namespace nx
             if(in(x,y,630,232,810,266))
             {m_visualInput=6;m_visualText=m_themeStyle;input.setTyping(true);m_status="Enter style name (e.g. button or custom).";return;}
             if(in(x,y,820,232,1000,266)){m_themeState=(m_themeState+1)%6;return;}
-            if(in(x,y,630,277,1000,421))
+            if(in(x,y,630,277,1000,493))
             {
                 const size_t index=static_cast<size_t>((y-277)/36)*3+static_cast<size_t>((x-630)/123.34f);
-                if(index>=sizeof(themeProps)/sizeof(themeProps[0]))return;
+                const size_t count=m_themeState?themeLookCount:sizeof(themeProps)/sizeof(themeProps[0]);
+                if(index>=count)return;
                 m_visualProperty=themeProps[index];
                 JsonTree tree;if(!tree.parse(selected->source.data(),selected->source.size()))return;
                 const auto style=tree.root()["styles"][m_themeStyle.c_str()];
                 const auto state=m_themeState?style[themeStates[m_themeState]]:style;
                 const auto property=state[m_visualProperty.c_str()];
                 m_visualText=property.isNumber()?std::to_string(property.exact()):property.text();
-                m_visualInput=7;input.setTyping(true);m_status="Edit style value; blank restores default.";return;
+                m_visualInput=7;input.setTyping(true);m_status=m_visualProperty=="align"?"Enter left, center or right; blank restores default.":"Edit style value; blank restores default.";return;
             }
             return;
         }
@@ -1211,12 +1213,12 @@ namespace nx
             if(selected->kind=="theme")
             {
                 button(630,232,180,m_themeStyle.c_str());button(820,232,180,themeStates[m_themeState]);
-                for(size_t i=0;i<sizeof(themeProps)/sizeof(themeProps[0]);++i)
+                const size_t count=m_themeState?themeLookCount:sizeof(themeProps)/sizeof(themeProps[0]);
+                for(size_t i=0;i<count;++i)
                     button(630+123.34f*static_cast<float>(i%3),277+36*static_cast<float>(i/3),119,themeProps[i]);
-                c.text(*m_font,"Colours: #RRGGBB or #RRGGBBAA",630,445,muted);
-                c.text(*m_font,"Style states overlay Normal.",630,470,muted);
-                c.text(*m_font,"Assign this theme ID to a UI page.",630,495,muted);
-                c.text(*m_font,"Preview the result in that page designer.",630,520,muted);
+                c.text(*m_font,"Colours: #RRGGBB or #RRGGBBAA",630,505,muted);
+                c.text(*m_font,m_themeState?"State overrides appearance only.":"Normal also controls size and layout.",630,530,muted);
+                c.text(*m_font,"Assign this theme ID to a UI page.",630,555,muted);
             }
             else if(selected->kind=="widget")
             {

@@ -830,17 +830,19 @@ namespace nx
         const std::string states="|normal|hovered|checked|focused|pressed|disabled|";
         const std::string colors="|back|text|line|track|";
         const std::string looks="|radius|lineWidth|scale|shadow|";
-        const std::string geometry="|size|padding|gap|minWidth|minHeight|seconds|";
+        const std::string geometry="|size|padding|gap|minWidth|minHeight|seconds|slice|";
         const auto contains=[](const std::string& list,const std::string& key){return !key.empty()&&key.find('|')==std::string::npos&&list.find("|"+key+"|")!=std::string::npos;};
-        const bool color=contains(colors,property),look=contains(looks,property),metric=contains(geometry,property);
+        const bool color=contains(colors,property),look=contains(looks,property),metric=contains(geometry,property),alignment=property=="align";
         if(!identifier(styleName)||styleName.size()>31||!contains(states,state)||
-            (!color&&!look&&!metric)||(metric&&state!="normal"))
+            (!color&&!look&&!metric&&!alignment)||((metric||alignment)&&state!="normal"))
         {error="Invalid style name, state or property.";return false;}
         if(color&&!value.empty()&&((value.size()!=7&&value.size()!=9)||value.front()!='#'||
             value.find_first_not_of("0123456789abcdefABCDEF",1)!=std::string::npos))
         {error="Use #RRGGBB or #RRGGBBAA.";return false;}
+        if(alignment&&!value.empty()&&value!="left"&&value!="center"&&value!="right")
+        {error="Use left, center or right.";return false;}
         double n=0;
-        if(!color&&!value.empty())
+        if(!color&&!alignment&&!value.empty())
         {
             if(!literal("literal:float",value)){error="Enter a finite number.";return false;}
             n=std::strtod(value.c_str(),nullptr);
@@ -858,7 +860,7 @@ namespace nx
             auto* style=styles->put(styleName);if(!style)return false;
             auto* target=state=="normal"?style:style->put(state);if(!target)return false;
             if(value.empty())target->remove(property.c_str());
-            else if(color){if(!text(*target,property.c_str(),value))return false;}
+            else if(color||alignment){if(!text(*target,property.c_str(),value))return false;}
             else if(!number(*target,property.c_str(),n))return false;
             const auto changed=root.write(true);if(changed==theme.source){error.clear();return true;}
             theme.source=changed;return replaceVisualAssets(assets,error);

@@ -1510,6 +1510,13 @@ NX_TEST(nativeReusableThemeLinksAndStyleProperties)
     NX_EXPECT(doc.setVisualThemeProperty(theme,"button","normal","back","#123456",error));
     NX_EXPECT(doc.setVisualThemeProperty(theme,"button","focused","back","#ffffff",error));
     NX_EXPECT(doc.setVisualThemeProperty(theme,"button","normal","radius","8",error));
+    NX_EXPECT(doc.setVisualThemeProperty(theme,"button","normal","minWidth","160",error));
+    NX_EXPECT(doc.setVisualThemeProperty(theme,"button","normal","minHeight","60",error));
+    NX_EXPECT(doc.setVisualThemeProperty(theme,"button","normal","slice","8",error));
+    NX_EXPECT(doc.setVisualThemeProperty(theme,"button","normal","align","right",error));
+    NX_EXPECT(!doc.setVisualThemeProperty(theme,"button","normal","align","invalid",error));
+    NX_EXPECT(!doc.setVisualThemeProperty(theme,"button","focused","align","left",error));
+    NX_EXPECT(!doc.setVisualThemeProperty(theme,"button","hovered","minWidth","80",error));
     NX_EXPECT(!doc.setVisualThemeProperty(theme,"button","focused","padding","3",error));
     NX_EXPECT(!doc.setVisualThemeProperty(theme,"button","normal","back","#xyz",error));
     NX_EXPECT(doc.setVisualTheme(page,theme,error)&&doc.connectVisualWidget("Screen",page,error));

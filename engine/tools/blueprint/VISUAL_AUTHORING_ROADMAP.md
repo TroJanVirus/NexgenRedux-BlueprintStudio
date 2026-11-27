@@ -114,3 +114,6 @@ Click a visible widget in the native preview to select it. Drag Stack children t
 ## Reusable native themes
 
 Themes are project assets with native theme JSON; a UI page can reference one theme, loaded before its page by the compiler and in the actual native preview. The Content Browser supports editing named style colors (#RRGGBB/#RRGGBBAA), radius, border, scale, shadow, padding, size, gap and transition duration, including native interaction-state overrides. Reference deletion protection and undo/redo use the existing asset model. Standalone page snapshots still contain only page JSON; linked output embeds the theme. Tests cover source generation and real runtime style values. This first editor uses text/number input and the normal preview, not a color picker or forced-state visual comparison. Theme font/image/sound asset picking, timeline animation and reusable widget composition remain outstanding.
+
+
+The theme editor now exposes minimum width/height, nine-slice size and text alignment, and only displays appearance overrides for non-normal interaction states. Document and runtime regression cases cover the extra style values and reject state-specific layout changes.
