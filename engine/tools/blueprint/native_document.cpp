@@ -24,8 +24,6 @@ namespace nx
             {"literal:float","Float","Values","","value:float"},
             {"literal:uint","Unsigned integer","Values","","value:uint"},
             {"literal:double","Double","Values","","value:double"},
-            {"add:float","Add (float)","Math","a:float|b:float","result:float"},
-            {"less:float","Less than (float)","Math","a:float|b:float","result:bool"},
             {"make:Vec2","Make Vec2","Values","x:float|y:float","result:Vec2"},
             {"make:Vec3","Make Vec3","Values","x:float|y:float|z:float","result:Vec3"},
             {"make:Color","Make Color","Values","r:float|g:float|b:float|a:float","result:Color"},
@@ -150,6 +148,40 @@ namespace nx
             std::vector<BlueprintNodeSpec> result;
             result.reserve(sizeof(rows)/sizeof(rows[0]));
             for(const auto& row:rows)result.push_back({row.id,row.title,row.category,parsePins(row.inputs),parsePins(row.outputs),row.call,row.property,row.result,*row.member!=0,*row.pure!=0,*row.hasOut!=0,parsePins(row.arguments),parsePins(row.defaults)});
+            auto operation=[&](const std::string& id,const std::string& title,const std::string& category,
+                const std::string& input,const std::string& output,const std::string& op,bool unary=false)
+            {
+                BlueprintNodeSpec spec;
+                spec.id=id;spec.title=title;spec.category=category;spec.pure=true;spec.result=output;spec.operation=op;
+                spec.inputs.push_back({"a",input});
+                if(!unary)spec.inputs.push_back({"b",input});
+                spec.outputs.push_back({"result",output});
+                result.push_back(std::move(spec));
+            };
+            struct Operator {const char* id;const char* title;const char* op;bool comparison;};
+            constexpr Operator numeric[]={
+                {"add","Add","+",false},{"subtract","Subtract","-",false},{"multiply","Multiply","*",false},
+                {"divide","Divide","/",false},{"equal","Equal","==",true},{"not_equal","Not equal","!=",true},
+                {"less","Less than","<",true},{"less_equal","Less or equal","<=",true},
+                {"greater","Greater than",">",true},{"greater_equal","Greater or equal",">=",true}
+            };
+            for(const std::string type:{"int","uint","float","double"})
+            {
+                for(const auto& op:numeric)
+                    operation(std::string(op.id)+":"+type,std::string(op.title)+" ("+type+")","Math",type,op.comparison?"bool":type,op.op);
+                if(type=="int"||type=="uint")operation("mod:"+type,"Remainder ("+type+")","Math",type,type,"%");
+                if(type!="uint")operation("negate:"+type,"Negate ("+type+")","Math",type,type,"-",true);
+                for(const std::string target:{"int","uint","float","double"})
+                    if(target!=type)operation("cast:"+type+":"+target,"Convert "+type+" to "+target,"Conversions",type,target,"cast",true);
+            }
+            operation("and:bool","And","Logic","bool","bool","&&");
+            operation("or:bool","Or","Logic","bool","bool","||");
+            operation("not:bool","Not","Logic","bool","bool","!",true);
+            operation("equal:bool","Equal (bool)","Logic","bool","bool","==");
+            operation("not_equal:bool","Not equal (bool)","Logic","bool","bool","!=");
+            operation("add:string","Concatenate","String","string","string","+");
+            operation("equal:string","Equal (string)","String","string","bool","==");
+            operation("not_equal:string","Not equal (string)","String","string","bool","!=");
             return result;
         }();
         return catalogue;

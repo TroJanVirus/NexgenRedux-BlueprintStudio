@@ -7,7 +7,7 @@
 using namespace nx;
 NX_TEST(nativeCatalogueContainsReferenceAPI)
 {
-    NX_EXPECT(blueprintCatalogue().size()==842);
+    NX_EXPECT(blueprintCatalogue().size()==905);
     const auto* save=blueprintSpec("api:Save:Save::set:string,string");
     NX_EXPECT(save&&save->inputs.size()==3&&save->outputs.size()==1);
     if(save&&save->inputs.size()==3)NX_EXPECT(save->inputs[0].type=="exec"&&save->inputs[2].type=="string");
@@ -231,4 +231,24 @@ NX_TEST(nativeCompilerDiagnosticsAndSourceMapLocateExactGraphNodes)
     const auto old=source;const auto count=map.size();
     NX_EXPECT(doc.clearInputValue(0,2,"key")&&!compileBlueprint(doc,source,error,&location,&map));
     NX_EXPECT(source==old&&map.size()==count&&location.node==2);
+}
+
+NX_TEST(nativeBuiltinOperatorsHaveConsistentTypedPinsAndCompile)
+{
+    std::string error,source;
+    size_t operators=0;
+    for(const auto& spec:blueprintCatalogue())
+    {
+        if(spec.operation.empty())continue;
+        ++operators;
+        NX_EXPECT(spec.pure&&spec.outputs.size()==1&&spec.outputs[0].type==spec.result);
+        BlueprintDocument doc;doc.create();
+        const auto setter="var:set:"+spec.result;
+        bool authored=doc.addNode(0,spec.id,0,0,error)&&doc.addNode(0,setter,0,0,error)&&
+            doc.connect(0,0,"then",2,"in",error)&&doc.connect(0,1,"result",2,"value",error);
+        for(const auto& p:spec.inputs)
+            authored=authored&&doc.setInputValue(0,1,p.name,p.type=="string"?"hello":p.type=="bool"?"true":"2",error);
+        NX_EXPECT(authored&&compileBlueprint(doc,source,error));
+    }
+    NX_EXPECT(operators==65);
 }

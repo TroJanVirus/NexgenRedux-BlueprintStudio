@@ -650,3 +650,23 @@ NX_TEST(nativeScriptCompileErrorRetainsSourceLine)
     NX_EXPECT(compile(r.host,"class Valid : Screen {}"));
     NX_EXPECT(r.host.lastError()[0]==0);
 }
+
+NX_TEST(nativeBuiltinOperatorsCompileThroughAngelScript)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    for(const auto& spec:blueprintCatalogue())
+    {
+        if(spec.operation.empty())continue;
+        BlueprintDocument doc;doc.create();std::string source,error;
+        bool authored=doc.addNode(0,spec.id,0,0,error)&&doc.addNode(0,"var:set:"+spec.result,0,0,error)&&
+            doc.connect(0,0,"then",2,"in",error)&&doc.connect(0,1,"result",2,"value",error);
+        for(const auto& p:spec.inputs)
+            authored=authored&&doc.setInputValue(0,1,p.name,p.type=="string"?"test":p.type=="bool"?"true":"2",error);
+        NX_EXPECT(authored&&compileBlueprint(doc,source,error));
+        if(authored&&!source.empty())
+        {
+            NX_EXPECT(compile(r.host,source.c_str()));
+            r.host.discard("blueprint");
+        }
+    }
+}

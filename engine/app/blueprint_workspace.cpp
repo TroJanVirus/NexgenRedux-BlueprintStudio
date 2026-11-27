@@ -505,8 +505,32 @@ namespace nx
             if(click&&in(x,y,kRight+8,kTop+80,kWidth-8,kTop+340))
             {
                 const size_t row=m_paletteFirst+static_cast<size_t>((y-kTop-80)/26);
-                if(row<m_palette.size()&&m_document.addNode(m_graph,m_palette[row]->id,(kRight-kLeft)*0.5f/m_zoom-m_x/m_zoom,(kBottom-kTop)*0.4f/m_zoom-m_y/m_zoom,m_status))
-                {m_diagnostic={};clearWire();rebuildPins();m_selection=m_document.graphs[m_graph].nodes.size()-1;m_status="Added "+m_palette[row]->title;}
+                if(row<m_palette.size())
+                {
+                    float px=((kRight-kLeft)*0.5f-m_x)/m_zoom,py=((kBottom-kTop)*0.4f-m_y)/m_zoom;
+                    const auto& nodes=m_document.graphs[m_graph].nodes;
+                    const auto* spec=m_palette[row];
+                    const float height=std::max(kNodeHeight,kPinStart+kPinStep*static_cast<float>(std::max(spec->inputs.size(),spec->outputs.size()))+8);
+                    for(size_t attempt=0;attempt<=nodes.size();++attempt)
+                    {
+                        bool overlap=false;
+                        float next=py;
+                        for(size_t i=0;i<nodes.size();++i)
+                        {
+                            const auto& n=nodes[i];
+                            if(px<n.x+kNodeWidth+12&&px+kNodeWidth+12>n.x&&py<n.y+m_rows[i].height+12&&py+height+12>n.y)
+                            {overlap=true;next=std::max(next,n.y+m_rows[i].height+16);}
+                        }
+                        if(!overlap)break;
+                        py=next;
+                    }
+                    if(m_document.addNode(m_graph,spec->id,px,py,m_status))
+                    {
+                        m_diagnostic={};clearWire();rebuildPins();m_selection=m_document.graphs[m_graph].nodes.size()-1;
+                        if(kTop+m_y+py*m_zoom>kBottom-40)m_y=(kBottom-kTop-height*m_zoom)*0.5f-py*m_zoom;
+                        m_status="Added "+spec->title;
+                    }
+                }
                 m_left=left;return;
             }
             if(click&&m_selection<m_document.graphs[m_graph].nodes.size())

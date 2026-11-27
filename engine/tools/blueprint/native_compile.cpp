@@ -118,11 +118,14 @@ namespace nx
                 {
                     return literalValue(node,n.kind.substr(8),n.ref,result);
                 }
-                if((n.kind=="add:float"||n.kind=="less:float")&&pin=="result")
+                if(!spec->operation.empty()&&pin=="result")
                 {
                     std::string a,b;
-                    if(!value(node,"a",a,depth)||!value(node,"b",b,depth))return false;
-                    result="("+a+(n.kind=="add:float"?" + ":" < ")+b+")";return true;
+                    if(!value(node,"a",a,depth))return false;
+                    if(spec->operation=="cast"){result=spec->result+"("+a+")";return true;}
+                    if(spec->inputs.size()==1){result="("+spec->operation+a+")";return true;}
+                    if(!value(node,"b",b,depth))return false;
+                    result="("+a+" "+spec->operation+" "+b+")";return true;
                 }
                 if(n.kind=="event:delta"&&graph.name=="update"&&pin=="value"){result="dt";return true;}
                 if(n.kind=="event:canvas"&&graph.name=="draw"&&pin=="value"){result="canvas";return true;}

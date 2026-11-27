@@ -14,6 +14,8 @@ namespace nx
         bool member=false,pure=false,hasOut=false;
         // name=in/out is encoded as a pin pair; defaults are trusted generated expressions.
         std::vector<BlueprintPin> arguments, defaults;
+        // Trusted builtin operator or cast from the native catalogue, never from document text.
+        std::string operation{};
     };
     const std::vector<BlueprintNodeSpec>& blueprintCatalogue();
     const BlueprintNodeSpec* blueprintSpec(const std::string& kind);
