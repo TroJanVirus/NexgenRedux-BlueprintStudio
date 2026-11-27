@@ -612,7 +612,7 @@ namespace nx
             std::string id;
             if(m_document.createVisualAsset(x<440?"actor":"widget",id,m_status))
             {
-                m_visualSelection=id;m_visualComponent=m_visualComponentFirst=0;m_visualInspector=false;m_visualText.clear();m_visualFirst=m_document.visualAssets().size()>9?m_document.visualAssets().size()-9:0;
+                m_visualSelection=id;m_visualComponent=m_visualComponentFirst=0;m_visualInspector=false;m_visualPhysics=false;m_visualText.clear();m_visualFirst=m_document.visualAssets().size()>9?m_document.visualAssets().size()-9:0;
                 m_status="Created reusable definition. Ctrl+S saves the project.";
             }
             return;
@@ -620,7 +620,7 @@ namespace nx
         if(in(x,y,280,198,610,522))
         {
             const size_t row=m_visualFirst+static_cast<size_t>((y-198)/36);
-            if(row<assets.size()){m_visualSelection=assets[row].id;m_visualComponent=m_visualComponentFirst=0;m_visualInspector=false;m_visualText.clear();m_status="Selected "+assets[row].title;}
+            if(row<assets.size()){m_visualSelection=assets[row].id;m_visualComponent=m_visualComponentFirst=0;m_visualInspector=false;m_visualPhysics=false;m_visualText.clear();m_status="Selected "+assets[row].title;}
             return;
         }
         const auto* selected=m_document.visualAsset(m_visualSelection);
@@ -635,11 +635,21 @@ namespace nx
         }
         if(selected->kind=="actor")
         {
-            if(in(x,y,630,232,1000,266)){m_visualInspector=!m_visualInspector;return;}
+            if(in(x,y,630,232,1000,266)){m_visualInspector=!m_visualInspector;m_visualPhysics=false;return;}
             if(m_visualInspector)
             {
+                if(in(x,y,630,m_visualPhysics?548:558,1000,m_visualPhysics?581:591)){m_visualPhysics=!m_visualPhysics;return;}
                 const char* prop=nullptr;
-                if(in(x,y,630,277,810,310))prop="name";
+                if(m_visualPhysics)
+                {
+                    if(in(x,y,630,277,810,310))prop="collision";
+                    else if(in(x,y,820,277,1000,310))prop="mass";
+                    else if(in(x,y,630,318,810,351))prop="friction";
+                    else if(in(x,y,820,318,1000,351))prop="bounce";
+                    else if(in(x,y,630,359,810,392))prop="gravity";
+                    else if(in(x,y,820,359,1000,392))prop="animate";
+                }
+                else if(in(x,y,630,277,810,310))prop="name";
                 else if(in(x,y,820,277,1000,310))prop="place";
                 else if(in(x,y,630,318,810,351))prop="angles";
                 else if(in(x,y,820,318,1000,351))prop="size";
@@ -663,7 +673,19 @@ namespace nx
                 }
                 else
                 {
-                    m_visualText=v.text();
+                    if(m_visualProperty=="collision")
+                    {
+                        m_visualText="none";
+                        for(const char* key:{"cube","sphere","capsule"})
+                        {
+                            const auto cv=item[key];if(!cv.exists())continue;
+                            m_visualText=std::string(std::string(key)=="cube"?"box":key)+":";
+                            const u32 count=std::string(key)=="cube"?3:std::string(key)=="sphere"?1:2;
+                            for(u32 i=0;i<count;++i){if(i)m_visualText+=",";m_visualText+=std::to_string(cv.isArray()?cv[i].number(1):cv.number(1));}
+                            break;
+                        }
+                    }
+                    else m_visualText=v.isNumber()?std::to_string(v.exact()):v.text();
                     if(m_visualProperty=="behaviour"&&m_visualText.rfind("BP_Behaviour_",0)==0)m_visualText.erase(0,13);
                 }
                 m_visualInput=3;input.setTyping(true);m_status="Edit property; Enter applies, Escape cancels.";return;
@@ -773,6 +795,19 @@ namespace nx
                 button(630,232,370,m_visualInspector?"Back to component hierarchy":"Edit selected component properties");
                 if(m_visualInspector)
                 {
+                    if(m_visualPhysics)
+                    {
+                        button(630,277,180,"Collider");button(820,277,180,"Mass");
+                        button(630,318,180,"Friction");button(820,318,180,"Bounce");
+                        button(630,359,180,"Gravity");button(820,359,180,"Animation");
+                        c.text(*m_font,"box:X,Y,Z or sphere:radius",630,407,muted);
+                        c.text(*m_font,"capsule:radius,height or none",630,432,muted);
+                        c.text(*m_font,"Blank physics values use native defaults.",630,467,muted);
+                        c.text(*m_font,"Animation: model clip name (looped).",630,492,muted);
+                        button(630,548,370,"Transform and model properties");
+                    }
+                    else
+                    {
                     button(630,277,180,"Name");button(820,277,180,"Position XYZ");
                     button(630,318,180,"Rotation XYZ");button(820,318,180,"Size XYZ");
                     button(630,359,180,"Model");button(820,359,180,"Behaviour");
@@ -795,7 +830,9 @@ namespace nx
                         const auto model=std::string("Model: ")+item["model"].text("(none)");
                         const auto behaviour=std::string("Behaviour: ")+item["behaviour"].text("(none)");
                         c.clip(630,510,370,25);c.text(*m_font,model.c_str(),630,512,muted);c.noClip();
-                        c.clip(630,535,370,25);c.text(*m_font,behaviour.c_str(),630,537,muted);c.noClip();
+                        c.clip(630,535,370,20);c.text(*m_font,behaviour.c_str(),630,537,muted);c.noClip();
+                    }
+                    button(630,558,370,"Physics and animation");
                     }
                 }
                 else

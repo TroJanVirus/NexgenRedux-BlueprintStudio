@@ -2318,3 +2318,30 @@ NX_TEST(nativeActorComponentsReceiveIndependentBlueprintBehaviours)
     NX_EXPECT(attached.size()==2);
     if(attached.size()==2)NX_EXPECT(attached[0]!=attached[1]);
 }
+
+NX_TEST(nativeActorPhysicsAndInstanceOverridesRun)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    BlueprintDocument doc;doc.create();std::string error,id,source;
+    const bool ok=doc.createVisualAsset("actor",id,error)&&
+        doc.setVisualActorProperty(id,0,"collision","box:1,1,1",error)&&
+        doc.setVisualActorProperty(id,0,"mass","2",error)&&
+        doc.setVisualActorProperty(id,0,"gravity","0",error)&&
+        doc.placeVisualActor("Screen",id,"0,0,0",error)&&doc.placeVisualActor("Screen",id,"5,0,0",error)&&
+        doc.setInputValue(0,1,"instanceName","First",error)&&doc.setInputValue(0,1,"sizeOverride","2,2,2",error)&&
+        doc.setVisualActorProperty(id,0,"size","3,3,3",error)&&compileBlueprint(doc,source,error);
+    NX_EXPECT(ok);if(!ok)return;
+    r.platform.files["showcase/main/screen.json"]="{\"title\":\"Actor overrides\"}";
+    r.platform.files["showcase/main/main.as"]=source;
+    if(!r.screens.init(r.services,"showcase","main")){NX_EXPECT(false);return;}
+    r.step(3);NX_EXPECT(!r.screens.failed());
+    if(!r.services.world){NX_EXPECT(false);return;}
+    auto& world=*r.services.world;
+    const auto first=world.findNamed("First"),second=world.findNamed("Root");
+    NX_EXPECT(first&&second&&first!=second);
+    const auto* one=world.space().getSpatial(first);const auto* two=world.space().getSpatial(second);
+    NX_EXPECT(one&&two&&fabsf(one->size.x-2)<0.01f&&fabsf(two->size.x-3)<0.01f);
+    const auto* body=world.space().getBody(first);const auto* collider=world.space().getCollider(first);
+    NX_EXPECT(body&&fabsf(body->mass-2)<0.01f&&body->gravity==0);
+    NX_EXPECT(collider&&collider->shape==Shape3::Box);
+}

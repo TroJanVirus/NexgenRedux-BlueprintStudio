@@ -292,10 +292,11 @@ namespace nx
                 }
                 if(n.kind=="actor:spawn-asset")
                 {
-                    if(incoming(to,"id"))return fail(to,"Linked actor ID must be a constant asset reference.");
+                    for(const char* pin:{"id","instanceName","rotationOverride","sizeOverride"})
+                        if(incoming(to,pin))return fail(to,"Linked actor IDs and instance overrides must be constant authoring values.");
                     const auto it=std::find_if(n.values.begin(),n.values.end(),[](const BlueprintDocument::InputValue& v){return v.pin=="id";});
                     std::string json,why,sourceJson,place;
-                    if(it==n.values.end()||!document.visualActorForOwner(it->value,graph.owner,json,why))
+                    if(it==n.values.end()||!document.visualActorInstance(it->value,graph.owner,n.values,json,why))
                         return fail(to,why.empty()?"Select a linked actor asset.":why);
                     if(!literalValue(to,"string",json,sourceJson)||!value(to,"place",place,0))return false;
                     source+=pad+"Entity@ bp_value_"+std::to_string(to)+" = Space::makeActor(Json("+sourceJson+"), "+place+");\n";

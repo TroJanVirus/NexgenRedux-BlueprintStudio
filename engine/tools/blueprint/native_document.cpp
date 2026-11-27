@@ -33,7 +33,7 @@ namespace nx
             {"camera:orbit-timed","Orbit camera around entity (timed)","Space / Camera","in:exec|name:string|radius:float|height:float|duration:float|turns:float|angle:float|loop:bool|reset:bool|dt:float","then:exec|progress:float|elapsed:float|finished:bool|found:bool","","","","","void","","","name:\"Target\"|radius:float(6)|height:float(2)|duration:float(8)|turns:float(1)|angle:float(60)|loop:false|reset:false|dt:dt"},
             {"render:space","Render 3D scene","Space / Rendering","in:exec","then:exec"},
             {"ui:load-asset","Load linked widget page","Ui / Designer","in:exec|id:string","then:exec"},
-            {"actor:spawn-asset","Spawn linked actor","Space / Blueprint Classes","in:exec|id:string|place:Vec3","then:exec|result:Entity@","","","","","Entity@","","","place:Vec3(0, 0, 0)"},
+            {"actor:spawn-asset","Spawn linked actor","Space / Blueprint Classes","in:exec|id:string|place:Vec3|instanceName:string|rotationOverride:string|sizeOverride:string","then:exec|result:Entity@","","","","","Entity@","","","place:Vec3(0, 0, 0)|instanceName:\"\"|rotationOverride:\"\"|sizeOverride:\"\""},
             {"math:orbit-position","Orbit position (turns)","Math / Camera","center:Vec3|radius:float|height:float|turns:float","result:Vec3","","","","pure","Vec3","","","center:Vec3(0, 0, 0)|radius:float(6)|height:float(2)|turns:float(0)"},
             {"spawn:box","Spawn 3D box","Space / Primitives","in:exec|name:string|place:Vec3|size:Vec3|color:Color","then:exec|result:Entity@","","","","","Entity@","","","name:\"Box\"|place:Vec3(0, 0.5, 0)|size:Vec3(1, 1, 1)|color:Color(0.92, 0.35, 0.12, 1)"},
             {"spawn:plane","Spawn 3D floor plane","Space / Primitives","in:exec|name:string|place:Vec3|size:Vec3|color:Color","then:exec|result:Entity@","","","","","Entity@","","","name:\"Floor\"|place:Vec3(0, 0, 0)|size:Vec3(20, 1, 20)|color:Color(0.4, 0.46, 0.52, 1)"},
@@ -741,6 +741,48 @@ namespace nx
         }
         json.swap(source);error.clear();return true;
     }
+    namespace
+    {
+        bool actorTransform(JsonValue& item,const std::string& property,const std::string& value,std::string& error)
+        {
+            std::vector<std::string> xyz;
+            if(!blueprintInputComponents("Vec3",value,xyz)){error="Enter three finite numbers separated by commas.";return false;}
+            double values[3]={};
+            for(size_t i=0;i<3;++i)
+            {
+                values[i]=std::strtod(xyz[i].c_str(),nullptr);
+                if(!std::isfinite(values[i])||std::abs(values[i])>1000000||(property=="size"&&values[i]<=0))
+                {error="Transform outside supported range; size must be positive.";return false;}
+            }
+            auto* field=item.put(property);if(!field)return false;field->setArray();
+            for(double n:values){auto* v=field->add();if(!v)return false;v->setNumber(n);}
+            return true;
+        }
+        bool actorName(JsonValue& item,const std::string& value,std::string& error)
+        {
+            if(value.empty()||value.size()>23||std::any_of(value.begin(),value.end(),[](unsigned char ch){return ch<32||ch==127;}))
+            {error="Use a nonempty component name of at most 23 UTF-8 bytes.";return false;}
+            return text(item,"name",value);
+        }
+    }
+    bool BlueprintDocument::visualActorInstance(const std::string& id,const std::string& owner,const std::vector<InputValue>& overrides,std::string& json,std::string& error)const
+    {
+        std::string source;if(!visualActorForOwner(id,owner,source,error))return false;
+        JsonValue root;if(!root.parse(source.data(),source.size(),error))return false;
+        auto* item=root.find("entities")->at(0);
+        bool edited=false;
+        for(const auto& v:overrides)
+        {
+            if(v.value.empty())continue; // Empty means inherit, not reset to zero.
+            if(v.pin=="instanceName"){if(!actorName(*item,v.value,error))return false;edited=true;}
+            else if(v.pin=="rotationOverride"||v.pin=="sizeOverride")
+            {
+                if(!actorTransform(*item,v.pin=="rotationOverride"?"angles":"size",v.value,error))return false;
+                edited=true;
+            }
+        }
+        json=edited?root.write(true):source;error.clear();return true;
+    }
     bool BlueprintDocument::setVisualActorProperty(const std::string& id,size_t component,const std::string& property,const std::string& value,std::string& error)
     {
         std::string source;if(!visualActorSource(id,source,error))return false;
@@ -753,23 +795,80 @@ namespace nx
             auto* item=entities->at(static_cast<unsigned>(component));
             if(property=="place"||property=="angles"||property=="size")
             {
-                std::vector<std::string> xyz;
-                if(!blueprintInputComponents("Vec3",value,xyz)){error="Enter three finite numbers separated by commas.";return false;}
-                double values[3]={};
-                for(size_t i=0;i<3;++i)
-                {
-                    values[i]=std::strtod(xyz[i].c_str(),nullptr);
-                    if(!std::isfinite(values[i])||std::abs(values[i])>1000000||(property=="size"&&values[i]<=0))
-                    {error="Transform outside supported range; size must be positive.";return false;}
-                }
-                auto* field=item->put(property);if(!field)return false;field->setArray();
-                for(double n:values){auto* v=field->add();if(!v)return false;v->setNumber(n);}
+                if(!actorTransform(*item,property,value,error))return false;
             }
             else if(property=="name")
             {
-                if(value.empty()||value.size()>23||std::any_of(value.begin(),value.end(),[](unsigned char ch){return ch<32||ch==127;}))
-                {error="Use a nonempty component name of at most 23 UTF-8 bytes.";return false;}
-                if(!text(*item,"name",value))return false;
+                if(!actorName(*item,value,error))return false;
+            }
+            else if(property=="mass"||property=="friction"||property=="bounce"||property=="gravity"||property=="drag")
+            {
+                if(value.empty())item->remove(property.c_str());
+                else
+                {
+                    if(!literal("literal:float",value)){error="Enter a finite number or leave blank to inherit the engine default.";return false;}
+                    const double n=std::strtod(value.c_str(),nullptr);
+                    if(n<0||n>(property=="bounce"?1:1000000)){error="Physics property outside supported range.";return false;}
+                    if(!number(*item,property.c_str(),n))return false;
+                }
+            }
+            else if(property=="animate")
+            {
+                if(value.empty())item->remove("animate");
+                else
+                {
+                    if(!item->find("model")){error="Assign a model before selecting a startup animation.";return false;}
+                    if(value.size()>64||std::any_of(value.begin(),value.end(),[](unsigned char ch){return ch<32||ch==127;}))
+                    {error="Invalid animation name.";return false;}
+                    if(!text(*item,"animate",value))return false;
+                }
+            }
+            else if(property=="collision")
+            {
+                // Exactly one native collider. The dimensions are in engine units.
+                std::string shape=value;
+                const auto colon=value.find(':');
+                if(colon!=std::string::npos)shape=value.substr(0,colon);
+                std::vector<std::string> xyz;
+                if(shape!="none"&&shape!="box"&&shape!="sphere"&&shape!="capsule")
+                {error="Use none, box:X,Y,Z, sphere:radius or capsule:radius,height.";return false;}
+                std::string raw=colon==std::string::npos?"":value.substr(colon+1);
+                if(shape=="box")
+                {
+                    if(!blueprintInputComponents("Vec3",raw,xyz)){error="Box requires X,Y,Z dimensions.";return false;}
+                }
+                else if(shape=="sphere")
+                {
+                    if(!literal("literal:float",raw)){error="Sphere requires a radius.";return false;}
+                    xyz={raw};
+                }
+                else if(shape=="capsule")
+                {
+                    const auto comma=raw.find(',');
+                    if(comma==std::string::npos||!literal("literal:float",raw.substr(0,comma))||!literal("literal:float",raw.substr(comma+1)))
+                    {error="Capsule requires radius,height.";return false;}
+                    xyz={raw.substr(0,comma),raw.substr(comma+1)};
+                }
+                else if(colon!=std::string::npos){error="Use none without dimensions.";return false;}
+                std::vector<double> dimensions;
+                for(const auto& axis:xyz)
+                {
+                    const double n=std::strtod(axis.c_str(),nullptr);
+                    if(n<=0||n>1000000){error="Collider dimensions must be positive.";return false;}
+                    dimensions.push_back(n);
+                }
+                if(shape=="capsule"&&dimensions[1]<2*dimensions[0]){error="Capsule height must be at least twice its radius.";return false;}
+                for(const char* key:{"cube","sphere","capsule","exact"})item->remove(key);
+                if(shape!="none")
+                {
+                    auto* field=item->put(shape=="box"?"cube":shape);if(!field)return false;
+                    if(shape=="sphere")field->setNumber(dimensions[0]);
+                    else
+                    {
+                        field->setArray();
+                        for(double n:dimensions){auto* v=field->add();if(!v)return false;v->setNumber(n);}
+                    }
+                }
             }
             else if(property=="behaviour")
             {
@@ -784,7 +883,7 @@ namespace nx
             }
             else if(property=="model")
             {
-                if(value.empty())item->remove("model");
+                if(value.empty()){item->remove("model");item->remove("animate");}
                 else
                 {
                     size_t at=value.rfind("asset:",0)==0?6:value.rfind("global:",0)==0?7:0;
@@ -1518,6 +1617,11 @@ namespace nx
         const auto* input=nodeSpec(graphs[graph],n,spec)?findPin(spec.inputs,pin):nullptr;
         if(!input||!inputLiteral(input->type,value))
         {error="Invalid value for input "+pin+".";return false;}
+        if(n.kind=="actor:spawn-asset"&&!value.empty()&&(pin=="instanceName"||pin=="rotationOverride"||pin=="sizeOverride"))
+        {
+            JsonValue checked;
+            if(pin=="instanceName"?!actorName(checked,value,error):!actorTransform(checked,pin=="rotationOverride"?"angles":"size",value,error))return false;
+        }
         const auto it=std::find_if(n.values.begin(),n.values.end(),[&](const InputValue& v){return v.pin==pin;});
         if(it!=n.values.end()&&it->value==value){error.clear();return true;}
         record(graph);

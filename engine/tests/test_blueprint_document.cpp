@@ -1364,3 +1364,36 @@ NX_TEST(nativeActorInspectorEditsSharedComponentProperties)
     NX_EXPECT(copy.setVisualActorProperty(id,1,"behaviour","",error)&&copy.removeBehaviour("Movement",error));
     NX_EXPECT(copy.undo()&&copy.undo()&&!copy.removeBehaviour("Movement",error));
 }
+
+NX_TEST(nativeActorPhysicsAndRootInstanceOverrides)
+{
+    BlueprintDocument doc;doc.create();std::string error,id,source,bytes;
+    NX_EXPECT(doc.createVisualAsset("actor",id,error));
+    NX_EXPECT(doc.setVisualActorProperty(id,0,"collision","capsule:0.5,2",error));
+    NX_EXPECT(doc.setVisualActorProperty(id,0,"mass","2",error));
+    NX_EXPECT(doc.setVisualActorProperty(id,0,"gravity","0",error));
+    NX_EXPECT(doc.setVisualActorProperty(id,0,"friction","0.5",error));
+    NX_EXPECT(!doc.setVisualActorProperty(id,0,"collision","capsule:2,1",error));
+    NX_EXPECT(!doc.setVisualActorProperty(id,0,"bounce","2",error));
+    NX_EXPECT(doc.setVisualActorProperty(id,0,"model","global:models/player.glb",error));
+    NX_EXPECT(doc.setVisualActorProperty(id,0,"animate","idle",error));
+    NX_EXPECT(doc.placeVisualActor("Screen",id,"0,0,0",error));
+    NX_EXPECT(doc.placeVisualActor("Screen",id,"4,0,0",error));
+    NX_EXPECT(doc.setInputValue(0,1,"instanceName","First",error));
+    NX_EXPECT(doc.setInputValue(0,1,"sizeOverride","2,2,2",error));
+    NX_EXPECT(!doc.setInputValue(0,1,"sizeOverride","0,1,1",error));
+    NX_EXPECT(doc.setVisualActorProperty(id,0,"size","3,3,3",error));
+    std::string first,second;
+    NX_EXPECT(doc.visualActorInstance(id,"Screen",doc.graphs[0].nodes[1].values,first,error));
+    NX_EXPECT(doc.visualActorInstance(id,"Screen",doc.graphs[0].nodes[2].values,second,error));
+    NX_EXPECT(first.find("First")!=std::string::npos&&second.find("First")==std::string::npos);
+    NX_EXPECT(first!=second);
+    NX_EXPECT(doc.serialize(bytes,error));
+    BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error));
+    NX_EXPECT(copy.clearInputValue(0,1,"sizeOverride"));
+    NX_EXPECT(copy.clearInputValue(0,1,"instanceName"));
+    NX_EXPECT(copy.visualActorInstance(id,"Screen",copy.graphs[0].nodes[1].values,first,error)&&first==second);
+    NX_EXPECT(copy.setVisualActorProperty(id,0,"collision","none",error));
+    NX_EXPECT(copy.setVisualActorProperty(id,0,"model","",error));
+    NX_EXPECT(copy.visualActorSource(id,source,error)&&source.find("capsule")==std::string::npos&&source.find("animate")==std::string::npos);
+}
