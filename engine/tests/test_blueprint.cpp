@@ -1610,3 +1610,59 @@ NX_TEST(nativeWorkspaceArchivesDamagedRecoveryBeforeReplacingIt)
     studio.close(r.services);
 }
 #endif
+
+#ifdef NX_DESKTOP_BLUEPRINT
+NX_TEST(nativeWorkspacePreservesExternallyReplacedRecoveryAcrossEditAndSave)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    r.platform.workspaceFiles=true;
+    r.platform.files["showcase/main/screen.json"]="{\"title\":\"Home\"}";
+    r.platform.files["showcase/main/main.as"]="class Home : Screen {}";
+    if(!r.screens.init(r.services,"showcase","main")){NX_EXPECT(false);return;}
+    r.step(3);r.screens.setDevelopmentPaused(true);
+    const std::string path="own/blueprint-recovery.bp.json";
+    r.platform.files["own/original.as"]="class Example : Screen { void onEnter(){ Save::set(\"a\",\"b\"); } }";
+    BlueprintWorkspace studio;studio.open(r.services);
+    NX_EXPECT(studio.active());if(!studio.active())return;
+    auto& state=r.platform.state;state.hasMouse=true;
+    auto frame=[&]()
+    {
+        r.assets.finish();r.input.update(state,1.0f/60);r.platform.now+=1.0/60;
+        studio.update(r.services);
+        r.device->beginFrame({});r.canvas.begin();studio.draw(r.canvas);r.canvas.end();r.device->endFrame();
+    };
+    auto click=[&](float x,float y)
+    {
+        state.mouseX=x;state.mouseY=y;state.mouseButtons[0]=true;frame();
+        state.mouseButtons[0]=false;frame();
+    };
+    auto type=[&](const char* value)
+    {
+        for(const char* p=value;*p;++p){state.type(static_cast<u32>(*p));frame();}
+        state.type(13);frame();
+    };
+    frame();r.platform.dropped="original.as";frame();
+    NX_EXPECT(r.platform.files.count(path));
+    BlueprintDocument external;external.create();external.name="External Draft";
+    std::string other,error;
+    NX_EXPECT(external.serialize(other,error));
+    r.platform.files[path]=other;
+    click(1100,130);type("literal:int");click(1100,167);
+    studio.checkpoint(r.services,true);
+    size_t archives=0;
+    for(const auto& item:r.platform.files)
+        if(item.first.rfind("own/blueprint-recovery-conflict-",0)==0)
+        {++archives;NX_EXPECT(item.second==other);}
+    NX_EXPECT(archives==1&&r.platform.files[path]!=other);
+    BlueprintDocument current;
+    const auto& bytes=r.platform.files[path];
+    NX_EXPECT(current.load(bytes.data(),bytes.size(),error)&&current.graphs[0].nodes.size()==3);
+    external.name="Another Draft";NX_EXPECT(external.serialize(other,error));
+    r.platform.files[path]=other;
+    click(900,18);type("Conflict Save");
+    NX_EXPECT(r.platform.files.count("own/blueprint-project-Conflict Save.bp.json"));
+    NX_EXPECT(r.platform.files[path]==other);
+    studio.close(r.services);
+    NX_EXPECT(r.platform.files[path]==other);
+}
+#endif

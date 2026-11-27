@@ -93,6 +93,7 @@ namespace nx
         bool m_playing=false;
         bool m_checkpointPresent=false;
         bool m_protectDamagedRecovery=false;
+        std::string m_checkpointBytes; // last recovery bytes read or verified by this workspace
         size_t m_checkpointRevision=static_cast<size_t>(-1);
         double m_nextCheckpoint=0;
     };

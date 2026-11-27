@@ -110,6 +110,9 @@ namespace nx
             const bool readable=exists&&s.platform->readFile("own/blueprint-recovery.bp.json",recovery,MemTag::General);
             const bool found=exists&&(!readable||recovery.size>0);
             m_protectDamagedRecovery=false;
+            m_checkpointBytes.clear();
+            if(readable&&recovery.size)
+                m_checkpointBytes.assign(reinterpret_cast<const char*>(recovery.data),recovery.size);
             if(readable&&recovery.size>0&&m_document.load(reinterpret_cast<const char*>(recovery.data),recovery.size,m_status))
             {
                 m_document.markRecovered();m_checkpointPresent=true;m_checkpointRevision=m_document.revision();
@@ -619,9 +622,23 @@ namespace nx
         {
             if(m_checkpointPresent)
             {
-                // Empty tombstone only after a verified manual save or undo to saved state.
-                if(s.platform->writeFile(path,"",0))
-                {m_checkpointPresent=false;m_checkpointRevision=static_cast<size_t>(-1);}
+                // Never clear a newer recovery draft written outside this workspace.
+                FileData current;
+                const bool exists=s.platform->fileTime(path)!=0;
+                const bool readable=!exists||s.platform->readFile(path,current,MemTag::General);
+                const bool same=readable&&current.size==m_checkpointBytes.size()&&
+                    (!current.size||std::memcmp(current.data,m_checkpointBytes.data(),current.size)==0);
+                if(!exists||(!m_protectDamagedRecovery&&same&&s.platform->writeFile(path,"",0)))
+                {
+                    m_checkpointPresent=false;m_checkpointRevision=static_cast<size_t>(-1);
+                    m_checkpointBytes.clear();m_protectDamagedRecovery=false;
+                }
+                else if(!same||m_protectDamagedRecovery)
+                {
+                    m_checkpointPresent=false;m_checkpointRevision=static_cast<size_t>(-1);
+                    m_protectDamagedRecovery=true;
+                    NX_WARN("Blueprint Studio: recovery changed outside workspace; original retained");
+                }
                 else NX_WARN("Blueprint Studio: could not clear recovery file");
             }
             return;
@@ -630,18 +647,24 @@ namespace nx
         std::string output,error;
         if(!m_document.serialize(output,error))
         {NX_WARN("Blueprint Studio: recovery serialization failed: %s",error.c_str());return;}
-        if(m_protectDamagedRecovery)
+        // Check the last known bytes before replacing a shared recovery filename.
+        // This detects sequential external changes; it is not a cross-process lock.
+        FileData damaged;
+        const bool exists=s.platform->fileTime(path)!=0;
+        if(exists&&!s.platform->readFile(path,damaged,MemTag::General))
+        {NX_WARN("Blueprint Studio: recovery cannot be read; autosave deferred");return;}
+        const bool changed=exists&&(damaged.size!=m_checkpointBytes.size()||
+            (damaged.size&&std::memcmp(damaged.data,m_checkpointBytes.data(),damaged.size)!=0));
+        if(exists&&damaged.size&&(m_protectDamagedRecovery||changed))
         {
-            // Do not silently destroy the only copy of an unreadable or damaged draft.
-            // A failed archive must leave the original untouched and retry later.
-            FileData damaged;
-            if(!s.platform->readFile(path,damaged,MemTag::General))
-            {NX_WARN("Blueprint Studio: damaged recovery cannot be archived; autosave deferred");return;}
+            // Preserve the previous bytes before any overwrite, including a valid
+            // draft from another workspace. Verify the archive before continuing.
             static unsigned sequence=0;
             std::string archive;
             for(unsigned attempt=0;attempt<100;++attempt)
             {
-                const auto candidate="own/blueprint-recovery-damaged-"+std::to_string(static_cast<long long>(std::time(nullptr)))+"-"+std::to_string(++sequence)+".bak";
+                const auto candidate=std::string("own/blueprint-recovery-")+(m_protectDamagedRecovery?"damaged-":"conflict-")+
+                    std::to_string(static_cast<long long>(std::time(nullptr)))+"-"+std::to_string(++sequence)+".bak";
                 if(!s.platform->fileTime(candidate.c_str())){archive=candidate;break;}
             }
             FileData verified;
@@ -649,16 +672,22 @@ namespace nx
                 !s.platform->readFile(archive.c_str(),verified,MemTag::General)||verified.size!=damaged.size||
                 (damaged.size&&std::memcmp(verified.data,damaged.data,damaged.size)!=0))
             {NX_WARN("Blueprint Studio: damaged recovery archive failed; original retained");return;}
-            m_protectDamagedRecovery=false;
-            NX_WARN("Blueprint Studio: damaged recovery archived at %s",archive.c_str());
+            NX_WARN("Blueprint Studio: previous recovery archived at %s",archive.c_str());
         }
+        m_protectDamagedRecovery=false;
+        m_checkpointBytes.clear();
+        if(damaged.size)m_checkpointBytes.assign(reinterpret_cast<const char*>(damaged.data),damaged.size);
         if(!s.platform->writeFile(path,output.data(),output.size()))
         {NX_WARN("Blueprint Studio: recovery checkpoint failed: %s",error.c_str());return;}
         FileData check;
         if(!s.platform->readFile(path,check,MemTag::General)||check.size!=output.size()||
             std::memcmp(check.data,output.data(),output.size())!=0)
-        {NX_WARN("Blueprint Studio: recovery checkpoint verification failed");return;}
+        {
+            m_protectDamagedRecovery=true;m_checkpointRevision=static_cast<size_t>(-1);
+            NX_WARN("Blueprint Studio: recovery checkpoint verification failed");return;
+        }
         m_checkpointPresent=true;m_checkpointRevision=m_document.revision();
+        m_checkpointBytes=std::move(output);
     }
 
     void BlueprintWorkspace::recover(Services& s)
