@@ -184,7 +184,7 @@ node test_node_library.js
 
 No npm packages are needed. To run the optional browser tests, install Python Playwright and Chromium, then run `python test_browser.py` and `python test_layout_browser.py` and `python test_workspace_browser.py` and `python test_polish_browser.py` and `python test_organise_browser.py` and `python test_game_tools_browser.py` and `python test_playtest_browser.py`, `python test_ui_design_browser.py` , `python test_shared_behaviours_browser.py` and `python test_shared_media_browser.py`, `python test_scene_viewport_browser.py` and `python test_native_scene_browser.py` and `python test_profile_browser.py`, `python test_node_library_browser.py` and `python test_graph_performance_browser.py` and `python test_command_bar_browser.py`. Set `CHROMIUM_PATH` if Chromium is installed outside Playwright's usual location. The recovery test uses real browser storage by default; `BLUEPRINT_MOCK_STORAGE=1` checks its UI with a simulated storage backend on restricted test hosts. Actual storage across a browser restart has not been verified on this branch.
 
-The 720 engine API definitions are based on Nexgen's script reference. The compiler checks data types and graph structure; the native engine compiler checks the resulting AngelScript. Neither check guarantees that all assets are present or that a game performs well on real hardware.
+The 804 engine API definitions are based on Nexgen's script reference. The compiler checks data types and graph structure; the native engine compiler checks the resulting AngelScript. Neither check guarantees that all assets are present or that a game performs well on real hardware.
 
 ## Build a scene
 
@@ -213,3 +213,9 @@ Generated scripts include the original `global:scene.as` and need the Nexgen med
 Studio uses the original editor for visual 3D editing; the native launch/import workflow has been tested with a substitute desktop process, not a full rendered Nexgen release. Timelines cannot yet be controlled from other graphs. Dispatchers work within one object, and there is no automatic network replication or remote procedure call system. Graph debugging uses Nexgen's existing debugger and currently highlights the active graph only. There is no skeletal blend-tree editor.
 
 Linux headless tests and Chromium tests have been run. Windows, macOS, RXDK builds, graphical rendering and real Xbox gameplay are still unverified for this branch. No rebuilt XBE is included.
+
+### Platform-specific nodes
+
+The Xbox, Xbox 360, Xbox One, Windows, Mac and Linux categories expose Nexgen's own platform APIs, including temperature readings, console controls and desktop integration. Use the corresponding **Get available** node before platform-only operations. On other platforms, the original engine supplies the documented fallback values or no-op behaviour. These calls are not emulated by Studio.
+
+Studio rejects a connection that would create an execution or data cycle before changing the graph. Use a loop node for repeating actions and a variable for retaining a previous value.

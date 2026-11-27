@@ -1,6 +1,12 @@
 'use strict';
 const fs = require('node:fs'), path = require('node:path'), B = require('./blueprint');
 const out = path.join(__dirname, 'examples');
+const checking = process.argv.includes('--check');
+function write(file, content) {
+    if (!checking) return fs.writeFileSync(file, content);
+    if (!fs.existsSync(file) || fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n') !== content)
+        throw Error('Generated file is out of date: ' + path.relative(__dirname, file) + '. Run make_examples.js.');
+}
 const E = (name, nodes, links) => ({ kind: 'event', name, nodes, links });
 const F = (name, params, returns, nodes, links) => ({ kind: 'function', name, params, returns, nodes, links });
 const N = (id, kind, x, y, defaults = {}, extra = {}) => ({ id, kind, x, y, defaults, ...extra });
@@ -23,7 +29,7 @@ const advanced = { version: 1, name: 'BP_Advanced', kind: 'Screen', variables: [
             N('entry', 'entry', 20, 60), A('spawn', spawn, 280, 60, { position: [100, 100] }), N('attach', 'attach', 540, 60, {}, { ref: 'BP_Spinner' }), N('array', 'arrayNew', 800, 60, { length: 1 }, { type: 'array<int>@' }), N('store', 'set', 1060, 60, {}, { ref: 'numbers' }), N('set', 'arraySet', 1320, 60, { index: 0, value: 7 }, { type: 'array<int>@' }), N('delay', 'delay', 1580, 60, { seconds: 0.05 }), N('get', 'get', 1300, 280, {}, { ref: 'numbers' }), N('read', 'arrayGet', 1560, 280, { index: 0 }, { type: 'array<int>@' }), N('str', 'toString', 1820, 280, {}, { type: 'int' }), A('save', save, 1840, 60, { key: 'bp_delayed' })
         ], [X('entry', 'spawn'), X('spawn', 'attach'), L('spawn', 'result', 'attach', 'target'), X('attach', 'array'), X('array', 'store'), L('array', 'result', 'store', 'value'), X('store', 'set'), L('store', 'value', 'set', 'target'), X('set', 'delay'), X('delay', 'save'), L('get', 'value', 'read', 'target'), L('read', 'result', 'str', 'value'), L('str', 'result', 'save', 'value')])] };
 function emit(file, d) { const r = B.compile(d); if (!r.ok)
-    throw Error(JSON.stringify(r.diagnostics)); fs.writeFileSync(path.join(out, file + '.bp.json'), JSON.stringify(d, null, 2) + '\n'); fs.writeFileSync(path.join(out, file + '.as'), r.source); return r.source; }
+    throw Error(JSON.stringify(r.diagnostics)); write(path.join(out, file + '.bp.json'), JSON.stringify(d, null, 2) + '\n'); write(path.join(out, file + '.as'), r.source); return r.source; }
 const gameplay = {version:1,name:'BP_Gameplay',kind:'Screen',variables:[{name:'total',type:'int',default:0}],dispatchers:[{name:'Scored',params:[{name:'amount',type:'int'}]}],graphs:[
  E('onEnter',[N('entry','entry',20,60),N('bind','bind',260,60,{}, {ref:'Scored',handler:'OnScore'}),N('broadcast','broadcast',500,60,{amount:3},{ref:'Scored'}),N('unbind','unbind',740,60,{}, {ref:'Scored',handler:'OnScore'}),N('again','broadcast',980,60,{amount:8},{ref:'Scored'}),N('timeline','timeline',1220,60,{duration:1,from:0,to:10}),N('text','toString',1500,230,{}, {type:'float'}),A('progress',save,1500,60,{key:'bp_progress'}),A('done',save,1500,440,{key:'bp_timeline_done',value:'yes'})],[X('entry','bind'),X('bind','broadcast'),X('broadcast','unbind'),X('unbind','again'),X('again','timeline'),X('timeline','progress','update'),L('timeline','value','text','value'),L('text','result','progress','value'),X('timeline','done','finished')]),
  F('OnScore',[{name:'amount',type:'int'}],'void',[N('entry','entry',20,60),N('get','get',20,250,{}, {ref:'total'}),N('sum','add',260,250,{}, {type:'int'}),N('set','set',520,60,{}, {ref:'total'}),N('str','toString',760,250,{}, {type:'int'}),A('save',save,1000,60,{key:'bp_dispatch_total'})],[X('entry','set'),L('entry','amount','sum','b'),L('get','value','sum','a'),L('sum','result','set','value'),X('set','save'),L('set','value','str','value'),L('str','result','save','value')]) ]};
@@ -66,9 +72,9 @@ const tree3={name:'SpaceRig',mode:'3D',entities:[
 const hierarchies={version:1,name:'BP_Hierarchies',kind:'Screen',variables:[],components:[behavior],hierarchies:[tree2,tree3],graphs:[E('onEnter',[N('entry','entry',20,60),N('spawn2','hierarchySpawn',280,60,{origin:[100,200]},{ref:'PlayerRig'}),A('rename',name,550,60,{value:'WeaponRenamed'}),N('spawn3','hierarchySpawn',820,60,{origin:[10,20,30]},{ref:'SpaceRig'}),A('done',save,1100,60,{key:'bp_hierarchy',value:'yes'}),A('fail',save,550,440,{key:'bp_hierarchy',value:'failed'})],[X('entry','spawn2'),X('spawn2','rename'),L('spawn2','entity_Weapon2D','rename','target'),X('rename','spawn3'),X('spawn3','done'),X('spawn2','fail','failed'),X('spawn3','fail','failed')])]};
 const sources = [emit('arcade', screen), emit('spinner', behavior), emit('flow', flow), emit('advanced', advanced),emit('gameplay',gameplay),emit('child',child),emit('extended',extended),emit('delayed_child',delayedChild),emit('messages',messages),emit('tracks',tracks),emit('health',healthBehaviour),emit('animation',animation),emit('model_animation',animModel),emit('hierarchies',hierarchies)];
 const project={version:1,kind:'BlueprintProject',name:'Nexgen Blueprint Examples',screens:[['arcade',screen],['gameplay',gameplay],['extended',extended],['child',child],['delayed_child',delayedChild],['messages',messages],['tracks',tracks],['animation',animation],['hierarchies',hierarchies]].map(([id,blueprint])=>({id,title:id,blueprint,assets:[]}))};
-fs.writeFileSync(path.join(out,'showcase.bp.project.json'),JSON.stringify(project,null,2)+'\n');
-const debug=B.traceCompile(gameplay); if(!debug.ok)throw Error(JSON.stringify(debug.diagnostics)); fs.writeFileSync(path.join(out,'gameplay.debug.as'),debug.source); sources.push(debug.source);
-fs.writeFileSync(path.join(out, 'example.js'), '// Generated example graph.\nconst NexgenExample=' + JSON.stringify(screen) + ';\nconst NexgenExamples='+JSON.stringify({Arcade:screen,Spinner:behavior,Flow:flow,Advanced:advanced,Gameplay:gameplay,Inheritance:child,Extended:extended,ParentDelay:delayedChild,Interfaces:messages,TimelineTracks:tracks,Health:healthBehaviour,AnimationMachine:animation,ModelAnimation:animModel,EntityHierarchies:hierarchies})+';\n');
+write(path.join(out,'showcase.bp.project.json'),JSON.stringify(project,null,2)+'\n');
+const debug=B.traceCompile(gameplay); if(!debug.ok)throw Error(JSON.stringify(debug.diagnostics)); write(path.join(out,'gameplay.debug.as'),debug.source); sources.push(debug.source);
+write(path.join(out, 'example.js'), '// Generated example graph.\nconst NexgenExample=' + JSON.stringify(screen) + ';\nconst NexgenExamples='+JSON.stringify({Arcade:screen,Spinner:behavior,Flow:flow,Advanced:advanced,Gameplay:gameplay,Inheritance:child,Extended:extended,ParentDelay:delayedChild,Interfaces:messages,TimelineTracks:tracks,Health:healthBehaviour,AnimationMachine:animation,ModelAnimation:animModel,EntityHierarchies:hierarchies})+';\n');
 // Test all catalog signatures by compiling a function for each node. Use typed parameters,
 // not null placeholders, to ensure calls select the intended overload. Never execute them.
 const suites = [];
@@ -88,5 +94,5 @@ let header = '// Generated by tools/blueprint/make_examples.js. Do not edit.\n#p
 for (let i = 0; i < sources.length; i++)
     header += '    inline const char* const ' + ['arcade', 'spinner', 'flow', 'advanced','gameplay','child','extended','delayed_child','messages','tracks','health','animation','model_animation','hierarchies','gameplay_debug'][i] + ' = R"BP(' + sources[i] + ')BP";\n';
 header += '    inline const char* const catalogue[] = {\n' + suites.map(s => 'R"BP(' + s + ')BP"').join(',\n') + '\n    };\n}\n';
-fs.writeFileSync(path.join(__dirname, '../../tests/blueprint_fixtures.h'), header);
+write(path.join(__dirname, '../../tests/blueprint_fixtures.h'), header);
 console.log('Generated example graphs, AngelScript, ' + suites.length + ' native catalogue suites');

@@ -1,5 +1,11 @@
 # Changes
 
+## Native API coverage and safer connections
+
+- Add 84 existing platform APIs from the Nexgen reference, including availability checks and console information.
+- Check that the catalogue and native compiler fixtures are current.
+- Reject circular connections before changing the graph or its undo history.
+
 ## A tidier toolbar
 
 - Keep common actions visible and group the rest under File, Game, Development and View. All existing commands remain available.

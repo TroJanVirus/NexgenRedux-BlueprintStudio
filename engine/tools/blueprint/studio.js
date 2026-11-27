@@ -203,11 +203,42 @@ function drawWires(pointer = null) {
         }
     }
 }
-function connect(a, b, record = true) { if (a.dir === b.dir || a.type !== b.type || a.node === b.node) {
-    $('status').textContent = 'Incompatible pins';
-    return false;
-} const from = a.dir === 'out' ? a : b, to = a.dir === 'in' ? a : b; if (record)
-    remember(); const g = graph(); g.links = g.links.filter(l => !(a.type === 'exec' ? l.from.node === from.node && l.from.pin === from.pin : l.to.node === to.node && l.to.pin === to.pin)); g.links.push({ from: { node: from.node, pin: from.pin }, to: { node: to.node, pin: to.pin } }); return true; }
+// Check the proposed connection before changing the graph or undo history.
+function connectionError(message) { $('status').textContent = message; return false; }
+function connect(a, b, record = true) {
+    if (a.dir === b.dir || a.type !== b.type || a.node === b.node)
+        return connectionError('Incompatible pins');
+    const from = a.dir === 'out' ? a : b, to = a.dir === 'in' ? a : b, g = graph();
+    const byId = new Map(g.nodes.map(n => [n.id, B.describe(doc, g, n)]));
+    const output = byId.get(from.node)?.outputs.find(p => p.name === from.pin);
+    const input = byId.get(to.node)?.inputs.find(p => p.name === to.pin);
+    if (!output || !input || output.type !== input.type || output.type !== a.type)
+        return connectionError('Pin no longer exists or its type has changed');
+    if (g.links.some(l => l.from.node === from.node && l.from.pin === from.pin && l.to.node === to.node && l.to.pin === to.pin))
+        return true;
+    const exec = output.type === 'exec';
+    const next = g.links.filter(l => !(exec ? l.from.node === from.node && l.from.pin === from.pin : l.to.node === to.node && l.to.pin === to.pin));
+    // Ignore the wire being replaced. Execution and data cycles are checked separately,
+    // just as in the compiler; loops are explicit nodes rather than back edges.
+    const edges = new Map();
+    for (const l of next) {
+        const p = byId.get(l.from.node)?.outputs.find(p => p.name === l.from.pin);
+        if (!p || (p.type === 'exec') !== exec) continue;
+        if (!edges.has(l.from.node)) edges.set(l.from.node, []);
+        edges.get(l.from.node).push(l.to.node);
+    }
+    const todo = [to.node], seen = new Set();
+    while (todo.length) {
+        const id = todo.pop();
+        if (id === from.node) return connectionError(exec ? 'Execution cycle — use a loop node instead' : 'Data cycle — use a variable to store the previous value');
+        if (seen.has(id)) continue;
+        seen.add(id);
+        for (const target of edges.get(id) || []) todo.push(target);
+    }
+    if (record) remember();
+    g.links = [...next, {from: {node: from.node, pin: from.pin}, to: {node: to.node, pin: to.pin}}];
+    return true;
+}
 function field(parent, label, type, value, onchange) { parent.append(el('label', '', label)); let inp; if (type === 'bool') {
     inp = el('select');
     for (const v of ['false', 'true']) {
@@ -589,9 +620,10 @@ window.addEventListener('pointerup', e => { if (!drag)
     const target = document.elementFromPoint(e.clientX, e.clientY)?.closest('.port');
     const b = target && portElements.get(target.dataset.port)?.data;
     if (a.moved && b) {
-        connect(a.start, b);
+        const ok = connect(a.start, b), message = $('status').textContent;
         armed = null;
         render();
+        if (!ok) $('status').textContent = message;
     }
     else if (a.moved && !b) {
         armed = null;
@@ -601,9 +633,10 @@ window.addEventListener('pointerup', e => { if (!drag)
             showContext(e.clientX, e.clientY, a.start);
     }
     else if (armed && portKey(armed.node, armed.dir, armed.pin) !== portKey(a.start.node, a.start.dir, a.start.pin)) {
-        connect(armed, a.start);
+        const ok = connect(armed, a.start), message = $('status').textContent;
         armed = null;
         render();
+        if (!ok) $('status').textContent = message;
     }
     else {
         armed = a.start;

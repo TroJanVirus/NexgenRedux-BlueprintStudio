@@ -9,3 +9,13 @@ const f={kind:'function',name:'AddScore',pure:true};const allowed=L.available(it
 assert.equal(L.search(items,'zzzzzz-unfindable').length,0);assert.equal(L.search(items,'').length,items.length);
 assert.deepEqual(L.search(items,'camera space'),camera);assert.equal(B.compile(doc).ok,true);
 console.log('PASS native node search, word order, namespaced calls, pin filtering and stable results');
+
+for (const category of ['Xbox','Xbox360','XboxOne','Windows','Mac','Linux']) {
+    const native=B.catalog.nodes.filter(n=>n.category===category);
+    assert.ok(native.length>0,category);
+    assert.ok(native.some(n=>n.call===category+'::get_available'));
+}
+assert.ok(B.catalog.enums.Tray.includes('TrayClosed'));
+assert.ok(B.catalog.enums.XboxText.includes('XboxKernel'));
+assert.ok(L.search(items,'xbox cpu temperature').some(x=>x.d.category==='Xbox'));
+console.log('PASS native platform categories, availability checks and console enum types');
