@@ -277,6 +277,18 @@ namespace nx
                     }
                     available[to]=true;mark(start,to);return flow(to,"then",indent,depth+1);
                 }
+                if(n.kind=="ui:load-asset")
+                {
+                    if(incoming(to,"id"))return fail(to,"A linked widget ID must be a constant asset reference.");
+                    const auto it=std::find_if(n.values.begin(),n.values.end(),[](const BlueprintDocument::InputValue& v){return v.pin=="id";});
+                    const auto* page=it==n.values.end()?nullptr:document.visualAsset(it->value);
+                    if(!page||page->kind!="widget"||!page->dependencies.empty())return fail(to,"Missing or unsupported linked widget page.");
+                    std::string json;
+                    if(!literalValue(to,"string",page->source,json))return false;
+                    source+=pad+"Ui::loadPage("+json+");\n";
+                    if(source.size()>1024*1024)return fail(to,"Generated source exceeds the size limit.");
+                    mark(start,to);return flow(to,"then",indent,depth+1);
+                }
                 if(n.kind=="render:space")
                 {source+=pad+"Space::draw(canvas);\n";mark(start,to);return flow(to,"then",indent,depth+1);}
                 if(n.kind=="spawn:box"||n.kind=="spawn:plane")

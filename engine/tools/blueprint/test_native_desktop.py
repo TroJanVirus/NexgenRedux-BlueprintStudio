@@ -351,7 +351,8 @@ with menu_log.open("wb") as out:
         click(720, 293, window)
         click(910, 293, window)
         click(720, 334, window)
-        click(815, 564, window)
+        click(720, 564, window)
+        click(910, 564, window)
         click(360, 172, window)
         click(930, 133, window)
         click(800, 53, window)
@@ -371,6 +372,15 @@ with menu_log.open("wb") as out:
         saved_root = json.loads(copy.read_text(encoding="utf-8"))["assetRoot"]
         published = authored_own / saved_root / "Screen" / "asset" / ("ui_" + widget["id"] + ".json")
         assert published.read_text(encoding="utf-8") == widget["source"]
+        linked_graphs = json.loads(copy.read_text(encoding="utf-8"))["graphs"]
+        assert any(n["kind"] == "ui:load-asset" for n in linked_graphs[0]["nodes"])
+        assert any(n["kind"] == "api:Ui:Ui::draw:Canvas@" for n in linked_graphs[2]["nodes"])
+        before_preview = menu_log.read_text(errors="replace").count("preview started: Screen")
+        click(553, 53, window)
+        wait_for(lambda: menu_log.read_text(errors="replace").count("preview started: Screen") > before_preview, "play linked widget page", process)
+        time.sleep(1)
+        key("Escape")
+        assert "Preview error:" not in menu_log.read_text(errors="replace")
         print("Native Content Browser: actor and UI asset creation, palette and native page copy passed.", flush=True)
         click(1200, 53, window)
         request_close(window)

@@ -2173,3 +2173,24 @@ NX_TEST(nativeBlueprintCameraOrbitKeepsCubeCenteredAndReturnsToStart)
     NX_INFO("Blueprint orbit variant %d: completed position, projection and endpoint assertions.",variant);
     }
 }
+
+NX_TEST(nativeLinkedWidgetPageRunsWithoutSnapshotFile)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    BlueprintDocument doc;doc.create();std::string error,id,source;
+    const bool authored=doc.createVisualAsset("widget",id,error)&&
+        doc.appendVisualWidget(id,"label","Health",error)&&
+        doc.appendVisualWidget(id,"progress","",error)&&
+        doc.connectVisualWidget("Screen",id,error)&&compileBlueprint(doc,source,error);
+    NX_EXPECT(authored);if(!authored)return;
+    r.platform.files["showcase/main/screen.json"]="{\"title\":\"Linked HUD\"}";
+    r.platform.files["showcase/main/main.as"]=source;
+    if(!r.screens.init(r.services,"showcase","main")){NX_EXPECT(false);return;}
+    r.step(3);
+    NX_EXPECT(!r.screens.failed());
+    if(!r.services.ui){NX_EXPECT(false);return;}
+    const auto* label=r.services.ui->find("item-1");
+    const auto* progress=r.services.ui->find("item-2");
+    NX_EXPECT(label&&label->text=="Health");
+    NX_EXPECT(progress&&progress->value==0.75f);
+}

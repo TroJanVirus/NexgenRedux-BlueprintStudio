@@ -32,6 +32,7 @@ namespace nx
             {"time:timeline","Timeline (0 to 1)","Time / Animation","in:exec|dt:float|duration:float|loop:bool|reset:bool","then:exec|progress:float|elapsed:float|finished:bool","","","","","void","","","dt:dt|duration:float(1)|loop:false|reset:false"},
             {"camera:orbit-timed","Orbit camera around entity (timed)","Space / Camera","in:exec|name:string|radius:float|height:float|duration:float|turns:float|angle:float|loop:bool|reset:bool|dt:float","then:exec|progress:float|elapsed:float|finished:bool|found:bool","","","","","void","","","name:\"Target\"|radius:float(6)|height:float(2)|duration:float(8)|turns:float(1)|angle:float(60)|loop:false|reset:false|dt:dt"},
             {"render:space","Render 3D scene","Space / Rendering","in:exec","then:exec"},
+            {"ui:load-asset","Load linked widget page","Ui / Designer","in:exec|id:string","then:exec"},
             {"math:orbit-position","Orbit position (turns)","Math / Camera","center:Vec3|radius:float|height:float|turns:float","result:Vec3","","","","pure","Vec3","","","center:Vec3(0, 0, 0)|radius:float(6)|height:float(2)|turns:float(0)"},
             {"spawn:box","Spawn 3D box","Space / Primitives","in:exec|name:string|place:Vec3|size:Vec3|color:Color","then:exec|result:Entity@","","","","","Entity@","","","name:\"Box\"|place:Vec3(0, 0.5, 0)|size:Vec3(1, 1, 1)|color:Color(0.92, 0.35, 0.12, 1)"},
             {"spawn:plane","Spawn 3D floor plane","Space / Primitives","in:exec|name:string|place:Vec3|size:Vec3|color:Color","then:exec|result:Entity@","","","","","Entity@","","","name:\"Floor\"|place:Vec3(0, 0, 0)|size:Vec3(20, 1, 20)|color:Color(0.4, 0.46, 0.52, 1)"},
@@ -144,7 +145,7 @@ namespace nx
         bool context(const std::string& event,const std::string& kind,const std::string& owner)
         {
             const bool behaviour=behaviourOwner(owner);
-            return ((kind!="time:timeline"&&kind!="camera:orbit-timed")||event=="update")&&(kind!="render:space"||(!behaviour&&event=="draw"))&&(kind!="event:delta"||event=="update")&&(kind!="event:canvas"||(!behaviour&&event=="draw"))&&
+            return ((kind!="time:timeline"&&kind!="camera:orbit-timed")||event=="update")&&(kind!="render:space"||(!behaviour&&event=="draw"))&&(kind!="ui:load-asset"||(!behaviour&&event=="onEnter"))&&(kind!="event:delta"||event=="update")&&(kind!="event:canvas"||(!behaviour&&event=="draw"))&&
                 (kind!="event:entity"||behaviour)&&(kind!="event:other"||(behaviour&&(event=="onHit"||event=="onLeave")))&&
                 (kind!="event:levelName"||(!behaviour&&(event=="onLevelTouch"||event=="onLevelAgent")))&&
                 (kind!="event:levelWho"||(!behaviour&&event=="onLevelTouch"))&&
@@ -446,7 +447,16 @@ namespace nx
         if(!validVisualAssets(assets,error))return false;
         // Copy before recording to permit replacing from a reference into this document.
         auto next=assets;
-        recordGraphList();m_visualAssets=std::move(next);return true;
+        unsigned serial=m_visualSerial;
+        for(const auto& a:next)
+        {
+            const auto prefix=a.kind+"-";
+            if(a.id.rfind(prefix,0)!=0)continue;
+            const auto suffix=a.id.substr(prefix.size());
+            if(!suffix.empty()&&suffix.size()<=9&&suffix.find_first_not_of("0123456789")==std::string::npos)
+                serial=std::max(serial,static_cast<unsigned>(std::strtoul(suffix.c_str(),nullptr,10)));
+        }
+        recordGraphList();m_visualAssets=std::move(next);m_visualSerial=serial;return true;
     }
     bool BlueprintDocument::createVisualAsset(const std::string& kind,std::string& id,std::string& error)
     {
@@ -454,12 +464,8 @@ namespace nx
         if(m_visualAssets.size()>=128){error="Visual asset limit reached.";return false;}
         // The ID is independent of the user-facing name. At this stage there
         // are no external scene-instance references; dependency links are checked.
-        std::string next;
-        for(unsigned i=1;i<=129;++i)
-        {
-            next=kind+"-"+std::to_string(i);
-            if(!visualAsset(next))break;
-        }
+        if(m_visualSerial>=999999999){error="Visual asset ID limit reached.";return false;}
+        const std::string next=kind+"-"+std::to_string(m_visualSerial+1);
         auto assets=m_visualAssets;
         assets.push_back({next,kind,kind=="actor"?"New Actor":"New Widget",
             kind=="actor"?"{\"entities\":[{\"name\":\"Root\",\"shape\":\"box\",\"size\":[1,1,1]}]}":"[]",{}});
@@ -478,6 +484,9 @@ namespace nx
     }
     bool BlueprintDocument::removeVisualAsset(const std::string& id,std::string& error)
     {
+        for(const auto& g:graphs)for(const auto& node:g.nodes)if(node.kind=="ui:load-asset")
+            for(const auto& v:node.values)if(v.pin=="id"&&v.value==id)
+            {error="Remove the linked Load widget page node before deleting this asset.";return false;}
         auto next=m_visualAssets;
         const auto at=std::find_if(next.begin(),next.end(),[&](const VisualAsset& a){return a.id==id;});
         if(at==next.end()){error="Visual asset not found.";return false;}
@@ -528,6 +537,93 @@ namespace nx
         }
         error="Select a widget page first.";return false;
     }
+    bool BlueprintDocument::connectVisualWidget(const std::string& owner,const std::string& id,std::string& error)
+    {
+        const auto* page=visualAsset(id);
+        if(!page||page->kind!="widget"||!page->dependencies.empty())
+        {error="Select a standalone widget page.";return false;}
+        size_t enter=static_cast<size_t>(-1),draw=enter;
+        for(size_t i=0;i<graphs.size();++i)if(graphs[i].owner==owner)
+        {
+            if(graphs[i].name=="onEnter")enter=i;
+            if(graphs[i].name=="draw")draw=i;
+        }
+        if(enter>=graphs.size()||draw>=graphs.size()){error="Select a screen graph.";return false;}
+        BlueprintDocument staged;
+        staged.name=name;staged.assetRoot=assetRoot;staged.graphs=graphs;staged.manifests=manifests;
+        staged.m_visualAssets=m_visualAssets;staged.m_visualSerial=m_visualSerial;staged.m_nextId=m_nextId;
+        // Only append to a complete simple action chain. No implicit rewiring.
+        auto tail=[&](size_t index,size_t& last)->bool
+        {
+            const auto& g=staged.graphs[index];
+            last=static_cast<size_t>(-1);
+            for(size_t i=0;i<g.nodes.size();++i)if(g.nodes[i].kind=="entry"){last=i;break;}
+            if(last>=g.nodes.size())return false;
+            std::unordered_set<size_t> seen;
+            while(true)
+            {
+                if(!seen.insert(last).second)return false;
+                BlueprintNodeSpec spec;
+                if(!staged.nodeSpec(g,g.nodes[last],spec))return false;
+                size_t count=0;
+                for(const auto& out:spec.outputs)if(out.type=="exec")
+                {if(out.name!="then")return false;++count;}
+                if(count!=1)return false;
+                const auto link=std::find_if(g.links.begin(),g.links.end(),[&](const Link& l){return l.from==last&&l.output=="then";});
+                if(link==g.links.end())break;
+                if(link->to>=g.nodes.size())return false;
+                last=link->to;
+            }
+            for(size_t i=0;i<g.nodes.size();++i)if(!seen.count(i))
+            {
+                BlueprintNodeSpec spec;
+                if(!staged.nodeSpec(g,g.nodes[i],spec))return false;
+                for(const auto& in:spec.inputs)if(in.type=="exec")return false;
+            }
+            return true;
+        };
+        size_t enterTail,drawTail;
+        if(!tail(enter,enterTail)||!tail(draw,drawTail))
+        {error="Existing On Enter or Draw is not a simple action chain. Connect the page manually.";return false;}
+        bool linked=false,drawn=false;
+        for(const auto& n:staged.graphs[enter].nodes)
+        {
+            if(n.kind=="api:Ui:Ui::load:string,Widget@")
+            {error="Existing UI load found. Connect the page manually.";return false;}
+            if(n.kind=="ui:load-asset")
+            {
+                if(linked||std::none_of(n.values.begin(),n.values.end(),[&](const InputValue& v){return v.pin=="id"&&v.value==id;}))
+                {error="Screen already links a different widget page.";return false;}
+                linked=true;
+            }
+        }
+        for(const auto& n:staged.graphs[draw].nodes)
+            if(n.kind.rfind("api:Ui:Ui::draw:",0)==0)
+            {
+                if(drawn){error="Multiple existing UI draws; connect manually.";return false;}
+                drawn=true;
+            }
+        if(!linked)
+        {
+            const auto node=staged.graphs[enter].nodes[enterTail];
+            if(!staged.addConnectedNode(enter,enterTail,"then","ui:load-asset",node.x+240,node.y,error)||
+                !staged.setInputValue(enter,staged.graphs[enter].nodes.size()-1,"id",id,error))return false;
+        }
+        if(!drawn)
+        {
+            const auto node=staged.graphs[draw].nodes[drawTail];
+            if(!staged.addConnectedNode(draw,drawTail,"then","api:Ui:Ui::draw:Canvas@",node.x+240,node.y,error))return false;
+            const auto target=staged.graphs[draw].nodes.size()-1;
+            size_t canvas=0;
+            while(canvas<staged.graphs[draw].nodes.size()&&staged.graphs[draw].nodes[canvas].kind!="event:canvas")++canvas;
+            if(canvas==staged.graphs[draw].nodes.size()&&!staged.addNode(draw,"event:canvas",node.x,node.y+180,error))return false;
+            if(!staged.connect(draw,canvas,"value",target,"canvas",error))return false;
+        }
+        if(linked&&drawn){error.clear();return true;}
+        std::string verified;
+        if(!staged.serialize(verified,error))return false;
+        recordGraphList();graphs.swap(staged.graphs);m_nextId=staged.m_nextId;error.clear();return true;
+    }
     void BlueprintDocument::create()
     {
         *this=BlueprintDocument{};
@@ -550,6 +646,14 @@ namespace nx
         BlueprintDocument candidate;candidate.name=root["name"].text();
         candidate.assetRoot=root["assetRoot"].text();
         if(!candidate.assetRoot.empty()&&!blueprintAssetRoot(candidate.assetRoot)){error="Invalid project asset directory.";return false;}
+        const auto serialValue=root["visualSerial"];
+        if(serialValue.exists())
+        {
+            const auto n=serialValue.exact();
+            if(!serialValue.isNumber()||n<0||n>999999999||std::floor(n)!=n)
+            {error="Invalid visual asset allocator.";return false;}
+            candidate.m_visualSerial=static_cast<unsigned>(n);
+        }
         const auto visual=root["visualAssets"];
         if(visual.exists())
         {
@@ -569,6 +673,16 @@ namespace nx
                 candidate.m_visualAssets.push_back(std::move(entry));
             }
             if(!validVisualAssets(candidate.m_visualAssets,error))return false;
+            unsigned serial=candidate.m_visualSerial;
+        for(const auto& a:candidate.m_visualAssets)
+        {
+            const auto prefix=a.kind+"-";
+            if(a.id.rfind(prefix,0)!=0)continue;
+            const auto suffix=a.id.substr(prefix.size());
+            if(!suffix.empty()&&suffix.size()<=9&&suffix.find_first_not_of("0123456789")==std::string::npos)
+                serial=std::max(serial,static_cast<unsigned>(std::strtoul(suffix.c_str(),nullptr,10)));
+        }
+            candidate.m_visualSerial=serial;
         }
         std::unordered_set<std::string> graphNames;
         // Load every graph header first so forward function references resolve consistently.
@@ -793,6 +907,7 @@ namespace nx
                 auto* entry=metadata->add();if(!entry||!text(*entry,"owner",m.owner)||!text(*entry,"source",m.source))return fail();
             }
         }
+        if(m_visualSerial&&!number(root,"visualSerial",m_visualSerial))return fail();
         if(!m_visualAssets.empty())
         {
             if(!validVisualAssets(m_visualAssets,error))return false;

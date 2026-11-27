@@ -119,6 +119,7 @@ namespace nx
         bool loadTheme(const char* name);
         // Widgets from a file, put into one of them. Click and change name methods of the screen.
         bool load(const char* name, Widget& into, asIScriptObject* screen);
+        bool loadPage(const char* data,size_t size,Widget& into,asIScriptObject* screen,const char* path="inline UI page");
         bool words(const char* name);
         const char* word(const char* key) const;
         const char* error() const { return m_error; }

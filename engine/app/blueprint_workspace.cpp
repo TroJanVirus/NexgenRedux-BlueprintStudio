@@ -579,8 +579,8 @@ namespace nx
             return;
         }
         if(pressed&1u){saveCurrent(s);return;}
-        if(pressed&2u){if(m_document.undo())m_status="Library edit undone.";return;}
-        if(pressed&4u){if(m_document.redo())m_status="Library edit redone.";return;}
+        if(pressed&2u){if(m_document.undo()){selectGraph(std::min(m_graph,m_document.graphs.size()-1));m_status="Library edit undone.";}return;}
+        if(pressed&4u){if(m_document.redo()){selectGraph(std::min(m_graph,m_document.graphs.size()-1));m_status="Library edit redone.";}return;}
         const auto& assets=m_document.visualAssets();
         if(m_visualFirst>=assets.size())m_visualFirst=assets.empty()?0:assets.size()-1;
         if(in(x,y,280,198,610,535))
@@ -630,7 +630,15 @@ namespace nx
             if(m_document.appendVisualWidget(m_visualSelection,kind,m_visualText,m_status))
             {m_visualText.clear();m_status="Added native widget. Ctrl+Z restores the previous page.";}
         }
-        else if(in(x,y,630,548,1000,581))publishVisualWidget(s);
+        else if(in(x,y,630,548,810,581))publishVisualWidget(s);
+        else if(in(x,y,820,548,1000,581))
+        {
+            if(m_document.connectVisualWidget(assetScreen(),m_visualSelection,m_status))
+            {
+                rebuildPins();filterCatalogue();m_diagnostic={};
+                m_status="Linked page to On Enter and Draw. Close Content and Play test.";
+            }
+        }
     }
     void BlueprintWorkspace::drawVisualLibrary(Canvas& c)
     {
@@ -674,7 +682,7 @@ namespace nx
                     }
                     if(tree.root().count()>5)c.text(*m_font,("+"+std::to_string(tree.root().count()-5)+" more widgets").c_str(),630,528,muted);
                 }
-                button(630,548,370,"Copy native page to screen");
+                button(630,548,180,"Copy JSON");button(820,548,180,"Link to screen");
             }
             else
             {

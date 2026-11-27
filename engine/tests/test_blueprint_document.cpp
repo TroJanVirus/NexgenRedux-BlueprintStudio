@@ -8,7 +8,7 @@
 using namespace nx;
 NX_TEST(nativeCatalogueContainsReferenceAPI)
 {
-    NX_EXPECT(blueprintCatalogue().size()==1032);
+    NX_EXPECT(blueprintCatalogue().size()==1033);
     const auto* save=blueprintSpec("api:Save:Save::set:string,string");
     NX_EXPECT(save&&save->inputs.size()==3&&save->outputs.size()==1);
     if(save&&save->inputs.size()==3)NX_EXPECT(save->inputs[0].type=="exec"&&save->inputs[2].type=="string");
@@ -1178,4 +1178,32 @@ NX_TEST(nativeVisualAssetPaletteProducesNativeWidgetJson)
     for(auto& a:assets)if(a.id==actor)a.dependencies={widget};
     NX_EXPECT(copy.replaceVisualAssets(assets,error));
     NX_EXPECT(!copy.removeVisualAsset(widget,error));
+}
+
+NX_TEST(nativeLinkedWidgetCompilesCurrentPageAndProtectsIdentity)
+{
+    BlueprintDocument doc;doc.create();std::string error,id,source,bytes;
+    NX_EXPECT(doc.createVisualAsset("widget",id,error));
+    NX_EXPECT(doc.appendVisualWidget(id,"label","Health",error));
+    NX_EXPECT(doc.connectVisualWidget("Screen",id,error));
+    NX_EXPECT(compileBlueprint(doc,source,error));
+    NX_EXPECT(source.find("Ui::loadPage(")!=std::string::npos&&source.find("Health")!=std::string::npos);
+    NX_EXPECT(source.find("Ui::draw(canvas)")!=std::string::npos);
+    NX_EXPECT(!doc.removeVisualAsset(id,error));
+    const auto revision=doc.revision();
+    NX_EXPECT(doc.connectVisualWidget("Screen",id,error)&&doc.revision()==revision);
+    NX_EXPECT(doc.appendVisualWidget(id,"button","Play",error)&&compileBlueprint(doc,source,error));
+    NX_EXPECT(source.find("Play")!=std::string::npos);
+    NX_EXPECT(doc.undo()&&compileBlueprint(doc,source,error)&&source.find("Play")==std::string::npos);
+    NX_EXPECT(doc.redo()&&compileBlueprint(doc,source,error)&&source.find("Play")!=std::string::npos);
+    std::string old,next;
+    NX_EXPECT(doc.createVisualAsset("actor",old,error)&&doc.removeVisualAsset(old,error));
+    NX_EXPECT(doc.serialize(bytes,error));
+    BlueprintDocument loaded;NX_EXPECT(loaded.load(bytes.data(),bytes.size(),error));
+    NX_EXPECT(loaded.createVisualAsset("actor",next,error)&&next!=old);
+    NX_EXPECT(loaded.addScreen("other",error));
+    const size_t other=loaded.graphs.size()-6;
+    NX_EXPECT(loaded.addNode(other,"branch",300,40,error)&&loaded.connect(other,0,"then",1,"in",error));
+    const auto before=loaded.revision();
+    NX_EXPECT(!loaded.connectVisualWidget("other",id,error)&&loaded.revision()==before);
 }

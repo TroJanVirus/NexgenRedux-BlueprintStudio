@@ -79,6 +79,7 @@ namespace nx
         bool renameVisualAsset(const std::string& id,const std::string& title,std::string& error);
         bool removeVisualAsset(const std::string& id,std::string& error);
         bool appendVisualWidget(const std::string& id,const std::string& kind,const std::string& label,std::string& error);
+        bool connectVisualWidget(const std::string& owner,const std::string& id,std::string& error);
         void create();
         bool load(const char* data,size_t size,std::string& error);
         bool serialize(std::string& result,std::string& error) const;
@@ -147,6 +148,6 @@ namespace nx
         std::vector<VisualAsset> m_visualAssets;
         std::vector<Edit> m_undo,m_redo;
         size_t m_revision=0,m_savedRevision=0,m_nextRevision=0;
-        unsigned m_nextId=0;
+        unsigned m_nextId=0,m_visualSerial=0;
     };
 }

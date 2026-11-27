@@ -149,27 +149,31 @@ namespace nx
     {
         FileData file;
         char path[192];
-        JsonTree tree;
         if (!readFile(name, file, path))
         {
             return false;
         }
-        if (!tree.parse(reinterpret_cast<const char*>(file.data), file.size))
+        return loadPage(reinterpret_cast<const char*>(file.data),file.size,into,screen,path);
+    }
+
+    bool Ui::loadPage(const char* data,size_t size,Widget& into,asIScriptObject* screen,const char* path)
+    {
+        m_error[0]=0;
+        JsonTree tree;
+        if (!data || !tree.parse(data,size))
         {
-            return fail(path, tree.errorLine(), tree.error(), "");
+            return fail(path,tree.errorLine(),tree.error(),"");
         }
-        const Json root = tree.root();
-        if (!root.isArray())
+        const auto previous=into.children.count();
+        const auto rollback=[&]()
         {
-            return build(root, into, path, screen) != nullptr;
-        }
-        for (Json v = root.first(); v.exists(); v = v.next())
-        {
-            if (build(v, into, path, screen) == nullptr)
-            {
-                return false;
-            }
-        }
+            while(into.children.count()>previous)into.children[into.children.count()-1]->remove();
+            return false;
+        };
+        const Json root=tree.root();
+        if(!root.isArray())return build(root,into,path,screen)!=nullptr||rollback();
+        for(Json v=root.first();v.exists();v=v.next())
+            if(!build(v,into,path,screen))return rollback();
         return true;
     }
 
