@@ -622,8 +622,11 @@ namespace nx
             if(click&&in(x,y,410,5,560,33)&&m_graph<m_document.graphs.size()&&m_document.graphs[m_graph].owner.rfind("behaviour:",0)!=0)
             {
                 const auto owner=m_document.graphs[m_graph].owner;
-                const size_t first=m_document.graphs.size();
+                const auto& graphs=m_document.graphs;
+                const auto found=std::find_if(graphs.begin(),graphs.end(),[&](const BlueprintDocument::Graph& g){return g.owner==owner&&g.name=="onLevelTouch";});
+                const size_t first=found==graphs.end()?graphs.size():static_cast<size_t>(found-graphs.begin());
                 if(m_document.addLevelEvents(owner,m_status)){selectGraph(first);m_status="Added native Level trigger and agent events.";}
+                else if(first<graphs.size()){selectGraph(first);m_status="Level trigger event. Choose onLevelAgent in the graph list for agent events.";}
                 m_left=left;return;
             }
             if(click&&in(x,y,566,5,734,33)){m_edit.clear();m_focus=8;input.setTyping(true);m_status="Type a behaviour name, then Enter.";m_left=left;return;}

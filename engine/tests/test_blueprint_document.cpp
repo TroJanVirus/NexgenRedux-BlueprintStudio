@@ -387,3 +387,20 @@ NX_TEST(nativeLevelEventsAndNamedAttachmentsValidateAndPersist)
     BlueprintLocation location;
     NX_EXPECT(!compileBlueprint(copy,source,error,&location)&&location.graph==13&&location.node==1);
 }
+
+NX_TEST(nativeBehaviourAttachmentChecksExecutionScopeAndEntityLifetime)
+{
+    BlueprintDocument doc;doc.create();std::string error,source;
+    NX_EXPECT(doc.addBehaviour("Actor",error)&&doc.addNode(0,"var:get:Entity@",0,0,error));
+    NX_EXPECT(doc.addNode(0,"attach:behaviour",0,0,error)&&doc.connect(0,1,"value",2,"target",error));
+    NX_EXPECT(doc.addNode(0,"branch",0,0,error)&&doc.connect(0,2,"result",3,"condition",error));
+    NX_EXPECT(doc.connect(0,0,"then",3,"in",error)&&!compileBlueprint(doc,source,error));
+    NX_EXPECT(doc.disconnect(0,3,"in",false)&&doc.connect(0,0,"then",2,"in",error)&&doc.connect(0,2,"then",3,"in",error));
+    NX_EXPECT(compileBlueprint(doc,source,error)&&source.find("bp_attach_2 !is null && bp_attach_2.alive")!=std::string::npos);
+}
+NX_TEST(nativeAgentCallbacksRejectUnsafeVisibilityMutation)
+{
+    BlueprintDocument doc;doc.create();std::string error,source;BlueprintLocation location;
+    NX_EXPECT(doc.addLevelEvents("Screen",error)&&doc.addNode(7,"level:show",0,0,error)&&doc.connect(7,0,"then",1,"in",error));
+    NX_EXPECT(!compileBlueprint(doc,source,error,&location)&&location.graph==7&&location.node==1);
+}

@@ -154,7 +154,7 @@ namespace nx
                 if(n.kind=="event:levelName"&&pin=="value"){result="bp_event_name";return true;}
                 if(n.kind=="event:levelWho"&&pin=="value"){result="bp_event_who";return true;}
                 if(n.kind=="event:levelWhat"&&pin=="value"){result="bp_event_what";return true;}
-                if(n.kind=="level:attach"&&pin=="result")
+                if((n.kind=="level:attach"||n.kind=="attach:behaviour")&&pin=="result")
                 {
                     if(!available[node])return fail(node,"Attachment result used before execution.");
                     result="bp_value_"+std::to_string(node);return true;
@@ -237,20 +237,21 @@ namespace nx
                     source+=pad+(n.kind.ends_with("@")?"@":"")+"bp_var_"+n.ref+" = "+v+";\n";mark(start,to);
                     return flow(to,"then",indent,depth+1);
                 }
-                if(n.kind=="level:attach")
+                if(n.kind=="level:attach"||n.kind=="attach:behaviour")
                 {
-                    std::string name;if(!value(to,"name",name,0))return false;
+                    std::string entity;
+                    if(n.kind=="level:attach")
+                    {
+                        std::string name;if(!value(to,"name",name,0))return false;
+                        entity="bp_level.find("+name+")";
+                    }
+                    else if(!value(to,"target",entity,0))return false;
                     const auto suffix=std::to_string(to);
-                    source+=pad+"Entity@ bp_attach_"+suffix+" = bp_level.find("+name+");\n";
+                    // Evaluate the entity expression once, then guard both null and destroyed entities.
+                    source+=pad+"Entity@ bp_attach_"+suffix+" = "+entity+";\n";
                     source+=pad+"bool bp_value_"+suffix+" = bp_attach_"+suffix+" !is null && bp_attach_"+suffix+".alive;\n";
                     source+=pad+"if (bp_value_"+suffix+") bp_attach_"+suffix+".add(BP_Behaviour_"+n.ref+"());\n";
                     available[to]=true;mark(start,to);return flow(to,"then",indent,depth+1);
-                }
-                if(n.kind=="attach:behaviour")
-                {
-                    std::string entity;if(!value(to,"target",entity,0))return false;
-                    source+=pad+"("+entity+").add(BP_Behaviour_"+n.ref+"());\n";mark(start,to);
-                    return flow(to,"then",indent,depth+1);
                 }
                 if(n.kind=="call:function")
                 {
@@ -362,11 +363,39 @@ namespace nx
                 const auto& node=graph.nodes[n];
                 if(node.kind=="level:load"||node.kind=="level:clear"||node.kind=="level:update")
                 {
-                    if(location)*location={i,n};error=graph.name+": Level callbacks cannot load, clear or update the level recursively. Set a variable and handle it after Update native level.";return false;
+                    if(location)*location={i,n};
+                    error=graph.name+": Level callbacks cannot load, clear or update the level recursively. Set a variable and handle it after Update native level.";
+                    return false;
                 }
                 if(node.kind=="call:function")
                     for(size_t j=0;j<document.graphs.size();++j)
                         if(document.graphs[j].owner==owner&&document.graphs[j].kind=="function"&&document.graphs[j].name==node.ref)work.push_back(j);
+            }
+        }
+        if(agent)
+        {
+            std::fill(checkedGraphs.begin(),checkedGraphs.end(),false);
+            for(size_t i=0;i<document.graphs.size();++i)
+                if(document.graphs[i].owner==owner&&document.graphs[i].name=="onLevelAgent")work.push_back(i);
+            while(!work.empty())
+            {
+                const auto i=work.back();work.pop_back();
+                if(checkedGraphs[i])continue;
+                checkedGraphs[i]=true;
+                const auto& graph=document.graphs[i];
+                for(size_t n=0;n<graph.nodes.size();++n)
+                {
+                    const auto& node=graph.nodes[n];
+                    if(node.kind=="level:show"||node.kind=="level:hide")
+                    {
+                        if(location)*location={i,n};
+                        error=graph.name+": Agent callbacks cannot change Level visibility during Crowd.update. Request it after Update native level.";
+                        return false;
+                    }
+                    if(node.kind=="call:function")
+                        for(size_t j=0;j<document.graphs.size();++j)
+                            if(document.graphs[j].owner==owner&&document.graphs[j].kind=="function"&&document.graphs[j].name==node.ref)work.push_back(j);
+                }
             }
         }
         if(usesLevel)result+="#include \"global:scene.as\"\n\n";

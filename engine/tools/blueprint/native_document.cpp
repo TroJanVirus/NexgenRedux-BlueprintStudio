@@ -35,7 +35,7 @@ namespace nx
             {"event:levelWho","Trigger visitor","Events","","value:Entity@"},
             {"event:levelWhat","Agent event","Events","","value:string"},
             {"level:attach","Attach behaviour to named level entity","Level","in:exec|name:string","then:exec|result:bool"},
-            {"attach:behaviour","Attach behaviour","Behaviours","in:exec|target:Entity@","then:exec"},
+            {"attach:behaviour","Attach behaviour","Behaviours","in:exec|target:Entity@","then:exec|result:bool"},
             {"var:get:bool","Get bool variable","Variables","","value:bool"},
             {"var:set:bool","Set bool variable","Variables","in:exec|value:bool","then:exec"},
             {"var:get:int","Get int variable","Variables","","value:int"},

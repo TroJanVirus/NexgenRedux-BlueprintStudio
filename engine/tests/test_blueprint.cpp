@@ -1082,3 +1082,19 @@ NX_TEST(nativeLevelTriggerDelegatesAndNamedBehaviourRunInOriginalLevel)
     r.screens.stopPreview();
 }
 #endif
+
+NX_TEST(nativeBehaviourAttachmentWithNullEntityReturnsFalse)
+{
+    BlueprintDocument doc;doc.create();std::string error,source;
+    bool ok=doc.addBehaviour("Actor",error)&&doc.addNode(0,"var:get:Entity@",0,0,error)&&
+        doc.addNode(0,"attach:behaviour",0,0,error)&&doc.connect(0,1,"value",2,"target",error)&&doc.connect(0,0,"then",2,"in",error)&&
+        doc.addNode(0,"branch",0,0,error)&&doc.connect(0,2,"then",3,"in",error)&&doc.connect(0,2,"result",3,"condition",error)&&
+        doc.addNode(0,"api:Save:Save::set:string,string",0,0,error)&&doc.connect(0,3,"false",4,"in",error)&&
+        doc.setInputValue(0,4,"key","null_attachment",error)&&doc.setInputValue(0,4,"value","safe",error)&&compileBlueprint(doc,source,error);
+    NX_EXPECT(ok);if(!ok)return;
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    r.platform.files["showcase/attach/screen.json"]="{\"title\":\"Attach\"}";
+    r.platform.files["showcase/attach/main.as"]=source;
+    if(!r.screens.init(r.services,"showcase","attach")){NX_EXPECT(false);return;}
+    r.step(3);NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("null_attachment","missing"),"safe")==0);
+}
