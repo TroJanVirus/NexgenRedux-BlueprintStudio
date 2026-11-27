@@ -305,8 +305,9 @@ namespace nx
         BlueprintDocument candidate;candidate.name=folder.rfind("project-",0)==0?folder.substr(8):folder;
         for(const auto& owner:owners)
         {
-            // Use the canonical document screen-ID validator, including reserved IDs.
-            BlueprintDocument probe;probe.create();std::string error;
+            // Validate against an empty document: the canonical initial Screen ID
+            // is legal, but create() would pre-populate it and reject it as a duplicate.
+            BlueprintDocument probe;std::string error;
             if(!probe.addScreen(owner,error)){m_status=owner+": "+error;return false;}
             FileData data;
             if(!s.platform->readFile((base+"/"+owner+"/main.as").c_str(),data,MemTag::General)||

@@ -1781,57 +1781,65 @@ NX_TEST(nativeWorkspaceBrowserRecoversArchivesAndImportsSource)
 #endif
 
 #ifdef NX_DESKTOP_BLUEPRINT
-NX_TEST(nativeWorkspaceImportsMultipleNativeScreensAndTheirAssets)
+NX_TEST(nativeWorkspaceImportsNativeExportScreensAndTheirAssets)
 {
-    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
-    r.platform.workspaceFiles=true;
-    r.platform.files["showcase/main/screen.json"]="{\"title\":\"Home\"}";
-    r.platform.files["showcase/main/main.as"]="class Home : Screen {}";
-    if(!r.screens.init(r.services,"showcase","main")){NX_EXPECT(false);return;}
-    r.step(3);r.screens.setDevelopmentPaused(true);
-    NX_EXPECT(blueprintImportProjectFolderName("project-demo"));
-    NX_EXPECT(blueprintImportProjectFolderName("bp-1790000000-1"));
-    NX_EXPECT(!blueprintImportProjectFolderName("bp-1790000000-"));
-    NX_EXPECT(!blueprintImportProjectFolderName("bp-1790000000-1-2"));
-    NX_EXPECT(!blueprintImportProjectFolderName("project-"));
-    NX_EXPECT(!blueprintImportProjectFolderName("bpa-1790000000-1"));
-    const std::string folder="own/bp-1790000000-1";
-    const std::string first="class Start : Screen { void onEnter(){ Screens::push(\"level\"); } }";
-    const std::string second="class LevelScreen : Screen { void onEnter(){ Save::set(\"level\",\"ok\"); } }";
-    r.platform.files[folder+"/intro/main.as"]=first;
-    r.platform.files[folder+"/level/main.as"]=second;
-    for(const char* screen:{"intro","level"})
+    // Ordinary IDs, the default Screen with navigation, and a single default Screen.
+    for(int scenario=0;scenario<3;++scenario)
     {
-        r.platform.ownFolders.insert(folder+"/"+screen+"/asset");
-        r.platform.files[folder+"/"+screen+"/asset/data.bin"]=std::string(screen)+std::string("\0\xff",2);
+        Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+        r.platform.workspaceFiles=true;
+        r.platform.files["showcase/main/screen.json"]="{\"title\":\"Home\"}";
+        r.platform.files["showcase/main/main.as"]="class Home : Screen {}";
+        if(!r.screens.init(r.services,"showcase","main")){NX_EXPECT(false);return;}
+        r.step(3);r.screens.setDevelopmentPaused(true);
+        NX_EXPECT(blueprintImportProjectFolderName("project-demo"));
+        NX_EXPECT(blueprintImportProjectFolderName("bp-1790000000-1"));
+        NX_EXPECT(!blueprintImportProjectFolderName("bp-1790000000-"));
+        NX_EXPECT(!blueprintImportProjectFolderName("bp-1790000000-1-2"));
+        NX_EXPECT(!blueprintImportProjectFolderName("project-"));
+        NX_EXPECT(!blueprintImportProjectFolderName("bpa-1790000000-1"));
+        const std::string folder="own/bp-1790000000-1";
+        const std::string firstId=scenario==0?"intro":"Screen";
+        const bool multiple=scenario!=2;
+        const std::vector<std::string> expected=multiple?std::vector<std::string>{firstId,"level"}:std::vector<std::string>{firstId};
+        const std::string first=multiple?"class Start : Screen { void onEnter(){ Screens::push(\"level\"); } }":"class Start : Screen { void onEnter(){ Save::set(\"start\",\"ok\"); } }";
+        const std::string second="class LevelScreen : Screen { void onEnter(){ Save::set(\"level\",\"ok\"); } }";
+        r.platform.files[folder+"/"+firstId+"/main.as"]=first;
+        if(multiple)r.platform.files[folder+"/level/main.as"]=second;
+        for(const auto& screen:expected)
+        {
+            r.platform.ownFolders.insert(folder+"/"+screen+"/asset");
+            r.platform.files[folder+"/"+screen+"/asset/data.bin"]=std::string(screen)+std::string("\0\xff",2);
+        }
+        BlueprintWorkspace studio;studio.open(r.services);
+        NX_EXPECT(studio.active());if(!studio.active())return;
+        auto& state=r.platform.state;state.hasMouse=true;
+        auto frame=[&]()
+        {
+            r.assets.finish();r.input.update(state,1.0f/60);r.platform.now+=1.0/60;
+            studio.update(r.services);studio.checkpoint(r.services);
+            r.device->beginFrame({});r.canvas.begin();studio.draw(r.canvas);r.canvas.end();r.device->endFrame();
+        };
+        auto click=[&](float x,float y)
+        {
+            state.mouseX=x;state.mouseY=y;state.mouseButtons[0]=true;frame();
+            state.mouseButtons[0]=false;frame();
+        };
+        frame();click(794,18);click(500,180);
+        const std::string recovery="own/blueprint-recovery.bp.json";
+        NX_EXPECT(r.platform.files.count(recovery)&&studio.recoveryProtected());
+        BlueprintDocument project;std::string error;
+        const auto bytes=r.platform.files[recovery];
+        NX_EXPECT(project.load(bytes.data(),bytes.size(),error));
+        std::vector<BlueprintScreenOutput> output;
+        NX_EXPECT(compileBlueprintProject(project,output,error)&&output.size()==expected.size());
+        NX_EXPECT(project.screens()==expected);
+        NX_EXPECT(project.name=="bp-1790000000-1");
+        for(const auto& screen:expected)
+            NX_EXPECT(r.platform.files["own/"+project.assetRoot+"/"+screen+"/asset/data.bin"]==r.platform.files[folder+"/"+screen+"/asset/data.bin"]);
+        NX_EXPECT(r.platform.files[folder+"/"+firstId+"/main.as"]==first);
+        if(multiple)NX_EXPECT(r.platform.files[folder+"/level/main.as"]==second);
+        studio.close(r.services);
     }
-    BlueprintWorkspace studio;studio.open(r.services);
-    NX_EXPECT(studio.active());if(!studio.active())return;
-    auto& state=r.platform.state;state.hasMouse=true;
-    auto frame=[&]()
-    {
-        r.assets.finish();r.input.update(state,1.0f/60);r.platform.now+=1.0/60;
-        studio.update(r.services);studio.checkpoint(r.services);
-        r.device->beginFrame({});r.canvas.begin();studio.draw(r.canvas);r.canvas.end();r.device->endFrame();
-    };
-    auto click=[&](float x,float y)
-    {
-        state.mouseX=x;state.mouseY=y;state.mouseButtons[0]=true;frame();
-        state.mouseButtons[0]=false;frame();
-    };
-    frame();click(794,18);click(500,180);
-    const std::string recovery="own/blueprint-recovery.bp.json";
-    NX_EXPECT(r.platform.files.count(recovery)&&studio.recoveryProtected());
-    BlueprintDocument project;std::string error;
-    const auto bytes=r.platform.files[recovery];
-    NX_EXPECT(project.load(bytes.data(),bytes.size(),error));
-    std::vector<BlueprintScreenOutput> output;
-    NX_EXPECT(compileBlueprintProject(project,output,error)&&output.size()==2);
-    NX_EXPECT(project.screens()==std::vector<std::string>({"intro","level"}));
-    NX_EXPECT(project.name=="bp-1790000000-1");
-    for(const char* screen:{"intro","level"})
-        NX_EXPECT(r.platform.files["own/"+project.assetRoot+"/"+screen+"/asset/data.bin"]==r.platform.files[folder+"/"+screen+"/asset/data.bin"]);
-    NX_EXPECT(r.platform.files[folder+"/intro/main.as"]==first&&r.platform.files[folder+"/level/main.as"]==second);
-    studio.close(r.services);
 }
 #endif
