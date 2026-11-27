@@ -9,8 +9,10 @@ namespace nx
     bool blueprintCopyAssets(Platform& platform,const std::string& source,const std::string& destination,const std::string& screen,std::string& error);
     bool blueprintPrepareSceneEditor(Platform& platform,const std::string& root,const std::string& screen,std::string& error);
     std::string blueprintAssetImportPath(const std::string& file);
-    // Copy a standalone source's optional companion own/<stem>/asset tree into a fresh project.
+    // Recognize explicitly staged projects and native export folders.
+    bool blueprintImportProjectFolderName(const std::string& folder);
     bool blueprintImportFolderAssets(Platform& platform,const std::string& folder,const std::vector<std::string>& screens,std::string& root,std::string& error);
+    // Copy a standalone source's optional companion own/<stem>/asset tree into a fresh project.
     bool blueprintImportSourceAssets(Platform& platform,const std::string& sourceFile,std::string& root,std::string& error);
     bool blueprintImportAsset(Platform& platform,const std::string& root,const std::string& screen,const std::string& file,std::string& error);
 }

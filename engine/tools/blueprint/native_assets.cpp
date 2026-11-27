@@ -170,9 +170,20 @@ namespace nx
             if(ext==type)return "sound/"+file;
         return file;
     }
+    bool blueprintImportProjectFolderName(const std::string& folder)
+    {
+        if(!blueprintAssetName(folder,true))return false;
+        if(folder.size()>8&&folder.rfind("project-",0)==0)return true;
+        if(folder.rfind("bp-",0)!=0||folder.size()>32)return false;
+        const auto stamp=folder.substr(3);
+        const auto separator=stamp.find('-');
+        return separator!=std::string::npos&&separator>0&&separator+1<stamp.size()&&
+            stamp.substr(0,separator).find_first_not_of("0123456789")==std::string::npos&&
+            stamp.substr(separator+1).find_first_not_of("0123456789")==std::string::npos;
+    }
     bool blueprintImportFolderAssets(Platform& p,const std::string& folder,const std::vector<std::string>& screens,std::string& root,std::string& error)
     {
-        if(!blueprintAssetName(folder,true)||folder.rfind("project-",0)!=0||screens.empty()||screens.size()>10)
+        if(!blueprintImportProjectFolderName(folder)||screens.empty()||screens.size()>10)
         {error="Invalid native project folder.";return false;}
         std::vector<std::vector<std::string>> collected(screens.size());
         size_t directories=0,totalFiles=0;

@@ -249,7 +249,7 @@ namespace nx
                 stamp.substr(separator+1).find_first_not_of("0123456789")==std::string::npos;
         }
         bool projectFolderName(const std::string& folder)
-        {return folder.size()>8&&folder.rfind("project-",0)==0&&blueprintAssetName(folder,true);}
+        {return blueprintImportProjectFolderName(folder);}
         bool standaloneSourceName(const std::string& file)
         {
             return file.size()>3&&file.size()<=128&&file.front()!='.'&&file.ends_with(".as")&&
@@ -302,7 +302,7 @@ namespace nx
         std::sort(owners.begin(),owners.end());
         if(std::adjacent_find(owners.begin(),owners.end())!=owners.end())
         {m_status="Duplicate screen folder.";return false;}
-        BlueprintDocument candidate;candidate.name=folder.substr(8);
+        BlueprintDocument candidate;candidate.name=folder.rfind("project-",0)==0?folder.substr(8):folder;
         for(const auto& owner:owners)
         {
             // Use the canonical document screen-ID validator, including reserved IDs.

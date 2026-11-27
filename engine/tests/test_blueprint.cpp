@@ -1789,7 +1789,13 @@ NX_TEST(nativeWorkspaceImportsMultipleNativeScreensAndTheirAssets)
     r.platform.files["showcase/main/main.as"]="class Home : Screen {}";
     if(!r.screens.init(r.services,"showcase","main")){NX_EXPECT(false);return;}
     r.step(3);r.screens.setDevelopmentPaused(true);
-    const std::string folder="own/project-demo";
+    NX_EXPECT(blueprintImportProjectFolderName("project-demo"));
+    NX_EXPECT(blueprintImportProjectFolderName("bp-1790000000-1"));
+    NX_EXPECT(!blueprintImportProjectFolderName("bp-1790000000-"));
+    NX_EXPECT(!blueprintImportProjectFolderName("bp-1790000000-1-2"));
+    NX_EXPECT(!blueprintImportProjectFolderName("project-"));
+    NX_EXPECT(!blueprintImportProjectFolderName("bpa-1790000000-1"));
+    const std::string folder="own/bp-1790000000-1";
     const std::string first="class Start : Screen { void onEnter(){ Screens::push(\"level\"); } }";
     const std::string second="class LevelScreen : Screen { void onEnter(){ Save::set(\"level\",\"ok\"); } }";
     r.platform.files[folder+"/intro/main.as"]=first;
@@ -1797,7 +1803,7 @@ NX_TEST(nativeWorkspaceImportsMultipleNativeScreensAndTheirAssets)
     for(const char* screen:{"intro","level"})
     {
         r.platform.ownFolders.insert(folder+"/"+screen+"/asset");
-        r.platform.files[folder+"/"+screen+"/asset/data.bin"]=std::string(screen)+"\0";
+        r.platform.files[folder+"/"+screen+"/asset/data.bin"]=std::string(screen)+std::string("\0\xff",2);
     }
     BlueprintWorkspace studio;studio.open(r.services);
     NX_EXPECT(studio.active());if(!studio.active())return;
@@ -1822,6 +1828,7 @@ NX_TEST(nativeWorkspaceImportsMultipleNativeScreensAndTheirAssets)
     std::vector<BlueprintScreenOutput> output;
     NX_EXPECT(compileBlueprintProject(project,output,error)&&output.size()==2);
     NX_EXPECT(project.screens()==std::vector<std::string>({"intro","level"}));
+    NX_EXPECT(project.name=="bp-1790000000-1");
     for(const char* screen:{"intro","level"})
         NX_EXPECT(r.platform.files["own/"+project.assetRoot+"/"+screen+"/asset/data.bin"]==r.platform.files[folder+"/"+screen+"/asset/data.bin"]);
     NX_EXPECT(r.platform.files[folder+"/intro/main.as"]==first&&r.platform.files[folder+"/level/main.as"]==second);
