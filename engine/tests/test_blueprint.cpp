@@ -1647,10 +1647,26 @@ NX_TEST(nativeWorkspacePreservesExternallyReplacedRecoveryAcrossEditAndSave)
     };
     frame();r.platform.dropped="original.as";frame();
     NX_EXPECT(r.platform.files.count(path));
+    NX_EXPECT(studio.recoveryProtected());
+    const auto originalCheckpoint=r.platform.files[path];
+    // A missing checkpoint must be detected even with no new graph edit.
+    r.platform.files.erase(path);
+    r.platform.failOwnWrites=true;
+    studio.checkpoint(r.services,true);
+    NX_EXPECT(!studio.recoveryProtected()&&!r.platform.files.count(path));
+    r.platform.failOwnWrites=false;
+    studio.checkpoint(r.services,true);
+    NX_EXPECT(studio.recoveryProtected()&&r.platform.files[path]==originalCheckpoint);
     BlueprintDocument external;external.create();external.name="External Draft";
     std::string other,error;
     NX_EXPECT(external.serialize(other,error));
     r.platform.files[path]=other;
+    r.platform.failOwnWrites=true;
+    studio.checkpoint(r.services,true);
+    NX_EXPECT(!studio.recoveryProtected()&&r.platform.files[path]==other);
+    r.platform.failOwnWrites=false;
+    studio.checkpoint(r.services,true);
+    NX_EXPECT(studio.recoveryProtected()&&r.platform.files[path]==originalCheckpoint);
     click(1100,130);type("literal:int");click(1100,167);
     studio.checkpoint(r.services,true);
     size_t archives=0;

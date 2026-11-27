@@ -671,18 +671,23 @@ namespace nx
             else m_recoveryWarning.clear();
             return;
         }
-        if(m_checkpointPresent&&m_checkpointRevision==m_document.revision()&&m_recoveryWarning.empty())return;
-        std::string output,error;
-        if(!m_document.serialize(output,error))
-        {recoveryWarning("Recovery serialization failed: "+error);return;}
-        // Check the last known bytes before replacing a shared recovery filename.
-        // This detects sequential external changes; it is not a cross-process lock.
+        // Revalidate even if the graph revision has not changed. External tools
+        // may remove or replace a previously verified checkpoint. Reading once
+        // per checkpoint interval avoids reserializing unchanged graphs.
         FileData damaged;
         const bool exists=s.platform->fileTime(path)!=0;
         if(exists&&!s.platform->readFile(path,damaged,MemTag::General))
         {recoveryWarning("Cannot read recovery file; autosave deferred.");return;}
         const bool changed=exists&&(damaged.size!=m_checkpointBytes.size()||
             (damaged.size&&std::memcmp(damaged.data,m_checkpointBytes.data(),damaged.size)!=0));
+        if(exists&&!changed&&!m_protectDamagedRecovery&&m_checkpointPresent&&
+            m_checkpointRevision==m_document.revision()&&!m_checkpointBytes.empty())
+        {
+            m_recoveryWarning.clear();return;
+        }
+        std::string output,error;
+        if(!m_document.serialize(output,error))
+        {recoveryWarning("Recovery serialization failed: "+error);return;}
         if(exists&&damaged.size&&(m_protectDamagedRecovery||changed))
         {
             // Preserve the previous bytes before any overwrite, including a valid
