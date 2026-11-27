@@ -324,6 +324,10 @@ namespace nx
         const auto owners=document.screens();
         if(std::find(owners.begin(),owners.end(),owner)==owners.end()){error="Unknown screen "+owner;return false;}
         // Generate shared native behaviour classes in each screen module, before the Screen.
+        bool usesLevel=false;
+        for(const auto& graph:document.graphs)if(graph.owner==owner)
+            for(const auto& node:graph.nodes)if(node.kind.rfind("level:",0)==0)usesLevel=true;
+        if(usesLevel)result+="#include \"global:scene.as\"\n\n";
         std::vector<std::string> classes;
         for(const auto& name:document.behaviours())classes.push_back("behaviour:"+name);
         classes.push_back(owner);
@@ -331,6 +335,7 @@ namespace nx
         {
         const bool behaviour=classOwner!=owner;
         result+=behaviour?"class BP_Behaviour_"+classOwner.substr(10)+" : Behaviour\n{\n":"class BP_NativeScreen : Screen\n{\n";
+        if(!behaviour&&usesLevel)result+="    Level bp_level;\n";
         if(!document.variables(vars,error,classOwner))return false;
         for(const auto& v:vars)result+="    "+v.type+" bp_var_"+v.name+";\n";
         for(size_t graphIndex=0;graphIndex<document.graphs.size();++graphIndex)

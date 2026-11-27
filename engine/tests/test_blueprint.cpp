@@ -1007,3 +1007,38 @@ NX_TEST(nativeInstalledSceneEditorOpensAndSavesRealScene)
     NX_EXPECT(r.screens.depth()==1&&r.services.save==&r.save&&!r.services.sceneEditorAssets);
 }
 #endif
+
+#ifdef NX_DESKTOP_BLUEPRINT
+NX_TEST(nativeLevelGraphLoadsAProjectSceneThroughOriginalLevelHelper)
+{
+    Rig r(128*1024*1024);NX_EXPECT(r.ok);if(!r.ok)return;
+    r.host.setStatementLimit(5000000);
+    r.platform.workspaceFiles=true;
+    r.platform.files["showcase/main/screen.json"]="{\"title\":\"Home\"}";
+    r.platform.files["showcase/main/main.as"]="class Home : Screen {}";
+    if(!r.screens.init(r.services,"showcase","main")){NX_EXPECT(false);return;}
+    r.step(3);r.screens.setDevelopmentPaused(true);
+    std::string root,error,source;
+    if(!blueprintCreateAssetRoot(r.platform,root,error)||!blueprintPrepareSceneEditor(r.platform,root,"Screen",error))
+    {NX_EXPECT(false);return;}
+    BlueprintDocument doc;doc.create();
+    bool ok=doc.addNode(0,"level:load",0,0,error)&&doc.setInputValue(0,1,"file","asset:scene.json",error)&&doc.connect(0,0,"then",1,"in",error)&&
+        doc.addNode(0,"branch",0,0,error)&&doc.connect(0,1,"then",2,"in",error)&&doc.connect(0,1,"result",2,"condition",error)&&
+        doc.addNode(0,"api:Save:Save::set:string,string",0,0,error)&&doc.connect(0,2,"true",3,"in",error)&&
+        doc.setInputValue(0,3,"key","level_loaded",error)&&doc.setInputValue(0,3,"value","yes",error)&&
+        doc.addNode(1,"level:update",0,0,error)&&doc.addNode(1,"event:delta",0,0,error)&&doc.connect(1,0,"then",1,"in",error)&&doc.connect(1,2,"value",1,"dt",error)&&
+        compileBlueprint(doc,source,error);
+    NX_EXPECT(ok);if(!ok)return;
+    // Missing include must not contaminate the next compile.
+    NX_EXPECT(!r.screens.validateBlueprintSource("#include \"global:scene.as\"\n#include \"global:missing-test.as\"\nclass Test : Screen {}",error));
+    NX_EXPECT(r.screens.validateBlueprintSource(source,error));
+    Screens::PreviewScreen p;snprintf(p.info.id,sizeof(p.info.id),"Screen");p.source=source;
+    NX_EXPECT(r.screens.startProjectPreview({p},"Screen",error,root));if(!r.screens.previewing())return;
+    for(int i=0;i<1000&&r.screens.loading()&&!r.screens.failed();++i)
+    {r.step();std::this_thread::sleep_for(std::chrono::milliseconds(10));}
+    r.step(2);
+    NX_EXPECT(!r.screens.failed()&&!r.screens.loading());
+    NX_EXPECT(strcmp(r.services.save->get("level_loaded","missing"),"yes")==0);
+    r.screens.stopPreview();
+}
+#endif

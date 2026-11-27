@@ -181,7 +181,7 @@ namespace nx
         for(const auto& node:blueprintCatalogue())
             if(node.id!="entry"&&(node.id!="return:function"||graph.kind=="function")&&(node.id!="event:entity"||behaviour)&&
                 (node.id!="event:other"||(behaviour&&(graph.name=="onHit"||graph.name=="onLeave")))&&
-                (node.id!="attach:behaviour"||(!behaviour&&hasBehaviours))&&(node.id!="event:delta"||m_document.graphs[m_graph].name=="update")&&
+                (node.id!="attach:behaviour"||(!behaviour&&hasBehaviours))&&(!behaviour||node.id.rfind("level:",0)!=0)&&(node.id!="event:delta"||m_document.graphs[m_graph].name=="update")&&
                 (node.id!="event:canvas"||m_document.graphs[m_graph].name=="draw")&&
                 lower(node.category+" "+node.title+" "+node.id).find(query)!=std::string::npos)m_palette.push_back(&node);
     }
@@ -351,16 +351,16 @@ namespace nx
 
     bool BlueprintWorkspace::validateProject(Services& s,const std::vector<BlueprintScreenOutput>& screens)
     {
-        const char* module="bp_native_validation";
         for(const auto& screen:screens)
         {
-            const bool valid=s.host->compile(module,"blueprint.as",screen.source.data(),screen.source.size())&&s.host->findClass(module,"Screen");
+            std::string error;
+            const bool valid=s.screens->validateBlueprintSource(screen.source,error);
             if(!valid)
             {
-                m_status=screen.id+": "+s.host->lastError();
+                m_status=screen.id+": "+error;
                 focusDiagnostic(blueprintSourceLocation(screen.map,blueprintErrorLine(m_status,"blueprint.as")));
             }
-            s.host->discard(module);if(!valid)return false;
+            if(!valid)return false;
         }
         return true;
     }

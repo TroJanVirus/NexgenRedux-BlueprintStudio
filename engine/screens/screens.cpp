@@ -153,6 +153,25 @@ namespace nx
         return startPreviewSession(screens,start,error,assetRoot,false);
     }
 
+    bool Screens::validateBlueprintSource(const std::string& code,std::string& error)
+    {
+        if(!m_services||previewing()||code.empty()||code.size()>1024*1024)
+        {error="No valid Blueprint source to validate.";return false;}
+        auto& host=*m_services->host;
+        auto* bytes=static_cast<u8*>(memAlloc(code.size()+1,MemTag::Script));
+        if(!bytes){error="Cannot allocate validation source.";return false;}
+        memcpy(bytes,code.data(),code.size());
+        FileData source;source.take(bytes,code.size());
+        m_included.clear();host.clearSections();
+        if(!include(source,"blueprint.as",error,0)){host.clearSections();m_included.clear();return false;}
+        const char* module="bp_native_validation";
+        const bool compiled=host.compile(module,"blueprint.as",reinterpret_cast<const char*>(source.data),source.size);
+        const bool valid=compiled&&host.findClass(module,"Screen");
+        if(!valid)error=compiled?"Generated script needs a Screen class.":host.lastError();
+        else error.clear();
+        host.discard(module);host.clearSections();m_included.clear();return valid;
+    }
+
     bool Screens::startSceneEditor(const std::string& assetRoot,const std::string& screen,std::string& error)
     {
         if(!m_services||assetRoot.empty()||screen.empty()||screen.size()>40||
@@ -431,11 +450,12 @@ namespace nx
         }
         // `#include "global:scene.as"`: other files, which the screen shares. The line itself is made blank.
         std::string included;
-        m_included.clear();
+        m_included.clear();host.clearSections();
         if (!include(source, shown(entry), included, 0))
         {
             entry.failed = true;
             snprintf(entry.error, sizeof(entry.error), "%s", included.c_str());
+            host.clearSections();m_included.clear();
             return false;
         }
         // Its path is in every error message, so leave out the part that is always the same.

@@ -48,6 +48,7 @@ namespace nx
         bool compile(const char* module, const char* file, const char* code, size_t length);
         // Other files, put in with the next to be compiled: those that it includes.
         void addSection(const char* file, const char* code, size_t length);
+        void clearSections() { m_sections.clear(); }
         void discard(const char* module);
 
         // Looks up a function by declaration; nullptr if the module doesn't have it.

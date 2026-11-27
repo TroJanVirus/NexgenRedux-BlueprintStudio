@@ -7,7 +7,7 @@
 using namespace nx;
 NX_TEST(nativeCatalogueContainsReferenceAPI)
 {
-    NX_EXPECT(blueprintCatalogue().size()==909);
+    NX_EXPECT(blueprintCatalogue().size()==924);
     const auto* save=blueprintSpec("api:Save:Save::set:string,string");
     NX_EXPECT(save&&save->inputs.size()==3&&save->outputs.size()==1);
     if(save&&save->inputs.size()==3)NX_EXPECT(save->inputs[0].type=="exec"&&save->inputs[2].type=="string");
@@ -353,4 +353,18 @@ NX_TEST(nativeAssetRootsAndNamesAreConfined)
     doc.assetRoot="bpa-12345-1";NX_EXPECT(doc.serialize(saved,error));
     BlueprintDocument copy;NX_EXPECT(copy.load(saved.data(),saved.size(),error)&&copy.assetRoot==doc.assetRoot);
     doc.assetRoot="../external";NX_EXPECT(!doc.serialize(saved,error));
+}
+
+NX_TEST(nativeLevelNodesGenerateTheOriginalSceneHelper)
+{
+    BlueprintDocument doc;doc.create();std::string source,error;
+    NX_EXPECT(doc.addNode(0,"level:load",0,0,error)&&doc.setInputValue(0,1,"file","asset:scene.json",error)&&doc.connect(0,0,"then",1,"in",error));
+    NX_EXPECT(doc.addNode(1,"level:update",0,0,error)&&doc.addNode(1,"event:delta",0,0,error)&&doc.connect(1,0,"then",1,"in",error)&&doc.connect(1,2,"value",1,"dt",error));
+    NX_EXPECT(doc.addNode(2,"level:drawHud",0,0,error)&&doc.addNode(2,"event:canvas",0,0,error)&&doc.connect(2,0,"then",1,"in",error)&&doc.connect(2,2,"value",1,"canvas",error));
+    NX_EXPECT(doc.addBehaviour("Actor",error)&&!doc.addNode(6,"level:load",0,0,error));
+    NX_EXPECT(compileBlueprint(doc,source,error));
+    NX_EXPECT(source.rfind("#include \"global:scene.as\"",0)==0&&source.find("Level bp_level;")!=std::string::npos);
+    NX_EXPECT(source.find("bp_level.load(\"asset:scene.json\")")!=std::string::npos);
+    NX_EXPECT(source.find("bp_level.update(dt, null, false, Vec3())")!=std::string::npos);
+    NX_EXPECT(source.find("bp_level.drawHud(canvas)")!=std::string::npos);
 }

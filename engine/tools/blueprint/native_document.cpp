@@ -56,6 +56,22 @@ namespace nx
             {"call:function","Call function","Functions","in:exec","then:exec"},
             {"return:function","Return","Functions","in:exec",""},
             {"repeat","Repeat (bounded)","Flow","in:exec|count:int","body:exec|then:exec|index:int"},
+            // The installed global:scene.as helper (ordinary AngelScript, not a second scene runtime).
+            {"level:load","Load native level","Level","in:exec|file:string","then:exec|result:bool","bp_level.load","","","","bool","","in:file"},
+            {"level:clear","Clear level","Level","in:exec","then:exec","bp_level.clear","","","","void"},
+            {"level:update","Update native level","Level","in:exec|dt:float|who:Entity@|shot:bool|shotAt:Vec3","then:exec|result:string","bp_level.update","","","","string","","in:dt|in:who|in:shot|in:shotAt","who:null|shot:false|shotAt:Vec3()"},
+            {"level:drawHud","Draw level HUD","Level","in:exec|canvas:Canvas@","then:exec","bp_level.drawHud","","","","void","","in:canvas"},
+            {"level:find","Find named level entity","Level","name:string","result:Entity@","bp_level.find","","","1","Entity@","","in:name"},
+            {"level:show","Show level entity","Level","in:exec|name:string|seconds:float|how:string","then:exec","bp_level.show","","","","void","","in:name|in:seconds|in:how","seconds:0.6f|how:\"\""},
+            {"level:hide","Hide level entity","Level","in:exec|name:string|seconds:float","then:exec","bp_level.hide","","","","void","","in:name|in:seconds","seconds:0.4f"},
+            {"level:switchOn","Switch level trigger","Level","in:exec|name:string|on:bool","then:exec","bp_level.switchOn","","","","void","","in:name|in:on"},
+            {"level:isOn","Level trigger enabled","Level","name:string","result:bool","bp_level.isOn","","","1","bool","","in:name"},
+            {"level:arrival","Find level arrival","Level","in:exec|name:string","then:exec|result:bool|place:Vec3|turned:float","bp_level.arrival","","","","bool","1","in:name|out:place|out:turned"},
+            {"level:set:number","Set HUD number","Level","in:exec|name:string|value:float","then:exec","bp_level.set","","","","void","","in:name|in:value"},
+            {"level:set:text","Set HUD text","Level","in:exec|name:string|value:string","then:exec","bp_level.set","","","","void","","in:name|in:value"},
+            {"level:number","Get HUD number","Level","name:string","result:float","bp_level.number","","","1","float","","in:name"},
+            {"level:text","Get HUD text","Level","name:string","result:string","bp_level.text","","","1","string","","in:name"},
+            {"level:say","Show level message","Level","in:exec|text:string|seconds:float","then:exec","bp_level.say","","","","void","","in:text|in:seconds","seconds:3"},
 #include "tools/blueprint/native_catalog.inc"
         };
         std::vector<BlueprintPin> parsePins(const std::string& text)
@@ -104,7 +120,7 @@ namespace nx
             const bool behaviour=behaviourOwner(owner);
             return (kind!="event:delta"||event=="update")&&(kind!="event:canvas"||(!behaviour&&event=="draw"))&&
                 (kind!="event:entity"||behaviour)&&(kind!="event:other"||(behaviour&&(event=="onHit"||event=="onLeave")))&&
-                (kind!="attach:behaviour"||!behaviour);
+                (kind!="attach:behaviour"||!behaviour)&&(!behaviour||kind.rfind("level:",0)!=0);
         }
         bool signatureType(const std::string& type)
         {return blueprintLiteralType(type)||type=="Vec2"||type=="Vec3"||type=="Color"||type=="Entity@";}

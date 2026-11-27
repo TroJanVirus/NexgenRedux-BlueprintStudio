@@ -70,6 +70,7 @@ namespace nx
         bool startPreview(const std::string& source, std::string& error);
         bool startProjectPreview(const std::vector<PreviewScreen>& screens,const std::string& start,std::string& error,const std::string& assetRoot="");
         bool startSceneEditor(const std::string& assetRoot,const std::string& screen,std::string& error);
+        bool validateBlueprintSource(const std::string& source,std::string& error);
         void stopPreview();
         bool previewing() const { return m_previewSave != nullptr; }
 #endif
