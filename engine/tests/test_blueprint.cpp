@@ -2159,6 +2159,17 @@ NX_TEST(nativeBlueprintCameraOrbitKeepsCubeCenteredAndReturnsToStart)
     check(0,6,0.20f);r.step(120);check(6,0,0.20f);r.step(120);check(0,-6,0.20f);r.step(120);check(-6,0,0.20f);r.step(122);check(0,6,0.001f);
     const auto stopped=space.cameraPlace();r.step(120);const auto later=space.cameraPlace();
     NX_EXPECT(fabsf(stopped.x-later.x)<0.00001f&&fabsf(stopped.z-later.z)<0.00001f&&!r.screens.failed());
+    if(variant==2)
+    {
+        // The completed action must still follow its live target and tolerate deletion.
+        auto* spatial=space.getSpatial(cube);NX_EXPECT(spatial!=nullptr);if(!spatial)return;
+        spatial->place={2,1.5f,-3};r.step(2);
+        const Vec3 moved=space.cameraPlace();Vec2 projected{};
+        NX_EXPECT(fabsf(moved.x-2)<0.001f&&fabsf(moved.y-3.5f)<0.001f&&fabsf(moved.z-3)<0.001f);
+        NX_EXPECT(space.toScreen({2,1.5f,-3},projected)&&fabsf(projected.x-640)<1&&fabsf(projected.y-360)<1);
+        world.destroyEntity(cube);r.step(3);const Vec3 after=space.cameraPlace();
+        NX_EXPECT(!r.screens.failed()&&fabsf(after.x-moved.x)<0.001f&&fabsf(after.y-moved.y)<0.001f&&fabsf(after.z-moved.z)<0.001f);
+    }
     NX_INFO("Blueprint orbit variant %d: completed position, projection and endpoint assertions.",variant);
     }
 }

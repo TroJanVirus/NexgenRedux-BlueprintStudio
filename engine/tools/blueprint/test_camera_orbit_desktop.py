@@ -19,6 +19,9 @@ project = json.loads(fixture.read_text(encoding="utf-8"))
 author = "--author" in sys.argv
 timed = fixture.name == "camera-orbit-timed.bp.json"
 operations = {"insert": 0, "wire": 0, "value": 0, "graph_switch": 0}
+if timed and author:
+    project["graphs"][0]["nodes"][2]["values"]["place"] = "0,0.5,0"
+    project["graphs"][0]["nodes"][2]["values"]["color"] = "0.92,0.35,0.12,1"
 recovery = own / "blueprint-recovery.bp.json"
 if not author:
     recovery.write_text(json.dumps(project), encoding="utf-8")
@@ -66,6 +69,15 @@ def value(x, y, text):
     xdo("key", "Return")
     time.sleep(0.3)
 
+def components(x, y, values):
+    operations["value"] += 1
+    click(x, y)
+    for i, text in enumerate(values):
+        click(int(360 + 560 / len(values) * (i + 0.5)), 317)
+        xdo("type", "--delay", 35, text)
+    xdo("key", "Return")
+    time.sleep(0.3)
+
 def wire(x1, y1, x2, y2):
     operations["wire"] += 1
     xdo("mousemove", "--window", window, x1, y1)
@@ -99,6 +111,8 @@ def assert_authored(process, graph_index, nodes, links):
     required = {"spawn:box": {"name": "Cube"}, "time:timeline": {"duration": "8"},
                 "make:Vec3": {"x": "0", "y": "0.5", "z": "0"},
                 "camera:orbit-timed": {"name": "Cube", "duration": "8"}}
+    if timed and graph_index == 0:
+        required["spawn:box"].update({"place": "0,0.5,0", "color": "0.92,0.35,0.12,1"})
     for n in actual["nodes"]:
         if n["kind"] in required:
             assert all(n.get("values", {}).get(k) == v for k, v in required[n["kind"]].items()), n
@@ -109,6 +123,9 @@ def author_scene(process):
     right_add(500, 100, "spawn:plane")
     right_add(760, 100, "spawn:box")
     value(760, 160, "Cube")
+    if timed:
+        components(760, 182, ["0", "0.5", "0"])
+        components(760, 226, ["0.92", "0.35", "0.12", "1"])
     wire(468, 138, 500, 138)
     wire(696, 138, 760, 138)
     assert_authored(process, 0, 3, 2)
@@ -117,7 +134,11 @@ def author_scene(process):
     click(100, 122)
     if timed:
         right_add(500, 100, "camera:orbit-timed")
-        value(500, 160, "Cube")
+        operations["value"] += 1
+        click(500, 160)
+        click(500, 485)  # Cube sorts before Floor in the known-target list.
+        xdo("key", "Return")
+        time.sleep(0.3)
         value(500, 226, "8")
         wire(468, 138, 500, 138)
         assert_authored(process, 1, 2, 1)
@@ -160,7 +181,7 @@ def author_scene(process):
     exported = sorted(own.glob("bp-*/Screen/main.as"))[-1].read_text(encoding="utf-8")
     assert "SolidBox" in exported and "SolidPlane" in exported and "Space::camera" in exported
     (root / "gui-authored-main.as").write_text(exported, encoding="utf-8")
-    expected = {"insert": 4 if timed else 8, "wire": 4 if timed else 10, "value": 3 if timed else 5, "graph_switch": 2}
+    expected = {"insert": 4 if timed else 8, "wire": 4 if timed else 10, "value": 5, "graph_switch": 2}
     assert operations == expected, (operations, expected)
     (root / "authoring-operations.json").write_text(json.dumps(operations, indent=2), encoding="utf-8")
     print(f"GUI-authored camera orbit: {operations}, exported native source.", flush=True)
