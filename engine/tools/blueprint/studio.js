@@ -3,6 +3,7 @@ const B = NexgenBlueprint, $ = id => document.getElementById(id), clone = o => J
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls)
     e.className = cls; if (text !== undefined)
     e.textContent = text; return e; };
+let graphRendering = false;
 let doc = clone(NexgenExample), graphId = doc.graphs[0].name, selected = null, view = { x: 40, y: 35, z: 1 }, armed = null, drag = null, space = false, history = [], future = [], last = null, dirty = false, filterPort = null, contextPos = null;
 const graph = () => doc.graphs.find(g => g.name === graphId) || doc.graphs[0];
 function uid() { return 'n' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
@@ -102,7 +103,10 @@ function zoom(f, x, y) { const v = $('viewport').getBoundingClientRect(); x ??= 
 function portKey(n, dir, p) { return n + '|' + dir + '|' + p; }
 let portElements = new Map();
 function renderGraph() { const g = graph(); $('graphName').textContent = g ? doc.name + '  /  ' + g.name : 'No graph'; $('nodes').replaceChildren(); portElements = new Map(); if (!g)
-    return; for (const n of g.nodes) {
+    return; const connected = new Set();
+    for (const l of g.links) { connected.add(portKey(l.from.node, 'out', l.from.pin)); connected.add(portKey(l.to.node, 'in', l.to.pin)); }
+    const fragment = document.createDocumentFragment();
+    for (const n of g.nodes) {
     const d = B.describe(doc, g, n) || {title:'Invalid node: '+n.kind,category:'Invalid',inputs:[],outputs:[]};
     const x = el('div', 'node ' + (n.kind==='comment'?'comment ': '') + (n.kind === 'entry' ? 'entry' : d.category === 'Flow' ? 'flow' : !d.inputs.some(p => p.type === 'exec') ? 'pure' : ''));
     x.id = 'node-' + n.id;
@@ -134,7 +138,7 @@ function renderGraph() { const g = graph(); $('graphName').textContent = g ? doc
             const data = { node: n.id, pin: p.name, dir, type: p.type };
             port.dataset.port = portKey(n.id, dir, p.name);
             portElements.set(port.dataset.port, { el: port, data });
-            if (g.links.some(l => dir === 'in' ? l.to.node === n.id && l.to.pin === p.name : l.from.node === n.id && l.from.pin === p.name))
+            if (connected.has(port.dataset.port))
                 port.classList.add('connected');
             if (armed && portKey(armed.node, armed.dir, armed.pin) === port.dataset.port)
                 port.classList.add('chosen');
@@ -156,26 +160,49 @@ function renderGraph() { const g = graph(); $('graphName').textContent = g ? doc
         body.append(col);
     }
     x.append(body);
-    $('nodes').append(x);
-} transform(); drawWires(); if(typeof debugDecorate==='function')debugDecorate(); }
+    fragment.append(x);
+} $('nodes').append(fragment); transform(); drawWires(); if(typeof debugDecorate==='function')debugDecorate(); }
 function pinPos(p, dir) { const e = portElements.get(portKey(p.node, dir, p.pin))?.el; if (!e)
     return null; const r = e.getBoundingClientRect(); return worldPoint(r.left + r.width / 2, r.top + r.height / 2); }
 function curve(a, b) { const bend = Math.max(42, Math.abs(b.x - a.x) * .48); return `M ${a.x} ${a.y} C ${a.x + bend} ${a.y}, ${b.x - bend} ${b.y}, ${b.x} ${b.y}`; }
-function drawWires(pointer = null) { const s = $('wires'); s.replaceChildren(); for (const l of graph()?.links || []) {
-    if(globalThis.NexgenOrganise?.sameFold(l))continue;
-    const a = pinPos(l.from, 'out'), b = pinPos(l.to, 'in');
-    if (!a || !b)
-        continue;
-    const t = portElements.get(portKey(l.from.node, 'out', l.from.pin)).data.type;
-    const p = svg('path', { d: typeof NexgenPolish!=='undefined'?NexgenPolish.routePath(l,a,b,curve):curve(a,b), stroke: color(t), class: 'wire' });
-    p.onclick = e => { e.stopPropagation(); selected = { link: l }; renderDetails(); };
-    p.oncontextmenu = e => { e.preventDefault(); e.stopPropagation(); remember(); graph().links = graph().links.filter(x => x !== l); render(); };
-    s.append(p);
-} if (pointer && drag?.type === 'wire') {
-    const p = drag.start, a = pinPos(p, p.dir), b = worldPoint(pointer.clientX, pointer.clientY);
-    if (a)
-        s.append(svg('path', { d: p.dir === 'out' ? curve(a, b) : curve(b, a), stroke: color(p.type), class: 'wire', 'stroke-dasharray': '5 4' }));
-} }
+// Keep existing wire elements while dragging. Read each pin position only once per draw.
+let wirePaths = new Map(), wirePreview = null;
+function drawWires(pointer = null) {
+    const s = $('wires'), next = new Map(), positions = new Map();
+    const position = (p, dir) => {
+        const key = portKey(p.node, dir, p.pin);
+        if (!positions.has(key)) positions.set(key, pinPos(p, dir));
+        return positions.get(key);
+    };
+    const attr = (element, key, value) => { if (element.getAttribute(key) !== String(value)) element.setAttribute(key, value); };
+    if (wirePreview) { wirePreview.remove(); wirePreview = null; }
+    for (const l of graph()?.links || []) {
+        if (globalThis.NexgenOrganise?.sameFold(l)) continue;
+        const a = position(l.from, 'out'), b = position(l.to, 'in');
+        if (!a || !b) continue;
+        const t = portElements.get(portKey(l.from.node, 'out', l.from.pin))?.data.type;
+        if (!t) continue;
+        const d = typeof NexgenPolish !== 'undefined' ? NexgenPolish.routePath(l, a, b, curve) : curve(a, b);
+        let p = wirePaths.get(l);
+        if (!p || p.parentNode !== s) {
+            p = svg('path', { class: 'wire' });
+            p.onclick = e => { e.stopPropagation(); selected = { link: l }; renderDetails(); };
+            p.oncontextmenu = e => { e.preventDefault(); e.stopPropagation(); remember(); graph().links = graph().links.filter(x => x !== l); render(); };
+            s.append(p);
+        }
+        attr(p, 'd', d); attr(p, 'stroke', color(t));
+        next.set(l, p);
+    }
+    for (const [l, p] of wirePaths) if (!next.has(l)) p.remove();
+    wirePaths = next;
+    if (pointer && drag?.type === 'wire') {
+        const p = drag.start, a = position(p, p.dir), b = worldPoint(pointer.clientX, pointer.clientY);
+        if (a) {
+            wirePreview = svg('path', { d: p.dir === 'out' ? curve(a, b) : curve(b, a), stroke: color(p.type), class: 'wire', 'stroke-dasharray': '5 4' });
+            s.append(wirePreview);
+        }
+    }
+}
 function connect(a, b, record = true) { if (a.dir === b.dir || a.type !== b.type || a.node === b.node) {
     $('status').textContent = 'Incompatible pins';
     return false;
@@ -603,7 +630,14 @@ window.addEventListener('keydown', e => { if (e.target.matches('input,textarea,s
 } });
 window.addEventListener('keyup', e => { if (e.code === 'Space')
     space = false; });
-window.addEventListener('blur', () => { space = false; drag = null; });
+function cancelDrag() {
+    const wasDragging = drag;
+    space = false; drag = null;
+    if (wasDragging?.type === 'wire') { armed = null; renderGraph(); }
+    else if (wasDragging) drawWires();
+}
+window.addEventListener('blur', cancelDrag);
+window.addEventListener('pointercancel', cancelDrag);
 window.addEventListener('beforeunload', e => { if (dirty) {
     e.preventDefault();
     e.returnValue = '';

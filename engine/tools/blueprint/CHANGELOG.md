@@ -1,5 +1,11 @@
 # Changes
 
+## Large graphs
+
+- Draw wires once after node layout, pin visibility and folded groups have been updated. Keep existing wire elements when moving nodes instead of recreating them.
+- Cancel a wire drag when the window loses focus or the pointer is cancelled.
+- Added a browser regression test with 401 nodes and 400 wires, including folded groups and unchanged script output.
+
 ## Node library
 
 - Search native functions by name, category, description or pin, with words in any order. Fold categories and use the keyboard to insert nodes. Open the original Nexgen reference from Details. Hide action nodes in value-only functions and prevent direct self-calls from the library.

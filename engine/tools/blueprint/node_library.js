@@ -63,5 +63,15 @@ $('context').querySelector('input').placeholder='Find a node… (↑ ↓ Enter)'
 const docs='https://github.com/Team-Resurgent/NexgenRedux/blob/main/docs/ScriptReference.md';
 const oldDetails=renderDetails;
 renderDetails=()=>{oldDetails();const n=graph()?.nodes.find(n=>n.id===selected?.node);if(!n?.kind.startsWith('api:'))return;const d=B.describe(doc,graph(),n);if(!d)return;const a=el('a','nodeLibraryHelp','Read Nexgen reference: '+d.category);a.href=docs+'#'+d.category.toLowerCase().replace(/[^a-z0-9]+/g,'-');a.target='_blank';a.rel='noopener noreferrer';$('details').append(a);};
+// The graph is built in several stages (style, compact pins and folded groups).
+// Draw its wires and minimap once, after all stages have finished.
+const buildGraph=renderGraph, paintWires=drawWires;
+drawWires=pointer=>{if(!graphRendering)paintWires(pointer);};
+renderGraph=()=>{
+    if(graphRendering)return buildGraph();
+    graphRendering=true;
+    try{buildGraph();}finally{graphRendering=false;}
+    drawWires();
+};
 renderPalette();
 })(globalThis);
