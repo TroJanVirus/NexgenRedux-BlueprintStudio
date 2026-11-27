@@ -635,6 +635,21 @@ namespace nx
 
     // --- Every step ---
 
+    bool Space::activateActorCamera(u32 actor,const char* componentName)
+    {
+        if(!m_world.alive(actor)||!componentName)return false;
+        u32 selected=0,matches=0;
+        m_world.eachEntity([&](u32 id,const World::Entity& entity)
+        {
+            const auto* camera=getSpatial(id);
+            if(!camera||camera->cameraFov<=0||(*componentName&&strcmp(componentName,entity.name)!=0))return;
+            for(u32 at=id;at;at=m_world.parentOf(at))
+                if(at==actor){selected=id;++matches;break;}
+        });
+        if(matches!=1)return false;
+        m_cameraEntity=selected;refreshActorCamera(false);return true;
+    }
+
     void Space::refreshActorCamera(bool focus)
     {
         if(!m_cameraEntity)return;

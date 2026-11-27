@@ -2531,3 +2531,24 @@ NX_TEST(nativePlacementViewportProjectsRayToWorldPlane)
     NX_EXPECT(t>0&&fabsf(eye.x+ray.x*t-3)<0.01f&&fabsf(eye.z+ray.z*t-5)<0.01f);
     NX_EXPECT(doc.placeVisualActor("Screen",id,"3,2,5",error));
 }
+
+NX_TEST(nativeActorCameraSelectionIsInstanceScoped)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    BlueprintDocument doc;doc.create();std::string id,error,source;
+    NX_EXPECT(doc.createVisualAsset("actor",id,error)&&doc.appendVisualActorComponent(id,0,"camera","0,2,-5",error));
+    NX_EXPECT(doc.appendVisualActorComponent(id,0,"camera","0,8,-10",error)&&doc.visualActorSource(id,source,error));
+    JsonTree tree;NX_EXPECT(tree.parse(source.data(),source.size()));
+    World world(r.assets,r.host,"blueprint",64,32);auto& space=world.space();space.init(&r.solids,&r.audio);
+    const u32 a=space.makeActor(tree.root(),"showcase/main",{3,4,5}),b=space.makeActor(tree.root(),"showcase/main",{13,4,5});
+    NX_EXPECT(a&&b);if(!a||!b)return;
+    NX_EXPECT(space.activateActorCamera(a,"Camera1"));
+    NX_EXPECT(fabsf(space.cameraPlace().x-3)<0.001f);
+    NX_EXPECT(space.activateActorCamera(b,"Camera1"));
+    NX_EXPECT(fabsf(space.cameraPlace().x-13)<0.001f);
+    NX_EXPECT(!space.activateActorCamera(a,"")&&!space.activateActorCamera(a,"Missing"));
+    NX_EXPECT(fabsf(space.cameraPlace().x-13)<0.001f);
+    NX_EXPECT(space.activateActorCamera(a,"Camera2")&&fabsf(space.cameraPlace().y-12)<0.001f);
+    world.destroyEntity(a);
+    NX_EXPECT(!space.activateActorCamera(a,"Camera2"));
+}

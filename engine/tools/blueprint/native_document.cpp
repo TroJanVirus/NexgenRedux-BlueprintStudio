@@ -31,6 +31,7 @@ namespace nx
             {"math:cos","Cosine (radians)","Math","a:float","result:float","cos","","","pure","float","","in:a"},
             {"time:timeline","Timeline (0 to 1)","Time / Animation","in:exec|dt:float|duration:float|loop:bool|reset:bool","then:exec|progress:float|elapsed:float|finished:bool","","","","","void","","","dt:dt|duration:float(1)|loop:false|reset:false"},
             {"camera:orbit-timed","Orbit camera around entity (timed)","Space / Camera","in:exec|name:string|radius:float|height:float|duration:float|turns:float|angle:float|loop:bool|reset:bool|dt:float","then:exec|progress:float|elapsed:float|finished:bool|found:bool","","","","","void","","","name:\"Target\"|radius:float(6)|height:float(2)|duration:float(8)|turns:float(1)|angle:float(60)|loop:false|reset:false|dt:dt"},
+            {"camera:activate-actor","Activate actor camera","Space / Camera","in:exec|actor:Entity@|component:string","then:exec|result:bool","Space::activateActorCamera","","","","bool","","in:actor|in:component","component:\"\""},
             {"render:space","Render 3D scene","Space / Rendering","in:exec","then:exec"},
             {"ui:load-asset","Load linked widget page","Ui / Designer","in:exec|id:string","then:exec"},
             {"actor:spawn-asset","Spawn linked actor","Space / Blueprint Classes","in:exec|id:string|place:Vec3|instanceName:string|rotationOverride:string|sizeOverride:string","then:exec|result:Entity@","","","","","Entity@","","","place:Vec3(0, 0, 0)|instanceName:\"\"|rotationOverride:\"\"|sizeOverride:\"\""},

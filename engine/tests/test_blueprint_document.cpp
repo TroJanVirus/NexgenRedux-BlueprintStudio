@@ -1622,3 +1622,13 @@ NX_TEST(nativeActorClassInheritancePropagatesAndResetsRootOverrides)
     NX_EXPECT(copy.undo()&&copy.visualActorSource(grand,source,error)&&tree.parse(source.data(),source.size()));
     NX_EXPECT(tree.root()["entities"][0u]["size"][0u].number()==2);
 }
+
+NX_TEST(nativeActorCameraSelectionCompilesTypedActorReference)
+{
+    BlueprintDocument doc;doc.create();std::string id,error,source;
+    NX_EXPECT(doc.createVisualAsset("actor",id,error)&&doc.appendVisualActorComponent(id,0,"camera","0,2,-5",error));
+    NX_EXPECT(doc.placeVisualActor("Screen",id,"0,0,0",error));
+    NX_EXPECT(doc.addConnectedNode(0,1,"then","camera:activate-actor",480,60,error));
+    NX_EXPECT(doc.connect(0,1,"result",2,"actor",error)&&doc.setInputValue(0,2,"component","Camera1",error));
+    NX_EXPECT(compileBlueprint(doc,source,error)&&source.find("Space::activateActorCamera(")!=std::string::npos);
+}

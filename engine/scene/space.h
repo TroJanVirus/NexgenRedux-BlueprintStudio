@@ -553,6 +553,8 @@ namespace nx
         // From the camera through a place on the screen.
         Vec3 rayThrough(const Vec2& screen) const;
         Vec3 cameraPlace() const { return m_from; }
+        // Select one unambiguous camera under this specific live actor, not by global name.
+        bool activateActorCamera(u32 actor,const char* componentName);
 
         // --- Every step, and every frame ---
 

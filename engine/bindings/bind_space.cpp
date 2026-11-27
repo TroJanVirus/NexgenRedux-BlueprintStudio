@@ -426,6 +426,8 @@ namespace nx
         void spaceDraw(Canvas* c) { if (c) space().draw(*c, 0, 0, 0, 0); }
         void spaceDrawIn(Canvas* c, float x, float y, float w, float h) { if (c && w > 0 && h > 0) space().draw(*c, x, y, w, h); }
         void spaceCamera(const Vec3& from, const Vec3& to, float angle) { space().setCamera(from, to, angle); }
+        bool spaceActorCamera(EntityRef* actor,const std::string& component)
+        {return actor&&actor->world==services().world&&actor->world&&space().activateActorCamera(actor->id,component.c_str());}
         void spaceSun(const Vec3& direction, const Color& color) { space().setSun(direction, color); }
         void spaceAmbient(const Color& sky, const Color& ground) { space().setAmbient(sky, ground); }
         void spaceSky(const Color& top, const Color& horizon) { space().setSky(top, horizon); }
@@ -857,6 +859,7 @@ namespace nx
         b.function("void draw(Canvas@ canvas)", NX_FN(spaceDraw), "Draws everything, from the camera. Call it from draw(), after design(); what is drawn on the canvas after it is in front.");
         b.function("void draw(Canvas@ canvas, float x, float y, float w, float h)", NX_FN(spaceDrawIn), "The same in part of the screen. Move the camera and draw again for a split screen.");
         b.function("void camera(const Vec3 &in from, const Vec3 &in to, float angle = 60)", NX_FN(spaceCamera), "Where it is, what it looks at, and the degrees it sees from top to bottom.");
+        b.function("bool activateActorCamera(Entity@ actor, const string &in component)", NX_FN(spaceActorCamera), "Select one named camera inside a specific actor; an empty name requires exactly one camera.");
         b.function("void sun(const Vec3 &in direction, const Color &in color)", NX_FN(spaceSun), "Light from far away; the direction is towards it.");
         b.function("void ambient(const Color &in sky, const Color &in ground)", NX_FN(spaceAmbient), "Light from everywhere: on what faces up, and on what faces down.");
         b.function("void sky(const Color &in top, const Color &in horizon)", NX_FN(spaceSky), "Draws a sky, with the sun in it. Without one, what is on the canvas already is behind.");
