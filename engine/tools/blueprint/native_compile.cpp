@@ -217,10 +217,17 @@ namespace nx
                     std::string actor;if(!value(node,"actor",actor,depth))return false;
                     result="bp_is_class_"+n.ref+"("+actor+")";return true;
                 }
-                if(n.kind=="actor:cast-class"&&pin=="result")
+                if(n.kind=="actor:class-entity"&&pin=="result")
+                {
+                    std::string target;if(!value(node,"target",target,depth))return false;
+                    result="bp_class_entity_"+n.ref+"("+target+")";return true;
+                }
+                if(n.kind.rfind("typed:",0)==0&&pin=="value"&&n.kind.ends_with(":get"))
+                {result=std::string(n.kind.rfind("typed:global:",0)==0?"bp_global_":"bp_var_")+n.ref;return true;}
+                if(n.kind=="actor:cast-class"&&(pin=="result"||pin=="typed"))
                 {
                     if(!available[node])return fail(node,"Cast result is only available in the success branch or after the cast.");
-                    result="bp_value_"+std::to_string(node);return true;
+                    result=std::string(pin=="typed"?"bp_typed_":"bp_value_")+std::to_string(node);return true;
                 }
                 if((n.kind=="spawn:box"||n.kind=="spawn:plane"||n.kind=="actor:spawn-asset")&&pin=="result")
                 {
@@ -485,6 +492,13 @@ namespace nx
                     else return fail(to,"Unsupported array action.");
                     source+=pad+statement+";\n";mark(start,to);return flow(to,"then",indent,depth+1);
                 }
+                if(n.kind.rfind("typed:",0)==0&&n.kind.ends_with(":set"))
+                {
+                    BlueprintNodeSpec resolved;if(!document.nodeSpec(graph,n,resolved))return fail(to,"Invalid typed field.");
+                    std::string v;if(!value(to,"value",v,0))return false;
+                    source+=pad+(resolved.inputs.back().type.ends_with("@")?"@":"")+std::string(n.kind.rfind("typed:global:",0)==0?"bp_global_":"bp_var_")+n.ref+" = "+v+";\n";
+                    mark(start,to);return flow(to,"then",indent,depth+1);
+                }
                 if(n.kind.rfind("global:set:",0)==0)
                 {
                     std::string v;if(!value(to,"value",v,0))return false;
@@ -523,7 +537,10 @@ namespace nx
                     std::string actor;if(!value(to,"actor",actor,0))return false;
                     const auto v="bp_value_"+std::to_string(to);
                     source+=pad+"Entity@ "+v+" = "+actor+";\n";
-                    source+=pad+"if (bp_is_class_"+n.ref+"("+v+"))\n"+pad+"{\n";mark(start,to);
+                    const auto typed="bp_typed_"+std::to_string(to);
+                    source+=pad+"BP_Behaviour_"+n.ref+"@ "+typed+" = null;\n";
+                    source+=pad+"if (Space::validEntity("+v+")) @"+typed+" = cast<BP_Behaviour_"+n.ref+">("+v+".behaviour);\n";
+                    source+=pad+"if ("+typed+" !is null)\n"+pad+"{\n";mark(start,to);
                     const auto outer=available;available[to]=true;
                     if(!flow(to,"success",indent+1,depth+1))return false;
                     available=outer;source+=pad+"}\n"+pad+"else\n"+pad+"{\n"+pad+"    @"+v+" = null;\n";
@@ -1106,8 +1123,12 @@ namespace nx
         for(const auto& className:classes)if(className!=owner)
         {
             const auto type=className.substr(10);
-            bool used=false;for(const auto& g:document.graphs)for(const auto& n:g.nodes)
-                if((n.kind=="actor:is-class"||n.kind=="actor:cast-class")&&n.ref==type)used=true;
+            bool used=false,entityUsed=false;for(const auto& g:document.graphs)for(const auto& n:g.nodes)
+            {
+                if(n.kind=="actor:is-class"&&n.ref==type)used=true;
+                if(n.kind=="actor:class-entity"&&n.ref==type)entityUsed=true;
+            }
+            if(entityUsed)result+="Entity@ bp_class_entity_"+type+"(BP_Behaviour_"+type+"@ target)\n{\n    if (target is null || !Space::validEntity(target.entity)) return null;\n    return target.entity;\n}\n";
             if(!used)continue;
             result+="bool bp_is_class_"+type+"(Entity@ actor)\n{\n";
             result+="    return Space::validEntity(actor) && cast<BP_Behaviour_"+type+">(actor.behaviour) !is null;\n}\n";

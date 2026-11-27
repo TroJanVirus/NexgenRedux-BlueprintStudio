@@ -163,8 +163,9 @@ namespace nx
         std::vector<std::string> namedSceneTargets() const;
         struct VariableRow { BlueprintDocument::Field field; bool global=false,explicitField=true,inherited=false,inheritedExposure=false; };
         std::vector<VariableRow> variableRows() const;
+        std::vector<std::string> variableTypeChoices() const;
         void resetVariableEditor(bool global=false);
-        size_t m_variableFirst=0;
+        size_t m_variableFirst=0,m_variableTypeFirst=0;
         std::string m_variableOld,m_variableName,m_variableType="int",m_variableValue;
         bool m_variableGlobal=false,m_variableInitialized=false,m_variableTypes=false;
         int m_variableInput=0; // 1 name, 2 initial value

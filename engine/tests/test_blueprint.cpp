@@ -2924,3 +2924,21 @@ NX_TEST(nativeCoroutineAndMultilistenerRuntime)
     r.step(20);NX_EXPECT(!r.screens.failed());
     NX_EXPECT(strcmp(r.save.get("coroutine","missing"),"yes")==0&&strcmp(r.save.get("Signal","missing"),"second")==0&&strcmp(r.save.get("Receiver","missing"),"first")==0);
 }
+
+NX_TEST(nativeTypedActorHandleRuntime)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    BlueprintDocument doc;doc.create();std::string id,error,source;
+    bool ok=doc.createVisualAsset("actor",id,error)&&doc.addBehaviour("Target",error)&&doc.setVisualActorProperty(id,0,"behaviour","Target",error)&&doc.placeVisualActor("Screen",id,"0,0,0",error);
+    ok=ok&&doc.editVariableDeclaration("Screen","field target:BP_Behaviour_Target@",error);
+    ok=ok&&doc.addNode(0,"actor:cast-class",0,0,error,"Target")&&doc.connect(0,1,"then",2,"in",error)&&doc.connect(0,1,"result",2,"actor",error);
+    ok=ok&&doc.addVariableNode(0,"target",false,true,0,0,error)&&doc.connect(0,2,"success",3,"in",error)&&doc.connect(0,2,"typed",3,"value",error);
+    ok=ok&&doc.addVariableNode(0,"target",false,false,0,0,error)&&doc.addNode(0,"actor:class-entity",0,0,error,"Target")&&doc.connect(0,4,"value",5,"target",error);
+    ok=ok&&doc.addNode(0,"actor:valid",0,0,error)&&doc.connect(0,5,"result",6,"entity",error);
+    ok=ok&&doc.addNode(0,"branch",0,0,error)&&doc.connect(0,2,"then",7,"in",error)&&doc.connect(0,6,"result",7,"condition",error);
+    ok=ok&&doc.addNode(0,"api:Save:Save::set:string,string",0,0,error)&&doc.connect(0,7,"true",8,"in",error)&&doc.setInputValue(0,8,"key","typed_actor",error)&&doc.setInputValue(0,8,"value","yes",error);
+    if(!ok||!compileBlueprint(doc,source,error)){NX_ERROR("Typed actor: %s",error.c_str());NX_EXPECT(false);return;}
+    r.platform.files["project/main/screen.json"]="{\"title\":\"Typed actor\"}";r.platform.files["project/main/main.as"]=source;
+    if(!r.screens.init(r.services,"project","main")){NX_EXPECT(false);return;}
+    r.step(3);NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("typed_actor","missing"),"yes")==0);
+}

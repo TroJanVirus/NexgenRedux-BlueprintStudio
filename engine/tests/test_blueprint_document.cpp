@@ -9,7 +9,7 @@
 using namespace nx;
 NX_TEST(nativeCatalogueContainsReferenceAPI)
 {
-    NX_EXPECT(blueprintCatalogue().size()==1244);
+    NX_EXPECT(blueprintCatalogue().size()==1249);
     const auto* save=blueprintSpec("api:Save:Save::set:string,string");
     NX_EXPECT(save&&save->inputs.size()==3&&save->outputs.size()==1);
     if(save&&save->inputs.size()==3)NX_EXPECT(save->inputs[0].type=="exec"&&save->inputs[2].type=="string");
@@ -1854,4 +1854,21 @@ NX_TEST(nativeCoroutineGraphAndListenerCompilation)
     NX_EXPECT(doc.addNode(0,"dispatch:broadcast",0,0,error,"Signal")&&doc.connect(0,2,"then",3,"in",error));
     NX_EXPECT(doc.serialize(bytes,error));BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error));
     NX_EXPECT(compileBlueprint(copy,source,error)&&source.find("Coroutine(this.bp_fn_Later)")!=std::string::npos&&source.find("bp_snapshot_0")!=std::string::npos);
+}
+
+NX_TEST(nativeSharedLibraryTransferAndTypedVariables)
+{
+    BlueprintDocument doc;doc.create();std::string error,package,source;
+    NX_EXPECT(doc.addFunction("State",error));const auto en=doc.graphs.size()-1;
+    NX_EXPECT(doc.editFunctionSignature(en,"enum(Idle, Running)",error));
+    NX_EXPECT(doc.addFunction("Shared",error));const auto fn=doc.graphs.size()-1;
+    NX_EXPECT(doc.setSharedLibrary(fn,true,error)&&doc.exportLibrary(package,error));
+    BlueprintDocument other;other.create();
+    NX_EXPECT(other.importLibrary(package.data(),package.size(),"Screen",error));
+    NX_EXPECT(other.libraryFunction("Shared")&&other.dataType("State"));
+    NX_EXPECT(!other.importLibrary(package.data(),package.size(),"Screen",error));
+    NX_EXPECT(other.editVariableDeclaration("Screen","field state:BP_Data_State",error));
+    NX_EXPECT(other.addNode(0,"data:enum-value",0,0,error,"State")&&other.setInputValue(0,1,"member","Running",error));
+    NX_EXPECT(other.addVariableNode(0,"state",false,true,0,0,error)&&other.connect(0,0,"then",2,"in",error)&&other.connect(0,1,"result",2,"value",error));
+    NX_EXPECT(compileBlueprint(other,source,error)&&source.find("BP_Data_State bp_var_state")!=std::string::npos);
 }

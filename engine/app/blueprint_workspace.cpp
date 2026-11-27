@@ -257,7 +257,7 @@ namespace nx
             for(const auto& p:pins)
             {
                 const bool exact=p.type==m_pinType;
-                if(exact||(m_pendingOutput?blueprintLosslessConversion(m_pinType,p.type):blueprintLosslessConversion(p.type,m_pinType)))
+                if(exact||(m_pendingOutput?(blueprintLosslessConversion(m_pinType,p.type)||m_document.classAssignable(m_pinType,p.type)):(blueprintLosslessConversion(p.type,m_pinType)||m_document.classAssignable(p.type,m_pinType))))
                     m_contextResults.push_back({spec.id,reference,label+" / "+p.name+(exact?"":" (convert)"),p.name,!exact});
             }
         };
@@ -277,9 +277,15 @@ namespace nx
                 for(const auto& declaration:m_document.graphs)if(m_document.dataType(declaration.name)==&declaration)
                 {BlueprintNodeSpec resolved;if(m_document.nodeSpec(graph,{"",base->id,declaration.name},resolved))consider(resolved,declaration.name,base->title+" "+declaration.name);}
             }
-            else if(base->id=="actor:is-class"||base->id=="actor:cast-class")
+            else if(base->id.rfind("typed:",0)==0)
             {
-                for(const auto& name:behaviours)if(m_document.canAttach(graph.owner,name))consider(*base,name,base->title+" "+name);
+                for(const auto& row:namedVariables)if(row.global==(base->id.rfind("typed:global:",0)==0))
+                {BlueprintNodeSpec resolved;if(m_document.nodeSpec(graph,{"",base->id,row.field.name},resolved))consider(resolved,row.field.name,base->title+" "+row.field.name);}
+            }
+            else if(base->id=="actor:is-class"||base->id=="actor:cast-class"||base->id=="actor:class-entity")
+            {
+                for(const auto& name:behaviours)if(m_document.canAttach(graph.owner,name))
+                {BlueprintNodeSpec resolved;if(m_document.nodeSpec(graph,{"",base->id,name},resolved))consider(resolved,name,base->title+" "+name);}
             }
             else if(base->id=="return:function"||base->id=="call:parent")
             {
@@ -483,6 +489,13 @@ namespace nx
 
     bool BlueprintWorkspace::openFile(Services& s,const std::string& file,bool managed)
     {
+        if(blueprintFileName(file)&&file.ends_with(".bplib.bp.json"))
+        {
+            FileData data;
+            if(!s.platform->readFile(("own/"+file).c_str(),data,MemTag::General)){m_status="Could not read library package.";return false;}
+            if(!m_document.importLibrary(reinterpret_cast<const char*>(data.data),data.size,m_document.graphs[m_graph].owner,m_status))return false;
+            m_browsing=false;selectGraph(m_graph);checkpoint(s,true);m_status="Imported library "+file;return true;
+        }
         if(m_document.dirty()){m_status="Save changes before opening another Blueprint.";return false;}
         const bool archive=recoveryArchiveName(file);
         if(!blueprintFileName(file)&&!archive){m_status="Choose a Blueprint or recovery archive.";return false;}
@@ -2225,6 +2238,14 @@ namespace nx
         std::sort(rows.begin(),rows.end(),[](const VariableRow& a,const VariableRow& b){return a.global!=b.global?a.global<b.global:a.field.name<b.field.name;});
         return rows;
     }
+    std::vector<std::string> BlueprintWorkspace::variableTypeChoices() const
+    {
+        std::vector<std::string> types;for(const auto* type:variableTypes)types.emplace_back(type);
+        const auto& owner=m_document.graphs[m_graph].owner;
+        for(const auto& g:m_document.graphs)if(m_document.dataType(g.name)==&g)types.push_back("BP_Data_"+g.name);
+        for(const auto& type:m_document.behaviours())if(m_document.canAttach(owner,type))types.push_back("BP_Behaviour_"+type+"@");
+        return types;
+    }
     void BlueprintWorkspace::resetVariableEditor(bool global)
     {
         m_variableOld.clear();m_variableName.clear();m_variableType="int";m_variableValue.clear();
@@ -2459,6 +2480,17 @@ namespace nx
                     const bool enable=!m_document.graphs[m_graph].sharedLibrary;
                     if(m_document.setSharedLibrary(m_graph,enable,m_status)){rebuildPins();filterCatalogue();m_status=enable?"Published to project library.":"Made function local.";}
                 }
+                else if(in(x,y,300,365,550,395))
+                {
+                    std::string bytes;
+                    if(m_document.exportLibrary(bytes,m_status))
+                    {
+                        std::string file;
+                        for(unsigned i=1;i<=10000;++i){const auto candidate="blueprint-library-"+std::to_string(i)+".bplib.bp.json";if(!s.platform->fileTime(("own/"+candidate).c_str())){file=candidate;break;}}
+                        if(file.empty())m_status="No free library package name.";
+                        else if(writeVerified(s,"own/"+file,bytes))m_status="Exported "+file;
+                    }
+                }
                 m_layoutMenu=false;
             }
             m_left=left;return;
@@ -2619,12 +2651,18 @@ namespace nx
                 if(ch==8&&!value.empty()){size_t end=value.size()-1;while(end&&(static_cast<unsigned char>(value[end])&0xc0)==0x80)--end;value.resize(end);}
                 else if(ch>=32&&(m_variableInput==2||(ch>='a'&&ch<='z')||(ch>='A'&&ch<='Z')||(ch>='0'&&ch<='9')||ch=='_'))appendCharacter(value,ch,m_variableInput==1?64u:4096u);
             }
+            const auto types=variableTypeChoices();
+            if(m_variableTypes&&in(x,y,650,302,1100,302+8*28))
+            {
+                if(input.wheel()<0&&m_variableTypeFirst+24<types.size())m_variableTypeFirst+=8;
+                if(input.wheel()>0&&m_variableTypeFirst>=8)m_variableTypeFirst-=8;
+            }
             if(click)
             {
                 if(m_variableTypes&&in(x,y,650,302,1100,302+8*28))
                 {
-                    const size_t i=static_cast<size_t>((y-302)/28)+8*static_cast<size_t>((x-650)/150);
-                    if(i<sizeof(variableTypes)/sizeof(variableTypes[0])){m_variableType=variableTypes[i];if(!blueprintLiteralType(m_variableType)){m_variableInitialized=false;m_variableValue.clear();}}
+                    const size_t i=m_variableTypeFirst+static_cast<size_t>((y-302)/28)+8*static_cast<size_t>((x-650)/150);
+                    if(i<types.size()){m_variableType=types[i];if(!blueprintLiteralType(m_variableType)){m_variableInitialized=false;m_variableValue.clear();}}
                     m_variableTypes=false;
                 }
                 else if(m_variableTypes){m_variableTypes=false;}
@@ -2642,7 +2680,7 @@ namespace nx
                     }
                 }
                 else if(in(x,y,650,222,1100,258))m_variableInput=1;
-                else if(in(x,y,650,266,1100,302)){m_variableTypes=true;m_variableInput=0;}
+                else if(in(x,y,650,266,1100,302)){m_variableTypes=true;m_variableTypeFirst=0;m_variableInput=0;}
                 else if(in(x,y,650,322,1100,354)&&blueprintLiteralType(m_variableType)){m_variableInitialized=!m_variableInitialized;m_variableInput=m_variableInitialized?2:0;}
                 else if(in(x,y,650,370,1100,406)&&m_variableInitialized)m_variableInput=2;
                 else if(in(x,y,650,510,1100,544)&&!m_variableGlobal&&owner.rfind("behaviour:",0)==0&&selectedField!=rows.end()&&selectedField->explicitField&&!selectedField->inheritedExposure)
@@ -3328,13 +3366,13 @@ namespace nx
         }
         if(m_layoutMenu)
         {
-            c.roundRect(300,35,250,330,5,{0.12f,0.16f,0.22f,1});
-            const char* labels[]={"Arrange graph","Align selected left","Align selected top","Comment selection","Collapse to function","Rename function","Duplicate function","Open selected function","Back to caller",m_document.graphs[m_graph].inlineMacro?"Convert to function":"Convert to inline macro",m_document.graphs[m_graph].sharedLibrary?"Make library graph local":"Publish to project library"};
+            c.roundRect(300,35,250,360,5,{0.12f,0.16f,0.22f,1});
+            const char* labels[]={"Arrange graph","Align selected left","Align selected top","Comment selection","Collapse to function","Rename function","Duplicate function","Open selected function","Back to caller",m_document.graphs[m_graph].inlineMacro?"Convert to function":"Convert to inline macro",m_document.graphs[m_graph].sharedLibrary?"Make library graph local":"Publish to project library","Export project library"};
             const auto& activeGraph=m_document.graphs[m_graph];
             const bool hasSelection=m_selection<activeGraph.nodes.size()||!m_selectedNodes.empty();
-            for(size_t i=0;i<11;++i)
+            for(size_t i=0;i<12;++i)
             {
-                const bool enabled=i==0||(i<=2&&m_selectedNodes.size()>=2)||((i==3||i==4)&&hasSelection)||((i==5||i==6)&&activeGraph.kind=="function")||
+                const bool enabled=i==0||i==11||(i<=2&&m_selectedNodes.size()>=2)||((i==3||i==4)&&hasSelection)||((i==5||i==6)&&activeGraph.kind=="function")||
                     (i==7&&m_selection<activeGraph.nodes.size()&&(activeGraph.nodes[m_selection].kind=="call:function"||activeGraph.nodes[m_selection].kind=="call:library"))||(i==8&&!m_graphBack.empty())||((i==9||i==10)&&activeGraph.kind=="function");
                 const float yy=35+30*static_cast<float>(i);c.rect(304,yy+2,242,26,enabled?Color{0.19f,0.33f,0.50f,1}:Color{0.17f,0.22f,0.30f,1});c.text(*m_font,labels[i],312,yy+5,enabled?text:muted);
             }
@@ -3438,8 +3476,12 @@ namespace nx
                     variableButton(650,510,450,exposed?"Expose on spawn: enabled":"Expose on spawn: disabled",
                         selected&&selectedField->explicitField&&!selectedField->inheritedExposure&&blueprintLiteralType(selectedField->field.type));
                 }
-                if(m_variableTypes)for(size_t i=0;i<sizeof(variableTypes)/sizeof(variableTypes[0]);++i)
-                {const float yy=302+28*static_cast<float>(i%8),xx=650+150*static_cast<float>(i/8);c.rect(xx,yy,150,28,{0.24f,0.35f,0.48f,1});c.text(*m_font,variableTypes[i],xx+10,yy+3,text);}
+                if(m_variableTypes)
+                {
+                    const auto types=variableTypeChoices();
+                    for(size_t i=0;i<24&&m_variableTypeFirst+i<types.size();++i)
+                    {const float yy=302+28*static_cast<float>(i%8),xx=650+150*static_cast<float>(i/8);c.rect(xx,yy,150,28,{0.24f,0.35f,0.48f,1});c.clip(xx+2,yy,146,28);c.text(*m_font,shorten(types[m_variableTypeFirst+i],19).c_str(),xx+5,yy+3,text);c.noClip();}
+                }
                 c.clip(170,576,940,25);c.text(*m_font,m_status.c_str(),170,576,text);c.noClip();
                 c.text(*m_font,"Enter applies | Escape closes",640,601,muted,Align::Center);
             }

@@ -148,6 +148,9 @@ namespace nx
         const Graph* dataType(const std::string& name) const;
         std::vector<const Graph*> dispatcherListeners(const std::string& owner,const std::string& signal) const;
         bool setSharedLibrary(size_t graph,bool enabled,std::string& error);
+        bool exportLibrary(std::string& result,std::string& error) const;
+        bool importLibrary(const char* bytes,size_t count,const std::string& owner,std::string& error);
+        bool classAssignable(const std::string& from,const std::string& to) const;
         bool nodeSpec(const Graph& graph,const Node& node,BlueprintNodeSpec& spec) const;
         bool setFunctionSignature(size_t graph,const std::vector<BlueprintPin>& parameters,const std::string& returnType,std::string& error);
         bool editFunctionSignature(size_t graph,const std::string& signature,std::string& error);
