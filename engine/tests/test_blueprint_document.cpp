@@ -942,3 +942,25 @@ NX_TEST(nativeContextPlacementConnectsAtomicallyAndRejectsIncompatiblePins)
     NX_EXPECT(doc.addConnectedNode(0,0,"then","branch",200,100,error)&&doc.serialize(before,error));
     NX_EXPECT(!doc.addConnectedNode(0,0,"then","branch",400,100,error)&&doc.serialize(after,error)&&after==before);
 }
+
+NX_TEST(nativeContextSearchSupportsReversePlacementNamedFunctionsAndSafeConversions)
+{
+    BlueprintDocument doc;doc.create();std::string error,before,after;
+    NX_EXPECT(doc.addFunction("Pick",error));
+    const auto fn=doc.graphs.size()-1;
+    NX_EXPECT(doc.setFunctionSignature(fn,{{"value","double"}},"int",error));
+    NX_EXPECT(doc.canCallFunction(0,"Pick")&&!doc.canCallFunction(fn,"Pick"));
+    NX_EXPECT(doc.addNode(0,"literal:int",100,100,error));
+    NX_EXPECT(doc.serialize(before,error));
+    NX_EXPECT(doc.placeContextNode(0,1,"value",true,"call:function","Pick","arg_value",400,100,error));
+    NX_EXPECT(doc.graphs[0].nodes.size()==4&&doc.graphs[0].nodes[2].ref=="Pick"&&doc.graphs[0].nodes[3].kind=="cast:int:double"&&doc.graphs[0].links.size()==2);
+    NX_EXPECT(doc.undo()&&doc.serialize(after,error)&&after==before);
+    NX_EXPECT(doc.addNode(0,"var:set:int",500,100,error));
+    NX_EXPECT(doc.serialize(before,error));
+    NX_EXPECT(doc.placeContextNode(0,2,"value",false,"call:function","Pick","result",200,100,error));
+    NX_EXPECT(doc.graphs[0].nodes.back().ref=="Pick"&&doc.graphs[0].links.back().from==3&&doc.graphs[0].links.back().to==2);
+    NX_EXPECT(doc.undo()&&doc.serialize(after,error)&&after==before);
+    NX_EXPECT(!doc.placeContextNode(0,2,"value",false,"literal:double","","value",200,100,error)&&doc.serialize(after,error)&&after==before);
+    NX_EXPECT(doc.placeContextNode(0,static_cast<size_t>(-1),"",true,"call:function","Pick","",200,100,error));
+    NX_EXPECT(doc.graphs[0].nodes.back().ref=="Pick"&&doc.undo());
+}

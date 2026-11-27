@@ -2030,3 +2030,34 @@ NX_TEST(nativeWorkspaceGraphicalVariableEditorCreatesAndRemovesDeclarations)
     studio.close(r.services);
 }
 #endif
+
+#ifdef NX_DESKTOP_BLUEPRINT
+NX_TEST(nativeWorkspaceRightClickSearchPlacesNodeAndUndoRemovesIt)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    r.platform.workspaceFiles=true;r.platform.files["showcase/main/screen.json"]="{\"title\":\"Home\"}";r.platform.files["showcase/main/main.as"]="class Home : Screen {}";
+    if(!r.screens.init(r.services,"showcase","main")){NX_EXPECT(false);return;}
+    r.step(3);r.screens.setDevelopmentPaused(true);BlueprintWorkspace studio;studio.open(r.services);if(!studio.active()){NX_EXPECT(false);return;}
+    auto& state=r.platform.state;state.hasMouse=true;
+    auto frame=[&](){r.assets.finish();r.input.update(state,1.0f/60);r.platform.now+=1.0/60;studio.update(r.services);studio.checkpoint(r.services);r.device->beginFrame({});r.canvas.begin();studio.draw(r.canvas);r.canvas.end();r.device->endFrame();};
+    auto click=[&](float x,float y){state.mouseX=x;state.mouseY=y;state.mouseButtons[0]=true;frame();state.mouseButtons[0]=false;frame();};
+    frame();state.mouseX=500;state.mouseY=200;state.mouseButtons[1]=true;frame();state.mouseButtons[1]=false;frame();
+    for(char ch:std::string("branch")){state.typed[state.typedCount%InputState::kTyped]=static_cast<u32>(ch);++state.typedCount;}frame();
+    click(550,275);studio.checkpoint(r.services,true);
+    BlueprintDocument doc;std::string error;const std::string recovery="own/blueprint-recovery.bp.json";auto bytes=r.platform.files[recovery];
+    NX_EXPECT(doc.load(bytes.data(),bytes.size(),error)&&doc.graphs[0].nodes.size()==2);
+    if(!doc.graphs.empty()&&doc.graphs[0].nodes.size()==2)NX_EXPECT(doc.graphs[0].nodes[1].kind=="branch");
+    click(900,53);studio.checkpoint(r.services,true);bytes=r.platform.files[recovery];NX_EXPECT(doc.load(bytes.data(),bytes.size(),error)&&doc.graphs[0].nodes.size()==1);
+    // Fit leaves the entry node at (272,100), with its execution output at (468,138).
+    auto drag=[&](float x1,float y1,float x2,float y2){state.mouseX=x1;state.mouseY=y1;state.mouseButtons[0]=true;frame();state.mouseX=x2;state.mouseY=y2;frame();state.mouseButtons[0]=false;frame();};
+    auto type=[&](const char* value){for(;*value;++value){state.typed[state.typedCount%InputState::kTyped]=static_cast<u32>(*value);++state.typedCount;}frame();};
+    drag(468,138,600,200);type("branch");type("\r");studio.checkpoint(r.services,true);
+    bytes=r.platform.files[recovery];NX_EXPECT(doc.load(bytes.data(),bytes.size(),error)&&doc.graphs[0].nodes.size()==2&&doc.graphs[0].links.size()==1);
+    if(!doc.graphs.empty()&&doc.graphs[0].nodes.size()==2)NX_EXPECT(doc.graphs[0].nodes[1].kind=="branch");
+    // The newly placed branch begins at (600,200); its condition is the second input.
+    drag(600,260,420,380);type("bool");type("\r");studio.checkpoint(r.services,true);
+    bytes=r.platform.files[recovery];NX_EXPECT(doc.load(bytes.data(),bytes.size(),error)&&doc.graphs[0].nodes.size()==3&&doc.graphs[0].links.size()==2);
+    click(900,53);studio.checkpoint(r.services,true);bytes=r.platform.files[recovery];NX_EXPECT(doc.load(bytes.data(),bytes.size(),error)&&doc.graphs[0].nodes.size()==2&&doc.graphs[0].links.size()==1);
+    studio.close(r.services);
+}
+#endif

@@ -20,6 +20,7 @@ namespace nx
     const std::vector<BlueprintNodeSpec>& blueprintCatalogue();
     const BlueprintNodeSpec* blueprintSpec(const std::string& kind);
     bool blueprintLiteralType(const std::string& type);
+    bool blueprintLosslessConversion(const std::string& from,const std::string& to);
     // Managed authoring files are direct children of Redux's own folder.
     bool blueprintFileName(const std::string& file);
     bool blueprintManagedName(const std::string& name,std::string& file);
@@ -58,9 +59,12 @@ namespace nx
         bool load(const char* data,size_t size,std::string& error);
         bool serialize(std::string& result,std::string& error) const;
         bool move(size_t graph,size_t node,float x,float y);
-        bool addNode(size_t graph,const std::string& kind,float x,float y,std::string& error);
+        bool addNode(size_t graph,const std::string& kind,float x,float y,std::string& error,const std::string& functionTarget="");
+        bool placeContextNode(size_t graph,size_t existing,const std::string& pin,bool output,const std::string& kind,const std::string& reference,const std::string& otherPin,float x,float y,std::string& error);
+        bool connectCompatible(size_t graph,size_t from,const std::string& output,size_t to,const std::string& input,std::string& error);
+        bool canCallFunction(size_t graph,const std::string& target) const;
         bool addConnectedNode(size_t graph,size_t from,const std::string& output,const std::string& kind,float x,float y,std::string& error);
-        bool addVariableNode(size_t graph,const std::string& name,bool global,bool setter,float x,float y,std::string& error);
+        bool addVariableNode(size_t graph,const std::string& variableName,bool global,bool setter,float x,float y,std::string& error);
         bool deleteNode(size_t graph,size_t node,std::string& error);
         bool connect(size_t graph,size_t from,const std::string& output,size_t to,const std::string& input,std::string& error);
         bool disconnect(size_t graph,size_t node,const std::string& pin,bool output);

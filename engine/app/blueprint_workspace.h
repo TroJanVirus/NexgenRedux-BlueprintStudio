@@ -35,7 +35,7 @@ namespace nx
         void fitGraph();
         void rebuildPins();
         void filterCatalogue();
-        void clearWire(){m_pending=static_cast<size_t>(-1);m_pendingPin.clear();m_pinDrag=false;}
+        void clearWire(){m_pending=static_cast<size_t>(-1);m_pendingPin.clear();m_pinDrag=false;m_pendingOutput=true;}
         void openPinMenu(float x,float y);
         void closePinMenu(Services& services);
         bool saveNamed(Services& services,const std::string& name);
@@ -102,7 +102,11 @@ namespace nx
         size_t m_quickVariableFirst=0;
         VariableRow m_quickVariable{};
         bool m_quickDrag=false,m_quickMenu=false;
-        bool m_pinDrag=false,m_pinMenu=false;
+        bool m_pinDrag=false,m_pinMenu=false,m_pendingOutput=true;
+        bool m_rightDown=false,m_rightMoved=false;
+        float m_rightX=0,m_rightY=0;
+        struct ContextResult { std::string kind,reference,title,pin; bool conversion=false; };
+        std::vector<ContextResult> m_contextResults;
         float m_pinStartX=0,m_pinStartY=0,m_pinX=0,m_pinY=0,m_pinMenuX=0,m_pinMenuY=0;
         std::string m_pinQuery,m_pinType;
         float m_quickX=0,m_quickY=0,m_quickMenuX=0,m_quickMenuY=0;

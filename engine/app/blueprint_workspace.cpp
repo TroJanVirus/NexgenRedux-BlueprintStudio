@@ -145,7 +145,7 @@ namespace nx
         if (!active()) return;
         stopPreview(s);
         checkpoint(s,true);
-        cancelDrag();clearWire();m_quickDrag=m_quickMenu=false;m_focus=0;m_browsing=false;m_assetBrowser=false;s.input->setTyping(m_previousTyping);
+        cancelDrag();clearWire();m_quickDrag=m_quickMenu=m_pinMenu=m_rightDown=false;m_focus=0;m_browsing=false;m_assetBrowser=false;s.input->setTyping(m_previousTyping);
         s.assets->release(m_font);
         m_font = nullptr;
         s.platform->releaseBlueprintLease();
@@ -157,7 +157,7 @@ namespace nx
     {
         if (index >= m_document.graphs.size()) return;
         cancelDrag();clearWire();m_diagnostic={};
-        m_quickDrag=m_quickMenu=false;m_quickVariableFirst=0;
+        m_quickDrag=m_quickMenu=m_pinMenu=m_rightDown=false;m_quickVariableFirst=0;
         m_graph = index; m_selection = static_cast<size_t>(-1);
         rebuildPins();fitGraph();filterCatalogue();
         if (index < m_first) m_first = index;
@@ -197,37 +197,83 @@ namespace nx
 
     void BlueprintWorkspace::filterCatalogue()
     {
-        m_palette.clear();m_paletteFirst=0;
+        m_palette.clear();m_contextResults.clear();m_paletteFirst=0;
         if(m_graph>=m_document.graphs.size())return;
         auto lower=[](std::string value){for(char& c:value)c=static_cast<char>(std::tolower(static_cast<unsigned char>(c)));return value;};
-        const auto query=lower(m_pinMenu?m_pinQuery:m_query);
+        const auto query=lower(m_query);
+        const auto contextQuery=lower(m_pinQuery);
         const auto& graph=m_document.graphs[m_graph];const bool behaviour=graph.owner.rfind("behaviour:",0)==0;
         const auto behaviours=m_document.behaviours();
         const bool hasBehaviours=std::any_of(behaviours.begin(),behaviours.end(),[&](const std::string& name){return m_document.canAttach(graph.owner,name);});
         const auto& globals=m_document.moduleGlobals(graph.owner);
         for(const auto& node:blueprintCatalogue())
-            if((!m_pinMenu||std::any_of(node.inputs.begin(),node.inputs.end(),[&](const BlueprintPin& p){return p.type==m_pinType;}))&&(node.id.rfind("global:",0)!=0||std::any_of(globals.begin(),globals.end(),[&](const BlueprintDocument::Field& f){return f.type==node.id.substr(11);}))&&node.id!="entry"&&(node.id!="return:function"||graph.kind=="function")&&(node.id!="event:entity"||behaviour)&&
+            if((node.id.rfind("global:",0)!=0||std::any_of(globals.begin(),globals.end(),[&](const BlueprintDocument::Field& f){return f.type==node.id.substr(11);}))&&node.id!="entry"&&(node.id!="return:function"||graph.kind=="function")&&(node.id!="event:entity"||behaviour)&&
                 (node.id!="event:other"||(behaviour&&(graph.name=="onHit"||graph.name=="onLeave")))&&
                 (node.id!="event:levelName"||(!behaviour&&(graph.name=="onLevelTouch"||graph.name=="onLevelAgent")))&&
                 (node.id!="event:levelWho"||(!behaviour&&graph.name=="onLevelTouch"))&&
                 (node.id!="event:levelWhat"||(!behaviour&&graph.name=="onLevelAgent"))&&
                 ((node.id!="attach:behaviour"&&node.id!="level:attach")||(!behaviour&&hasBehaviours))&&(node.id!="attach:direct"||hasBehaviours)&&(!behaviour||node.id.rfind("level:",0)!=0)&&(node.id!="event:delta"||m_document.graphs[m_graph].name=="update")&&
                 (node.id!="event:canvas"||m_document.graphs[m_graph].name=="draw")&&
-                lower(node.category+" "+node.title+" "+node.id).find(query)!=std::string::npos)m_palette.push_back(&node);
+                (m_pinMenu||lower(node.category+" "+node.title+" "+node.id).find(query)!=std::string::npos))m_palette.push_back(&node);
+        if(!m_pinMenu)return;
+        const auto namedVariables=variableRows();
+        auto consider=[&](const BlueprintNodeSpec& spec,const std::string& reference,const std::string& label)
+        {
+            if(lower(spec.category+" "+label+" "+spec.id).find(contextQuery)==std::string::npos)return;
+            const auto& pins=m_pendingOutput?spec.inputs:spec.outputs;
+            if(m_pinType.empty()){m_contextResults.push_back({spec.id,reference,label,"",false});return;}
+            // Show all matching pins, so a user can deliberately choose an argument.
+            for(const auto& p:pins)
+            {
+                const bool exact=p.type==m_pinType;
+                if(exact||(m_pendingOutput?blueprintLosslessConversion(m_pinType,p.type):blueprintLosslessConversion(p.type,m_pinType)))
+                    m_contextResults.push_back({spec.id,reference,label+" / "+p.name+(exact?"":" (convert)"),p.name,!exact});
+            }
+        };
+        for(const auto* base:m_palette)
+        {
+            if(base->id=="call:function")
+            {
+                for(const auto& fn:m_document.graphs)if(fn.owner==graph.owner&&fn.kind=="function"&&m_document.canCallFunction(m_graph,fn.name))
+                {
+                    BlueprintNodeSpec resolved;
+                    if(m_document.nodeSpec(graph,{"",base->id,fn.name},resolved))consider(resolved,fn.name,"Call "+fn.name);
+                }
+            }
+            else if(base->id=="return:function")
+            {
+                BlueprintNodeSpec resolved;if(m_document.nodeSpec(graph,{"",base->id,""},resolved))consider(resolved,"",base->title);
+            }
+            else if(base->id.rfind("var:",0)==0||base->id.rfind("global:",0)==0)
+            {
+                for(const auto& row:namedVariables)
+                {
+                    const bool isGlobal=base->id.rfind("global:",0)==0;
+                    if(row.global==isGlobal&&row.field.type==base->id.substr(isGlobal?11:8))
+                        consider(*base,row.field.name,std::string(base->id.find(":set:")!=std::string::npos?"Set ":"Get ")+(isGlobal?"global ":"")+row.field.name);
+                }
+                if(base->id.rfind("var:",0)==0)consider(*base,"",base->title);
+            }
+            else consider(*base,"",base->title);
+        }
+        std::stable_sort(m_contextResults.begin(),m_contextResults.end(),[](const ContextResult& a,const ContextResult& b){return a.conversion<b.conversion;});
     }
 
     void BlueprintWorkspace::openPinMenu(float x,float y)
     {
-        if(m_pending>=m_rows.size())return;
-        const auto& row=m_rows[m_pending];const auto pin=std::find(row.outputs.begin(),row.outputs.end(),m_pendingPin);
-        if(pin==row.outputs.end())return;
-        m_pinType=row.outputTypes[static_cast<size_t>(pin-row.outputs.begin())];m_pinQuery.clear();
-        m_pinX=x;m_pinY=y;m_pinMenuX=std::clamp(x,kLeft+4,kRight-304);m_pinMenuY=std::clamp(y,kTop+4,kBottom-324);
-        m_pinMenu=true;m_pinDrag=false;filterCatalogue();m_status="Choose a compatible node for "+m_pendingPin+".";
+        m_pinType.clear();
+        if(m_pending<m_rows.size())
+        {
+            const auto& row=m_rows[m_pending];const auto& pins=m_pendingOutput?row.outputs:row.inputs;
+            const auto pin=std::find(pins.begin(),pins.end(),m_pendingPin);if(pin==pins.end())return;
+            m_pinType=(m_pendingOutput?row.outputTypes:row.inputTypes)[static_cast<size_t>(pin-pins.begin())];
+        }
+        m_pinQuery.clear();m_pinX=x;m_pinY=y;m_pinMenuX=std::clamp(x,kLeft+4,kRight-304);m_pinMenuY=std::clamp(y,kTop+4,kBottom-324);
+        m_pinMenu=true;m_pinDrag=false;m_pan=false;filterCatalogue();m_status=m_pinType.empty()?"Choose a node to place.":"Choose a compatible node for "+m_pendingPin+".";
     }
     void BlueprintWorkspace::closePinMenu(Services& s)
     {
-        m_pinMenu=false;clearWire();s.input->setTyping(false);filterCatalogue();
+        m_pinMenu=false;m_rightDown=false;clearWire();s.input->setTyping(false);filterCatalogue();
     }
     void BlueprintWorkspace::fitGraph()
     {
@@ -936,27 +982,32 @@ namespace nx
             (control&&(held(Key::Y)||(held(Key::Z)&&held(Key::Shift)))?4u:0u);
         const unsigned pressed=keys&~m_shortcuts;m_shortcuts=keys;
         const bool click=left&&!m_left;
+        const bool right=raw.mouseButtons[1];
         if(m_pinMenu)
         {
+            auto choose=[&](size_t index)
+            {
+                if(index>=m_contextResults.size())return false;
+                const auto choice=m_contextResults[index];const size_t added=m_document.graphs[m_graph].nodes.size();
+                if(!m_document.placeContextNode(m_graph,m_pending,m_pendingPin,m_pendingOutput,choice.kind,choice.reference,choice.pin,(m_pinX-kLeft-m_x)/m_zoom,(m_pinY-kTop-m_y)/m_zoom,m_status))return false;
+                closePinMenu(s);m_diagnostic={};rebuildPins();m_selection=added;m_status="Added "+choice.title+".";return true;
+            };
             for(u32 i=0;i<input.typedCount();++i)
             {
                 const auto ch=input.typed(i);
                 if(ch==8&&!m_pinQuery.empty()){size_t end=m_pinQuery.size()-1;while(end&&(static_cast<unsigned char>(m_pinQuery[end])&0xc0)==0x80)--end;m_pinQuery.resize(end);filterCatalogue();}
+                else if(ch==13){choose(m_paletteFirst);break;}
                 else if(ch>=32&&appendCharacter(m_pinQuery,ch,80))filterCatalogue();
             }
-            if(input.wheel()<0&&m_paletteFirst+8<m_palette.size())++m_paletteFirst;
+            if(!m_pinMenu){m_left=left;return;}
+            if(input.wheel()<0&&m_paletteFirst+8<m_contextResults.size())++m_paletteFirst;
             if(input.wheel()>0&&m_paletteFirst)--m_paletteFirst;
             if(click)
             {
                 if(in(x,y,m_pinMenuX,m_pinMenuY+64,m_pinMenuX+300,m_pinMenuY+304))
                 {
                     const auto index=m_paletteFirst+static_cast<size_t>((y-m_pinMenuY-64)/30);
-                    if(index<m_palette.size())
-                    {
-                        const auto kind=m_palette[index]->id;
-                        if(m_document.addConnectedNode(m_graph,m_pending,m_pendingPin,kind,(m_pinX-kLeft-m_x)/m_zoom,(m_pinY-kTop-m_y)/m_zoom,m_status))
-                        {closePinMenu(s);m_diagnostic={};rebuildPins();m_selection=m_document.graphs[m_graph].nodes.size()-1;m_status="Added and connected node.";}
-                    }
+                    choose(index);
                 }
                 else if(!in(x,y,m_pinMenuX,m_pinMenuY,m_pinMenuX+300,m_pinMenuY+320))closePinMenu(s);
             }
@@ -968,21 +1019,37 @@ namespace nx
             if(!left)
             {
                 m_pinDrag=false;
-                if(over&&(std::abs(x-m_pinStartX)>5||std::abs(y-m_pinStartY)>5))
+                const bool moved=std::abs(x-m_pinStartX)>5||std::abs(y-m_pinStartY)>5;
+                if(over&&moved)
                 {
                     const auto& nodes=m_document.graphs[m_graph].nodes;bool hit=false;
                     for(size_t i=nodes.size();i>0&&!hit;--i)
                     {
                         const auto& n=nodes[i-1];const auto& row=m_rows[i-1];
                         const float nx=kLeft+m_x+n.x*m_zoom,ny=kTop+m_y+n.y*m_zoom;
-                        for(size_t p=0;p<row.inputs.size();++p)if(std::abs(x-nx)<=9&&std::abs(y-ny-pinY(p)*m_zoom)<=9)
+                        const auto& pins=m_pendingOutput?row.inputs:row.outputs;
+                        const float px=nx+(m_pendingOutput?0:kNodeWidth*m_zoom);
+                        for(size_t p=0;p<pins.size();++p)if(std::abs(x-px)<=9&&std::abs(y-ny-pinY(p)*m_zoom)<=9)
                         {
-                            hit=true;if(m_document.connect(m_graph,m_pending,m_pendingPin,i-1,row.inputs[p],m_status)){clearWire();rebuildPins();m_status="Connected pins.";}break;
+                            hit=true;
+                            const bool ok=m_pendingOutput?m_document.connectCompatible(m_graph,m_pending,m_pendingPin,i-1,pins[p],m_status):m_document.connectCompatible(m_graph,i-1,pins[p],m_pending,m_pendingPin,m_status);
+                            if(ok){clearWire();rebuildPins();m_status="Connected pins.";}break;
                         }
                         if(in(x,y,nx,ny,nx+kNodeWidth*m_zoom,ny+row.height*m_zoom))hit=true;
                     }
                     if(!hit){openPinMenu(x,y);if(m_pinMenu)input.setTyping(true);}
                 }
+                else if(!moved&&!m_pendingOutput&&m_pending<m_rows.size())
+                {
+                    const auto& row=m_rows[m_pending];const auto pin=std::find(row.inputs.begin(),row.inputs.end(),m_pendingPin);
+                    if(pin!=row.inputs.end()&&blueprintLiteralType(row.inputTypes[static_cast<size_t>(pin-row.inputs.begin())]))
+                    {
+                        m_editPin=m_pendingPin;m_editType=row.inputTypes[static_cast<size_t>(pin-row.inputs.begin())];m_edit.clear();
+                        for(const auto& v:m_document.graphs[m_graph].nodes[m_pending].values)if(v.pin==m_editPin)m_edit=v.value;
+                        clearWire();m_focus=6;input.setTyping(true);m_status="Enter a typed value. Drag the pin to connect a node.";
+                    }
+                }
+                else if(!over&&moved)clearWire();
             }
             m_left=left;return;
         }
@@ -1346,18 +1413,16 @@ namespace nx
                         if(std::abs(x-px)>9||std::abs(y-(ny+pinY(p)*m_zoom))>9)continue;
                         m_selection=i-1;
                         if(control){if(m_document.disconnect(m_graph,i-1,pins[p],side!=0)){m_diagnostic={};rebuildPins();m_status="Disconnected pin.";}clearWire();}
-                        else if(side){m_pending=i-1;m_pendingPin=pins[p];m_pinDrag=true;m_pinStartX=m_pinX=x;m_pinStartY=m_pinY=y;m_status="Drag to a matching input or empty graph space."; }
-                        else if(m_pending!=static_cast<size_t>(-1))
+                        else if(m_pending!=static_cast<size_t>(-1)&&m_pendingOutput!=(side!=0))
                         {
-                            if(m_document.connect(m_graph,m_pending,m_pendingPin,i-1,pins[p],m_status)){m_diagnostic={};rebuildPins();clearWire();m_status="Connected pins.";}
+                            const bool ok=m_pendingOutput?m_document.connectCompatible(m_graph,m_pending,m_pendingPin,i-1,pins[p],m_status):m_document.connectCompatible(m_graph,i-1,pins[p],m_pending,m_pendingPin,m_status);
+                            if(ok){m_diagnostic={};rebuildPins();clearWire();m_status="Connected pins.";}
                         }
-                        else if(blueprintLiteralType(row.inputTypes[p]))
+                        else
                         {
-                            m_editPin=pins[p];m_editType=row.inputTypes[p];m_edit.clear();
-                            for(const auto& v:n.values)if(v.pin==m_editPin)m_edit=v.value;
-                            m_focus=6;input.setTyping(true);m_status="Enter a typed value. A connected wire takes precedence.";
+                            m_pending=i-1;m_pendingPin=pins[p];m_pendingOutput=side!=0;m_pinDrag=true;
+                            m_pinStartX=m_pinX=x;m_pinStartY=m_pinY=y;m_status="Drag to a compatible pin or empty graph space.";
                         }
-                        else m_status="Input "+pins[p]+" ("+row.inputTypes[p]+"): choose an output pin first.";
                         m_left=left;return;
                     }
                 }
@@ -1398,7 +1463,18 @@ namespace nx
             m_pan=false;m_left=left;m_lastX=x;m_lastY=y;
             return;
         }
-        if (pan && m_pan) { m_x += x-m_lastX; m_y += y-m_lastY; }
+        // A stationary right click opens the context menu; right-button dragging still pans.
+        if(right&&!m_rightDown&&over){m_rightDown=true;m_rightMoved=false;m_rightX=x;m_rightY=y;}
+        if(right&&m_rightDown&&(std::abs(x-m_rightX)>5||std::abs(y-m_rightY)>5))m_rightMoved=true;
+        if(!right&&m_rightDown)
+        {
+            m_rightDown=false;
+            if(!m_rightMoved&&over)
+            {
+                clearWire();openPinMenu(x,y);input.setTyping(true);m_pan=false;m_left=left;return;
+            }
+        }
+        if (pan && m_pan && (!right||m_rightMoved||raw.mouseButtons[2])) { m_x += x-m_lastX; m_y += y-m_lastY; }
         m_pan = pan && (over || m_pan);
         m_lastX=x; m_lastY=y; m_left=left;
         const float wheel = input.wheel();
@@ -1480,13 +1556,13 @@ namespace nx
             }
             if(m_pending<graph.nodes.size())
             {
-                const auto& n=graph.nodes[m_pending];const auto& pins=rows[m_pending].outputs;
+                const auto& n=graph.nodes[m_pending];const auto& pins=m_pendingOutput?rows[m_pending].outputs:rows[m_pending].inputs;
                 const auto pin=std::find(pins.begin(),pins.end(),m_pendingPin);
                 if(pin!=pins.end())
                 {
-                    const float px=kLeft+m_x+(n.x+kNodeWidth)*m_zoom,py=kTop+m_y+(n.y+pinY(static_cast<size_t>(pin-pins.begin())))*m_zoom;
+                    const float px=kLeft+m_x+(n.x+(m_pendingOutput?kNodeWidth:0))*m_zoom,py=kTop+m_y+(n.y+pinY(static_cast<size_t>(pin-pins.begin())))*m_zoom;
                     c.ring(px,py,9,2,accent);
-                    if(m_pinDrag||m_pinMenu)c.line(px,py,m_pinX,m_pinY,2,pinColor(rows[m_pending].outputTypes[static_cast<size_t>(pin-pins.begin())]));
+                    if(m_pinDrag||m_pinMenu)c.line(px,py,m_pinX,m_pinY,2,pinColor((m_pendingOutput?rows[m_pending].outputTypes:rows[m_pending].inputTypes)[static_cast<size_t>(pin-pins.begin())]));
                 }
             }
             for(size_t i=0;i<graph.nodes.size();++i)
@@ -1596,7 +1672,7 @@ namespace nx
         else
         {
             c.clip(12,kBottom+24,900,22);
-            c.text(*m_font,"Click output then input: connect | Click input: value | Ctrl+click: disconnect | Ctrl+S: save",12,kBottom+26,muted);
+            c.text(*m_font,"Drag either pin: connect | Right-click: add node | Ctrl+click: disconnect | Ctrl+S: save",12,kBottom+26,muted);
             c.noClip();
             const char* state=!m_document.dirty()?"Saved / clean":recoveryProtected()?"Recovery protected":"Recovery pending";
             c.text(*m_font,state,kWidth-12,kBottom+26,recoveryProtected()?muted:Color{1.f,0.72f,0.22f,1.f},Align::Right);
@@ -1605,12 +1681,12 @@ namespace nx
         {
             const float x=m_pinMenuX,y=m_pinMenuY;
             c.roundRect(x,y,300,320,6,{0.12f,0.16f,0.22f,1});
-            c.clip(x+6,y,288,28);c.text(*m_font,("COMPATIBLE / "+m_pinType).c_str(),x+8,y+5,accent);c.noClip();
+            c.clip(x+6,y,288,28);c.text(*m_font,(m_pinType.empty()?"ADD NODE":"COMPATIBLE / "+m_pinType).c_str(),x+8,y+5,accent);c.noClip();
             c.rect(x+6,y+28,288,30,{0.24f,0.35f,0.48f,1});c.clip(x+8,y+28,284,30);c.text(*m_font,m_pinQuery.empty()?"Search nodes...":m_pinQuery.c_str(),x+10,y+33,text);c.noClip();
-            for(size_t i=0;i<8&&m_paletteFirst+i<m_palette.size();++i)
-            {const float ry=y+64+30*static_cast<float>(i);c.rect(x+6,ry,288,28,{0.17f,0.22f,0.30f,1});c.clip(x+8,ry,284,28);c.text(*m_font,m_palette[m_paletteFirst+i]->title.c_str(),x+10,ry+5,text);c.noClip();}
-            if(m_palette.empty())c.text(*m_font,"No compatible results.",x+10,y+75,muted);
-            c.text(*m_font,(std::to_string(m_palette.size())+" results | wheel to scroll").c_str(),x+8,y+304,muted);
+            for(size_t i=0;i<8&&m_paletteFirst+i<m_contextResults.size();++i)
+            {const float ry=y+64+30*static_cast<float>(i);c.rect(x+6,ry,288,28,{0.17f,0.22f,0.30f,1});c.clip(x+8,ry,284,28);c.text(*m_font,m_contextResults[m_paletteFirst+i].title.c_str(),x+10,ry+5,text);c.noClip();}
+            if(m_contextResults.empty())c.text(*m_font,"No compatible results.",x+10,y+75,muted);
+            c.clip(x+6,y+304,288,16);c.text(*m_font,(std::to_string(m_contextResults.size())+" results | Enter to add").c_str(),x+8,y+304,muted);c.noClip();
         }
         if(m_quickDrag)
         {
