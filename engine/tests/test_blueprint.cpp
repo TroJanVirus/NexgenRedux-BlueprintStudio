@@ -723,3 +723,22 @@ NX_TEST(nativeBlueprintProjectExportRunsWithoutStudio)
     NX_EXPECT(r.screens.depth()==2&&strcmp(r.screens.current(),"level")==0);
     NX_EXPECT(strcmp(r.save.get("export_level","missing"),"entered")==0);
 }
+
+NX_TEST(nativeGeneratedBehaviourAttachesAndRunsInOriginalWorld)
+{
+    BlueprintDocument doc;doc.create();std::string error,source;
+    const bool authored=doc.addBehaviour("Spinner",error)&&
+        doc.addNode(0,"api:Scene:Scene::spawn:Vec2",0,0,error)&&doc.addNode(0,"make:Vec2",0,0,error)&&
+        doc.setInputValue(0,2,"x","0",error)&&doc.setInputValue(0,2,"y","0",error)&&doc.connect(0,2,"result",1,"position",error)&&
+        doc.addNode(0,"attach:behaviour",0,0,error)&&doc.connect(0,0,"then",1,"in",error)&&doc.connect(0,1,"then",3,"in",error)&&
+        doc.connect(0,1,"result",3,"target",error)&&
+        doc.addNode(6,"api:Save:Save::set:string,string",0,0,error)&&doc.setInputValue(6,1,"key","native_behaviour",error)&&
+        doc.setInputValue(6,1,"value","started",error)&&doc.connect(6,0,"then",1,"in",error)&&compileBlueprint(doc,source,error);
+    NX_EXPECT(authored);if(!authored)return;
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    r.platform.files["showcase/behaviour/screen.json"]="{\"title\":\"Behaviour\"}";
+    r.platform.files["showcase/behaviour/main.as"]=source;
+    if(!r.screens.init(r.services,"showcase","behaviour")){NX_EXPECT(false);return;}
+    r.step(5);
+    NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("native_behaviour","missing"),"started")==0);
+}

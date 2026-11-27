@@ -7,7 +7,7 @@
 using namespace nx;
 NX_TEST(nativeCatalogueContainsReferenceAPI)
 {
-    NX_EXPECT(blueprintCatalogue().size()==905);
+    NX_EXPECT(blueprintCatalogue().size()==908);
     const auto* save=blueprintSpec("api:Save:Save::set:string,string");
     NX_EXPECT(save&&save->inputs.size()==3&&save->outputs.size()==1);
     if(save&&save->inputs.size()==3)NX_EXPECT(save->inputs[0].type=="exec"&&save->inputs[2].type=="string");
@@ -289,4 +289,19 @@ NX_TEST(nativeProjectNavigationRejectsMissingConstantTargets)
     NX_EXPECT(doc.clearInputValue(0,1,"id")&&doc.addNode(0,"literal:string",0,0,error)&&doc.setLiteral(0,2,"level",error)&&doc.connect(0,2,"value",1,"id",error));
     NX_EXPECT(!doc.removeScreen("level",error)&&compileBlueprintProject(doc,out,error));
     NX_EXPECT(doc.setLiteral(0,2,"unknown",error)&&!compileBlueprintProject(doc,out,error,&location)&&out.size()==2);
+}
+
+NX_TEST(nativeBehaviourGraphsAreScopedAndAttachmentsPersist)
+{
+    BlueprintDocument doc;doc.create();std::string error,source,saved;
+    NX_EXPECT(doc.addBehaviour("Spinner",error)&&!doc.addBehaviour("Spinner",error)&&!doc.addBehaviour("bad name",error));
+    NX_EXPECT(doc.screens().size()==1&&doc.behaviours().size()==1);
+    NX_EXPECT(!doc.addNode(0,"event:entity",0,0,error)&&!doc.addNode(6,"event:other",0,0,error));
+    NX_EXPECT(doc.addNode(8,"event:other",0,0,error)&&doc.addNode(6,"event:entity",0,0,error));
+    NX_EXPECT(!doc.addNode(6,"attach:behaviour",0,0,error)&&doc.addNode(0,"attach:behaviour",0,0,error));
+    NX_EXPECT(!doc.setReference(0,1,"Missing",error)&&!doc.removeBehaviour("Spinner",error));
+    NX_EXPECT(doc.serialize(saved,error));BlueprintDocument copy;NX_EXPECT(copy.load(saved.data(),saved.size(),error));
+    NX_EXPECT(compileBlueprint(copy,source,error)&&source.find("class BP_Behaviour_Spinner : Behaviour")!=std::string::npos);
+    NX_EXPECT(source.find("void onHit(Entity@ other)")!=std::string::npos);
+    NX_EXPECT(copy.deleteNode(0,1,error)&&copy.removeBehaviour("Spinner",error)&&copy.undo()&&copy.behaviours().size()==1);
 }

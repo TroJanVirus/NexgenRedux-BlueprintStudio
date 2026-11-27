@@ -55,6 +55,9 @@ namespace nx
         bool addScreen(const std::string& id,std::string& error);
         bool removeScreen(const std::string& id,std::string& error);
         std::vector<std::string> screens() const;
+        std::vector<std::string> behaviours() const;
+        bool addBehaviour(const std::string& name,std::string& error);
+        bool removeBehaviour(const std::string& name,std::string& error);
         bool removeFunction(size_t graph,std::string& error);
         bool functions(std::string& error) const;
         // Named instance variables and function names are scoped to their owning screen.

@@ -34,6 +34,7 @@ namespace nx
         {
             if(node.kind.rfind("var:",0)==0)return (node.kind.rfind("var:get:",0)==0?"Get ":"Set ")+node.ref;
             if(node.kind=="call:function")return "Call "+node.ref;
+            if(node.kind=="attach:behaviour")return "Attach "+node.ref;
             if(const auto* spec=blueprintSpec(node.kind))return spec->title;
             if (node.kind.rfind("api:", 0) == 0)
             {
@@ -172,8 +173,11 @@ namespace nx
         if(m_graph>=m_document.graphs.size())return;
         auto lower=[](std::string value){for(char& c:value)c=static_cast<char>(std::tolower(static_cast<unsigned char>(c)));return value;};
         const auto query=lower(m_query);
+        const auto& graph=m_document.graphs[m_graph];const bool behaviour=graph.owner.rfind("behaviour:",0)==0;
         for(const auto& node:blueprintCatalogue())
-            if(node.id!="entry"&&(node.id!="event:delta"||m_document.graphs[m_graph].name=="update")&&
+            if(node.id!="entry"&&(node.id!="event:entity"||behaviour)&&
+                (node.id!="event:other"||(behaviour&&(graph.name=="onHit"||graph.name=="onLeave")))&&
+                (node.id!="attach:behaviour"||(!behaviour&&!m_document.behaviours().empty()))&&(node.id!="event:delta"||m_document.graphs[m_graph].name=="update")&&
                 (node.id!="event:canvas"||m_document.graphs[m_graph].name=="draw")&&
                 lower(node.category+" "+node.title+" "+node.id).find(query)!=std::string::npos)m_palette.push_back(&node);
     }
@@ -456,6 +460,12 @@ namespace nx
                     if(focus==3&&!m_document.setReference(m_graph,m_selection,m_edit,m_status))break;
                     if(focus==5&&!saveNamed(s,m_edit))break;
                     if(focus==6&&!m_document.setInputValue(m_graph,m_selection,m_editPin,m_edit,m_status))break;
+                    if(focus==8)
+                    {
+                        const size_t first=m_document.graphs.size();
+                        if(!m_document.addBehaviour(m_edit,m_status))break;
+                        selectGraph(first);
+                    }
                     if(focus==7)
                     {
                         const size_t first=m_document.graphs.size();
@@ -482,6 +492,7 @@ namespace nx
         if(!m_drag)
         {
             if(click&&in(x,y,1134,39,1266,69)){close(s);return;}
+            if(click&&in(x,y,566,5,734,33)){m_edit.clear();m_focus=8;input.setTyping(true);m_status="Type a behaviour name, then Enter.";m_left=left;return;}
             if(click&&in(x,y,740,5,850,33)){browseFiles(s);m_left=left;return;}
             if(click&&in(x,y,856,5,966,33)){m_edit.clear();m_focus=5;input.setTyping(true);m_status="Type a new Blueprint name and press Enter.";m_left=left;return;}
             if(m_document.graphs.empty()){m_left=left;return;}
@@ -500,7 +511,8 @@ namespace nx
                         snprintf(item.info.title,sizeof(item.info.title),"%s",output.id.c_str());
                         item.source=output.source;screens.push_back(std::move(item));
                     }
-                    const auto owner=m_document.graphs[m_graph].owner;
+                    const auto selected=m_document.graphs[m_graph].owner;
+                    const auto owner=selected.rfind("behaviour:",0)==0?m_document.screens().front():selected;
                     if(s.screens->startProjectPreview(screens,owner,m_status))
                     {m_playing=true;clearWire();m_status="Playing "+owner+". Escape returns to Studio.";}
                     else
@@ -524,7 +536,8 @@ namespace nx
         if(click&&in(x,y,8,kBottom-151,kLeft-8,kBottom-119))
         {
             const std::string owner=m_document.graphs[m_graph].owner;
-            if(m_document.removeScreen(owner,m_status)){m_first=0;selectGraph(0);m_status="Removed screen. Undo restores it.";}
+            const bool removed=owner.rfind("behaviour:",0)==0?m_document.removeBehaviour(owner.substr(10),m_status):m_document.removeScreen(owner,m_status);
+            if(removed){m_first=0;selectGraph(0);m_status="Removed owner. Undo restores it.";}
             m_left=left;return;
         }
         if(click&&in(x,y,8,kBottom-114,kLeft-8,kBottom-82))
@@ -581,7 +594,7 @@ namespace nx
             if(click&&m_selection<m_document.graphs[m_graph].nodes.size())
             {
                 const auto& n=m_document.graphs[m_graph].nodes[m_selection];
-                if(in(x,y,kRight+8,kTop+456,kWidth-8,kTop+486)&&(n.kind.rfind("literal:",0)==0||n.kind.rfind("var:",0)==0||n.kind=="call:function"))
+                if(in(x,y,kRight+8,kTop+456,kWidth-8,kTop+486)&&(n.kind.rfind("literal:",0)==0||n.kind.rfind("var:",0)==0||n.kind=="call:function"||n.kind=="attach:behaviour"))
                 {m_edit=n.ref;m_focus=n.kind.rfind("literal:",0)==0?2:3;input.setTyping(true);}
                 else if(in(x,y,kRight+8,kBottom-40,kWidth-8,kBottom-8)&&m_document.deleteNode(m_graph,m_selection,m_status)){m_diagnostic={};clearWire();m_selection=static_cast<size_t>(-1);rebuildPins();m_status="Deleted node.";}
             }
@@ -691,6 +704,8 @@ namespace nx
         c.rect(0,0,kWidth,kTop,{0.12f,0.16f,0.22f,1});
         c.text(*m_font,"NEXGEN  /  BLUEPRINT STUDIO",18,13,text);
         c.text(*m_font,"Native editor",1260,13,muted,Align::Right);
+        c.roundRect(566,5,168,28,4,{0.19f,0.33f,0.50f,1});
+        c.clip(566,5,168,28);c.text(*m_font,m_focus==8?(m_edit.empty()?"Type name...":m_edit.c_str()):"New behaviour",650,9,text,Align::Center);c.noClip();
         c.roundRect(740,5,110,28,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Open",795,9,text,Align::Center);
         c.roundRect(856,5,110,28,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Save as",911,9,text,Align::Center);
         const std::string titleText=(m_document.name.empty()?"No document open":m_document.name)+(m_document.dirty()?" *":"");
@@ -786,7 +801,7 @@ namespace nx
         c.clip(8,kBottom-188,kLeft-16,32);
         c.text(*m_font,m_focus==7?(m_edit.empty()?"Type screen ID...":m_edit.c_str()):"New screen",kLeft*0.5f,kBottom-182,text,Align::Center);c.noClip();
         c.roundRect(8,kBottom-151,kLeft-16,32,5,{0.32f,0.19f,0.23f,1});
-        c.text(*m_font,"Delete screen",kLeft*0.5f,kBottom-145,text,Align::Center);
+        c.text(*m_font,m_document.graphs[m_graph].owner.rfind("behaviour:",0)==0?"Delete behaviour":"Delete screen",kLeft*0.5f,kBottom-145,text,Align::Center);
         c.roundRect(8,kBottom-114,kLeft-16,32,5,{0.19f,0.33f,0.50f,1});
         c.clip(8,kBottom-114,kLeft-16,32);
         c.text(*m_font,m_focus==4?(m_edit.empty()?"Type name...":m_edit.c_str()):"New function",kLeft*0.5f,kBottom-108,text,Align::Center);c.noClip();
@@ -813,7 +828,7 @@ namespace nx
             const auto* spec=blueprintSpec(n.kind);
             c.clip(kRight+8,kTop+404,kWidth-kRight-16,44);
             c.paragraph(*m_font,spec?spec->title.c_str():n.kind.c_str(),kRight+12,kTop+408,244,text);c.noClip();
-            if(n.kind.rfind("literal:",0)==0||n.kind.rfind("var:",0)==0||n.kind=="call:function")
+            if(n.kind.rfind("literal:",0)==0||n.kind.rfind("var:",0)==0||n.kind=="call:function"||n.kind=="attach:behaviour")
             {
                 c.roundRect(kRight+8,kTop+456,kWidth-kRight-16,30,4,(m_focus==2||m_focus==3)?Color{0.24f,0.35f,0.48f,1}:Color{0.16f,0.21f,0.28f,1});
                 c.clip(kRight+12,kTop+456,kWidth-kRight-24,30);

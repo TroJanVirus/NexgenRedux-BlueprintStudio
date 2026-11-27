@@ -129,6 +129,8 @@ namespace nx
                 }
                 if(n.kind=="event:delta"&&graph.name=="update"&&pin=="value"){result="dt";return true;}
                 if(n.kind=="event:canvas"&&graph.name=="draw"&&pin=="value"){result="canvas";return true;}
+                if(n.kind=="event:entity"&&pin=="value"){result="entity";return true;}
+                if(n.kind=="event:other"&&pin=="value"){result="other";return true;}
                 if(n.kind.rfind("make:",0)==0&&pin=="result")
                 {
                     result=n.kind.substr(5)+"(";bool first=true;
@@ -189,6 +191,12 @@ namespace nx
                     source+=pad+(n.kind.ends_with("@")?"@":"")+"bp_var_"+n.ref+" = "+v+";\n";mark(start,to);
                     return flow(to,"then",indent,depth+1);
                 }
+                if(n.kind=="attach:behaviour")
+                {
+                    std::string entity;if(!value(to,"target",entity,0))return false;
+                    source+=pad+"("+entity+").add(BP_Behaviour_"+n.ref+"());\n";mark(start,to);
+                    return flow(to,"then",indent,depth+1);
+                }
                 if(n.kind=="call:function")
                 {
                     source+=pad+"bp_fn_"+n.ref+"();\n";mark(start,to);
@@ -245,20 +253,29 @@ namespace nx
         // Validate the public graph model before reading any endpoints.
         std::string checked;
         if(!document.serialize(checked,error))return false;
-        std::string result="class BP_NativeScreen : Screen\n{\n";
+        std::string result;
         std::vector<BlueprintPin> vars;
         const auto owners=document.screens();
         if(std::find(owners.begin(),owners.end(),owner)==owners.end()){error="Unknown screen "+owner;return false;}
-        if(!document.variables(vars,error,owner))return false;
+        // Generate shared native behaviour classes in each screen module, before the Screen.
+        std::vector<std::string> classes;
+        for(const auto& name:document.behaviours())classes.push_back("behaviour:"+name);
+        classes.push_back(owner);
+        for(const auto& classOwner:classes)
+        {
+        const bool behaviour=classOwner!=owner;
+        result+=behaviour?"class BP_Behaviour_"+classOwner.substr(10)+" : Behaviour\n{\n":"class BP_NativeScreen : Screen\n{\n";
+        if(!document.variables(vars,error,classOwner))return false;
         for(const auto& v:vars)result+="    "+v.type+" bp_var_"+v.name+";\n";
         for(size_t graphIndex=0;graphIndex<document.graphs.size();++graphIndex)
         {
             const auto& graph=document.graphs[graphIndex];
-            if(graph.owner!=owner)continue;
+            if(graph.owner!=classOwner)continue;
             const auto entry=std::find_if(graph.nodes.begin(),graph.nodes.end(),[](const BlueprintDocument::Node& n){return n.kind=="entry";});
             if(entry==graph.nodes.end()){error="Missing event entry.";return false;}
             const auto index=static_cast<size_t>(entry-graph.nodes.begin());
-            const auto signature=graph.name=="update"?"float dt":graph.name=="draw"?"Canvas@ canvas":"";
+            const auto signature=graph.kind=="function"?"":graph.name=="update"?"float dt":graph.name=="draw"?"Canvas@ canvas":
+                (graph.name=="onHit"||graph.name=="onLeave")?"Entity@ other":"";
             const size_t start=result.size();
             result+="    void "+(graph.kind=="function"?"bp_fn_"+graph.name:graph.name)+"("+signature+")\n    {\n";
             spans.push_back({start,result.size(),{graphIndex,index}});
@@ -268,6 +285,7 @@ namespace nx
             if(result.size()>1024*1024){error="Generated source exceeds the size limit.";return false;}
         }
         result+="}\n";
+        }
         if(map)
         {
             BlueprintSourceMap lines;lines.reserve(spans.size());size_t cursor=0,line=1;

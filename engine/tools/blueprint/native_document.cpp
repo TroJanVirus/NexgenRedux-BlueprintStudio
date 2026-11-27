@@ -29,6 +29,9 @@ namespace nx
             {"make:Color","Make Color","Values","r:float|g:float|b:float|a:float","result:Color"},
             {"event:delta","Delta time","Events","","value:float"},
             {"event:canvas","Canvas","Events","","value:Canvas@"},
+            {"event:entity","Owning entity","Events","","value:Entity@"},
+            {"event:other","Collision partner","Events","","value:Entity@"},
+            {"attach:behaviour","Attach behaviour","Behaviours","in:exec|target:Entity@","then:exec"},
             {"var:get:bool","Get bool variable","Variables","","value:bool"},
             {"var:set:bool","Set bool variable","Variables","in:exec|value:bool","then:exec"},
             {"var:get:int","Get int variable","Variables","","value:int"},
@@ -90,8 +93,18 @@ namespace nx
             return std::all_of(s.begin(),s.end(),[](char c){return (c>='a'&&c<='z')||(c>='0'&&c<='9')||c=='_'||c=='-';});
         }
         std::string scoped(const std::string& owner,const std::string& name){return owner+"/"+name;}
-        bool context(const std::string& event,const std::string& kind)
-        {return (kind!="event:delta"||event=="update")&&(kind!="event:canvas"||event=="draw");}
+        bool behaviourOwner(const std::string& owner){return owner.rfind("behaviour:",0)==0&&identifier(owner.substr(10));}
+        bool behaviourEvent(const std::string& name)
+        {return name=="start"||name=="update"||name=="onHit"||name=="onLeave"||name=="onGone";}
+        bool ownerEvent(const std::string& owner,const std::string& name)
+        {return behaviourOwner(owner)?behaviourEvent(name):lifecycle(name);}
+        bool context(const std::string& event,const std::string& kind,const std::string& owner)
+        {
+            const bool behaviour=behaviourOwner(owner);
+            return (kind!="event:delta"||event=="update")&&(kind!="event:canvas"||(!behaviour&&event=="draw"))&&
+                (kind!="event:entity"||behaviour)&&(kind!="event:other"||(behaviour&&(event=="onHit"||event=="onLeave")))&&
+                (kind!="attach:behaviour"||!behaviour);
+        }
         bool validText(JsonTree::Value v){return v.isString()&&v.text()[0]&&std::strlen(v.text())<=512;}
         bool literal(const std::string& kind,const std::string& value)
         {
@@ -228,24 +241,24 @@ namespace nx
         {
             auto ns=value["nodes"],ls=value["links"];
             const std::string owner=value["owner"].text("Screen");
-            if(!screenId(owner)||!validText(value["name"])||!graphNames.emplace(scoped(owner,value["name"].text())).second||
+            if((!screenId(owner)&&!behaviourOwner(owner))||!validText(value["name"])||!graphNames.emplace(scoped(owner,value["name"].text())).second||
                 !ns.isArray()||!ls.isArray()||ns.count()>kMaxNodes||ls.count()>kMaxLinks)
             {error="Invalid or duplicate graph.";return false;}
             Graph g;g.name=value["name"].text();g.owner=owner;g.kind="event";
             const auto kind=value["kind"].text("event");
             g.kind=kind;
-            if((g.kind=="event"&&!lifecycle(g.name))||
-                (g.kind=="function"&&(!identifier(g.name)||lifecycle(g.name)))||(g.kind!="event"&&g.kind!="function"))
+            if((g.kind=="event"&&!ownerEvent(owner,g.name))||
+                (g.kind=="function"&&(!identifier(g.name)||ownerEvent(owner,g.name)))||(g.kind!="event"&&g.kind!="function"))
             {error="Invalid event or function graph.";return false;}
             std::unordered_map<std::string,size_t> ids;unsigned entries=0;
             for(auto n=ns.first();n.exists();n=n.next())
             {
                 const std::string kind=n["kind"].text(),ref=n["value"].text();
                 const float x=n["x"].number(),y=n["y"].number();
-                if(!validText(n["id"])||!blueprintSpec(kind)||!context(g.name,kind)||!n["x"].isNumber()||!n["y"].isNumber()||
+                if(!validText(n["id"])||!blueprintSpec(kind)||!context(g.name,kind,g.owner)||!n["x"].isNumber()||!n["y"].isNumber()||
                     !coordinate(x)||!coordinate(y)||!ids.emplace(n["id"].text(),g.nodes.size()).second||
                     (kind.rfind("literal:",0)==0&&(!n["value"].isString()||!literal(kind,ref)))||
-                    ((variableKind(kind)||kind=="call:function")&&(!n["value"].isString()||!identifier(ref))))
+                    ((variableKind(kind)||kind=="call:function"||kind=="attach:behaviour")&&(!n["value"].isString()||!identifier(ref))))
                 {error="Invalid node in "+g.name;return false;}
                 if(kind=="entry")++entries;
                 Node node{n["id"].text(),kind,ref,x,y};
@@ -284,6 +297,18 @@ namespace nx
                 if(!graphNames.count(scoped(owner,event))){error="Missing required event graph in "+owner;return false;}
             std::vector<BlueprintPin> vars;if(!candidate.variables(vars,error,owner))return false;
         }
+        if(candidate.screens().empty()){error="A project requires at least one screen.";return false;}
+        const auto behaviours=candidate.behaviours();
+        for(const auto& behaviour:behaviours)
+        {
+            const auto owner="behaviour:"+behaviour;
+            for(const char* event:{"start","update","onHit","onLeave","onGone"})
+                if(!graphNames.count(scoped(owner,event))){error="Missing behaviour event "+owner+"/"+event;return false;}
+            std::vector<BlueprintPin> vars;if(!candidate.variables(vars,error,owner))return false;
+        }
+        for(const auto& g:candidate.graphs)for(const auto& n:g.nodes)
+            if(n.kind=="attach:behaviour"&&std::find(behaviours.begin(),behaviours.end(),n.ref)==behaviours.end())
+            {error="Missing behaviour "+n.ref;return false;}
         if(!candidate.functions(error))return false;
         *this=std::move(candidate);error.clear();return true;
     }
@@ -301,7 +326,7 @@ namespace nx
             for(const auto& n:g.nodes)
             {
                 auto* j=ns->add();if(!j||!text(*j,"id",n.id)||!text(*j,"kind",n.kind)||!number(*j,"x",n.x)||!number(*j,"y",n.y))return fail();
-                if((n.kind.rfind("literal:",0)==0||variableKind(n.kind)||n.kind=="call:function")&&!text(*j,"value",n.ref))return fail();
+                if((n.kind.rfind("literal:",0)==0||variableKind(n.kind)||n.kind=="call:function"||n.kind=="attach:behaviour")&&!text(*j,"value",n.ref))return fail();
                 if(!n.values.empty())
                 {
                     auto* values=j->put("values");if(!values)return fail();
@@ -337,7 +362,7 @@ namespace nx
         if(graph>=graphs.size()||!blueprintSpec(kind)||kind=="entry"||!coordinate(x)||!coordinate(y)||graphs[graph].nodes.size()>=kMaxNodes)
         {error="Cannot add this node.";return false;}
         auto& g=graphs[graph];
-        if(!context(g.name,kind)){error="This event value belongs to a different event graph.";return false;}
+        if(!context(g.name,kind,g.owner)){error="This event value belongs to a different event graph.";return false;}
         std::string id;
         do{id="n"+std::to_string(++m_nextId);}while(std::any_of(g.nodes.begin(),g.nodes.end(),[&](const Node& n){return n.id==id;}));
         std::string value=kind=="literal:string"?"":kind=="literal:bool"?"false":kind.rfind("literal:",0)==0?"0":"";
@@ -348,6 +373,10 @@ namespace nx
             std::vector<BlueprintPin> vars;
             if(!variables(vars,error,g.owner))return false;
             for(unsigned i=1;std::any_of(vars.begin(),vars.end(),[&](const BlueprintPin& p){return p.name==value&&p.type!=type;});++i)value="variable_"+std::to_string(i);
+        }
+        if(kind=="attach:behaviour")
+        {
+            const auto names=behaviours();if(names.empty()){error="Create a behaviour first.";return false;}value=names.front();
         }
         if(kind=="call:function")
         {
@@ -437,10 +466,15 @@ namespace nx
     bool BlueprintDocument::setReference(size_t graph,size_t node,const std::string& value,std::string& error)
     {
         if(graph>=graphs.size()||node>=graphs[graph].nodes.size()||
-            (!variableKind(graphs[graph].nodes[node].kind)&&graphs[graph].nodes[node].kind!="call:function")||!identifier(value))
+            (!variableKind(graphs[graph].nodes[node].kind)&&graphs[graph].nodes[node].kind!="call:function"&&graphs[graph].nodes[node].kind!="attach:behaviour")||!identifier(value))
         {error="Use a variable name containing letters, digits and underscores.";return false;}
         auto& n=graphs[graph].nodes[node];
         if(n.ref==value){error.clear();return true;}
+        if(n.kind=="attach:behaviour")
+        {
+            const auto names=behaviours();if(std::find(names.begin(),names.end(),value)==names.end()){error="Unknown behaviour "+value;return false;}
+            record(graph);n.ref=value;error.clear();return true;
+        }
         if(n.kind=="call:function")
         {
             const std::string previous=n.ref;n.ref=value;
@@ -491,7 +525,7 @@ namespace nx
         if(!identifier(functionName)||graphs.size()>=kMaxGraphs||
             std::none_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==owner;})||
             std::any_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==owner&&g.name==functionName;})||
-            lifecycle(functionName))
+            ownerEvent(owner,functionName))
         {error="Choose a unique function name (letters, digits and underscores).";return false;}
         recordGraphList();
         Graph g;g.owner=owner;g.name=functionName;g.kind="function";
@@ -510,8 +544,43 @@ namespace nx
     std::vector<std::string> BlueprintDocument::screens() const
     {
         std::vector<std::string> result;
-        for(const auto& g:graphs)if(std::find(result.begin(),result.end(),g.owner)==result.end())result.push_back(g.owner);
+        for(const auto& g:graphs)if(!behaviourOwner(g.owner)&&std::find(result.begin(),result.end(),g.owner)==result.end())result.push_back(g.owner);
         return result;
+    }
+    std::vector<std::string> BlueprintDocument::behaviours() const
+    {
+        std::vector<std::string> result;
+        for(const auto& g:graphs)if(behaviourOwner(g.owner))
+        {
+            const auto name=g.owner.substr(10);
+            if(std::find(result.begin(),result.end(),name)==result.end())result.push_back(name);
+        }
+        return result;
+    }
+    bool BlueprintDocument::addBehaviour(const std::string& name,std::string& error)
+    {
+        const auto owner="behaviour:"+name;
+        if(!identifier(name)||graphs.size()+5>kMaxGraphs||
+            std::any_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==owner;}))
+        {error="Choose a unique behaviour identifier.";return false;}
+        recordGraphList();
+        for(const char* event:{"start","update","onHit","onLeave","onGone"})
+        {
+            Graph g;g.owner=owner;g.name=event;g.kind="event";
+            g.nodes.push_back({"entry","entry","",24,60});graphs.push_back(std::move(g));
+        }
+        error.clear();return true;
+    }
+    bool BlueprintDocument::removeBehaviour(const std::string& name,std::string& error)
+    {
+        const auto owner="behaviour:"+name;
+        if(std::none_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==owner;}))
+        {error="Unknown behaviour.";return false;}
+        for(const auto& g:graphs)for(const auto& n:g.nodes)
+            if(n.kind=="attach:behaviour"&&n.ref==name){error="Remove attachment nodes referencing "+name+" first.";return false;}
+        recordGraphList();
+        graphs.erase(std::remove_if(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==owner;}),graphs.end());
+        error.clear();return true;
     }
     bool BlueprintDocument::addScreen(const std::string& id,std::string& error)
     {
