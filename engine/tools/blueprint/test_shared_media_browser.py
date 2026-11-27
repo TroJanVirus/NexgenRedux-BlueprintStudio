@@ -7,7 +7,7 @@ with tempfile.TemporaryDirectory() as tmp:
     with sync_playwright() as pw:
         browser=pw.chromium.launch(executable_path=os.environ.get('CHROMIUM_PATH'),args=['--no-sandbox','--disable-dev-shm-usage']); page=browser.new_page(viewport={'width':1800,'height':1000},accept_downloads=True);page.set_default_timeout(7000);errors=[]
         page.on('pageerror',lambda e:errors.append(str(e)));page.on('dialog',lambda d:d.accept())
-        page.set_content(html.read_text());page.evaluate('createProject();project.name="Demo";project.screens.push({id:"two",title:"Level Two",blueprint:clone(doc),assets:[]});render()')
+        page.set_content(html.read_text());page.evaluate("NexgenCommandBar.setExpanded(true)");page.evaluate('createProject();project.name="Demo";project.screens.push({id:"two",title:"Level Two",blueprint:clone(doc),assets:[]});render()')
         page.get_by_role('button',name='Assets',exact=True).click();a=page.locator('#assetBrowser');a.get_by_role('button',name='Shared project files',exact=True).click();a.get_by_placeholder('Optional destination folder (e.g. textures)').fill('data')
         with page.expect_file_chooser() as fc:a.get_by_role('button',name='Import files',exact=True).click()
         fc.value.set_files({'name':'message.txt','mimeType':'text/plain','buffer':b'Shared message'});a.get_by_role('button',name='data/message.txt',exact=True).wait_for();assert a.locator('pre').inner_text()=='Shared message'

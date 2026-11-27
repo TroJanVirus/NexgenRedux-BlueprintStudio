@@ -9,7 +9,7 @@ with tempfile.TemporaryDirectory() as tmp:
         page=browser.new_page(viewport={'width':1700,'height':1000});page.set_default_timeout(5000);errors=[]
         page.on('pageerror',lambda e:errors.append(str(e)))
         page.on('dialog',lambda d:d.accept('Setup' if d.type=='prompt' else ''))
-        page.set_content(html.read_text());page.wait_for_timeout(100)
+        page.set_content(html.read_text());page.evaluate("NexgenCommandBar.setExpanded(true)");page.wait_for_timeout(100)
         before=page.evaluate('B.compile(doc).source')
         page.locator('#node-spawn .nodeheader').click();page.locator('#node-name .nodeheader').click(modifiers=['Shift'])
         assert page.locator('.node.selected').count()==2

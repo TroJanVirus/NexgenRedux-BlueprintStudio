@@ -7,7 +7,7 @@ with tempfile.TemporaryDirectory() as tmp:
     with sync_playwright() as pw:
         browser=pw.chromium.launch(executable_path=os.environ.get('CHROMIUM_PATH'),args=['--no-sandbox','--disable-dev-shm-usage']);page=browser.new_page(viewport={'width':1700,'height':1000},accept_downloads=True);page.set_default_timeout(5000);errors=[]
         page.on('pageerror',lambda e:errors.append(str(e)));page.on('dialog',lambda d:d.accept('Group' if d.type=='prompt' else ''))
-        page.set_content(html.read_text())
+        page.set_content(html.read_text());page.evaluate("NexgenCommandBar.setExpanded(true)")
         before=page.evaluate('B.compile(doc).source')
         page.locator('#node-spawn .nodeheader').click();page.locator('#node-name .nodeheader').click(modifiers=['Shift']);page.get_by_role('button',name='Group',exact=True).click()
         page.get_by_role('button',name='Fold',exact=True).click()

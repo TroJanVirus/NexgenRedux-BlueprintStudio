@@ -7,7 +7,7 @@ with tempfile.TemporaryDirectory() as tmp:
     with sync_playwright() as pw:
         browser=pw.chromium.launch(executable_path=os.environ.get('CHROMIUM_PATH'),args=['--no-sandbox','--disable-dev-shm-usage']); page=browser.new_page(viewport={'width':1800,'height':1000},accept_downloads=True); page.set_default_timeout(7000); errors=[]
         page.on('pageerror',lambda e:errors.append(str(e))); page.on('dialog',lambda d:d.accept())
-        page.set_content(html.read_text()); screen=json.loads((root/'examples/messages.bp.json').read_text());page.evaluate('(s)=>{doc=s;selectGraph(doc.graphs[0].name);createProject();project.screens.push({id:"two",title:"Level Two",blueprint:clone(s),assets:[]});render()}',screen)
+        page.set_content(html.read_text());page.evaluate("NexgenCommandBar.setExpanded(true)"); screen=json.loads((root/'examples/messages.bp.json').read_text());page.evaluate('(s)=>{doc=s;selectGraph(doc.graphs[0].name);createProject();project.screens.push({id:"two",title:"Level Two",blueprint:clone(s),assets:[]});render()}',screen)
         name=screen['components'][0]['name']
         page.locator('#components .item').first.click();page.get_by_role('button',name='Share in project',exact=True).click();assert page.evaluate('project.sharedBehaviours.length')==1;assert page.evaluate('doc.sharedComponents[0]')==name
         page.locator('#undo').click();assert page.evaluate('!doc.sharedComponents&&project.sharedBehaviours.length===0');page.locator('#redo').click();assert page.evaluate('doc.sharedComponents.length===1&&project.sharedBehaviours.length===1')

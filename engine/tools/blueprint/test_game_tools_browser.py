@@ -7,7 +7,7 @@ with tempfile.TemporaryDirectory() as tmp:
     with sync_playwright() as pw:
         browser=pw.chromium.launch(executable_path=os.environ.get('CHROMIUM_PATH'),args=['--no-sandbox','--disable-dev-shm-usage']);page=browser.new_page(viewport={'width':1700,'height':1000},accept_downloads=True);page.set_default_timeout(6000);errors=[]
         page.on('pageerror',lambda e:errors.append(str(e)));page.on('dialog',lambda d:d.accept())
-        page.set_content(html.read_text());screen=json.loads((root/'examples/messages.bp.json').read_text());page.evaluate('(s)=>{doc=s;selectGraph(doc.graphs[0].name);createProject();render()}',screen)
+        page.set_content(html.read_text());page.evaluate("NexgenCommandBar.setExpanded(true)");screen=json.loads((root/'examples/messages.bp.json').read_text());page.evaluate('(s)=>{doc=s;selectGraph(doc.graphs[0].name);createProject();render()}',screen)
         page.locator('#components .item').first.dblclick();assert page.evaluate('doc.kind')=='Behaviour';assert page.locator('#backToScreen').is_visible();assert page.locator('#save').inner_text()=='Save project'
         page.locator('#variables .item').first.click();page.evaluate('remember();doc.variables[0].default=17;render()');assert page.evaluate('rootDocument().components[0].variables[0].default')==17
         with page.expect_download() as info:page.locator('#save').click()

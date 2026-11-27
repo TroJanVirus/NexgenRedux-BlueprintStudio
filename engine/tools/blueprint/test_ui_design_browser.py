@@ -7,7 +7,7 @@ with tempfile.TemporaryDirectory() as tmp:
     with sync_playwright() as pw:
         browser=pw.chromium.launch(executable_path=os.environ.get('CHROMIUM_PATH'),args=['--no-sandbox','--disable-dev-shm-usage']);page=browser.new_page(viewport={'width':1700,'height':1000},accept_downloads=True);page.set_default_timeout(5000);errors=[]
         page.on('pageerror',lambda e:errors.append(str(e)));page.on('dialog',lambda d:d.accept('OnPlay' if d.type=='prompt' else ''))
-        page.set_content(html.read_text());page.evaluate('doc={version:1,name:"BP_Menu",kind:"Screen",variables:[],graphs:[freshGraph("event","onEnter")]};selectGraph("onEnter");render()')
+        page.set_content(html.read_text());page.evaluate("NexgenCommandBar.setExpanded(true)");page.evaluate('doc={version:1,name:"BP_Menu",kind:"Screen",variables:[],graphs:[freshGraph("event","onEnter")]};selectGraph("onEnter");render()')
         page.locator('#uiDesignerButton').click();ui=page.locator('#uiDesigner');ui.locator('.uiDesignTree button').filter(has_text='play · button').click();assert ui.locator('.uiGameWidget.selected').inner_text()=='Play'
         ui.locator('.uiDesignDetails label').filter(has_text='Text').locator('xpath=following-sibling::input[1]').fill('Start game');ui.locator('.uiDesignDetails label').filter(has_text='Text').locator('xpath=following-sibling::input[1]').press('Tab');assert 'Start game' in ui.locator('.uiGamePage').inner_text()
         ui.get_by_role('button',name='Create click function',exact=True).click();assert ui.locator('.uiDesignDetails select').filter(has=page.locator('option[value="OnPlay"]')).count()==2

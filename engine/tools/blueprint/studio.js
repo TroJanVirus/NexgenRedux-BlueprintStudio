@@ -610,7 +610,7 @@ window.addEventListener('pointerup', e => { if (!drag)
         renderGraph();
     }
 } });
-window.addEventListener('keydown', e => { if (e.target.matches('input,textarea,select,[contenteditable=true]') || document.querySelector('dialog[open]'))
+window.addEventListener('keydown', e => { if (window.NexgenCommandBar?.ownsKeys(e.target)||e.target.matches('input,textarea,select,[contenteditable=true]') || document.querySelector('dialog[open]'))
     return; if (e.code === 'Space') {
     space = true;
     e.preventDefault();

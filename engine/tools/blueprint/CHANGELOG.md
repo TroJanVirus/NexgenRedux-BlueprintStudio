@@ -1,5 +1,10 @@
 # Changes
 
+## A tidier toolbar
+
+- Keep common actions visible and group the rest under File, Game, Development and View. All existing commands remain available.
+- Menus support arrow keys, Enter and Escape, and stay inside the window. The full toolbar can still be shown.
+
 ## Large graphs
 
 - Draw wires once after node layout, pin visibility and folded groups have been updated. Keep existing wire elements when moving nodes instead of recreating them.

@@ -11,7 +11,7 @@ with sync_playwright() as pw:
     page=browser.new_page(viewport={'width':1600,'height':1000},accept_downloads=True)
     page.set_default_timeout(5000)
     errors=[];page.on('pageerror',lambda e:errors.append(str(e)));page.on('dialog',lambda d:d.accept())
-    page.set_content(bundle.read_text());page.wait_for_timeout(150)
+    page.set_content(bundle.read_text());page.evaluate("NexgenCommandBar.setExpanded(true)");page.wait_for_timeout(150)
     assert page.locator('#status').inner_text().startswith('Compiled')
     page.locator('#examplesButton').click();page.locator('#dialogBody select').select_option('Extended');page.locator('#dialogOK').click();page.wait_for_timeout(120)
     assert page.locator('#status').inner_text().startswith('Compiled'); assert 'DoubleValue' in page.locator('#macros').inner_text()

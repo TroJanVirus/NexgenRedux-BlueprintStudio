@@ -6,6 +6,8 @@ The editor runs in a desktop browser. The game runs in Nexgen as usual; it does 
 
 ## Getting started
 
+The toolbar keeps Save, Compile and Play test close at hand. Open **File** for documents and exports, **Game** for scenes, assets and project tools, and **Development** for debugging and recovery. Graph appearance and image export are under **View**. Choose **File > Show all toolbar commands** to use the full toolbar instead.
+
 1. Open `index.html` in a desktop browser. The Arcade example is loaded for you.
 2. Choose an event from **My Blueprint**. Events run when something happens in the game, such as entering a screen, updating a frame or hitting another entity.
 3. Right-click the canvas to find a node, or drag a node from the library.
@@ -180,7 +182,7 @@ node test_native_scene.js
 node test_node_library.js
 ```
 
-No npm packages are needed. To run the optional browser tests, install Python Playwright and Chromium, then run `python test_browser.py` and `python test_layout_browser.py` and `python test_workspace_browser.py` and `python test_polish_browser.py` and `python test_organise_browser.py` and `python test_game_tools_browser.py` and `python test_playtest_browser.py`, `python test_ui_design_browser.py` , `python test_shared_behaviours_browser.py` and `python test_shared_media_browser.py`, `python test_scene_viewport_browser.py` and `python test_native_scene_browser.py` and `python test_profile_browser.py`, `python test_node_library_browser.py` and `python test_graph_performance_browser.py`. Set `CHROMIUM_PATH` if Chromium is installed outside Playwright's usual location. The recovery test uses real browser storage by default; `BLUEPRINT_MOCK_STORAGE=1` checks its UI with a simulated storage backend on restricted test hosts. Actual storage across a browser restart has not been verified on this branch.
+No npm packages are needed. To run the optional browser tests, install Python Playwright and Chromium, then run `python test_browser.py` and `python test_layout_browser.py` and `python test_workspace_browser.py` and `python test_polish_browser.py` and `python test_organise_browser.py` and `python test_game_tools_browser.py` and `python test_playtest_browser.py`, `python test_ui_design_browser.py` , `python test_shared_behaviours_browser.py` and `python test_shared_media_browser.py`, `python test_scene_viewport_browser.py` and `python test_native_scene_browser.py` and `python test_profile_browser.py`, `python test_node_library_browser.py` and `python test_graph_performance_browser.py` and `python test_command_bar_browser.py`. Set `CHROMIUM_PATH` if Chromium is installed outside Playwright's usual location. The recovery test uses real browser storage by default; `BLUEPRINT_MOCK_STORAGE=1` checks its UI with a simulated storage backend on restricted test hosts. Actual storage across a browser restart has not been verified on this branch.
 
 The 720 engine API definitions are based on Nexgen's script reference. The compiler checks data types and graph structure; the native engine compiler checks the resulting AngelScript. Neither check guarantees that all assets are present or that a game performs well on real hardware.
 

@@ -10,7 +10,7 @@ with tempfile.TemporaryDirectory() as tmp:
         def dialog(d):
             if d.type=='alert':alerts.append(d.message)
             d.accept()
-        page.on('dialog',dialog);page.set_content(html.read_text())
+        page.on('dialog',dialog);page.set_content(html.read_text());page.evaluate("NexgenCommandBar.setExpanded(true)")
         page.locator('#sceneEditorButton').click();d=page.locator('#nativeSceneEditor');assert d.get_by_label('Scene type',exact=True).input_value()=='3D'
         assert d.locator('#sceneCanvas').count()==0
         assert d.get_by_role('button',name='+ Entity',exact=True).count()==0

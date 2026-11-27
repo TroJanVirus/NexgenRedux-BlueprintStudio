@@ -10,7 +10,7 @@ with tempfile.TemporaryDirectory() as tmp:
         mock=os.environ.get('BLUEPRINT_MOCK_STORAGE')=='1'
         # The normal test uses real browser storage. A mock can exercise the UI on restricted test hosts.
         if mock:
-            page.set_content(html.read_text());page.evaluate("""() => { const rows=new Map(); Object.defineProperty(window,'indexedDB',{configurable:true,value:{open(){const req={};queueMicrotask(()=>{req.result={transaction(){const tx={objectStore(){return {put(v){rows.set(v.id,structuredClone(v));return {result:v.id}},getAll(){return {result:[...rows.values()].map(v=>structuredClone(v))}},delete(k){rows.delete(k);return {}}}}};queueMicrotask(()=>tx.oncomplete());return tx;}};req.onsuccess();});return req;}}}); }""")
+            page.set_content(html.read_text());page.evaluate("NexgenCommandBar.setExpanded(true)");page.evaluate("""() => { const rows=new Map(); Object.defineProperty(window,'indexedDB',{configurable:true,value:{open(){const req={};queueMicrotask(()=>{req.result={transaction(){const tx={objectStore(){return {put(v){rows.set(v.id,structuredClone(v));return {result:v.id}},getAll(){return {result:[...rows.values()].map(v=>structuredClone(v))}},delete(k){rows.delete(k);return {}}}}};queueMicrotask(()=>tx.oncomplete());return tx;}};req.onsuccess();});return req;}}}); }""")
         else:
             page.route('http://127.0.0.1:8765/',lambda route:route.fulfill(status=200,content_type='text/html',body=html.read_text()));page.goto('http://127.0.0.1:8765/')
         before=page.evaluate('B.compile(doc).source')

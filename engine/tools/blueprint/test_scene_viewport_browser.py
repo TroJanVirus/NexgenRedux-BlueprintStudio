@@ -10,7 +10,7 @@ with tempfile.TemporaryDirectory() as tmp:
         def dialog(d):
             if d.type=='alert':alerts.append(d.message)
             d.accept()
-        page.on('dialog',dialog);page.set_content(html.read_text());page.locator('#sceneEditorButton').click();d=page.locator('#nativeSceneEditor')
+        page.on('dialog',dialog);page.set_content(html.read_text());page.evaluate("NexgenCommandBar.setExpanded(true)");page.locator('#sceneEditorButton').click();d=page.locator('#nativeSceneEditor')
         def change(label,value):
             f=d.get_by_label(label,exact=True);f.fill(value);f.press('Tab')
         def add(kind):
