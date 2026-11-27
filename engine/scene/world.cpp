@@ -261,20 +261,29 @@ namespace nx
 
     u32 World::findComponent(u32 root,const char* name) const
     {
-        if(!alive(root)||!name||!*name)return 0;
-        u32 result=0;bool ambiguous=false;
-        eachEntity([&](u32 id,const Entity& entity)
+        const auto* owner=find(root);
+        if(!owner||!name||!*name)return 0;
+        const u32 rootIndex=root&((1u<<kIndexBits)-1);
+        u32 result=0,at=owner->child;
+        // Walk just this actor's descendants, with no allocation or recursion.
+        // The native parent/child/sibling indices already define the hierarchy.
+        while(at!=kNone&&at!=rootIndex)
         {
-            if(id==root||strcmp(entity.name,name)!=0)return;
-            for(u32 parent=parentOf(id);parent;parent=parentOf(parent))
-                if(parent==root)
+            const auto& entity=m_entities[at];
+            if(entity.live&&!entity.dying)
+            {
+                if(strcmp(entity.name,name)==0)
                 {
-                    // Once ambiguous, never select a later candidate.
-                    if(result!=0)ambiguous=true;else result=id;
-                    break;
+                    if(result)return 0;
+                    result=idOf(at);
                 }
-        });
-        return ambiguous?0:result;
+                if(entity.child!=kNone){at=entity.child;continue;}
+            }
+            while(at!=rootIndex&&m_entities[at].next==kNone)at=m_entities[at].parent;
+            if(at==rootIndex)break;
+            at=m_entities[at].next;
+        }
+        return result;
     }
 
     void World::clearParticles()

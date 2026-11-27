@@ -2598,3 +2598,99 @@ NX_TEST(nativeFlowControlsExecuteWithPersistentCounters)
     if(!r.screens.init(r.services,"project","main")){NX_EXPECT(false);return;}
     r.step(10);NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("flow","missing"),"ok")==0);
 }
+
+NX_TEST(nativeInheritedActorsAndComponentValidityThroughCompiledGraphs)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    BlueprintDocument doc;doc.create();std::string base,child,error,source,bytes;
+    bool ok=doc.createVisualAsset("actor",base,error)&&
+        doc.appendVisualActorComponent(base,0,"box","0,1,0",error)&&
+        doc.setVisualActorProperty(base,1,"name","Socket",error)&&
+        doc.createVisualActorChild(base,child,error)&&
+        doc.appendVisualActorComponent(child,1,"sphere","0,2,0",error)&&
+        doc.setVisualActorProperty(child,2,"name","Sensor",error)&&
+        doc.setVisualActorProperty(child,1,"place","0,3,0",error)&&
+        doc.setVisualActorProperty(base,1,"size","2,2,2",error)&&
+        doc.appendVisualActorComponent(base,0,"box","0,0,1",error)&&
+        doc.placeVisualActor("Screen",child,"0,0,0",error)&&
+        doc.placeVisualActor("Screen",child,"10,0,0",error)&&
+        doc.setInputValue(0,1,"instanceName","First",error)&&
+        doc.setInputValue(0,2,"instanceName","Second",error);
+    auto add=[&](const char* kind){const auto n=doc.graphs[0].nodes.size();ok=ok&&doc.addNode(0,kind,0,0,error);return n;};
+    auto wire=[&](size_t from,const char* output,size_t to,const char* input){ok=ok&&doc.connect(0,from,output,to,input,error);};
+    auto input=[&](size_t n,const char* pin,const char* value){ok=ok&&doc.setInputValue(0,n,pin,value,error);};
+    auto lookup=[&](size_t actor,const char* name){const auto n=add("actor:component");wire(actor,"result",n,"actor");input(n,"component",name);return n;};
+    auto valid=[&](size_t n){const auto check=add("actor:valid");wire(n,"result",check,"entity");return check;};
+    auto gate=[&](size_t previous,size_t condition){const auto n=add("flow:gate");wire(previous,"then",n,"in");wire(condition,"result",n,"open");return n;};
+    auto save=[&](size_t from,const char* pin,const char* key,const char* value){const auto n=add("api:Save:Save::set:string,string");wire(from,pin,n,"in");input(n,"key",key);input(n,"value",value);return n;};
+    const auto socket=lookup(1,"Socket"),other=lookup(2,"Socket"),missing=lookup(1,"Missing");
+    const auto captured=add("capture:Entity@");wire(2,"then",captured,"in");wire(socket,"result",captured,"value");
+    const auto initial=gate(captured,valid(captured));save(initial,"body","component_live","yes");
+    const auto absent=gate(initial,valid(missing));save(absent,"body","unexpected_missing","yes");
+    const auto destroy=add("api:Entity:destroy:Entity@");wire(absent,"then",destroy,"in");wire(captured,"result",destroy,"target");
+    const auto stale=gate(destroy,valid(captured));save(stale,"body","unexpected_stale","yes");
+    const auto surviving=gate(stale,valid(other));save(surviving,"body","other_live","yes");
+    save(surviving,"then","continued","yes");
+    if(!ok||!doc.serialize(bytes,error)){NX_ERROR("Actor authoring: %s",error.c_str());NX_EXPECT(false);return;}
+    BlueprintDocument copy;
+    if(!copy.load(bytes.data(),bytes.size(),error)||!compileBlueprint(copy,source,error)){NX_ERROR("Actor compilation: %s",error.c_str());NX_EXPECT(false);return;}
+    r.platform.files["project/main/screen.json"]="{\"title\":\"Inherited actors and validity\"}";
+    r.platform.files["project/main/main.as"]=source;
+    if(!r.screens.init(r.services,"project","main")){NX_EXPECT(false);return;}
+    r.step(5);NX_EXPECT(!r.screens.failed());
+    NX_EXPECT(strcmp(r.save.get("component_live","missing"),"yes")==0);
+    NX_EXPECT(strcmp(r.save.get("unexpected_missing","missing"),"missing")==0);
+    NX_EXPECT(strcmp(r.save.get("unexpected_stale","missing"),"missing")==0);
+    NX_EXPECT(strcmp(r.save.get("other_live","missing"),"yes")==0&&strcmp(r.save.get("continued","missing"),"yes")==0);
+    if(!r.services.world){NX_EXPECT(false);return;}
+    auto& world=*r.services.world;
+    const auto first=world.findNamed("First"),second=world.findNamed("Second");
+    NX_EXPECT(first&&second&&!world.findComponent(first,"Socket")&&!world.findComponent(first,"Sensor"));
+    const auto survivingSocket=world.findComponent(second,"Socket"),sensor=world.findComponent(second,"Sensor");
+    NX_EXPECT(survivingSocket&&sensor&&world.parentOf(sensor)==survivingSocket);
+    const auto* spatial=world.space().getSpatial(survivingSocket);
+    NX_EXPECT(spatial&&fabsf(spatial->place.y-3)<0.01f&&fabsf(spatial->size.x-2)<0.01f);
+}
+
+NX_TEST(nativeFlowResetAndGateIsolationAcrossBehaviourInstances)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    BlueprintDocument doc;doc.create();std::string id,error,source;
+    bool ok=doc.createVisualAsset("actor",id,error)&&doc.addBehaviour("FlowTest",error)&&
+        doc.setVisualActorProperty(id,0,"behaviour","FlowTest",error)&&
+        doc.placeVisualActor("Screen",id,"0,0,0",error)&&doc.placeVisualActor("Screen",id,"10,0,0",error)&&
+        doc.setInputValue(0,1,"instanceName","FlowFirst",error)&&doc.setInputValue(0,2,"instanceName","FlowSecond",error);
+    size_t g=doc.graphs.size();
+    for(size_t i=0;i<doc.graphs.size();++i)if(doc.graphs[i].owner=="behaviour:FlowTest"&&doc.graphs[i].name=="update"){g=i;break;}
+    if(!ok||g==doc.graphs.size()){NX_ERROR("Behaviour authoring: %s",error.c_str());NX_EXPECT(false);return;}
+    auto add=[&](const char* kind){const auto n=doc.graphs[g].nodes.size();ok=ok&&doc.addNode(g,kind,0,0,error);return n;};
+    auto wire=[&](size_t from,const char* output,size_t to,const char* input){ok=ok&&doc.connect(g,from,output,to,input,error);};
+    auto input=[&](size_t n,const char* pin,const char* value){ok=ok&&doc.setInputValue(g,n,pin,value,error);};
+    auto get=[&](const char* name){const auto n=add("var:get:int");ok=ok&&doc.setReference(g,n,name,error);return n;};
+    auto increment=[&](size_t from,const char* output,const char* name)
+    {
+        const auto current=get(name),sum=add("add:int"),set=add("var:set:int");
+        ok=ok&&doc.setReference(g,set,name,error);wire(current,"value",sum,"a");input(sum,"b","1");
+        wire(sum,"result",set,"value");wire(from,output,set,"in");return set;
+    };
+    auto equals=[&](const char* field,const char* value){const auto current=get(field),eq=add("equal:int");wire(current,"value",eq,"a");input(eq,"b",value);return eq;};
+    auto both=[&](size_t a,size_t b){const auto n=add("and:bool");wire(a,"result",n,"a");wire(b,"result",n,"b");return n;};
+    const auto tick=increment(0,"then","tick");
+    const auto reset=equals("tick","5");
+    const auto once=add("flow:do-once");wire(tick,"then",once,"in");wire(reset,"result",once,"reset");increment(once,"body","onceCount");
+    const auto n=add("flow:do-n");wire(once,"then",n,"in");input(n,"count","3");wire(reset,"result",n,"reset");increment(n,"body","nCount");
+    const auto gate=add("flow:gate");wire(n,"then",gate,"in");wire(equals("tick","4"),"result",gate,"open");increment(gate,"body","gateCount");
+    const auto branch=add("branch");wire(gate,"then",branch,"in");
+    const auto checks=both(both(equals("onceCount","2"),equals("nCount","6")),equals("gateCount","1"));
+    wire(checks,"result",branch,"condition");
+    const auto self=add("event:entity"),name=add("api:Entity:get_name:Entity@");wire(self,"value",name,"target");
+    const auto good=add("api:Save:Save::set:string,string"),bad=add("api:Save:Save::set:string,string");
+    wire(name,"result",good,"key");wire(name,"result",bad,"key");
+    wire(branch,"true",good,"in");wire(branch,"false",bad,"in");input(good,"value","ok");input(bad,"value","bad");
+    if(!ok||!compileBlueprint(doc,source,error)){NX_ERROR("Behaviour flow authoring: %s",error.c_str());NX_EXPECT(false);return;}
+    r.platform.files["project/main/screen.json"]="{\"title\":\"Flow instance isolation\"}";
+    r.platform.files["project/main/main.as"]=source;
+    if(!r.screens.init(r.services,"project","main")){NX_EXPECT(false);return;}
+    r.step(15);NX_EXPECT(!r.screens.failed());
+    NX_EXPECT(strcmp(r.save.get("FlowFirst","missing"),"ok")==0&&strcmp(r.save.get("FlowSecond","missing"),"ok")==0);
+}

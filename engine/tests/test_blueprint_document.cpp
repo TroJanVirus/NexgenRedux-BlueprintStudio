@@ -1676,3 +1676,15 @@ NX_TEST(nativeComponentReferenceAndFlowControlsCompile)
     NX_EXPECT(doc.serialize(bytes,error));BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error));
     std::string again;NX_EXPECT(compileBlueprint(copy,again,error)&&again==source);
 }
+
+NX_TEST(nativeDerivedActorComponentLimitRejectsParentChangeAtomically)
+{
+    BlueprintDocument doc;doc.create();std::string base,child,error,before,after,source;
+    NX_EXPECT(doc.createVisualAsset("actor",base,error)&&doc.createVisualActorChild(base,child,error));
+    for(unsigned i=0;i<31;++i)NX_EXPECT(doc.appendVisualActorComponent(child,0,"box","0,0,0",error));
+    NX_EXPECT(doc.serialize(before,error));const auto revision=doc.revision();
+    NX_EXPECT(!doc.appendVisualActorComponent(base,0,"box","0,0,0",error));
+    NX_EXPECT(doc.revision()==revision&&doc.serialize(after,error)&&before==after);
+    NX_EXPECT(doc.visualActorSource(child,source,error));
+    JsonTree tree;NX_EXPECT(tree.parse(source.data(),source.size())&&tree.root()["entities"].count()==32);
+}

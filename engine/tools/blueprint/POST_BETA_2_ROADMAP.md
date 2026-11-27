@@ -36,3 +36,7 @@ Selected-component reset now also clears non-root override records independently
 ## Native component references and flow controls
 
 Get actor component searches only the given live hierarchy and returns null for missing or ambiguous names; Is valid entity safely checks a handle before use. Do Once and Do N track counters per screen/Behaviour instance and per graph node. Their body runs when permitted; Then always continues. A true reset clears the counter before evaluating the current execution. Gate (condition) executes its body only when Open is true. These generate ordinary AngelScript; stateful nodes are rejected in inline macros rather than accidentally sharing call-site state. Multi-entry Unreal-style gates and latent continuations remain future work.
+
+## Consolidated verification
+
+Regression coverage includes generated-script spawning of derived actor hierarchies with parent edits, component overrides and independent instances; graph-level valid/missing/destroyed handles and condition gates; persistent and resettable Do Once/Do N counters on two independent native Behaviours; and rejection of parent edits that would exceed a descendant's component budget. Component lookup traverses only the native actor subtree without allocation or recursion. These tests are part of the native CI suite; confirm the exact revision's jobs before marking this phase verified.
