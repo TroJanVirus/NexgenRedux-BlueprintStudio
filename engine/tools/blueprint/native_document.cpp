@@ -13,7 +13,8 @@ namespace nx
 {
     namespace
     {
-        struct Row {const char* id;const char* title;const char* category;const char* inputs;const char* outputs;};
+        struct Row {const char* id;const char* title;const char* category;const char* inputs;const char* outputs;
+            const char* call="";const char* property="";const char* member="";const char* pure="";const char* result="";const char* hasOut="";};
         constexpr Row rows[]={
             {"entry","Event entry","Flow","","then:exec"},
             {"branch","Branch","Flow","in:exec|condition:bool","true:exec|false:exec"},
@@ -95,7 +96,7 @@ namespace nx
         static const auto catalogue=[]{
             std::vector<BlueprintNodeSpec> result;
             result.reserve(sizeof(rows)/sizeof(rows[0]));
-            for(const auto& row:rows)result.push_back({row.id,row.title,row.category,parsePins(row.inputs),parsePins(row.outputs)});
+            for(const auto& row:rows)result.push_back({row.id,row.title,row.category,parsePins(row.inputs),parsePins(row.outputs),row.call,row.property,row.result,*row.member!=0,*row.pure!=0,*row.hasOut!=0});
             return result;
         }();
         return catalogue;

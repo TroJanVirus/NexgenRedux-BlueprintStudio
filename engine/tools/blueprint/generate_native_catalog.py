@@ -15,7 +15,7 @@ for n in nodes:
     outs = ([] if n["pure"] else [{"name":"then","type":"exec"}]) + n["outputs"]
     if n["result"] != "void":
         outs += [{"name":"result","type":n["result"]}]
-    row = [n["id"], n["title"], n["category"], pins(ins), pins(outs)]
+    row = [n["id"], n["title"], n["category"], pins(ins), pins(outs), n["call"], n["property"], "member" if n["member"] else "", "pure" if n["pure"] else "", n["result"], "out" if n["outputs"] else ""]
     lines.append("    {" + ", ".join(json.dumps(s, ensure_ascii=True) for s in row) + "},\n")
 target = here / "native_catalog.inc"
 parser = argparse.ArgumentParser(description=__doc__)

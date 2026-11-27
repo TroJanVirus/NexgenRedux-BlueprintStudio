@@ -24,6 +24,7 @@ namespace nx
         void filterCatalogue();
         void clearWire(){m_pending=static_cast<size_t>(-1);m_pendingPin.clear();}
         bool saveCopy(Services& services);
+        bool compileAndExport(Services& services);
         void cancelDrag() { m_drag = false; }
         struct NodePins { std::vector<std::string> inputs, outputs; float height = 72; };
         struct WirePins { size_t output, input; };

@@ -1,5 +1,6 @@
 #include "test.h"
 #include "tools/blueprint/native_document.h"
+#include "tools/blueprint/native_compile.h"
 #include <cstring>
 
 using namespace nx;
@@ -53,4 +54,18 @@ NX_TEST(nativeBlueprintRejectsCyclesAndInvalidLiterals)
     NX_EXPECT(doc.setLiteral(0,3,"-42",error));
     const char legacy[]="{\"version\":1,\"kind\":\"Screen\"}";
     NX_EXPECT(!doc.load(legacy,strlen(legacy),error)&&doc.graphs[0].nodes.size()==4);
+}
+
+NX_TEST(nativeCompilerEmitsTypedAngelScriptAndRejectsIncompleteGraphs)
+{
+    BlueprintDocument doc;doc.create();std::string error,source="unchanged";
+    NX_EXPECT(doc.addNode(0,"api:Save:Save::set:string,string",0,0,error));
+    NX_EXPECT(doc.connect(0,0,"then",1,"in",error));
+    NX_EXPECT(!compileBlueprint(doc,source,error)&&source=="unchanged"&&error.find("Connect input key")!=std::string::npos);
+    NX_EXPECT(doc.addNode(0,"literal:string",0,0,error)&&doc.addNode(0,"literal:string",0,0,error));
+    NX_EXPECT(doc.setLiteral(0,2,"message",error)&&doc.setLiteral(0,3,"Hello \"Redux\"",error));
+    NX_EXPECT(doc.connect(0,2,"value",1,"key",error)&&doc.connect(0,3,"value",1,"value",error));
+    NX_EXPECT(compileBlueprint(doc,source,error));
+    NX_EXPECT(source.find("Save::set(\"message\", \"Hello \\\"Redux\\\"\");")!=std::string::npos);
+    NX_EXPECT(source.find("class BP_NativeScreen : Screen")!=std::string::npos);
 }

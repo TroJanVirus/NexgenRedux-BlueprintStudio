@@ -10,6 +10,8 @@ namespace nx
     {
         std::string id, title, category;
         std::vector<BlueprintPin> inputs, outputs;
+        std::string call,property,result;
+        bool member=false,pure=false,hasOut=false;
     };
     const std::vector<BlueprintNodeSpec>& blueprintCatalogue();
     const BlueprintNodeSpec* blueprintSpec(const std::string& kind);

@@ -1,4 +1,6 @@
 #include "app/blueprint_workspace.h"
+#include "tools/blueprint/native_compile.h"
+#include "script/script_host.h"
 #include "bindings/bindings.h"
 #include "assets/assets.h"
 #include "base/log.h"
@@ -177,6 +179,27 @@ namespace nx
         return true;
     }
 
+    bool BlueprintWorkspace::compileAndExport(Services& s)
+    {
+        std::string source;
+        if(!compileBlueprint(m_document,source,m_status))return false;
+        const char* module="bp_native_validation";
+        const bool valid=s.host->compile(module,"blueprint.as",source.data(),source.size())&&s.host->findClass(module,"Screen");
+        if(!valid)m_status=std::string("AngelScript validation failed: ")+s.host->lastError();
+        s.host->discard(module);
+        if(!valid)return false;
+        static unsigned sequence=0;
+        std::string path;
+        for(unsigned attempt=0;attempt<100;++attempt)
+        {
+            path="own/blueprint-script-"+std::to_string(static_cast<long long>(std::time(nullptr)))+"-"+std::to_string(++sequence)+".as";
+            if(!s.platform->fileTime(path.c_str()))break;
+            path.clear();
+        }
+        if(path.empty()||!s.platform->writeFile(path.c_str(),source.data(),source.size())){m_status="Script export failed.";return false;}
+        m_status="Compiled and exported: "+path;NX_INFO("Blueprint Studio: %s",m_status.c_str());return true;
+    }
+
     void BlueprintWorkspace::recover(Services& s)
     {
         // Called on normal Redux shutdown, even if the workspace is no longer visible.
@@ -250,6 +273,7 @@ namespace nx
         {
             if(click&&in(x,y,1134,39,1266,69)){close(s);return;}
             if(m_document.graphs.empty()){m_left=left;return;}
+            if(click&&in(x,y,610,39,742,69))compileAndExport(s);
             if((pressed&1u)||(click&&in(x,y,748,39,858,69)))saveCopy(s);
             if(((pressed&2u)||(click&&in(x,y,864,39,948,69)))&&m_document.undo()){clearWire();m_selection=static_cast<size_t>(-1);rebuildPins();m_status="Undid graph change.";}
             if(((pressed&4u)||(click&&in(x,y,954,39,1038,69)))&&m_document.redo()){clearWire();m_selection=static_cast<size_t>(-1);rebuildPins();m_status="Redid graph change.";}
@@ -380,12 +404,12 @@ namespace nx
         c.text(*m_font,"NEXGEN  /  BLUEPRINT STUDIO",18,13,text);
         c.text(*m_font,"Native Blueprint editor",1260,13,muted,Align::Right);
         const std::string titleText=(m_document.name.empty()?"No document open":m_document.name)+(m_document.dirty()?" *":"");
-        c.clip(12,38,726,34);c.text(*m_font,shorten(titleText,65).c_str(),18,43,accent);c.noClip();
+        c.clip(12,38,590,34);c.text(*m_font,shorten(titleText,65).c_str(),18,43,accent);c.noClip();
         const auto button=[&](float x,float width,const char* label,bool enabled){
             c.roundRect(x,39,width,30,5,enabled?Color{0.19f,0.33f,0.50f,1}:Color{0.14f,0.18f,0.24f,1});
             c.text(*m_font,label,x+width*0.5f,44,enabled?text:muted,Align::Center);
         };
-        button(748,110,"Save copy",!m_document.graphs.empty());button(864,84,"Undo",m_document.canUndo());
+        button(610,132,"Compile / export",!m_document.graphs.empty());button(748,110,"Save copy",!m_document.graphs.empty());button(864,84,"Undo",m_document.canUndo());
         button(954,84,"Redo",m_document.canRedo());button(1044,84,"Fit",!m_document.graphs.empty());button(1134,132,"Return",true);
         c.rect(0,kTop,kLeft,kBottom-kTop,{0.10f,0.13f,0.18f,1});
         c.rect(kRight,kTop,kWidth-kRight,kBottom-kTop,{0.10f,0.13f,0.18f,1});
