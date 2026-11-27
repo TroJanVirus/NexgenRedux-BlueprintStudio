@@ -1443,3 +1443,21 @@ NX_TEST(nativeWidgetEventsAreTypedAndSharedAcrossScreenLinks)
     NX_EXPECT(copy.undo()&&copy.undo());
     NX_EXPECT(!copy.removeFunction(graph,error));
 }
+
+NX_TEST(nativeWidgetHierarchyReparentIsTransactional)
+{
+    BlueprintDocument doc;doc.create();std::string id,error,bytes;
+    NX_EXPECT(doc.createVisualAsset("widget",id,error));
+    NX_EXPECT(doc.appendVisualWidget(id,"stack","",error));
+    NX_EXPECT(doc.appendVisualWidget(id,"column","",error));
+    NX_EXPECT(doc.appendVisualWidget(id,"label","HUD",error,"item-2"));
+    const auto revision=doc.revision();
+    NX_EXPECT(!doc.reparentVisualWidget(id,"item-2","item-3",error)&&doc.revision()==revision);
+    NX_EXPECT(!doc.reparentVisualWidget(id,"item-3","item-3",error)&&doc.revision()==revision);
+    NX_EXPECT(doc.reparentVisualWidget(id,"item-3","item-1",error));
+    NX_EXPECT(doc.serialize(bytes,error));
+    BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error));
+    NX_EXPECT(copy.reparentVisualWidget(id,"item-3","",error));
+    NX_EXPECT(copy.undo()&&copy.serialize(bytes,error));
+    NX_EXPECT(copy.visualAsset(id)->source==doc.visualAsset(id)->source);
+}

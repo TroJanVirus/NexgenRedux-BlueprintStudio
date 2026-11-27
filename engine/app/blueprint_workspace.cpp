@@ -720,7 +720,7 @@ namespace nx
         if(!m_designUi->loadPage(page->source.data(),page->source.size(),m_designUi->root(),nullptr,"designer",true))
             m_designPreviewError=m_designUi->error();
     }
-    void BlueprintWorkspace::updateWidgetDesigner(Services& s,float x,float y,bool click)
+    void BlueprintWorkspace::updateWidgetDesigner(Services& s,float x,float y,bool left,bool click)
     {
         const auto* page=m_document.visualAsset(m_visualSelection);
         if(!page||page->kind!="widget"){m_widgetDesigner=false;return;}
@@ -732,6 +732,19 @@ namespace nx
         {
             if(s.input->wheel()<0&&m_widgetFirst+8<count)++m_widgetFirst;
             if(s.input->wheel()>0&&m_widgetFirst)--m_widgetFirst;
+        }
+        if(m_widgetDragging)
+        {
+            if(left)return;
+            m_widgetDragging=false;
+            if((std::abs(x-m_widgetDragX)>6||std::abs(y-m_widgetDragY)>6)&&in(x,y,280,202,610,522))
+            {
+                const size_t target=m_widgetFirst+static_cast<size_t>((y-202)/40);
+                if(target<=rows.size()&&(!target||!rows[target-1].id.empty()))
+                    if(m_document.reparentVisualWidget(m_visualSelection,m_widgetDragId,target?rows[target-1].id:"",m_status))
+                        m_status="Moved widget into container.";
+            }
+            m_widgetDragId.clear();return;
         }
         if(!click)return;
         if(in(x,y,280,156,610,189)){m_widgetPalette=!m_widgetPalette;m_widgetFirst=0;return;}
@@ -746,7 +759,7 @@ namespace nx
                 if(m_document.appendVisualWidget(m_visualSelection,designPalette[row],"",m_status,m_widgetSelection))
                 {m_status="Added widget to selected container.";m_widgetPalette=false;m_widgetFirst=0;}
             }
-            else m_widgetSelection=row?rows[row-1].id:"";
+            else {m_widgetSelection=row?rows[row-1].id:"";if(!m_widgetSelection.empty()){m_widgetDragging=true;m_widgetDragId=m_widgetSelection;m_widgetDragX=x;m_widgetDragY=y;}}
             return;
         }
         if(!m_widgetSelection.empty()&&in(x,y,280,548,440,581))
@@ -814,6 +827,7 @@ namespace nx
             c.clip(286,y,318,36);c.text(*m_font,label.c_str(),290,y+9,text);c.noClip();
         }
         button(280,548,160,"Move up");button(450,548,160,"Move down");
+        c.text(*m_font,"Drag widget onto its new container.",280,525,muted);
         const float width=m_widgetFourThree?960.f:1280.f,scale=208.f/720.f,screenWidth=width*scale;
         const float px=815-screenWidth*0.5f,py=207;
         c.rect(630,202,370,219,{0.055f,0.075f,0.105f,1});
@@ -873,7 +887,7 @@ namespace nx
         if(pressed&1u){saveCurrent(s);return;}
         if(pressed&2u){if(m_document.undo()){selectGraph(std::min(m_graph,m_document.graphs.size()-1));m_status="Library edit undone.";}return;}
         if(pressed&4u){if(m_document.redo()){selectGraph(std::min(m_graph,m_document.graphs.size()-1));m_status="Library edit redone.";}return;}
-        if(m_widgetDesigner&&!(click&&(in(x,y,860,116,1000,150)||in(x,y,704,116,850,150)))){updateWidgetDesigner(s,x,y,click);return;}
+        if(m_widgetDesigner&&(m_widgetDragging||!(click&&(in(x,y,860,116,1000,150)||in(x,y,704,116,850,150))))){updateWidgetDesigner(s,x,y,left,click);return;}
         const auto& assets=m_document.visualAssets();
         if(m_visualFirst>=assets.size())m_visualFirst=assets.empty()?0:assets.size()-1;
         if(in(x,y,280,198,610,535))
@@ -1018,7 +1032,7 @@ namespace nx
             return;
         }
         if(selected->kind!="widget")return;
-        if(in(x,y,280,548,610,581)){m_widgetDesigner=true;m_widgetPalette=false;m_widgetEvents=m_widgetUnbind=false;m_widgetSelection.clear();m_widgetFirst=0;return;}
+        if(in(x,y,280,548,610,581)){m_widgetDesigner=true;m_widgetPalette=false;m_widgetEvents=m_widgetUnbind=m_widgetDragging=false;m_widgetSelection.clear();m_widgetFirst=0;return;}
         if(in(x,y,630,232,1000,266))
         {m_visualInput=2;input.setTyping(true);m_status="Enter the next widget label, then press Enter.";return;}
         const char* kind=nullptr;
@@ -1779,7 +1793,7 @@ namespace nx
         refreshWidgetPreview(s);
         if (input.pressed(Action::Menu))
         {
-            if(m_assetBrowser){if(m_visualInput){m_visualInput=0;m_visualText.clear();input.setTyping(false);m_status="Input cancelled.";return;}if(m_placementDragging){cancelVisualPlacement();m_status="Placement cancelled.";return;}if(m_visualPlacement){m_visualPlacement=false;return;}if(m_widgetDesigner){m_widgetDesigner=false;releaseWidgetPreview();return;}m_assetBrowser=false;m_status="Asset browser closed.";return;}
+            if(m_assetBrowser){if(m_visualInput){m_visualInput=0;m_visualText.clear();input.setTyping(false);m_status="Input cancelled.";return;}if(m_placementDragging){cancelVisualPlacement();m_status="Placement cancelled.";return;}if(m_visualPlacement){m_visualPlacement=false;return;}if(m_widgetDesigner){if(m_widgetDragging){m_widgetDragging=false;m_widgetDragId.clear();return;}m_widgetDesigner=false;releaseWidgetPreview();return;}m_assetBrowser=false;m_status="Asset browser closed.";return;}
             if(m_browsing){m_browsing=false;m_status="Open cancelled.";return;}
             if(m_focus){m_focus=0;input.setTyping(false);m_status="Input cancelled.";return;}
             if(m_layoutDragging||m_layoutMenu){m_layoutDragging=m_layoutMenu=false;m_status="Layout action cancelled.";return;}

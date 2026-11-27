@@ -635,6 +635,31 @@ namespace nx
         }
         error="Select a widget page.";return false;
     }
+    bool BlueprintDocument::reparentVisualWidget(const std::string& id,const std::string& widget,const std::string& parent,std::string& error)
+    {
+        if(widget.empty()||widget==parent){error="Cannot move a widget into itself.";return false;}
+        auto assets=m_visualAssets;
+        for(auto& page:assets)if(page.id==id&&page.kind=="widget")
+        {
+            JsonValue root;if(!root.parse(page.source.data(),page.source.size(),error)||root.type()!=JsonValue::Type::Array)return false;
+            WidgetMatch from;findVisualWidget(root,widget,from);
+            if(from.matches!=1||!from.siblings){error="Select a unique widget inside a container.";return false;}
+            JsonValue* dest=&root;
+            if(!parent.empty())
+            {
+                WidgetMatch to,descendant;findVisualWidget(root,parent,to);findVisualWidget(*from.item,parent,descendant);
+                if(descendant.matches||to.matches!=1||!(dest=widgetChildren(*to.item)))
+                {error="Drop onto a container outside the selected widget's subtree.";return false;}
+            }
+            if(dest==from.siblings){error.clear();return true;}
+            if(dest->count()>=64){error="Destination container is full.";return false;}
+            auto* copy=dest->add();
+            if(!copy||!copy->setCopy(*from.item)){error="Widget hierarchy nesting limit reached.";return false;}
+            from.siblings->removeAt(from.index);
+            page.source=root.write(true);return replaceVisualAssets(assets,error);
+        }
+        error="Widget page not found.";return false;
+    }
     bool BlueprintDocument::moveVisualWidget(const std::string& id,const std::string& widget,int direction,std::string& error)
     {
         if(direction!=-1&&direction!=1){error="Invalid sibling movement.";return false;}

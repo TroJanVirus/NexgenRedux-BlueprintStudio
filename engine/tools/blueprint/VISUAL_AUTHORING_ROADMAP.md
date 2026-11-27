@@ -98,3 +98,7 @@ Content Browser widget definitions now have a separate designer with a hierarchy
 ## Widget event graphs
 
 The designer Events tab creates or opens typed native screen function graphs for click, change, focus, done, draw and makeRow; entry pins carry Widget@, plus Canvas@ or row index where required. The linked page stores the actual emitted method name; linking a page to another screen creates compatible empty handler graphs for that screen without sharing runtime state. Unbinding preserves existing graph logic. Referenced functions cannot be removed, renamed, converted to macros or incompatibly retyped. Runtime load and compilation validate callback signatures; design preview still does not bind callbacks. Tests exercise a real controller Accept click and cross-screen graph persistence. The convenience command requires a linked page and does not automatically map arbitrary imported handler names or implement general delegates. 
+
+## Widget hierarchy drag
+
+Drag a uniquely identified widget onto a container or Page Root to reparent it. Cycles, noncontainers, full containers and depth violations are rejected transactionally. The preview uses the same native layout immediately after edits. Undo/redo and document round-trip tests cover reparenting. Direct free-position dragging, responsive anchors and theme/animation editing are outstanding.
