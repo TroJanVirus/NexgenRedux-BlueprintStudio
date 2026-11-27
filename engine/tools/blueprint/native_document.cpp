@@ -1186,6 +1186,151 @@ namespace nx
         g.nodes.push_back({"entry","entry","",24,60});graphs.push_back(std::move(g));
         error.clear();return true;
     }
+    bool BlueprintDocument::renameFunction(size_t graph,const std::string& functionName,std::string& error)
+    {
+        if(graph>=graphs.size()||graphs[graph].kind!="function"||!identifier(functionName)||ownerEvent(graphs[graph].owner,functionName))
+        {error="Choose a valid function name.";return false;}
+        const auto owner=graphs[graph].owner,old=graphs[graph].name;
+        if(old==functionName){error.clear();return true;}
+        if(std::any_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==owner&&g.name==functionName;}))
+        {error="A graph already uses that name.";return false;}
+        recordGraphList();graphs[graph].name=functionName;
+        for(auto& g:graphs)if(g.owner==owner)for(auto& n:g.nodes)if(n.kind=="call:function"&&n.ref==old)n.ref=functionName;
+        error.clear();return true;
+    }
+    bool BlueprintDocument::duplicateFunction(size_t graph,const std::string& functionName,std::string& error)
+    {
+        if(graph>=graphs.size()||graphs[graph].kind!="function"||graphs.size()>=kMaxGraphs||!identifier(functionName)||ownerEvent(graphs[graph].owner,functionName)||
+            std::any_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==graphs[graph].owner&&g.name==functionName;}))
+        {error="Choose a unique name for the copied function.";return false;}
+        Graph copy=graphs[graph];copy.name=functionName;
+        recordGraphList();graphs.push_back(std::move(copy));error.clear();return true;
+    }
+    bool BlueprintDocument::collapseToFunction(size_t graph,const std::vector<size_t>& nodes,const std::string& functionName,std::string& error)
+    {
+        const auto fail=[&](const std::string& reason){error=reason;return false;};
+        if(graph>=graphs.size()||nodes.empty()||graphs.size()>=kMaxGraphs||!identifier(functionName))return fail("Select nodes and choose a unique function name.");
+        const auto& original=graphs[graph];const size_t count=original.nodes.size(),none=static_cast<size_t>(-1);
+        if(ownerEvent(original.owner,functionName)||std::any_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==original.owner&&g.name==functionName;}))
+            return fail("A graph already uses that function name.");
+        std::vector<bool> selected(count,false),action(count,false);
+        std::vector<BlueprintNodeSpec> specs(count);size_t actions=0,selectedCount=0;
+        for(const auto i:nodes){if(i>=count)return fail("Invalid selection.");if(!selected[i]){selected[i]=true;++selectedCount;}}
+        for(size_t i=0;i<count;++i)
+        {
+            const auto& n=original.nodes[i];
+            if(!nodeSpec(original,n,specs[i]))return fail("Unknown node in graph.");
+            if(!selected[i])continue;
+            if(n.kind=="entry"||n.kind=="return:function"||n.kind.rfind("event:",0)==0||n.kind.rfind("local:set:",0)==0)
+                return fail("Event entries, returns, event values and mutable local assignments cannot be extracted.");
+            const auto isExec=[](const BlueprintPin& p){return p.type=="exec";};
+            const auto inputs=std::count_if(specs[i].inputs.begin(),specs[i].inputs.end(),isExec);
+            const auto outputs=std::count_if(specs[i].outputs.begin(),specs[i].outputs.end(),isExec);
+            if(inputs||outputs)
+            {
+                if(inputs!=1||outputs!=1||!findPin(specs[i].inputs,"in")||!findPin(specs[i].outputs,"then"))
+                    return fail("Collapse requires a contiguous linear execution chain; leave branch, loop and sequence nodes outside.");
+                action[i]=true;++actions;
+            }
+        }
+        if(!actions)return fail("Select at least one connected execution node.");
+        struct Boundary { size_t node;std::string pin,type; };
+        std::vector<Boundary> arguments;Boundary returned{none,"","void"};
+        const Link* entering=nullptr;const Link* leaving=nullptr;
+        std::vector<size_t> next(count,none);
+        for(const auto& l:original.links)
+        {
+            if(l.from>=count||l.to>=count)return fail("Invalid graph link.");
+            const auto* source=findPin(specs[l.from].outputs,l.output);
+            if(!source)return fail("Unknown source pin.");
+            const bool a=selected[l.from],b=selected[l.to];
+            if(source->type=="exec")
+            {
+                if(!a&&b){if(entering)return fail("Selection has more than one execution entry.");entering=&l;}
+                else if(a&&!b){if(leaving)return fail("Selection has more than one execution exit.");leaving=&l;}
+                else if(a&&b)next[l.from]=l.to;
+                continue;
+            }
+            if(!a&&b)
+            {
+                const auto& n=original.nodes[l.from];
+                const bool stable=n.kind.rfind("literal:",0)==0||(n.kind=="entry"&&l.output.rfind("arg_",0)==0)||n.kind.rfind("event:",0)==0||
+                    std::any_of(specs[l.from].inputs.begin(),specs[l.from].inputs.end(),[](const BlueprintPin& p){return p.type=="exec";});
+                if(!stable||!signatureType(source->type))return fail("Include live expression dependencies in the selection; only stable typed boundary inputs can become parameters.");
+                if(std::none_of(arguments.begin(),arguments.end(),[&](const Boundary& p){return p.node==l.from&&p.pin==l.output;}))
+                {if(arguments.size()>=8)return fail("Extraction supports at most eight distinct input values.");arguments.push_back({l.from,l.output,source->type});}
+            }
+            else if(a&&!b)
+            {
+                if(!action[l.from]||!signatureType(source->type))return fail("Only an executed value can cross the function return boundary.");
+                if(returned.node!=none&&(returned.node!=l.from||returned.pin!=l.output))return fail("Extraction supports one returned value.");
+                returned={l.from,l.output,source->type};
+            }
+        }
+        if(!entering)return fail("Selection must be connected to an execution entry.");
+        size_t cursor=entering->to,last=none,visited=0;
+        while(cursor!=none&&visited<=actions)
+        {if(!action[cursor])return fail("Invalid selected execution chain.");last=cursor;cursor=next[cursor];++visited;}
+        if(visited!=actions||cursor!=none||(leaving&&leaving->from!=last))return fail("Selected actions must form one contiguous execution chain.");
+        std::vector<bool> used(count,false);std::vector<size_t> work;
+        for(size_t i=0;i<count;++i)if(action[i]){used[i]=true;work.push_back(i);}
+        std::vector<std::vector<size_t>> predecessors(count);
+        for(const auto& l:original.links)if(selected[l.from]&&selected[l.to])predecessors[l.to].push_back(l.from);
+        for(size_t i=0;i<work.size();++i)for(const auto dep:predecessors[work[i]])if(!used[dep]){used[dep]=true;work.push_back(dep);}
+        for(size_t i=0;i<count;++i)if(selected[i]&&!used[i])return fail("Selection includes unused value nodes.");
+        for(const auto& comment:original.comments)
+        {
+            size_t included=0;
+            for(size_t i=0;i<count;++i)if(selected[i]&&std::find(comment.members.begin(),comment.members.end(),original.nodes[i].id)!=comment.members.end())++included;
+            if(included&&included!=comment.members.size())return fail("Select the complete comment group or remove it before extraction.");
+        }
+        if(selectedCount+2>kMaxNodes)return fail("Extracted graph exceeds node limit.");
+        BlueprintDocument staged;staged.name=name;staged.assetRoot=assetRoot;staged.graphs=graphs;staged.manifests=manifests;staged.m_nextId=m_nextId;
+        Graph outer=original,inner;outer.nodes.clear();outer.links.clear();outer.comments.clear();
+        inner.owner=original.owner;inner.name=functionName;inner.kind="function";inner.returnType=returned.type;
+        for(size_t i=0;i<arguments.size();++i)inner.parameters.push_back({"input_"+std::to_string(i+1),arguments[i].type});
+        std::unordered_set<std::string> ids;for(const auto& n:original.nodes)ids.insert(n.id);
+        auto newId=[&](){std::string id;do{id="n"+std::to_string(++staged.m_nextId);}while(!ids.insert(id).second);return id;};
+        inner.nodes.push_back({newId(),"entry","",24,60});
+        std::vector<size_t> outside(count,none),inside(count,none);
+        const auto& first=original.nodes[entering->to];
+        for(size_t i=0;i<count;++i)
+        {
+            if(selected[i]){inside[i]=inner.nodes.size();inner.nodes.push_back(original.nodes[i]);}
+            else {outside[i]=outer.nodes.size();outer.nodes.push_back(original.nodes[i]);}
+        }
+        const size_t call=outer.nodes.size();outer.nodes.push_back({newId(),"call:function",functionName,first.x,first.y});
+        const size_t ret=inner.nodes.size();
+        if(returned.node!=none)inner.nodes.push_back({newId(),"return:function","",24,60});
+        for(const auto& comment:original.comments)
+        {
+            const bool moved=std::any_of(inner.nodes.begin(),inner.nodes.end(),[&](const Node& n){return n.id==comment.members.front();});
+            (moved?inner.comments:outer.comments).push_back(comment);
+        }
+        for(const auto& l:original.links)
+        {
+            const bool a=selected[l.from],b=selected[l.to];
+            if(a&&b){Link copy=l;copy.from=inside[l.from];copy.to=inside[l.to];inner.links.push_back(std::move(copy));}
+            else if(!a&&!b){Link copy=l;copy.from=outside[l.from];copy.to=outside[l.to];outer.links.push_back(std::move(copy));}
+            else if(&l==entering){outer.links.push_back({outside[l.from],call,l.output,"in"});inner.links.push_back({0,inside[l.to],"then",l.input});}
+            else if(&l==leaving)outer.links.push_back({call,outside[l.to],"then",l.input});
+            else if(!a&&b)
+            {
+                const auto found=std::find_if(arguments.begin(),arguments.end(),[&](const Boundary& p){return p.node==l.from&&p.pin==l.output;});
+                if(found==arguments.end())return fail("Missing extraction argument.");
+                const auto arg="arg_input_"+std::to_string(static_cast<size_t>(found-arguments.begin())+1);
+                if(std::none_of(outer.links.begin(),outer.links.end(),[&](const Link& wire){return wire.to==call&&wire.input==arg;}))
+                    outer.links.push_back({outside[l.from],call,l.output,arg});
+                inner.links.push_back({0,inside[l.to],arg,l.input});
+            }
+            else outer.links.push_back({call,outside[l.to],"result",l.input});
+        }
+        if(returned.node!=none){inner.links.push_back({inside[last],ret,"then","in"});inner.links.push_back({inside[returned.node],ret,returned.pin,"value"});}
+        staged.graphs[graph]=std::move(outer);staged.graphs.push_back(std::move(inner));
+        if(!staged.arrange(staged.graphs.size()-1,error))return false;
+        std::string checked;if(!staged.serialize(checked,error))return false;
+        recordGraphList();graphs.swap(staged.graphs);m_nextId=staged.m_nextId;error.clear();return true;
+    }
     bool BlueprintDocument::removeFunction(size_t graph,std::string& error)
     {
         if(graph>=graphs.size()||graphs[graph].kind!="function")

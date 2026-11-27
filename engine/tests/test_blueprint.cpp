@@ -2075,3 +2075,22 @@ NX_TEST(nativeWorkspaceRightClickSearchPlacesNodeAndUndoRemovesIt)
     studio.close(r.services);
 }
 #endif
+
+NX_TEST(nativeCollapsedFunctionExecutesLikeOriginalSource)
+{
+    const std::string original=R"(class Example : Screen {int score=4;void onEnter(){score++;score=score+2;if(score==7){Save::set("collapse","ok");}}})";
+    BlueprintDocument doc;std::string error,uncollapsed,collapsed;
+    if(!importBlueprintScreen(original,doc,error)||!compileBlueprint(doc,uncollapsed,error)){NX_ERROR("Collapse source: %s",error.c_str());NX_EXPECT(false);return;}
+    // Select the first two assignments and their data dependencies, excluding the branch.
+    const auto& g=doc.graphs[0];std::vector<size_t> selected;std::vector<bool> seen(g.nodes.size(),false);
+    for(size_t i=0;i<g.nodes.size();++i)if(g.nodes[i].kind=="var:set:int"){selected.push_back(i);seen[i]=true;}
+    for(size_t i=0;i<selected.size();++i)for(const auto& l:g.links)if(l.to==selected[i]&&l.input!="in"&&!seen[l.from]){seen[l.from]=true;selected.push_back(l.from);}
+    if(!doc.collapseToFunction(0,selected,"ApplyScore",error)||!compileBlueprint(doc,collapsed,error)){NX_ERROR("Collapse function: %s",error.c_str());NX_EXPECT(false);return;}
+    for(const auto& code:std::vector<std::string>{original,uncollapsed,collapsed})
+    {
+        Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+        r.platform.files["project/main/screen.json"]="{\"title\":\"Collapse\"}";r.platform.files["project/main/main.as"]=code;
+        if(!r.screens.init(r.services,"project","main")){NX_EXPECT(false);return;}
+        r.step(5);NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("collapse","missing"),"ok")==0);
+    }
+}

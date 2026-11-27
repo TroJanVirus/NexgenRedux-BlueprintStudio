@@ -984,3 +984,43 @@ NX_TEST(nativeLayoutMetadataRoundTripsAndDoesNotChangeGeneratedCode)
     NX_EXPECT(restored.deleteNode(0,1,error)&&restored.graphs[0].comments.empty());
     NX_EXPECT(!doc.addComment(0,{1},"Overlap",error)&&!doc.insertRoutePoint(0,0,99,0,0));
 }
+
+NX_TEST(nativeCollapseLinearSelectionPreservesTypedBoundaryAndUndo)
+{
+    BlueprintDocument doc;std::string error,before,after,source;
+    NX_EXPECT(importBlueprintScreen("class Example : Screen {int score;void onEnter(){score=7;score++;}}",doc,error));
+    const auto& g=doc.graphs[0];std::vector<size_t> selected;
+    for(size_t i=0;i<g.nodes.size();++i)if(g.nodes[i].kind!="entry")selected.push_back(i);
+    NX_EXPECT(doc.serialize(before,error));
+    NX_EXPECT(doc.collapseToFunction(0,selected,"ApplyScore",error));
+    NX_EXPECT(doc.graphs[0].nodes.size()==2&&doc.graphs[0].nodes.back().ref=="ApplyScore"&&doc.function("Screen","ApplyScore"));
+    NX_EXPECT(compileBlueprint(doc,source,error)&&source.find("bp_fn_ApplyScore")!=std::string::npos);
+    NX_EXPECT(doc.serialize(after,error));
+    NX_EXPECT(doc.undo());std::string checked;NX_EXPECT(doc.serialize(checked,error)&&checked==before);
+    NX_EXPECT(doc.redo()&&doc.serialize(checked,error)&&checked==after);
+    NX_EXPECT(doc.renameFunction(doc.graphs.size()-1,"UpdateScore",error)&&doc.graphs[0].nodes.back().ref=="UpdateScore");
+    NX_EXPECT(doc.duplicateFunction(doc.graphs.size()-1,"AnotherScore",error)&&doc.function("Screen","AnotherScore"));
+    NX_EXPECT(doc.undo()&&doc.undo()&&doc.serialize(checked,error)&&checked==after);
+}
+NX_TEST(nativeCollapseUsesStableInputAndOneExecutedReturn)
+{
+    BlueprintDocument doc;std::string error,before,source;doc.create();
+    NX_EXPECT(doc.addNode(0,"literal:int",0,200,error)&&doc.addNode(0,"capture:int",300,100,error)&&doc.addNode(0,"var:set:int",600,100,error));
+    NX_EXPECT(doc.connect(0,0,"then",2,"in",error)&&doc.connect(0,1,"value",2,"value",error)&&doc.connect(0,2,"then",3,"in",error)&&doc.connect(0,2,"result",3,"value",error));
+    NX_EXPECT(doc.collapseToFunction(0,{2},"CaptureValue",error));
+    const auto* fn=doc.function("Screen","CaptureValue");NX_EXPECT(fn&&fn->parameters.size()==1&&fn->returnType=="int");
+    NX_EXPECT(compileBlueprint(doc,source,error)&&source.find("bp_fn_CaptureValue")!=std::string::npos);
+    NX_EXPECT(doc.serialize(before,error));
+    NX_EXPECT(!doc.collapseToFunction(0,{0},"Bad",error));std::string after;NX_EXPECT(doc.serialize(after,error)&&after==before);
+}
+
+NX_TEST(nativeCollapseRejectsLiveExternalGetterAndPartialCommentTransactionally)
+{
+    BlueprintDocument doc;std::string error,before,after;doc.create();
+    NX_EXPECT(doc.addNode(0,"var:get:int",100,200,error)&&doc.addNode(0,"var:set:int",300,100,error));
+    NX_EXPECT(doc.connect(0,0,"then",2,"in",error)&&doc.connect(0,1,"value",2,"value",error)&&doc.serialize(before,error));
+    NX_EXPECT(!doc.collapseToFunction(0,{2},"Unsafe",error)&&doc.serialize(after,error)&&after==before);
+    NX_EXPECT(doc.addComment(0,{0,1,2},"Partial",error)&&doc.serialize(before,error));
+    NX_EXPECT(!doc.collapseToFunction(0,{1,2},"Partial",error)&&doc.serialize(after,error)&&after==before);
+    NX_EXPECT(doc.deleteComment(0,0)&&doc.collapseToFunction(0,{1,2},"Safe",error));
+}

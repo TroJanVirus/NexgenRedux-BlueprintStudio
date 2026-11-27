@@ -99,6 +99,9 @@ namespace nx
         bool addBehaviour(const std::string& name,std::string& error);
         bool removeBehaviour(const std::string& name,std::string& error);
         bool removeFunction(size_t graph,std::string& error);
+        bool renameFunction(size_t graph,const std::string& functionName,std::string& error);
+        bool duplicateFunction(size_t graph,const std::string& functionName,std::string& error);
+        bool collapseToFunction(size_t graph,const std::vector<size_t>& nodes,const std::string& functionName,std::string& error);
         bool functions(std::string& error) const;
         // Named instance variables and function names are scoped to their owning screen.
         std::string moduleForOwner(const std::string& owner) const;

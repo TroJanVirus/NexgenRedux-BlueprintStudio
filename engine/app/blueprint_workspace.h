@@ -1,5 +1,6 @@
 #pragma once
 #include "tools/blueprint/native_compile.h"
+#include <utility>
 
 class asIScriptContext;
 
@@ -106,7 +107,10 @@ namespace nx
         bool m_layoutMenu=false,m_layoutDragging=false,m_layoutMoved=false;
         size_t m_layoutComment=static_cast<size_t>(-1),m_layoutLink=static_cast<size_t>(-1),m_layoutPoint=0;
         float m_layoutStartX=0,m_layoutStartY=0,m_layoutX=0,m_layoutY=0;
-        std::vector<size_t> m_selectedNodes,m_layoutMembers;
+        std::vector<size_t> m_selectedNodes,m_layoutMembers,m_extractNodes;
+        std::vector<std::pair<std::string,std::string>> m_graphBack;
+        void openSelectedFunction();
+        void returnToCaller();
         BlueprintDocument::Point nodeLayoutPosition(size_t node) const;
         BlueprintDocument::Point routeLayoutPosition(size_t wire,size_t point) const;
         std::vector<size_t> commentMembers(size_t comment) const;

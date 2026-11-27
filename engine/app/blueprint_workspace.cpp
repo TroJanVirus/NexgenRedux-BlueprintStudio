@@ -145,7 +145,7 @@ namespace nx
         if (!active()) return;
         stopPreview(s);
         checkpoint(s,true);
-        cancelDrag();clearWire();m_quickDrag=m_quickMenu=m_pinMenu=m_rightDown=false;m_layoutMenu=m_layoutDragging=false;m_focus=0;m_browsing=false;m_assetBrowser=false;s.input->setTyping(m_previousTyping);
+        cancelDrag();clearWire();m_quickDrag=m_quickMenu=m_pinMenu=m_rightDown=false;m_layoutMenu=m_layoutDragging=false;m_graphBack.clear();m_focus=0;m_browsing=false;m_assetBrowser=false;s.input->setTyping(m_previousTyping);
         s.assets->release(m_font);
         m_font = nullptr;
         s.platform->releaseBlueprintLease();
@@ -165,6 +165,25 @@ namespace nx
         if (index >= m_first + kRows) m_first = index - kRows + 1;
     }
 
+    void BlueprintWorkspace::openSelectedFunction()
+    {
+        const auto& g=m_document.graphs[m_graph];
+        if(m_selection>=g.nodes.size()||g.nodes[m_selection].kind!="call:function"){m_status="Select a function call first.";return;}
+        const auto* target=m_document.function(g.owner,g.nodes[m_selection].ref);
+        if(!target){m_status="Function target is missing.";return;}
+        if(m_graphBack.size()>=32)m_graphBack.erase(m_graphBack.begin());
+        m_graphBack.emplace_back(g.owner,g.name);selectGraph(static_cast<size_t>(target-m_document.graphs.data()));m_status="Opened function. Back returns to caller.";
+    }
+    void BlueprintWorkspace::returnToCaller()
+    {
+        while(!m_graphBack.empty())
+        {
+            const auto key=m_graphBack.back();m_graphBack.pop_back();
+            const auto found=std::find_if(m_document.graphs.begin(),m_document.graphs.end(),[&](const BlueprintDocument::Graph& g){return g.owner==key.first&&g.name==key.second;});
+            if(found!=m_document.graphs.end()){selectGraph(static_cast<size_t>(found-m_document.graphs.begin()));m_status="Returned to caller.";return;}
+        }
+        m_status="No previous caller.";
+    }
     void BlueprintWorkspace::rebuildPins()
     {
         m_rows.clear();m_wirePins.clear();
@@ -368,7 +387,7 @@ namespace nx
         if(!blueprintImportSourceAssets(*s.platform,file,candidate.assetRoot,m_status))
         {m_status="Companion assets: "+m_status;return false;}
         m_document=std::move(candidate);m_filePath.clear();m_fileBaseline.clear();
-        m_checkpointRevision=static_cast<size_t>(-1);m_first=0;selectGraph(0);m_browsing=false;
+        m_checkpointRevision=static_cast<size_t>(-1);m_graphBack.clear();m_first=0;selectGraph(0);m_browsing=false;
         m_status="Imported "+file+(m_document.assetRoot.empty()?" as editable graphs.":" with companion assets.")+" Save as a new project.";
         NX_INFO("Blueprint Studio: %s",m_status.c_str());
         checkpoint(s,true);return true;
@@ -435,7 +454,7 @@ namespace nx
         BlueprintDocument verified;
         if(!verified.load(bytes.data(),bytes.size(),m_status))return false;
         verified.markRecovered();m_document=std::move(verified);m_filePath.clear();m_fileBaseline.clear();
-        m_checkpointRevision=static_cast<size_t>(-1);m_first=0;selectGraph(0);m_browsing=false;
+        m_checkpointRevision=static_cast<size_t>(-1);m_graphBack.clear();m_first=0;selectGraph(0);m_browsing=false;
         m_status="Imported "+std::to_string(owners.size())+" screens from "+folder+". Save as a new project.";
         NX_INFO("Blueprint Studio: %s",m_status.c_str());
         checkpoint(s,true);return true;
@@ -459,7 +478,7 @@ namespace nx
             m_fileBaseline.assign(reinterpret_cast<const char*>(data.data),data.size);
         }
         m_checkpointRevision=static_cast<size_t>(-1);
-        m_first=0;selectGraph(0);m_browsing=false;
+        m_graphBack.clear();m_first=0;selectGraph(0);m_browsing=false;
         if(archive)
         {
             m_document.markRecovered();
@@ -1071,6 +1090,14 @@ namespace nx
                     if(m_document.addComment(m_graph,nodes,"Comment",m_status))
                     {m_layoutComment=m_document.graphs[m_graph].comments.size()-1;m_edit="Comment";m_focus=11;input.setTyping(true);}
                 }
+                else if(in(x,y,300,155,550,185))
+                {m_extractNodes=nodes;m_edit.clear();m_focus=12;input.setTyping(true);m_status="Name the extracted function.";}
+                else if(in(x,y,300,185,550,215)&&m_document.graphs[m_graph].kind=="function")
+                {m_edit=m_document.graphs[m_graph].name;m_focus=13;input.setTyping(true);m_status="Rename function and update its calls.";}
+                else if(in(x,y,300,215,550,245)&&m_document.graphs[m_graph].kind=="function")
+                {m_edit=m_document.graphs[m_graph].name+"_Copy";m_focus=14;input.setTyping(true);m_status="Name the duplicate function.";}
+                else if(in(x,y,300,245,550,275))openSelectedFunction();
+                else if(in(x,y,300,275,550,305))returnToCaller();
                 m_layoutMenu=false;
             }
             m_left=left;return;
@@ -1283,6 +1310,25 @@ namespace nx
                         if(!m_document.setReference(m_graph,m_selection,m_edit,m_status))break;
                         clearWire();rebuildPins();
                     }
+                    if(focus==12)
+                    {
+                        const auto& g=m_document.graphs[m_graph];const auto caller=std::make_pair(g.owner,g.name);
+                        if(!m_document.collapseToFunction(m_graph,m_extractNodes,m_edit,m_status))break;
+                        if(m_graphBack.size()>=32)m_graphBack.erase(m_graphBack.begin());
+                        m_graphBack.push_back(caller);selectGraph(m_document.graphs.size()-1);
+                    }
+                    if(focus==13)
+                    {
+                        const auto owner=m_document.graphs[m_graph].owner,old=m_document.graphs[m_graph].name;
+                        if(!m_document.renameFunction(m_graph,m_edit,m_status))break;
+                        for(auto& key:m_graphBack)if(key.first==owner&&key.second==old)key.second=m_edit;
+                        selectGraph(m_graph);
+                    }
+                    if(focus==14)
+                    {
+                        if(!m_document.duplicateFunction(m_graph,m_edit,m_status))break;
+                        selectGraph(m_document.graphs.size()-1);
+                    }
                     if(focus==11&&!m_document.renameComment(m_graph,m_layoutComment,m_edit,m_status))break;
                     if(focus==9)
                     {
@@ -1423,7 +1469,7 @@ namespace nx
         if(click&&in(x,y,8,kBottom-40,kLeft-8,kBottom-8))
         {
             if(m_document.dirty())m_status="Save changes before creating a new Blueprint.";
-            else{m_document.create();m_filePath.clear();m_fileBaseline.clear();m_checkpointRevision=static_cast<size_t>(-1);m_first=0;selectGraph(0);m_status="New Blueprint.";}
+            else{m_document.create();m_filePath.clear();m_fileBaseline.clear();m_checkpointRevision=static_cast<size_t>(-1);m_graphBack.clear();m_first=0;selectGraph(0);m_status="New Blueprint.";}
             m_left=left;return;
         }
         if(!m_drag&&in(x,y,kRight,kTop,kWidth,kBottom))
@@ -1829,9 +1875,16 @@ namespace nx
         }
         if(m_layoutMenu)
         {
-            c.roundRect(300,35,250,120,5,{0.12f,0.16f,0.22f,1});
-            const char* labels[]={"Arrange graph","Align selected left","Align selected top","Comment selection"};
-            for(size_t i=0;i<4;++i){const float yy=35+30*static_cast<float>(i);c.rect(304,yy+2,242,26,{0.19f,0.33f,0.50f,1});c.text(*m_font,labels[i],312,yy+5,text);}
+            c.roundRect(300,35,250,270,5,{0.12f,0.16f,0.22f,1});
+            const char* labels[]={"Arrange graph","Align selected left","Align selected top","Comment selection","Collapse to function","Rename function","Duplicate function","Open selected function","Back to caller"};
+            const auto& activeGraph=m_document.graphs[m_graph];
+            const bool hasSelection=m_selection<activeGraph.nodes.size()||!m_selectedNodes.empty();
+            for(size_t i=0;i<9;++i)
+            {
+                const bool enabled=i==0||(i<=2&&m_selectedNodes.size()>=2)||((i==3||i==4)&&hasSelection)||((i==5||i==6)&&activeGraph.kind=="function")||
+                    (i==7&&m_selection<activeGraph.nodes.size()&&activeGraph.nodes[m_selection].kind=="call:function")||(i==8&&!m_graphBack.empty());
+                const float yy=35+30*static_cast<float>(i);c.rect(304,yy+2,242,26,enabled?Color{0.19f,0.33f,0.50f,1}:Color{0.17f,0.22f,0.30f,1});c.text(*m_font,labels[i],312,yy+5,enabled?text:muted);
+            }
         }
         if(m_pinMenu)
         {
@@ -1857,7 +1910,7 @@ namespace nx
             c.rect(x+4,y+28,202,29,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Get variable",x+10,y+34,text);
             c.rect(x+4,y+58,202,29,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Set variable",x+10,y+64,text);
         }
-        if(m_assetBrowser||m_browsing||m_focus==5||m_focus==6||m_focus==9||m_focus==10||m_focus==11)
+        if(m_assetBrowser||m_browsing||m_focus==5||m_focus==6||m_focus==9||m_focus==10||m_focus==11||m_focus==12||m_focus==13||m_focus==14)
         {
             c.rect(0,0,kWidth,kHeight,{0,0,0,0.70f});
             if(m_assetBrowser)
@@ -1927,6 +1980,12 @@ namespace nx
                 {const float y=302+28*static_cast<float>(i);c.rect(650,y,450,28,{0.24f,0.35f,0.48f,1});c.text(*m_font,variableTypes[i],660,y+3,text);}
                 c.clip(170,576,940,25);c.text(*m_font,m_status.c_str(),170,576,text);c.noClip();
                 c.text(*m_font,"Enter applies | Escape closes",640,601,muted,Align::Center);
+            }
+            else if(m_focus>=12&&m_focus<=14)
+            {
+                c.roundRect(260,230,760,220,8,{0.12f,0.16f,0.22f,1});c.text(*m_font,m_focus==12?"COLLAPSE TO FUNCTION":m_focus==13?"RENAME FUNCTION":"DUPLICATE FUNCTION",280,250,accent);
+                c.rect(280,290,720,36,{0.24f,0.35f,0.48f,1});c.clip(286,290,708,36);c.text(*m_font,m_edit.c_str(),290,297,text);c.noClip();
+                c.paragraph(*m_font,m_status.c_str(),280,340,720,muted);c.text(*m_font,"Enter confirms | Escape cancels",640,415,text,Align::Center);
             }
             else if(m_focus==11)
             {
