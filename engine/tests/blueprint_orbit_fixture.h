@@ -307,14 +307,239 @@ namespace nx::blueprint_orbit
   ]
 }
 )BP_ORBIT";
+    inline constexpr char timelineProject[]=R"BP_TIME({
+  "version": 2,
+  "kind": "NativeBlueprint",
+  "name": "Camera Orbit Timeline",
+  "graphs": [
+    {
+      "owner": "Screen",
+      "name": "onEnter",
+      "kind": "event",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 24,
+          "y": 60
+        },
+        {
+          "id": "floor",
+          "kind": "spawn:plane",
+          "x": 285,
+          "y": 60,
+          "values": {
+            "name": "Floor"
+          }
+        },
+        {
+          "id": "cube",
+          "kind": "spawn:box",
+          "x": 565,
+          "y": 60,
+          "values": {
+            "name": "Cube"
+          }
+        }
+      ],
+      "links": [
+        {
+          "from": "entry",
+          "to": "floor",
+          "output": "then",
+          "input": "in"
+        },
+        {
+          "from": "floor",
+          "to": "cube",
+          "output": "then",
+          "input": "in"
+        }
+      ]
+    },
+    {
+      "owner": "Screen",
+      "name": "update",
+      "kind": "event",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 24,
+          "y": 60
+        },
+        {
+          "id": "timeline",
+          "kind": "time:timeline",
+          "x": 285,
+          "y": 60,
+          "values": {
+            "duration": "8",
+            "loop": "false"
+          }
+        },
+        {
+          "id": "center",
+          "kind": "make:Vec3",
+          "x": 24,
+          "y": 245,
+          "values": {
+            "x": "0",
+            "y": "0.5",
+            "z": "0"
+          }
+        },
+        {
+          "id": "orbit",
+          "kind": "math:orbit-position",
+          "x": 550,
+          "y": 245,
+          "values": {
+            "radius": "6",
+            "height": "2"
+          }
+        },
+        {
+          "id": "camera",
+          "kind": "api:Space:Space::camera:Vec3,Vec3,float",
+          "x": 810,
+          "y": 60,
+          "values": {
+            "angle": "60"
+          }
+        }
+      ],
+      "links": [
+        {
+          "from": "entry",
+          "to": "timeline",
+          "output": "then",
+          "input": "in"
+        },
+        {
+          "from": "timeline",
+          "to": "camera",
+          "output": "then",
+          "input": "in"
+        },
+        {
+          "from": "timeline",
+          "to": "orbit",
+          "output": "progress",
+          "input": "turns"
+        },
+        {
+          "from": "center",
+          "to": "orbit",
+          "output": "result",
+          "input": "center"
+        },
+        {
+          "from": "center",
+          "to": "camera",
+          "output": "result",
+          "input": "to"
+        },
+        {
+          "from": "orbit",
+          "to": "camera",
+          "output": "result",
+          "input": "from"
+        }
+      ]
+    },
+    {
+      "owner": "Screen",
+      "name": "draw",
+      "kind": "event",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 24,
+          "y": 60
+        },
+        {
+          "id": "canvas",
+          "kind": "event:canvas",
+          "x": 24,
+          "y": 200
+        },
+        {
+          "id": "render",
+          "kind": "api:Space:Space::draw:Canvas@",
+          "x": 300,
+          "y": 60
+        }
+      ],
+      "links": [
+        {
+          "from": "entry",
+          "to": "render",
+          "output": "then",
+          "input": "in"
+        },
+        {
+          "from": "canvas",
+          "to": "render",
+          "output": "value",
+          "input": "canvas"
+        }
+      ]
+    },
+    {
+      "owner": "Screen",
+      "name": "onSuspend",
+      "kind": "event",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 24,
+          "y": 60
+        }
+      ],
+      "links": []
+    },
+    {
+      "owner": "Screen",
+      "name": "onResume",
+      "kind": "event",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 24,
+          "y": 60
+        }
+      ],
+      "links": []
+    },
+    {
+      "owner": "Screen",
+      "name": "onExit",
+      "kind": "event",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 24,
+          "y": 60
+        }
+      ],
+      "links": []
+    }
+  ]
+}
+)BP_TIME";
     // Rebuild through the same document operations used by native Studio. This
     // intentionally does not reverse-import handwritten AngelScript.
-    inline bool author(BlueprintDocument& result,std::string& error)
+    inline bool author(BlueprintDocument& result,std::string& error,bool timeline=false)
     {
         BlueprintDocument expected;
-        if(!expected.load(project,sizeof(project)-1,error))return false;
+        if(!expected.load(timeline?timelineProject:project,timeline?sizeof(timelineProject)-1:sizeof(project)-1,error))return false;
         BlueprintDocument doc;doc.create();doc.name=expected.name;
-        if(!doc.editVariableDeclaration("Screen","field elapsed:float=0",error))return false;
+        if(!timeline&&!doc.editVariableDeclaration("Screen","field elapsed:float=0",error))return false;
         for(size_t g=0;g<expected.graphs.size();++g)
         {
             const auto& graph=expected.graphs[g];

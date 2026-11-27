@@ -8,7 +8,7 @@
 using namespace nx;
 NX_TEST(nativeCatalogueContainsReferenceAPI)
 {
-    NX_EXPECT(blueprintCatalogue().size()==1029);
+    NX_EXPECT(blueprintCatalogue().size()==1030);
     const auto* save=blueprintSpec("api:Save:Save::set:string,string");
     NX_EXPECT(save&&save->inputs.size()==3&&save->outputs.size()==1);
     if(save&&save->inputs.size()==3)NX_EXPECT(save->inputs[0].type=="exec"&&save->inputs[2].type=="string");
@@ -1069,4 +1069,15 @@ NX_TEST(nativeCameraOrbitIsAuthoredThroughDocumentOperations)
     NX_EXPECT(fixture.load(blueprint_orbit::project,sizeof(blueprint_orbit::project)-1,error));
     NX_EXPECT(compileBlueprint(doc,source,error)&&compileBlueprint(fixture,expected,error)&&source==expected);
     NX_EXPECT(source.find("SolidBox")!=std::string::npos&&source.find("SolidPlane")!=std::string::npos&&source.find("Space::camera")!=std::string::npos);
+}
+
+NX_TEST(nativeTimelineSimplifiesOrbitWithoutManualState)
+{
+    BlueprintDocument doc,fixture;std::string error,source,expected;
+    if(!blueprint_orbit::author(doc,error,true)){NX_ERROR("Timeline author: %s",error.c_str());NX_EXPECT(false);return;}
+    NX_EXPECT(doc.graphs[0].fields.empty()&&doc.graphs[0].nodes.size()==3&&doc.graphs[1].nodes.size()==5&&doc.graphs[2].nodes.size()==3);
+    NX_EXPECT(fixture.load(blueprint_orbit::timelineProject,sizeof(blueprint_orbit::timelineProject)-1,error));
+    NX_EXPECT(compileBlueprint(doc,source,error)&&compileBlueprint(fixture,expected,error)&&source==expected);
+    NX_EXPECT(source.find("bp_timeline_state_1_1")!=std::string::npos&&source.find("Space::camera")!=std::string::npos);
+    NX_EXPECT(!doc.addNode(0,"time:timeline",200,200,error));
 }

@@ -2131,8 +2131,10 @@ NX_TEST(nativeImportedArraysExecuteLikeOriginalScript)
 #include "blueprint_orbit_fixture.h"
 NX_TEST(nativeBlueprintCameraOrbitKeepsCubeCenteredAndReturnsToStart)
 {
+    for(const bool timeline:{false,true})
+    {
     BlueprintDocument doc;std::string error,source,manifest;
-    if(!blueprint_orbit::author(doc,error)||!compileBlueprintScreen(doc,source,manifest,error)){NX_ERROR("Orbit compile: %s",error.c_str());NX_EXPECT(false);return;}
+    if(!blueprint_orbit::author(doc,error,timeline)||!compileBlueprintScreen(doc,source,manifest,error)){NX_ERROR("Orbit compile: %s",error.c_str());NX_EXPECT(false);return;}
     Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
     r.platform.files["project/main/screen.json"]=manifest;r.platform.files["project/main/main.as"]=source;
     if(!r.screens.init(r.services,"project","main")){NX_EXPECT(false);return;}
@@ -2151,8 +2153,9 @@ NX_TEST(nativeBlueprintCameraOrbitKeepsCubeCenteredAndReturnsToStart)
         NX_EXPECT(space.toScreen({0,0.5f,0},projected)&&fabsf(projected.x-640)<1&&fabsf(projected.y-360)<1);
         NX_EXPECT(space.stats().drawn>=2&&r.device->stats().rejected==0);
     };
-    check(0,6,0.20f);r.step(120);check(6,0,0.20f);r.step(120);check(0,-6,0.20f);r.step(120);check(-6,0,0.20f);r.step(122);check(0,6,0.001f);
+    check(0,6,timeline?0.001f:0.20f);r.step(120);check(6,0,0.20f);r.step(120);check(0,-6,0.20f);r.step(120);check(-6,0,0.20f);r.step(122);check(0,6,0.001f);
     const auto stopped=space.cameraPlace();r.step(120);const auto later=space.cameraPlace();
     NX_EXPECT(fabsf(stopped.x-later.x)<0.00001f&&fabsf(stopped.z-later.z)<0.00001f&&!r.screens.failed());
-    NX_INFO("Blueprint orbit: floor and cube created, four quadrants verified, centered projection and stationary return verified.");
+    NX_INFO("Blueprint orbit (%s): floor and cube created, four quadrants verified, centered projection and stationary return verified.",timeline?"Timeline":"explicit time");
+    }
 }

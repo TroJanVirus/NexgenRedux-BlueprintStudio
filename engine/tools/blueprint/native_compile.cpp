@@ -143,6 +143,12 @@ namespace nx
                 {
                     return literalValue(node,n.kind.substr(8),n.ref,result);
                 }
+                if(n.kind=="time:timeline")
+                {
+                    if(!available[node])return fail(node,"Timeline output must be used after its execution in Update.");
+                    if(pin!="progress"&&pin!="elapsed"&&pin!="finished")return fail(node,"Unknown Timeline output.");
+                    result="bp_timeline_"+pin+"_"+std::to_string(node);return true;
+                }
                 if(n.kind=="math:orbit-position"&&pin=="result")
                 {
                     std::string center,radius,height,turns;
@@ -235,6 +241,22 @@ namespace nx
                 const auto& n=graph.nodes[to];const auto* spec=blueprintSpec(n.kind);
                 const std::string pad(indent*4,' ');
                 const size_t start=source.size();
+                if(n.kind=="time:timeline")
+                {
+                    std::string delta,duration,loop,reset;
+                    if(!value(to,"dt",delta,0)||!value(to,"duration",duration,0)||!value(to,"loop",loop,0)||!value(to,"reset",reset,0))return false;
+                    const auto suffix=std::to_string(to),state="bp_timeline_state_"+std::to_string(graphIndex)+"_"+suffix;
+                    const auto period="bp_timeline_period_"+suffix,cycle="bp_timeline_loop_"+suffix,elapsed="bp_timeline_elapsed_"+suffix,progress="bp_timeline_progress_"+suffix,finished="bp_timeline_finished_"+suffix;
+                    source+=pad+"float "+period+" = max(float(0), "+duration+");\n"+pad+"bool "+cycle+" = "+loop+";\n";
+                    source+=pad+"if ("+reset+") "+state+" = 0;\n";
+                    source+=pad+"float "+elapsed+" = min("+state+", "+period+");\n";
+                    source+=pad+"if ("+cycle+" && "+period+" > 0) "+elapsed+" = "+state+" - floor("+state+" / "+period+") * "+period+";\n";
+                    source+=pad+"float "+progress+" = "+period+" > 0 ? clamp("+elapsed+" / "+period+", float(0), float(1)) : float(1);\n";
+                    source+=pad+"bool "+finished+" = "+period+" <= 0 || (!"+cycle+" && "+elapsed+" >= "+period+");\n";
+                    source+=pad+state+" = "+elapsed+" + max(float(0), "+delta+");\n";
+                    source+=pad+"if (!"+cycle+" || "+period+" <= 0) "+state+" = min("+state+", "+period+");\n";
+                    available[to]=true;mark(start,to);return flow(to,"then",indent,depth+1);
+                }
                 if(n.kind=="spawn:box"||n.kind=="spawn:plane")
                 {
                     std::string place,size,color,entityName;
@@ -533,6 +555,13 @@ namespace nx
                     result+=" = "+literal;
                 }
             result+=";\n";
+        }
+        // Each Timeline belongs to one screen/Behaviour instance and one Update node.
+        for(size_t gi=0;gi<document.graphs.size();++gi)
+        {
+            const auto& g=document.graphs[gi];if(g.owner!=classOwner)continue;
+            for(size_t ni=0;ni<g.nodes.size();++ni)if(g.nodes[ni].kind=="time:timeline")
+                result+="    float bp_timeline_state_"+std::to_string(gi)+"_"+std::to_string(ni)+" = 0;\n";
         }
         for(size_t graphIndex=0;graphIndex<document.graphs.size();++graphIndex)
         {

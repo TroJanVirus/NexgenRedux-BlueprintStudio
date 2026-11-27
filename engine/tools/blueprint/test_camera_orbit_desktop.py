@@ -14,7 +14,7 @@ binary = pathlib.Path(sys.argv[1]).resolve()
 root = pathlib.Path(sys.argv[2]).resolve()
 own = root / "own"
 own.mkdir(parents=True)
-fixture = pathlib.Path(__file__).parent / "examples" / "camera-orbit.bp.json"
+fixture = pathlib.Path(__file__).parent / "examples" / (sys.argv[3] if len(sys.argv) > 3 else "camera-orbit.bp.json")
 project = json.loads(fixture.read_text(encoding="utf-8"))
 (own / "blueprint-recovery.bp.json").write_text(json.dumps(project), encoding="utf-8")
 conn = display.Display()
