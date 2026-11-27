@@ -7,7 +7,7 @@
 using namespace nx;
 NX_TEST(nativeCatalogueContainsReferenceAPI)
 {
-    NX_EXPECT(blueprintCatalogue().size()==908);
+    NX_EXPECT(blueprintCatalogue().size()==909);
     const auto* save=blueprintSpec("api:Save:Save::set:string,string");
     NX_EXPECT(save&&save->inputs.size()==3&&save->outputs.size()==1);
     if(save&&save->inputs.size()==3)NX_EXPECT(save->inputs[0].type=="exec"&&save->inputs[2].type=="string");
@@ -304,4 +304,24 @@ NX_TEST(nativeBehaviourGraphsAreScopedAndAttachmentsPersist)
     NX_EXPECT(compileBlueprint(copy,source,error)&&source.find("class BP_Behaviour_Spinner : Behaviour")!=std::string::npos);
     NX_EXPECT(source.find("void onHit(Entity@ other)")!=std::string::npos);
     NX_EXPECT(copy.deleteNode(0,1,error)&&copy.removeBehaviour("Spinner",error)&&copy.undo()&&copy.behaviours().size()==1);
+}
+
+NX_TEST(nativeFunctionSignaturesResolveForwardReferencesAndProtectWires)
+{
+    BlueprintDocument doc;doc.create();std::string error,source,saved;
+    NX_EXPECT(doc.addFunction("Add",error)&&doc.editFunctionSignature(6,"int(a:int, b:int)",error));
+    NX_EXPECT(doc.addNode(6,"add:int",0,0,error)&&doc.addNode(6,"return:function",0,0,error));
+    NX_EXPECT(doc.connect(6,0,"arg_a",1,"a",error)&&doc.connect(6,0,"arg_b",1,"b",error));
+    NX_EXPECT(doc.connect(6,0,"then",2,"in",error)&&doc.connect(6,1,"result",2,"value",error));
+    NX_EXPECT(doc.addNode(0,"call:function",0,0,error)&&doc.connect(0,0,"then",1,"in",error));
+    NX_EXPECT(doc.setInputValue(0,1,"arg_a","7",error)&&doc.setInputValue(0,1,"arg_b","8",error));
+    NX_EXPECT(doc.addNode(0,"var:set:int",0,0,error)&&doc.connect(0,1,"then",2,"in",error)&&doc.connect(0,1,"result",2,"value",error));
+    NX_EXPECT(!doc.editFunctionSignature(6,"float(a:float)",error));
+    NX_EXPECT(doc.functionSignature(6)=="int(a:int, b:int)");
+    NX_EXPECT(doc.serialize(saved,error));BlueprintDocument copy;NX_EXPECT(copy.load(saved.data(),saved.size(),error));
+    NX_EXPECT(compileBlueprint(copy,source,error)&&source.find("int bp_fn_Add(int bp_arg_a, int bp_arg_b)")!=std::string::npos);
+    NX_EXPECT(source.find("bp_fn_Add(int(7), int(8))")!=std::string::npos);
+    NX_EXPECT(!copy.addNode(0,"return:function",0,0,error));
+    NX_EXPECT(copy.disconnect(6,2,"in",false)&&!compileBlueprint(copy,source,error));
+    NX_EXPECT(error.find("returns a value")!=std::string::npos);
 }

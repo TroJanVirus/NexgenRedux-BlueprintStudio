@@ -36,6 +36,8 @@ namespace nx
             std::string owner,name,kind;
             std::vector<Node> nodes;
             std::vector<Link> links;
+            std::vector<BlueprintPin> parameters{};
+            std::string returnType="void";
         };
         std::string name;
         std::vector<Graph> graphs;
@@ -52,6 +54,11 @@ namespace nx
         bool clearInputValue(size_t graph,size_t node,const std::string& pin);
         bool setReference(size_t graph,size_t node,const std::string& value,std::string& error);
         bool addFunction(const std::string& name,std::string& error,const std::string& owner="Screen");
+        const Graph* function(const std::string& owner,const std::string& name) const;
+        bool nodeSpec(const Graph& graph,const Node& node,BlueprintNodeSpec& spec) const;
+        bool setFunctionSignature(size_t graph,const std::vector<BlueprintPin>& parameters,const std::string& returnType,std::string& error);
+        bool editFunctionSignature(size_t graph,const std::string& signature,std::string& error);
+        std::string functionSignature(size_t graph) const;
         bool addScreen(const std::string& id,std::string& error);
         bool removeScreen(const std::string& id,std::string& error);
         std::vector<std::string> screens() const;

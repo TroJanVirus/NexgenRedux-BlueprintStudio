@@ -23,6 +23,7 @@ namespace nx
         struct ByteSpan { size_t begin,end; BlueprintLocation location; };
         struct Emitter
         {
+            const BlueprintDocument& document;
             const Graph& graph;
             std::string& source;
             std::string& error;
@@ -63,11 +64,12 @@ namespace nx
                 if(!wire)
                 {
                     const auto& n=graph.nodes[node];
-                    if(const auto* spec=blueprintSpec(n.kind))
+                    BlueprintNodeSpec spec;
+                    if(document.nodeSpec(graph,n,spec))
                     {
                         for(const auto& v:n.values)if(v.pin==pin)
-                            for(const auto& p:spec->inputs)if(p.name==pin)return literalValue(node,p.type,v.value,result);
-                        for(const auto& d:spec->defaults)if(d.name==pin){result=d.type;return true;}
+                            for(const auto& p:spec.inputs)if(p.name==pin)return literalValue(node,p.type,v.value,result);
+                        for(const auto& d:spec.defaults)if(d.name==pin){result=d.type;return true;}
                     }
                     return fail(node,"Connect input "+pin+".");
                 }
@@ -114,6 +116,15 @@ namespace nx
                 const auto& n=graph.nodes[node];
                 const auto* spec=blueprintSpec(n.kind);
                 if(!spec)return fail(node,"Unknown node.");
+                if(n.kind=="entry"&&graph.kind=="function"&&pin.rfind("arg_",0)==0)
+                {
+                    for(const auto& p:graph.parameters)if(pin=="arg_"+p.name){result="bp_arg_"+p.name;return true;}
+                }
+                if(n.kind=="call:function"&&pin=="result")
+                {
+                    if(!available[node])return fail(node,"Function result used before execution or outside its branch.");
+                    result="bp_value_"+std::to_string(node);return true;
+                }
                 if(n.kind.rfind("literal:",0)==0&&pin=="value")
                 {
                     return literalValue(node,n.kind.substr(8),n.ref,result);
@@ -162,6 +173,17 @@ namespace nx
                 }
                 return fail(node,"This output is not supported by the native compiler yet.");
             }
+            bool returns(size_t node,const std::string& pin,unsigned depth) const
+            {
+                if(depth>128)return false;
+                const auto found=std::find_if(graph.links.begin(),graph.links.end(),[&](const Link& l){return l.from==node&&l.output==pin;});
+                if(found==graph.links.end())return false;
+                const auto to=found->to;const auto& kind=graph.nodes[to].kind;
+                if(kind=="return:function")return true;
+                if(kind=="branch")return returns(to,"true",depth+1)&&returns(to,"false",depth+1);
+                if(kind=="sequence"&&(returns(to,"first",depth+1)||returns(to,"second",depth+1)))return true;
+                return returns(to,"then",depth+1);
+            }
             bool flow(size_t node,const std::string& pin,unsigned indent,unsigned depth)
             {
                 const auto found=std::find_if(graph.links.begin(),graph.links.end(),[&](const Link& l){return l.from==node&&l.output==pin;});
@@ -199,8 +221,28 @@ namespace nx
                 }
                 if(n.kind=="call:function")
                 {
-                    source+=pad+"bp_fn_"+n.ref+"();\n";mark(start,to);
-                    return flow(to,"then",indent,depth+1);
+                    const auto* target=document.function(graph.owner,n.ref);
+                    if(!target)return fail(to,"Missing function.");
+                    std::string args;
+                    for(const auto& p:target->parameters)
+                    {
+                        std::string v;if(!value(to,"arg_"+p.name,v,0))return false;
+                        if(!args.empty())args+=", ";
+                        args+=v;
+                    }
+                    const auto call="bp_fn_"+n.ref+"("+args+")";
+                    if(target->returnType=="void")source+=pad+call+";\n";
+                    else
+                    {
+                        source+=pad+target->returnType+" bp_value_"+std::to_string(to)+" = "+call+";\n";available[to]=true;
+                    }
+                    mark(start,to);return flow(to,"then",indent,depth+1);
+                }
+                if(n.kind=="return:function")
+                {
+                    std::string v;
+                    if(graph.returnType!="void"&&!value(to,"value",v,0))return false;
+                    source+=pad+(v.empty()?"return;":"return "+v+";")+"\n";mark(start,to);return true;
                 }
                 if(n.kind=="sequence")
                 {
@@ -274,12 +316,18 @@ namespace nx
             const auto entry=std::find_if(graph.nodes.begin(),graph.nodes.end(),[](const BlueprintDocument::Node& n){return n.kind=="entry";});
             if(entry==graph.nodes.end()){error="Missing event entry.";return false;}
             const auto index=static_cast<size_t>(entry-graph.nodes.begin());
-            const auto signature=graph.kind=="function"?"":graph.name=="update"?"float dt":graph.name=="draw"?"Canvas@ canvas":
+            std::string signature=graph.kind=="function"?"":graph.name=="update"?"float dt":graph.name=="draw"?"Canvas@ canvas":
                 (graph.name=="onHit"||graph.name=="onLeave")?"Entity@ other":"";
+            if(graph.kind=="function")for(const auto& p:graph.parameters)
+            {
+                if(!signature.empty())signature+=", ";
+                signature+=p.type+" bp_arg_"+p.name;
+            }
             const size_t start=result.size();
-            result+="    void "+(graph.kind=="function"?"bp_fn_"+graph.name:graph.name)+"("+signature+")\n    {\n";
+            result+="    "+(graph.kind=="function"?graph.returnType:"void")+" "+(graph.kind=="function"?"bp_fn_"+graph.name:graph.name)+"("+signature+")\n    {\n";
             spans.push_back({start,result.size(),{graphIndex,index}});
-            Emitter e{graph,result,error,std::vector<bool>(graph.nodes.size(),false),std::vector<bool>(graph.nodes.size(),false),graphIndex,location,spans};
+            Emitter e{document,graph,result,error,std::vector<bool>(graph.nodes.size(),false),std::vector<bool>(graph.nodes.size(),false),graphIndex,location,spans};
+            if(graph.returnType!="void"&&!e.returns(index,"then",0))return e.fail(index,"Not every execution path returns a value.");
             if(!e.flow(index,"then",2,0))return false;
             result+="    }\n";
             if(result.size()>1024*1024){error="Generated source exceeds the size limit.";return false;}

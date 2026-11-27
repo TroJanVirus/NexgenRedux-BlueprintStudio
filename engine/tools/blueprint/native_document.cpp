@@ -54,6 +54,7 @@ namespace nx
             {"var:set:Entity@","Set Entity@ variable","Variables","in:exec|value:Entity@","then:exec"},
             {"sequence","Sequence","Flow","in:exec","first:exec|second:exec|then:exec"},
             {"call:function","Call function","Functions","in:exec","then:exec"},
+            {"return:function","Return","Functions","in:exec",""},
             {"repeat","Repeat (bounded)","Flow","in:exec|count:int","body:exec|then:exec|index:int"},
 #include "tools/blueprint/native_catalog.inc"
         };
@@ -105,6 +106,15 @@ namespace nx
                 (kind!="event:entity"||behaviour)&&(kind!="event:other"||(behaviour&&(event=="onHit"||event=="onLeave")))&&
                 (kind!="attach:behaviour"||!behaviour);
         }
+        bool signatureType(const std::string& type)
+        {return blueprintLiteralType(type)||type=="Vec2"||type=="Vec3"||type=="Color"||type=="Entity@";}
+        bool validSignature(const std::vector<BlueprintPin>& parameters,const std::string& result)
+        {
+            if(parameters.size()>8||(result!="void"&&!signatureType(result)))return false;
+            std::unordered_set<std::string> names;
+            for(const auto& p:parameters)if(!identifier(p.name)||!signatureType(p.type)||!names.insert(p.name).second)return false;
+            return true;
+        }
         bool validText(JsonTree::Value v){return v.isString()&&v.text()[0]&&std::strlen(v.text())<=512;}
         bool literal(const std::string& kind,const std::string& value)
         {
@@ -121,12 +131,12 @@ namespace nx
             }
             return kind=="literal:double"||(kind=="literal:float"&&std::abs(n)<=3.402823466e38);
         }
-        bool validWire(const BlueprintDocument::Graph& g,size_t from,const std::string& output,size_t to,const std::string& input,std::string& error)
+        bool validWire(const BlueprintDocument& doc,const BlueprintDocument::Graph& g,size_t from,const std::string& output,size_t to,const std::string& input,std::string& error)
         {
             if(from>=g.nodes.size()||to>=g.nodes.size()||from==to){error="Choose two different nodes.";return false;}
-            const auto* a=blueprintSpec(g.nodes[from].kind);const auto* b=blueprintSpec(g.nodes[to].kind);
-            if(!a||!b){error="Unknown node.";return false;}
-            const auto* out=findPin(a->outputs,output);const auto* in=findPin(b->inputs,input);
+            BlueprintNodeSpec a,b;
+            if(!doc.nodeSpec(g,g.nodes[from],a)||!doc.nodeSpec(g,g.nodes[to],b)){error="Unknown node or function.";return false;}
+            const auto* out=findPin(a.outputs,output);const auto* in=findPin(b.inputs,input);
             if(!out||!in||out->type!=in->type){error="Pins must have matching types and opposite directions.";return false;}
             for(const auto& l:g.links)
             {
@@ -237,6 +247,7 @@ namespace nx
         {error="Expected native Blueprint version 2. Browser prototypes are not supported.";return false;}
         BlueprintDocument candidate;candidate.name=root["name"].text();
         std::unordered_set<std::string> graphNames;
+        // Load every graph header first so forward function references resolve consistently.
         for(auto value=gs.first();value.exists();value=value.next())
         {
             auto ns=value["nodes"],ls=value["links"];
@@ -250,6 +261,23 @@ namespace nx
             if((g.kind=="event"&&!ownerEvent(owner,g.name))||
                 (g.kind=="function"&&(!identifier(g.name)||ownerEvent(owner,g.name)))||(g.kind!="event"&&g.kind!="function"))
             {error="Invalid event or function graph.";return false;}
+            auto parameters=value["parameters"];
+            if(parameters.exists())
+            {
+                if(!parameters.isArray()||parameters.count()>8){error="Invalid function parameters.";return false;}
+                for(auto p=parameters.first();p.exists();p=p.next())
+                    g.parameters.push_back({p["name"].text(),p["type"].text()});
+            }
+            g.returnType=value["returnType"].text("void");
+            if(!validSignature(g.parameters,g.returnType)||(g.kind!="function"&&(!g.parameters.empty()||g.returnType!="void")))
+            {error="Invalid function signature in "+g.name;return false;}
+            candidate.graphs.push_back(std::move(g));
+        }
+        size_t graphIndex=0;
+        for(auto value=gs.first();value.exists();value=value.next(),++graphIndex)
+        {
+            auto& g=candidate.graphs[graphIndex];
+            auto ns=value["nodes"],ls=value["links"];
             std::unordered_map<std::string,size_t> ids;unsigned entries=0;
             for(auto n=ns.first();n.exists();n=n.next())
             {
@@ -262,16 +290,17 @@ namespace nx
                 {error="Invalid node in "+g.name;return false;}
                 if(kind=="entry")++entries;
                 Node node{n["id"].text(),kind,ref,x,y};
+                BlueprintNodeSpec resolved;
+                if(!candidate.nodeSpec(g,node,resolved)){error="Invalid function node in "+g.name;return false;}
                 const auto values=n["values"];
                 if(values.exists())
                 {
-                    const auto* spec=blueprintSpec(kind);
-                    if(!values.isObject()||values.count()>spec->inputs.size())
+                    if(!values.isObject()||values.count()>resolved.inputs.size())
                     {error="Invalid input values in "+g.name;return false;}
                     for(auto v=values.first();v.exists();v=v.next())
                     {
                         const std::string pin=v.key();
-                        const auto* input=findPin(spec->inputs,pin);
+                        const auto* input=findPin(resolved.inputs,pin);
                         if(!input||!blueprintLiteralType(input->type)||!v.isString()||
                             !literal("literal:"+input->type,v.text())||
                             std::any_of(node.values.begin(),node.values.end(),[&](const InputValue& old){return old.pin==pin;}))
@@ -285,11 +314,10 @@ namespace nx
             for(auto l=ls.first();l.exists();l=l.next())
             {
                 auto a=ids.find(l["from"].text()),b=ids.find(l["to"].text());
-                if(a==ids.end()||b==ids.end()||!validWire(g,a->second,l["output"].text(),b->second,l["input"].text(),error))
+                if(a==ids.end()||b==ids.end()||!validWire(candidate,g,a->second,l["output"].text(),b->second,l["input"].text(),error))
                 {if(a==ids.end()||b==ids.end())error="Dangling connection.";return false;}
                 g.links.push_back({a->second,b->second,l["output"].text(),l["input"].text()});
             }
-            candidate.graphs.push_back(std::move(g));
         }
         for(const auto& owner:candidate.screens())
         {
@@ -322,6 +350,15 @@ namespace nx
         for(const auto& g:graphs)
         {
             auto* v=gs->add();if(!v||!text(*v,"owner",g.owner)||!text(*v,"name",g.name)||!text(*v,"kind",g.kind))return fail();
+            if(g.kind=="function")
+            {
+                if(!text(*v,"returnType",g.returnType))return fail();
+                auto* parameters=v->put("parameters");if(!parameters)return fail();parameters->setArray();
+                for(const auto& p:g.parameters)
+                {
+                    auto* item=parameters->add();if(!item||!text(*item,"name",p.name)||!text(*item,"type",p.type))return fail();
+                }
+            }
             auto* ns=v->put("nodes");if(!ns)return fail();ns->setArray();
             for(const auto& n:g.nodes)
             {
@@ -362,6 +399,7 @@ namespace nx
         if(graph>=graphs.size()||!blueprintSpec(kind)||kind=="entry"||!coordinate(x)||!coordinate(y)||graphs[graph].nodes.size()>=kMaxNodes)
         {error="Cannot add this node.";return false;}
         auto& g=graphs[graph];
+        if(kind=="return:function"&&g.kind!="function"){error="Return belongs in a function graph.";return false;}
         if(!context(g.name,kind,g.owner)){error="This event value belongs to a different event graph.";return false;}
         std::string id;
         do{id="n"+std::to_string(++m_nextId);}while(std::any_of(g.nodes.begin(),g.nodes.end(),[&](const Node& n){return n.id==id;}));
@@ -404,7 +442,7 @@ namespace nx
     bool BlueprintDocument::connect(size_t graph,size_t from,const std::string& output,size_t to,const std::string& input,std::string& error)
     {
         if(graph>=graphs.size()||graphs[graph].links.size()>=kMaxLinks){error="Graph link limit reached.";return false;}
-        auto& g=graphs[graph];if(!validWire(g,from,output,to,input,error))return false;
+        auto& g=graphs[graph];if(!validWire(*this,g,from,output,to,input,error))return false;
         record(graph);g.links.push_back({from,to,output,input});error.clear();return true;
     }
     bool BlueprintDocument::disconnect(size_t graph,size_t node,const std::string& pin,bool output)
@@ -426,8 +464,8 @@ namespace nx
     {
         if(graph>=graphs.size()||node>=graphs[graph].nodes.size()){error="Invalid node.";return false;}
         auto& n=graphs[graph].nodes[node];
-        const auto* spec=blueprintSpec(n.kind);
-        const auto* input=spec?findPin(spec->inputs,pin):nullptr;
+        BlueprintNodeSpec spec;
+        const auto* input=nodeSpec(graphs[graph],n,spec)?findPin(spec.inputs,pin):nullptr;
         if(!input||!blueprintLiteralType(input->type)||!literal("literal:"+input->type,value))
         {error="Invalid value for input "+pin+".";return false;}
         const auto it=std::find_if(n.values.begin(),n.values.end(),[&](const InputValue& v){return v.pin==pin;});
@@ -478,7 +516,8 @@ namespace nx
         if(n.kind=="call:function")
         {
             const std::string previous=n.ref;n.ref=value;
-            const bool valid=functions(error);n.ref=previous;if(!valid)return false;
+            std::string checked;
+            const bool valid=functions(error)&&serialize(checked,error);n.ref=previous;if(!valid)return false;
             record(graph);n.ref=value;error.clear();return true;
         }
         const auto type=n.kind.substr(8);
@@ -519,6 +558,82 @@ namespace nx
         if(m_undo.size()>=kHistory)m_undo.erase(m_undo.begin());
         m_undo.push_back({static_cast<size_t>(-1),{},m_revision,graphs});
         m_redo.clear();m_revision=++m_nextRevision;
+    }
+    const BlueprintDocument::Graph* BlueprintDocument::function(const std::string& owner,const std::string& name) const
+    {
+        const auto found=std::find_if(graphs.begin(),graphs.end(),[&](const Graph& g)
+        {return g.owner==owner&&g.name==name&&g.kind=="function";});
+        return found==graphs.end()?nullptr:&*found;
+    }
+    bool BlueprintDocument::nodeSpec(const Graph& graph,const Node& node,BlueprintNodeSpec& spec) const
+    {
+        const auto* base=blueprintSpec(node.kind);if(!base)return false;
+        spec=*base;
+        if(node.kind=="entry"&&graph.kind=="function")
+            for(const auto& p:graph.parameters)spec.outputs.push_back({"arg_"+p.name,p.type});
+        if(node.kind=="return:function")
+        {
+            if(graph.kind!="function")return false;
+            if(graph.returnType!="void")spec.inputs.push_back({"value",graph.returnType});
+        }
+        if(node.kind=="call:function")
+        {
+            const auto* target=function(graph.owner,node.ref);if(!target)return false;
+            for(const auto& p:target->parameters)spec.inputs.push_back({"arg_"+p.name,p.type});
+            spec.result=target->returnType;
+            if(spec.result!="void")spec.outputs.push_back({"result",spec.result});
+        }
+        return true;
+    }
+    bool BlueprintDocument::setFunctionSignature(size_t graph,const std::vector<BlueprintPin>& parameters,const std::string& returnType,std::string& error)
+    {
+        if(graph>=graphs.size()||graphs[graph].kind!="function"||!validSignature(parameters,returnType))
+        {error="Invalid signature: up to eight uniquely named typed parameters.";return false;}
+        auto& g=graphs[graph];
+        const auto old=g.parameters;const auto oldReturn=g.returnType;
+        if(oldReturn==returnType&&old.size()==parameters.size()&&
+            std::equal(old.begin(),old.end(),parameters.begin(),[](const BlueprintPin& a,const BlueprintPin& b){return a.name==b.name&&a.type==b.type;}))
+        {error.clear();return true;}
+        // A signature is a contract. Reject incompatible connected pins or stored input values.
+        g.parameters=parameters;g.returnType=returnType;
+        std::string checked;
+        const bool valid=serialize(checked,error);
+        g.parameters=old;g.returnType=oldReturn;
+        if(!valid){error="Signature would invalidate existing pins: "+error;return false;}
+        record(graph);g.parameters=parameters;g.returnType=returnType;error.clear();return true;
+    }
+    std::string BlueprintDocument::functionSignature(size_t graph)const
+    {
+        if(graph>=graphs.size()||graphs[graph].kind!="function")return "";
+        const auto& g=graphs[graph];std::string s=g.returnType+"(";
+        for(size_t i=0;i<g.parameters.size();++i)
+        {if(i)s+=", ";s+=g.parameters[i].name+":"+g.parameters[i].type;}
+        return s+")";
+    }
+    bool BlueprintDocument::editFunctionSignature(size_t graph,const std::string& signature,std::string& error)
+    {
+        const auto trim=[](const std::string& s)
+        {
+            const auto first=s.find_first_not_of(" \t"),last=s.find_last_not_of(" \t");
+            return first==std::string::npos?std::string():s.substr(first,last-first+1);
+        };
+        const auto s=trim(signature);const auto open=s.find('(');
+        auto fail=[&](){error="Use returnType(name:type, name:type), e.g. float(amount:float).";return false;};
+        if(open==std::string::npos||s.empty()||s.back()!=')')return fail();
+        const auto result=trim(s.substr(0,open));const auto body=trim(s.substr(open+1,s.size()-open-2));
+        std::vector<BlueprintPin> parameters;
+        if(!body.empty())
+        {
+            for(size_t at=0;;)
+            {
+                const auto comma=body.find(',',at);const auto item=trim(body.substr(at,comma==std::string::npos?comma:comma-at));
+                const auto colon=item.find(':');if(colon==std::string::npos)return fail();
+                parameters.push_back({trim(item.substr(0,colon)),trim(item.substr(colon+1))});
+                if(comma==std::string::npos)break;
+                at=comma+1;
+            }
+        }
+        return setFunctionSignature(graph,parameters,result,error);
     }
     bool BlueprintDocument::addFunction(const std::string& functionName,std::string& error,const std::string& owner)
     {

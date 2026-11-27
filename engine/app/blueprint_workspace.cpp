@@ -154,8 +154,10 @@ namespace nx
         };
         for(size_t i=0;i<graph.nodes.size();++i)
         {
-            if(const auto* spec=blueprintSpec(graph.nodes[i].kind))
+            BlueprintNodeSpec resolved;
+            if(m_document.nodeSpec(graph,graph.nodes[i],resolved))
             {
+                const auto* spec=&resolved;
                 for(const auto& pin:spec->inputs){add(m_rows[i].inputs,lookup[i].inputs,pin.name);m_rows[i].inputTypes.push_back(pin.type);}
                 for(const auto& pin:spec->outputs){add(m_rows[i].outputs,lookup[i].outputs,pin.name);m_rows[i].outputTypes.push_back(pin.type);}
             }
@@ -176,7 +178,7 @@ namespace nx
         const auto& graph=m_document.graphs[m_graph];const bool behaviour=graph.owner.rfind("behaviour:",0)==0;
         const bool hasBehaviours=!m_document.behaviours().empty();
         for(const auto& node:blueprintCatalogue())
-            if(node.id!="entry"&&(node.id!="event:entity"||behaviour)&&
+            if(node.id!="entry"&&(node.id!="return:function"||graph.kind=="function")&&(node.id!="event:entity"||behaviour)&&
                 (node.id!="event:other"||(behaviour&&(graph.name=="onHit"||graph.name=="onLeave")))&&
                 (node.id!="attach:behaviour"||(!behaviour&&hasBehaviours))&&(node.id!="event:delta"||m_document.graphs[m_graph].name=="update")&&
                 (node.id!="event:canvas"||m_document.graphs[m_graph].name=="draw")&&
@@ -460,11 +462,20 @@ namespace nx
                     size_t end=value.size()-1;while(end&&(static_cast<unsigned char>(value[end])&0xc0)==0x80)--end;
                     value.resize(end);changed=true;
                 }
-                else if(ch>=32&&(focus==1||focus==2||focus==6||ch<127)&&appendCharacter(value,ch,focus==1?80u:(focus==2||focus==6)?4096u:64u))changed=true;
+                else if(ch>=32&&(focus==1||focus==2||focus==6||ch<127)&&appendCharacter(value,ch,focus==1?80u:(focus==2||focus==6)?4096u:focus==9?1024u:64u))changed=true;
                 else if(ch==13)
                 {
                     if(focus==2&&!m_document.setLiteral(m_graph,m_selection,m_edit,m_status))break;
-                    if(focus==3&&!m_document.setReference(m_graph,m_selection,m_edit,m_status))break;
+                    if(focus==3)
+                    {
+                        if(!m_document.setReference(m_graph,m_selection,m_edit,m_status))break;
+                        clearWire();rebuildPins();
+                    }
+                    if(focus==9)
+                    {
+                        if(!m_document.editFunctionSignature(m_graph,m_edit,m_status))break;
+                        clearWire();rebuildPins();
+                    }
                     if(focus==5&&!saveNamed(s,m_edit))break;
                     if(focus==6&&!m_document.setInputValue(m_graph,m_selection,m_editPin,m_edit,m_status))break;
                     if(focus==8)
@@ -499,6 +510,8 @@ namespace nx
         if(!m_drag)
         {
             if(click&&in(x,y,1134,39,1266,69)){close(s);return;}
+            if(click&&in(x,y,410,5,560,33)&&m_document.graphs[m_graph].kind=="function")
+            {m_edit=m_document.functionSignature(m_graph);m_focus=9;input.setTyping(true);m_status="Edit the typed signature.";m_left=left;return;}
             if(click&&in(x,y,566,5,734,33)){m_edit.clear();m_focus=8;input.setTyping(true);m_status="Type a behaviour name, then Enter.";m_left=left;return;}
             if(click&&in(x,y,740,5,850,33)){browseFiles(s);m_left=left;return;}
             if(click&&in(x,y,856,5,966,33)){m_edit.clear();m_focus=5;input.setTyping(true);m_status="Type a new Blueprint name and press Enter.";m_left=left;return;}
@@ -711,6 +724,8 @@ namespace nx
         c.rect(0,0,kWidth,kTop,{0.12f,0.16f,0.22f,1});
         c.text(*m_font,"NEXGEN  /  BLUEPRINT STUDIO",18,13,text);
         c.text(*m_font,"Native editor",1260,13,muted,Align::Right);
+        if(!m_document.graphs.empty()&&m_document.graphs[m_graph].kind=="function")
+        {c.roundRect(410,5,150,28,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Signature",485,9,text,Align::Center);}
         c.roundRect(566,5,168,28,4,{0.19f,0.33f,0.50f,1});
         c.clip(566,5,168,28);c.text(*m_font,m_focus==8?(m_edit.empty()?"Type name...":m_edit.c_str()):"New behaviour",650,9,text,Align::Center);c.noClip();
         c.roundRect(740,5,110,28,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Open",795,9,text,Align::Center);
@@ -848,7 +863,7 @@ namespace nx
         c.rect(0,kBottom,kWidth,kHeight-kBottom,{0.12f,0.16f,0.22f,1});
         c.text(*m_font,shorten(m_status,110).c_str(),12,kBottom+6,text);
         c.text(*m_font,"Click output then input: connect | Click input: value | Ctrl+click: disconnect | Ctrl+S: save",12,kBottom+26,muted);
-        if(m_browsing||m_focus==5||m_focus==6)
+        if(m_browsing||m_focus==5||m_focus==6||m_focus==9)
         {
             c.rect(0,0,kWidth,kHeight,{0,0,0,0.70f});
             if(m_browsing)
@@ -864,6 +879,16 @@ namespace nx
                 }
                 if(m_files.empty())c.text(*m_font,"No saved Blueprints. Save as or drop a .bp.json file.",640,330,muted,Align::Center);
                 c.clip(280,603,720,22);c.text(*m_font,shorten(m_status,90).c_str(),280,603,muted);c.noClip();
+            }
+            else if(m_focus==9)
+            {
+                c.roundRect(200,226,880,240,9,{0.12f,0.16f,0.22f,1});
+                c.text(*m_font,"FUNCTION SIGNATURE",220,245,accent);
+                c.roundRect(220,285,840,36,4,{0.24f,0.35f,0.48f,1});
+                c.clip(224,285,832,36);c.text(*m_font,m_edit.c_str(),230,293,text);c.noClip();
+                c.paragraph(*m_font,"Format: float(amount:float, count:int) | void() for no return. Up to 8 parameters.",220,330,840,muted);
+                c.paragraph(*m_font,m_status.c_str(),220,375,840,muted);
+                c.text(*m_font,"Enter confirms | Escape cancels",640,438,text,Align::Center);
             }
             else if(m_focus==6)
             {

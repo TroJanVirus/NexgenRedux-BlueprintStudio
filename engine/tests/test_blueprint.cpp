@@ -798,3 +798,23 @@ NX_TEST(nativeBehaviourStateAndCollisionValuesArePerEntity)
     NX_EXPECT(strcmp(r.save.get("partner_b","missing"),"second")==0);
     r.services.world=nullptr;
 }
+
+NX_TEST(nativeTypedFunctionCallsExecuteThroughAngelScript)
+{
+    BlueprintDocument doc;doc.create();std::string error,source;
+    bool ok=doc.addFunction("Join",error)&&doc.editFunctionSignature(6,"string(a:string, b:string)",error);
+    auto add=[&](size_t g,const char* kind){ok=ok&&doc.addNode(g,kind,0,0,error);};
+    auto wire=[&](size_t g,size_t a,const char* out,size_t b,const char* in){ok=ok&&doc.connect(g,a,out,b,in,error);};
+    auto input=[&](size_t g,size_t n,const char* pin,const char* value){ok=ok&&doc.setInputValue(g,n,pin,value,error);};
+    add(6,"add:string");add(6,"return:function");
+    wire(6,0,"arg_a",1,"a");wire(6,0,"arg_b",1,"b");wire(6,0,"then",2,"in");wire(6,1,"result",2,"value");
+    add(0,"call:function");add(0,"api:Save:Save::set:string,string");
+    input(0,1,"arg_a","hello ");input(0,1,"arg_b","world");input(0,2,"key","function_result");
+    wire(0,0,"then",1,"in");wire(0,1,"then",2,"in");wire(0,1,"result",2,"value");
+    NX_EXPECT(ok&&compileBlueprint(doc,source,error));if(!ok||source.empty())return;
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    r.platform.files["showcase/functions/screen.json"]="{\"title\":\"Functions\"}";
+    r.platform.files["showcase/functions/main.as"]=source;
+    if(!r.screens.init(r.services,"showcase","functions")){NX_EXPECT(false);return;}
+    r.step(3);NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("function_result","missing"),"hello world")==0);
+}
