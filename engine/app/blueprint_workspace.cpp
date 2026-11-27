@@ -755,7 +755,7 @@ namespace nx
             if(in(x,y,630,232,1000,266)){m_visualInspector=!m_visualInspector;m_visualPhysics=false;return;}
             if(m_visualInspector)
             {
-                if(in(x,y,630,m_visualPhysics?548:558,1000,m_visualPhysics?581:591)){m_visualPhysics=!m_visualPhysics;return;}
+                if(in(x,y,630,m_visualPhysics?548.f:558.f,1000,m_visualPhysics?581.f:591.f)){m_visualPhysics=!m_visualPhysics;return;}
                 const char* prop=nullptr;
                 if(m_visualPhysics)
                 {

@@ -292,8 +292,8 @@ namespace nx
                 }
                 if(n.kind=="actor:spawn-asset")
                 {
-                    for(const char* pin:{"id","instanceName","rotationOverride","sizeOverride"})
-                        if(incoming(to,pin))return fail(to,"Linked actor IDs and instance overrides must be constant authoring values.");
+                    for(const char* overridePin:{"id","instanceName","rotationOverride","sizeOverride"})
+                        if(incoming(to,overridePin))return fail(to,"Linked actor IDs and instance overrides must be constant authoring values.");
                     const auto it=std::find_if(n.values.begin(),n.values.end(),[](const BlueprintDocument::InputValue& v){return v.pin=="id";});
                     std::string json,why,sourceJson,place;
                     if(it==n.values.end()||!document.visualActorInstance(it->value,graph.owner,n.values,json,why))
