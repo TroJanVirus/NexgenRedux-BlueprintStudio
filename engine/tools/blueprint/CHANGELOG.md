@@ -1,5 +1,9 @@
 # Changes
 
+## Convert individual handwritten functions
+
+- Review and convert the current body of a retained function using the same importer, without rebuilding the class or other graphs. Keep the original source and the exact pre-conversion body, protect imported signatures, and undo or redo the conversion. Unsupported code leaves the Blueprint unchanged.
+
 ## Import existing project folders
 
 - Review each existing screen before converting it. Keep unchecked or unsupported screens as original files. Preserve metadata, assets, extra scripts and global paths, with exact original main-script backups. Refuse automatic test staging when it could overwrite installed files.

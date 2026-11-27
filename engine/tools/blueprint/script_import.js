@@ -7,7 +7,9 @@ const scalar=new Set(['bool','int','uint','float','double','string']);
 const numeric=new Set(['int','uint','float','double']);
 const precedence={'||':1,'&&':2,'==':3,'!=':3,'<':4,'>':4,'<=':4,'>=':4,'+':5,'-':5,'*':6,'/':6};
 const operations={'+':'add','-':'subtract','*':'multiply','/':'divide','<':'less','>':'greater','==':'equal','!=':'equal','<=':'greater','>=':'less','&&':'and','||':'or'};
-function read(source,filename='main.as',options={}){
+function read(source,filename='main.as',options={}){return parse(source,filename,options);}
+// The same reader handles one retained body in the current class, without regenerating other graphs.
+function parse(source,filename,options,context=null){
  const mixed=options.mixed===true;
  if(typeof source!=='string'||source.length>256*1024||new TextEncoder().encode(source).length>256*1024||source.includes('\0'))throw Error('Import a UTF-8 script of at most 256 KiB.');
  // Match from the current offset; an unknown token is an error, not a gap.
@@ -27,9 +29,17 @@ function read(source,filename='main.as',options={}){
   else fail('Expected a supported literal',t);
   if(Object.is(result.value,-0))fail('Signed zero is not preserved by the graph compiler',t);B.literal(result.type,result.value);return {...result,kind:'literal',line:t.line};
  }
- expect('class');const className=name();expect(':');const kind=take().v;if(!Object.hasOwn(B.events,kind))fail('Only a single Screen or Behaviour class is supported');expect('{');
- const doc={version:1,name:className,kind,variables:[],graphs:[],importedScript:{version:1,filename:String(filename).split(/[\\/]/).pop().slice(0,128)||'main.as',source}};
- const methods=[];
+ let doc,kind;const methods=[];
+ if(context){
+  doc=context.doc;kind=doc.kind;const g=doc.graphs.find(x=>x.name===context.name),raw=g.handwritten;
+  expect('{');const start=i;const end=tokens.length-2;
+  if(tokens[end].v!=='}')fail('Unclosed function');
+  methods.push({g,params:raw.params,start,end,body:raw.body});
+  g.convertedScript={body:raw.body,params:raw.params.map(p=>({...p}))};
+  delete g.handwritten;g.nodes=[];g.links=[];delete g.locals;
+ }else{
+ expect('class');const className=name();expect(':');kind=take().v;if(!Object.hasOwn(B.events,kind))fail('Only a single Screen or Behaviour class is supported');expect('{');
+ doc={version:1,name:className,kind,variables:[],graphs:[],importedScript:{version:1,filename:String(filename).split(/[\\/]/).pop().slice(0,128)||'main.as',source}};
  while(peek()!=='}'){
   if(peek()==='<end>')fail('Unclosed class');const t=type(true),n=name();
   if(eat('(')){
@@ -45,11 +55,12 @@ function read(source,filename='main.as',options={}){
  }
  expect('}');if(peek()!=='<end>')fail('Additional declarations, includes or classes are not supported');if(!methods.length)fail('No functions found');
  if(mixed)doc.importedScript.contract=B.scriptContract(doc);
- const fields=new Map(doc.variables.map(v=>[v.name,v.type])),functions=new Map(methods.filter(m=>m.g.kind==='function').map(m=>[m.g.name,m.g]));
+ }
+ const fields=new Map(doc.variables.map(v=>[v.name,v.type])),functions=new Map(doc.graphs.filter(g=>g.kind==='function').map(g=>[g.name,g]));
  if(fields.size!==doc.variables.length||new Set(doc.graphs.map(g=>g.name)).size!==doc.graphs.length)fail('Duplicate or overloaded member');
  for(const m of methods){
   const {g,params,start,end}=m;i=start;const argumentsByName=new Map(params.map((p,j)=>[p.name,{type:p.type,pin:g.kind==='event'?B.events[kind][g.name][j][0]:p.name}]));const locals=new Map();let serial=0;
-  const node=(kind,extra={},line=at().line)=>{if(g.nodes.length>=512)fail('Graph exceeds 512 nodes');const n={id:'n'+(++serial),kind,x:40,y:serial*80,sourceLine:line,...extra};g.nodes.push(n);if(!B.describe(doc,g,n))fail('No matching Blueprint node for '+kind);return n;};
+  const node=(kind,extra={},line=at().line)=>{if(g.nodes.length>=512)fail('Graph exceeds 512 nodes');const n={id:'n'+(++serial),kind,x:40,y:serial*80,...(context?{bodyLine:line}:{sourceLine:line}),...extra};g.nodes.push(n);if(!B.describe(doc,g,n))fail('No matching Blueprint node for '+kind);return n;};
   const entry=node('entry',{},tokens[start-1].line);
   try{
   const link=(a,b,p)=>g.links.push({from:{node:a.node,pin:a.pin},to:{node:b.id,pin:p}});
@@ -85,16 +96,25 @@ function read(source,filename='main.as',options={}){
   }
   statements('}',out(entry,'then','exec'));if(i!==end)fail('Could not read the whole function');
   }catch(e){
-   if(!mixed)throw e;
+   if(!mixed||context)throw e;
    B.validateScriptBody(m.body);g.nodes=[entry];g.links=[];delete g.locals;
    g.handwritten={body:m.body,params:m.params.map(p=>({...p})),reason:e.message};
   }
   const sizes=Object.fromEntries(g.nodes.map(n=>[n.id,{w:230,h:190}]));const positions=W.arrange(g,sizes,70);for(const n of g.nodes)Object.assign(n,positions[n.id]);
  }
  const handwritten=doc.graphs.filter(g=>g.handwritten).map(g=>({name:g.name,reason:g.handwritten.reason}));
- if(!handwritten.length)delete doc.importedScript.contract;
+ if(!handwritten.length&&!context)delete doc.importedScript.contract;
  const compiled=B.compile(doc);if(!compiled.ok||compiled.diagnostics.some(d=>d.severity==='warning'&&d.code!=='handwritten'))throw Error('Conversion refused: '+compiled.diagnostics.map(d=>[d.graph,d.message].filter(Boolean).join(': ')).join('; '));
  return {doc,source:compiled.source,handwritten,graphs:doc.graphs.length,nodes:doc.graphs.reduce((n,g)=>n+g.nodes.length,0)};
 }
-const api={read};if(typeof module!=='undefined')module.exports=api;else root.NexgenScriptImport=api;
+function convertFunction(doc,name){
+ const before=B.compile(doc);if(!before.ok)throw Error('Compile the current Blueprint before converting a function');
+ const g=doc.graphs.find(x=>x.name===name);if(!g?.handwritten)throw Error('Select a handwritten function');
+ B.validateScriptBody(g.handwritten.body);
+ const next=JSON.parse(JSON.stringify(doc));
+ // Tokenise the body with the existing permissive token reader, then require a full supported conversion.
+ const result=parse('{'+g.handwritten.body+'\n}',doc.importedScript.filename,{mixed:true},{doc:next,name});
+ return {...result,before:before.source};
+}
+const api={read,convertFunction};if(typeof module!=='undefined')module.exports=api;else root.NexgenScriptImport=api;
 })(globalThis);

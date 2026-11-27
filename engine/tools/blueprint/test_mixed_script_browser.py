@@ -31,6 +31,30 @@ with tempfile.TemporaryDirectory() as tmp:
         assert page.evaluate('doc.importedScript.source')==source
         page.locator('#undo').click();assert page.evaluate('graph().handwritten.body')==original
         page.locator('#redo').click();assert page.evaluate('graph().handwritten.body')=='score += 9;'
+        # Refuse a still-unsupported body and leave the history untouched.
+        page.locator('#undo').click()
+        history_len=page.evaluate('history.length')
+        page.locator('#handwrittenPanel').get_by_role('button',name='Review conversion to graph').click()
+        assert 'no changes made' in page.locator('#functionConversionStatus').inner_text()
+        page.locator('#functionConversionDialog').get_by_role('button',name='Close').click()
+        assert page.evaluate('history.length')==history_len
+        page.locator('#redo').click()
+        page.locator('#handwrittenPanel').get_by_role('button',name='Review conversion to graph').click()
+        assert 'nodes' in page.locator('#functionConversionStatus').inner_text()
+        page.locator('#functionConversionApply').click()
+        assert not page.locator('#handwrittenPanel').is_visible()
+        assert page.evaluate('graph().convertedScript.body')=='score += 9;'
+        assert page.evaluate('graph().nodes.some(n=>n.kind==="set")')
+        assert page.evaluate('doc.importedScript.source')==source
+        with page.expect_download() as download:
+            page.locator('#save').click()
+        import json
+        converted=json.loads(download.value.path().read_text())
+        assert converted['graphs'][1]['convertedScript']['body']=='score += 9;'
+        page.locator('#undo').click();assert page.locator('#handwrittenPanel').is_visible()
+        assert page.evaluate('graph().handwritten.body')=='score += 9;'
+        page.locator('#redo').click();assert not page.locator('#handwrittenPanel').is_visible()
+        page.locator('#undo').click()
         page.locator('#deleteGraph').click();assert page.evaluate('doc.graphs.length')==2
         page.evaluate('selectGraph("onEnter")');assert not page.locator('#handwrittenPanel').is_visible()
         assert page.evaluate('document.querySelector("#world").style.visibility')==''
