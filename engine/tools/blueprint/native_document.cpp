@@ -1243,15 +1243,28 @@ namespace nx
         if(!replaceVisualAssets(assets,error))return false;
         id=nextId;return true;
     }
-    bool BlueprintDocument::resetVisualActorOverrides(const std::string& id,std::string& error)
+    bool BlueprintDocument::resetVisualActorOverrides(const std::string& id,std::string& error,size_t component)
     {
+        std::string resolved;std::vector<std::string> keys;
+        if(!resolveVisualActor(id,resolved,keys,error))return false;
+        if(component>=keys.size()){error="Select a component.";return false;}
         auto assets=m_visualAssets;
         for(auto& asset:assets)if(asset.id==id&&asset.kind=="actor"&&asset.dependencies.size()==1)
         {
-            std::string source;if(!visualActorSource(id,source,error))return false;
             JsonValue delta;if(!delta.parse(asset.source.data(),asset.source.size(),error))return false;
-            if(!delta.find("rootOverrides")->count()){error.clear();return true;}
-            JsonValue empty;if(!empty.parse("{}",2,error)||!delta.find("rootOverrides")->setCopy(empty))return false;
+            if(component==0)
+            {
+                auto* root=delta.find("rootOverrides");
+                if(!root||!root->count()){error.clear();return true;}
+                JsonValue empty;if(!empty.parse("{}",2,error)||!root->setCopy(empty))return false;
+            }
+            else
+            {
+                auto* table=delta.find("componentOverrides");
+                if(!table||!table->find(keys[component].c_str())){error.clear();return true;}
+                table->remove(keys[component].c_str());
+                if(!table->count())delta.remove("componentOverrides");
+            }
             asset.source=delta.write(true);return replaceVisualAssets(assets,error);
         }
         error="Select a derived actor.";return false;
@@ -1446,8 +1459,9 @@ namespace nx
                 if(!text(*definition,"name",std::string(shape=="camera"?"Camera":"Component")+a.id.substr(6)+"_"+std::to_string(additions->count())))return false;
                 a.source=delta.write(true);
             }
-            BlueprintDocument staged=*this;
-            if(!staged.replaceVisualAssets(assets,error))return false;
+            BlueprintDocument staged;
+            if(!validVisualAssets(assets,error))return false;
+            staged.m_visualAssets=assets;
             for(const auto& dependent:assets)if(dependent.kind=="actor"&&dependent.source.find("\"rootOverrides\"")!=std::string::npos)
             {std::string resolved;if(!staged.visualActorSource(dependent.id,resolved,error))return false;}
             return replaceVisualAssets(assets,error);

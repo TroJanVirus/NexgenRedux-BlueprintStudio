@@ -1357,7 +1357,7 @@ namespace nx
                 return;
             }
             if(!selected->dependencies.empty()&&m_visualInspector&&!m_visualPhysics&&in(x,y,630,400,1000,430))
-            {if(m_document.resetVisualActorOverrides(m_visualSelection,m_status))m_status="Child root overrides cleared.";return;}
+            {if(m_document.resetVisualActorOverrides(m_visualSelection,m_status,m_visualComponent))m_status="Selected component overrides cleared.";return;}
             if(in(x,y,280,548,610,581)){m_visualPlacement=true;m_placementOutliner=false;m_placementSelectedId.clear();m_placementSelectedOwner=assetScreen();m_placementFirst=0;cancelVisualPlacement();m_status="Drag actors into placement or open the World outliner.";return;}
             if(in(x,y,630,232,1000,266)){m_visualInspector=!m_visualInspector;m_visualPhysics=false;return;}
             if(m_visualInspector)
@@ -1579,7 +1579,7 @@ namespace nx
                     if(m_document.visualActorSource(selected->id,resolved,why)&&tree.parse(resolved.data(),resolved.size()))
                     {
                         const auto item=tree.root()["entities"][static_cast<u32>(m_visualComponent)];
-                        if(!selected->dependencies.empty())button(630,400,370,"Reset inherited root overrides");
+                        if(!selected->dependencies.empty())button(630,400,370,"Reset selected component overrides");
                         else {c.clip(630,401,370,28);c.text(*m_font,(std::string("Component: ")+item["name"].text()).c_str(),630,404,accent);c.noClip();}
                         const auto vec=[&](const char* prop,float fallback)
                         {

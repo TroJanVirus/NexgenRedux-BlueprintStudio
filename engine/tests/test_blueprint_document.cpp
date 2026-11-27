@@ -1651,5 +1651,9 @@ NX_TEST(nativeDerivedComponentsKeepIdentityWhenParentAddsComponents)
     NX_EXPECT(tree.root()["parents"][3u].number()==1&&tree.root()["parents"][4u].number()==3);
     NX_EXPECT(doc.serialize(bytes,error));BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error));
     std::string actual;NX_EXPECT(copy.visualActorSource(grand,actual,error)&&actual==source);
+    NX_EXPECT(copy.resetVisualActorOverrides(grand,error,1)&&copy.visualActorSource(grand,actual,error)&&tree.parse(actual.data(),actual.size()));
+    NX_EXPECT(tree.root()["entities"][1u]["camera"].number()==60&&tree.root()["entities"].count()==5);
+    NX_EXPECT(tree.root()["entities"][3u]["mass"].number()==11);
+    NX_EXPECT(copy.undo()&&copy.visualActorSource(grand,actual,error)&&actual==source);
     NX_EXPECT(copy.placeVisualActor("Screen",grand,"0,0,0",error)&&compileBlueprint(copy,actual,error));
 }
