@@ -7,6 +7,19 @@
     const events = { Screen: { onEnter: [], update: [['dt', 'float']], draw: [['canvas', 'Canvas@']], onSuspend: [], onResume: [], onExit: [] }, Behaviour: { start: [], update: [['dt', 'float']], onHit: [['other', 'Entity@']], onLeave: [['other', 'Entity@']], onGone: [] } };
     const pin = (name, type, def) => ({ name, type, ...(def === undefined ? {} : { default: def }) });
     const signature = (title, category, inputs = [], outputs = [], execIn = false, execOut = []) => ({ title, category, inputs: [...(execIn ? [pin('in', 'exec')] : []), ...inputs], outputs: [...execOut.map(x => pin(x, 'exec')), ...outputs] });
+    // These methods belong to Nexgen's existing global:scene.as, not the native API catalogue.
+    const levelNodes = new Map([
+        ['levelLoad',['Load level','load','bool',[pin('name','string','asset:level.json')]]],
+        ['levelUpdate',['Update level','update','string',[pin('dt','float'),pin('player','Entity@',null),pin('shot','bool',false),pin('shotAt','Vec3',[0,0,0])]]],
+        ['levelHud',['Draw level HUD','drawHud','void',[pin('canvas','Canvas@')]]],
+        ['levelFind',['Find level entity','find','Entity@',[pin('name','string')]]],
+        ['levelIsOn',['Is level object on','isOn','bool',[pin('name','string')]]],
+        ['levelNumber',['Set HUD number','set','void',[pin('name','string'),pin('value','float')]]],
+        ['levelText',['Set HUD text','set','void',[pin('name','string'),pin('value','string')]]],
+        ['levelShow',['Show level entity','show','void',[pin('name','string'),pin('seconds','float',.6),pin('how','string','')]]],
+        ['levelHide',['Hide level entity','hide','void',[pin('name','string'),pin('seconds','float',.4)]]],
+        ['levelClear',['Clear level','clear','void',[]]]
+    ]);
     const maths = { add: '+', subtract: '-', multiply: '*', divide: '/', less: '<', greater: '>', equal: '==', and: '&&', or: '||' };
     function defaultValue(t) { if (t === 'bool')
         return false; if (t === 'string')
@@ -119,6 +132,11 @@
     function compatibleHandler(f,d) { return f.kind === 'function' && f.returns === 'void' && f.params?.length === d.params.length && f.params.every((p,i) => p.type === d.params[i].type); }
     function describe(doc, g, n) {
         const k = n.kind;
+        if (levelNodes.has(k)) {
+            if(doc.kind!=='Screen')return null;
+            const [title,method,ret,inputs]=levelNodes.get(k);
+            return {...signature(title,'Native level',inputs,ret==='void'?[]:[pin('result',ret)],true,['then']),description:'Uses Nexgen’s original Level helper (global:scene.as).'};
+        }
         if (api.has(k)) {
             const a = api.get(k);
             return { ...signature(a.title, a.category, a.inputs, [...(a.result === 'void' ? [] : [pin('result', a.result)]), ...(a.outputs || [])], !a.pure, a.pure ? [] : ['then']), description: a.description };
@@ -241,6 +259,7 @@
     function palette(doc, g) { let list = [{ kind: 'branch' }, { kind: 'sequence' }, { kind: 'repeat' }, { kind: 'once' }, { kind: 'flipflop' }, { kind: 'print' }, { kind: 'not' }, ...(doc.kind === 'Behaviour' ? [{ kind: 'self' }] : []), ...(g.kind === 'function' ? [{ kind: 'return' }] : [])]; if (g.kind === 'macro' || g.kind === 'event' && !['draw', 'onExit', 'onGone'].includes(g.name))
         list.push({ kind: 'delay' }, {kind:'timeline'}); list.push({kind:'gate'},{kind:'doN'},{kind:'lerp'},{kind:'comment'},{kind:'while'},{kind:'breakLoop'},{kind:'continueLoop'}); for(const t of ['int','uint','string'])list.push({kind:'switch',type:t,cases:t==='string'?['A','B']:[0,1]});for(const v of g.locals||[])list.push({kind:'getLocal',ref:v.name},{kind:'setLocal',ref:v.name});
         for(const d of doc.dispatchers || []) { list.push({kind:'broadcast',ref:d.name},{kind:'unbindAll',ref:d.name}); for(const f of doc.graphs.filter(f=>compatibleHandler(f,d))) list.push({kind:'bind',ref:d.name,handler:f.name},{kind:'unbind',ref:d.name,handler:f.name}); }
+        if(doc.kind==='Screen')for(const kind of levelNodes.keys())list.push({kind});
         for(const h of doc.hierarchies||[])list.push({kind:'hierarchySpawn',ref:h.name});
         if(g.kind==='macro'||g.kind==='event'&&g.name==='update')for(const mode of ['logic','sprite','model'])list.push({kind:'stateMachine',mode,initial:'Idle',states:[{name:'Idle',clip:'idle',first:0,last:0,fps:8,loop:true,blend:0.25,speed:1},{name:'Move',clip:'walk',first:1,last:4,fps:8,loop:true,blend:0.25,speed:1}],transitions:[{name:'StartMove',from:'Idle',to:'Move'},{name:'StopMove',from:'Move',to:'Idle'}]});
         for(const i of interfaceRegistry(doc).values()) for(const m of i.methods) list.push({kind:'interfaceMessage',ref:i.name,method:m.name});
@@ -348,7 +367,8 @@
             validateHierarchies(doc);
             const emitInterfaces = !options.interfaceRegistry;
             const registry=options.interfaceRegistry || interfaceRegistry(doc);
-            options={...options,interfaceRegistry:registry};
+            const levelNeeded=doc.kind==='Screen'&&(options.levelNeeded||chain.some(c=>c.graphs.some(g=>g.nodes.some(n=>levelNodes.has(n.kind)))));
+            options={...options,interfaceRegistry:registry,levelNeeded};
             const implementations=(doc.interfaces||[]).filter(i=>i.implement);
             for(const i of implementations) for(const m of i.methods){
                 const f=members(doc,'graphs').find(g=>g.kind==='function'&&g.name===m.name);
@@ -435,6 +455,7 @@
             const push = (s, depth = 1) => { if (lines.length > 20000)
                 fail('Expanded graph too large', current, node); lines.push('    '.repeat(depth) + s); };
             const fields = [];
+            if(levelNeeded&&!doc.parent)push('protected Level bp_nativeLevel;');
             const statePrefix=options.abstract||doc.parent?'bp_'+doc.name+'_':'bp_';
             const tickName=statePrefix+'tickDelays';
             const timers = [], timelines = [];
@@ -526,7 +547,7 @@
                 calls.set(g.name, called);
                 let budget = 0;
                 function exprInput(n, p, env, stack = []) { const link = incoming.get(key(n.id, p.name)); if (link)
-                    return expr(link.node, link.pin, env, stack); if (p.name === 'target' && (p.type.endsWith('@') || p.type === 'Voice' || p.type === 'Tween'))
+                    return expr(link.node, link.pin, env, stack); if(n.kind==='levelHud'&&p.name==='canvas')fail('Connect the Draw event canvas',current,n.id); if (p.name === 'target' && (p.type.endsWith('@') || p.type === 'Voice' || p.type === 'Tween'))
                     fail('Connect the target object', current, n.id); return literal(p.type, n.defaults && Object.hasOwn(n.defaults, p.name) ? n.defaults[p.name] : p.default); }
                 function apiExpr(a, args) { const target = a.member ? '(' + args.shift() + ').' : '', name = a.member ? a.call.split('::').pop() : a.call; if (a.property) {
                     const prop = name.replace(/(^|::)(get_|set_)/, '$1');
@@ -787,6 +808,9 @@
                         result = members(doc,'graphs').find(g => g.name === n.ref).returns;
                     }
                     else if(k==='parentCall') { statement=doc.parent.name+'::'+g.name+'('+a.join(', ')+')'; result=ret; }
+                    else if (levelNodes.has(k)) {
+                        const spec=levelNodes.get(k);result=spec[2];statement='bp_nativeLevel.'+spec[1]+'('+a.join(', ')+')';
+                    }
                     else if (api.has(k)) {
                         const spec = api.get(k);
                         result = spec.result;
@@ -860,7 +884,7 @@
             lines.push(...methods, ...latentMethods, '}', '');
             const own=lines.join('\n');
             const declarations=emitInterfaces?[...registry.values()].map(i=>'interface bp_iface_'+i.name+' {\n'+i.methods.map(m=>'    '+m.returns+' '+m.name+'('+m.params.map(p=>p.type+' '+p.name).join(', ')+');').join('\n')+'\n}\n'):[];
-            return { ok: true, source: [...declarations,...componentSources, own].join('\n'), diagnostics };
+            return { ok: true, source: [...(emitInterfaces&&levelNeeded?['#include \"global:scene.as\"']:[]),...declarations,...componentSources, own].join('\n'), diagnostics };
         }
         catch (e) {
             if (!diagnostics.some(d => d.severity !== 'warning'))

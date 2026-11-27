@@ -1,5 +1,12 @@
 # Changes
 
+## Fly camera and native level editing
+
+- Added a perspective view with right-mouse WASD movement, Q/E height, speed controls and near-plane clipping.
+- Open scenes in a temporary copy of Team Resurgent’s original scene editor; import its saved JSON and keep the original showcase untouched.
+- Use the existing Level helper for full scene files. Added native level load, update, HUD and entity nodes and warnings for using the wrong loader.
+- Tested camera input, staging, scene import, cleanup and the Level method signatures. Full native graphical testing is still needed.
+
 ## Scene editor
 
 - View and place native 3D shapes from orbit, top, front and side views. Move on the ground or change height, snap to a grid, pan and zoom.

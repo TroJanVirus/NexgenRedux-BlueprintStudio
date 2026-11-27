@@ -71,6 +71,7 @@ jobs:
         node engine/tools/blueprint/test_shared_behaviours.js
         node engine/tools/blueprint/test_shared_media.js
         node engine/tools/blueprint/test_scene_viewport.js
+        node engine/tools/blueprint/test_native_scene.js
 
     # With a real window and GPU driver, though a software one.
     - name: Draw every screen

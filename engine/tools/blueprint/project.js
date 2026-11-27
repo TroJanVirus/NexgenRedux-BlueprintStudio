@@ -4,6 +4,7 @@ const B=typeof module!=='undefined'?require('./blueprint'):root.NexgenBlueprint;
 const S=typeof module!=='undefined'?require('./shared_behaviours'):root.NexgenSharedBehaviours;
 const U=typeof module!=='undefined'?require('./ui_design'):root.NexgenUiDesign;
 const M=typeof module!=='undefined'?require('./shared_media'):root.NexgenSharedMedia;
+const N=typeof module!=='undefined'?require('./native_scene'):root.NexgenNativeScene;
 const enc=new TextEncoder(), MAX_ASSETS=64*1024*1024;
 const isId=s=>typeof s==='string'&&/^[a-z][a-z0-9_-]{0,47}$/.test(s);
 const safeAsset=s=>typeof s==='string'&&s.length<=240&&s.split('/').every(p=>p&&p!=='.'&&p!=='..'&&!/[<>:"\\|?*\x00-\x1f]/.test(p)&&!/[. ]$/.test(p)&&!/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(p));
@@ -28,11 +29,13 @@ function assetWarnings(screen,project={}){
  function visit(d){
   for(const g of d.graphs){
    const nodes=new Map(g.nodes.map(n=>[n.id,n])),inputs=new Map(g.links.map(l=>[l.to.node+'|'+l.to.pin,l.from]));
-   for(const n of g.nodes){if(!loaders.test(n.kind))continue;const wire=inputs.get(n.id+'|name'),source=wire&&nodes.get(wire.node);let value=n.defaults?.name;
+   for(const n of g.nodes){if(!loaders.test(n.kind)&&n.kind!=='levelLoad')continue;const wire=inputs.get(n.id+'|name'),source=wire&&nodes.get(wire.node);let value=n.defaults?.name;
     if(wire)value=source?.kind==='constant'&&source.type==='string'&&wire.pin==='value'&&!inputs.has(source.id+'|value')?source.defaults?.value:undefined;
     if(typeof value!=='string')continue;
     const missing=value.startsWith('asset:')?safeAsset(value.slice(6))&&!assets.has(value.slice(6)):M.managed(project,value)&&!M.find(project,value);
     if(missing)warnings.push({severity:'warning',graph:g.name,node:n.id,message:d.name+' / '+g.name+': missing project asset — '+value});
+    if(n.kind.startsWith('api:Space:Space::load:')){const a=value.startsWith('asset:')?(screen.assets||[]).find(a=>a.path===value.slice(6)):M.find(project,value);if(a&&a.data.length<=2*1024*1024*4/3+4)try{const features=N.rich(JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(decode(a.data))));if(features.length)warnings.push({severity:'warning',graph:g.name,node:n.id,message:d.name+' / '+g.name+': '+value+' is a full Nexgen level. Space::load does not implement '+features.join(', ')+'. Use the Load level node (global:scene.as).'});}catch{}}
+
    }
   }
   if(d.parent)visit(d.parent);for(const b of d.components||[])visit(b);
