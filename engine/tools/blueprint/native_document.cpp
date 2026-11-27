@@ -197,6 +197,13 @@ namespace nx
     }
     bool blueprintLiteralType(const std::string& type)
     {return type=="bool"||type=="int"||type=="uint"||type=="float"||type=="double"||type=="string";}
+    std::string blueprintArrayElement(const std::string& type)
+    {
+        if(type.size()<8||type.rfind("array<",0)!=0||!type.ends_with(">"))return "";
+        const auto element=type.substr(6,type.size()-7);
+        return element=="int"||element=="uint"||element=="float"||element=="bool"||element=="string"||element=="Vec2"||element=="Color"?element:"";
+    }
+    bool blueprintVariableType(const std::string& type){return blueprintLiteralType(type)||!blueprintArrayElement(type).empty();}
     bool blueprintLosslessConversion(const std::string& from,const std::string& to)
     {return to=="double"&&(from=="int"||from=="uint"||from=="float");}
     bool blueprintFileName(const std::string& file)
@@ -269,6 +276,28 @@ namespace nx
                 assign.id="local:set:"+type;assign.title="Assign local "+type;assign.category="Variables";
                 assign.inputs={{"in","exec"},{"local","local:"+type},{"value",type}};
                 assign.outputs={{"then","exec"}};result.push_back(std::move(assign));
+            }
+            for(const std::string element:{"int","uint","float","bool","string","Vec2","Color"})
+            {
+                const auto type="array<"+element+">";
+                for(const std::string scope:{"var","global"})
+                {
+                    BlueprintNodeSpec getter;getter.id=scope+":get:"+type;getter.title="Get "+type+(scope=="global"?" global":" field");getter.category="Arrays";
+                    getter.outputs={{"value",type}};getter.pure=true;getter.result=type;result.push_back(std::move(getter));
+                }
+                for(const std::string op:{"length","get","set","append","remove","resize","clear"})
+                {
+                    BlueprintNodeSpec spec;spec.id="array:"+op+":"+element;spec.title="Array "+op+" ("+element+")";spec.category="Arrays";
+                    const bool pure=op=="length"||op=="get";spec.pure=pure;
+                    if(!pure)spec.inputs.push_back({"in","exec"});
+                    spec.inputs.push_back({"target",type});
+                    if(op=="get"||op=="set"||op=="remove")spec.inputs.push_back({"index","uint"});
+                    if(op=="set"||op=="append")spec.inputs.push_back({"value",element});
+                    if(op=="resize")spec.inputs.push_back({"size","uint"});
+                    if(pure){spec.result=op=="length"?"uint":element;spec.outputs.push_back({"result",spec.result});}
+                    else {spec.result="void";spec.outputs.push_back({"then","exec"});}
+                    result.push_back(std::move(spec));
+                }
             }
             operation("and:bool","And","Logic","bool","bool","&&");
             operation("or:bool","Or","Logic","bool","bool","||");
@@ -368,7 +397,7 @@ namespace nx
                 for(auto f=declarations.first();f.exists();f=f.next())
                 {
                     Field field{f["name"].text(),f["type"].text(),f["value"].text(),f["value"].exists()};
-                    if(!f.isObject()||!identifier(field.name)||!blueprintLiteralType(field.type)||!names.insert(field.name).second||
+                    if(!f.isObject()||!identifier(field.name)||!blueprintVariableType(field.type)||!names.insert(field.name).second||
                         (behaviourOwner(owner)&&field.name=="entity")||
                         (field.initialized&&(!f["value"].isString()||!literal("literal:"+field.type,field.value))))
                     {error="Invalid or duplicate field declaration.";return false;}
@@ -391,7 +420,7 @@ namespace nx
                 for(auto f=globals.first();f.exists();f=f.next())
                 {
                     Field field{f["name"].text(),f["type"].text(),f["value"].text(),f["value"].exists()};
-                    if(!f.isObject()||!identifier(field.name)||!blueprintLiteralType(field.type)||!names.insert(field.name).second||
+                    if(!f.isObject()||!identifier(field.name)||!blueprintVariableType(field.type)||!names.insert(field.name).second||
                         (field.initialized&&(!f["value"].isString()||!literal("literal:"+field.type,field.value))))
                     {error="Invalid or duplicate module variable.";return false;}
                     g.globals.push_back(std::move(field));
@@ -751,6 +780,7 @@ namespace nx
         {
             const auto type=kind.substr(8);
             value="value_"+type; if(value.back()=='@')value.pop_back();
+            if(!blueprintArrayElement(type).empty())value="array_"+blueprintArrayElement(type);
             std::vector<BlueprintPin> vars;
             if(!variables(vars,error,g.owner))return false;
             for(unsigned i=1;std::any_of(vars.begin(),vars.end(),[&](const BlueprintPin& p){return p.name==value&&p.type!=type;});++i)value="variable_"+std::to_string(i);
@@ -853,6 +883,7 @@ namespace nx
             std::vector<BlueprintPin> vars;if(!variables(vars,error,g.owner))return false;
             for(const auto& f:vars)if(f.name==variableName){type=f.type;break;}
         }
+        if(setter&&!blueprintArrayElement(type).empty()){error="Use array element operations rather than whole-array assignment.";return false;}
         const auto kind=std::string(global?"global:":"var:")+(setter?"set:":"get:")+type;
         if(type.empty()||!blueprintSpec(kind)||!context(g.name,kind,g.owner)){error="Variable is not available in this graph.";return false;}
         std::string id;do{id="n"+std::to_string(++m_nextId);}while(std::any_of(g.nodes.begin(),g.nodes.end(),[&](const Node& n){return n.id==id;}));
@@ -950,7 +981,7 @@ namespace nx
         std::vector<BlueprintPin> result;
         for(const auto& graph:graphs)if(graph.owner==owner)for(const auto& field:graph.fields)
         {
-            if(!identifier(field.name)||!blueprintLiteralType(field.type)||std::any_of(result.begin(),result.end(),[&](const BlueprintPin& p){return p.name==field.name;}))
+            if(!identifier(field.name)||!blueprintVariableType(field.type)||std::any_of(result.begin(),result.end(),[&](const BlueprintPin& p){return p.name==field.name;}))
             {error="Invalid or duplicate declared field: "+field.name;return false;}
             result.push_back({field.name,field.type});
         }
@@ -995,7 +1026,7 @@ namespace nx
             next.type=body.substr(colon+1,equals==std::string::npos?equals:equals-colon-1);
             next.initialized=equals!=std::string::npos;
             if(next.initialized)next.value=body.substr(equals+1);
-            if(!identifier(next.name)||!blueprintLiteralType(next.type)||(!global&&behaviourOwner(scope)&&next.name=="entity")||
+            if(!identifier(next.name)||!blueprintVariableType(next.type)||(!global&&behaviourOwner(scope)&&next.name=="entity")||
                 (next.initialized&&!literal("literal:"+next.type,next.value)))
             {error="Invalid name, primitive type or literal initializer.";return false;}
         }

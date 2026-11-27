@@ -175,6 +175,12 @@ namespace nx
                     }
                     result+=")";return true;
                 }
+                if(n.kind.rfind("array:",0)==0&&pin=="result")
+                {
+                    std::string target;if(!value(node,"target",target,depth))return false;
+                    if(n.kind.rfind("array:length:",0)==0){result="("+target+").length()";return true;}
+                    if(n.kind.rfind("array:get:",0)==0){std::string index;if(!value(node,"index",index,depth))return false;result="("+target+")["+index+"]";return true;}
+                }
                 if(n.kind.rfind("global:get:",0)==0&&pin=="value"){result="bp_global_"+n.ref;return true;}
                 if(n.kind.rfind("var:get:",0)==0&&pin=="value"){result="bp_var_"+n.ref;return true;}
                 if(n.kind=="repeat"&&pin=="index")
@@ -253,6 +259,18 @@ namespace nx
                     std::string v;if(!value(to,"value",v,0))return false;
                     source+=pad+n.kind.substr(8)+" bp_local_"+n.ref+"_"+std::to_string(to)+" = "+v+";\n";
                     available[to]=true;mark(start,to);return flow(to,"then",indent,depth+1);
+                }
+                if(n.kind.rfind("array:",0)==0)
+                {
+                    std::string target,index,v;if(!value(to,"target",target,0))return false;
+                    const auto member="("+target+")";std::string statement;
+                    if(n.kind.rfind("array:set:",0)==0){if(!value(to,"index",index,0)||!value(to,"value",v,0))return false;statement=member+"["+index+"] = "+v;}
+                    else if(n.kind.rfind("array:append:",0)==0){if(!value(to,"value",v,0))return false;statement=member+".insertLast("+v+")";}
+                    else if(n.kind.rfind("array:remove:",0)==0){if(!value(to,"index",index,0))return false;statement=member+".removeAt("+index+")";}
+                    else if(n.kind.rfind("array:resize:",0)==0){if(!value(to,"size",v,0))return false;statement=member+".resize("+v+")";}
+                    else if(n.kind.rfind("array:clear:",0)==0)statement=member+".resize(0)";
+                    else return fail(to,"Unsupported array action.");
+                    source+=pad+statement+";\n";mark(start,to);return flow(to,"then",indent,depth+1);
                 }
                 if(n.kind.rfind("global:set:",0)==0)
                 {

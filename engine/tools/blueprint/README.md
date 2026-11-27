@@ -359,3 +359,7 @@ Select a connected execution region and its expression dependencies, then Layout
 ### Trace history inspection
 
 During a frame-boundary trace pause, scroll/select recent statement samples to inspect their copied primitive fields, globals, locals and bounded native call stack. Switch between sampled values and stack; Focus node centers the selected node in the graph above the trace panel. Directly observed consecutive execution links are highlighted. These are historical samples, not a live suspended context or statement-level stepping. Step update retains its frame-boundary semantics. No VM pointers survive a callback.
+
+### Array variables
+
+Native instance and module declarations support empty arrays of int, uint, float, bool, string, Vec2 and Color. The variable editor exposes these types; drag a named array onto the graph as a Get node and connect its typed target to Length, Get element, Set element, Append, Remove at, Resize or Clear. Native AngelScript bounds behavior is preserved. Reverse import supports `array<T>` and `T[]` fields, `.length()`, `.insertLast(value)`, `.removeAt(index)`, `.resize(size)`, indexing and element assignment; int indices and sizes use visible uint conversion nodes. List/size initializers, local arrays, arbitrary array expressions, array parameters/returns and whole-array assignment are not supported by this initial model.

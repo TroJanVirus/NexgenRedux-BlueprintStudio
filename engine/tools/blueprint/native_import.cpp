@@ -72,7 +72,7 @@ namespace nx
                 const auto two=source.substr(i,2);
                 if(two=="::"||two=="=="||two=="!="||two=="<="||two==">="||two=="&&"||two=="||"||two=="+="||two=="-="||two=="*="||two=="/="||two=="%="||two=="++"||two=="--")
                 {tokens.push_back({Kind::Symbol,two,atLine});i+=2;continue;}
-                if(std::string("{}();:,.=@+-*/%<>!").find(c)!=std::string::npos)
+                if(std::string("{}[]();:,.=@+-*/%<>!").find(c)!=std::string::npos)
                 {tokens.push_back({Kind::Symbol,std::string(1,c),atLine});++i;continue;}
                 return fail("Unsupported character or directive; source was not converted.");
             }
@@ -109,6 +109,17 @@ namespace nx
             {
                 if(peek().kind!=Kind::Name||peek().text.size()>64)return fail("Expected an identifier.");
                 out=peek().text;++at;return true;
+            }
+            bool declaredType(std::string& type)
+            {
+                if(!name(type))return false;
+                if(type=="array")
+                {
+                    std::string element;if(!expect("<")||!name(element)||!expect(">"))return false;
+                    type="array<"+element+">";
+                }
+                else if(take("[")){if(!expect("]"))return false;type="array<"+type+">";}
+                return true;
             }
             bool add(const std::string& kind,size_t& index,const std::string& ref="")
             {
@@ -235,6 +246,36 @@ namespace nx
                 }while(take(","));
                 return expect(")");
             }
+            bool arrayIndex(Value& index)
+            {
+                if(!expression(index)||!expect("]"))return false;
+                if(index.type=="uint")return true;
+                if(index.type!="int")return fail("Array index requires int or uint.");
+                size_t n;if(!add("cast:int:uint",n)||!bind(n,"a",index))return false;
+                index={"uint","","result",n};return true;
+            }
+            bool arrayMethod(const std::string& method,const Value& target,const std::vector<Value>& args,Value& result,Flow* flow)
+            {
+                const auto element=blueprintArrayElement(target.type);if(element.empty())return fail("Unsupported array type.");
+                std::string op,pin;
+                if(!flow&&method=="length"&&args.empty())op="length";
+                else if(flow&&method=="insertLast"&&args.size()==1){op="append";pin="value";}
+                else if(flow&&method=="removeAt"&&args.size()==1){op="remove";pin="index";}
+                else if(flow&&method=="resize"&&args.size()==1){op="resize";pin="size";}
+                else return fail("Unsupported array method or argument count: "+method+".");
+                size_t n;if(!add("array:"+op+":"+element,n)||!bind(n,"target",target))return false;
+                if(!pin.empty())
+                {
+                    Value arg=args.front();
+                    if((pin=="size"||pin=="index")&&arg.type=="int")
+                    {
+                        size_t cast;if(!add("cast:int:uint",cast)||!bind(cast,"a",arg))return false;arg={"uint","","result",cast};
+                    }
+                    if(!bind(n,pin,arg))return false;
+                }
+                if(flow)chain(*flow,n);
+                result={op=="length"?"uint":"void","","result",n};return true;
+            }
             bool primary(Value& v)
             {
                 if(take("("))return expression(v)&&expect(")");
@@ -245,11 +286,23 @@ namespace nx
                 const bool instanceOnly=id=="this";
                 if(instanceOnly&&inFreeFunction)return fail("Standalone functions cannot use this.");
                 if(instanceOnly&&(!expect(".")||!name(id)))return false;
+                if(take("["))
+                {
+                    Value target,index;if(!field(id,target,instanceOnly)||!arrayIndex(index))return false;
+                    const auto element=blueprintArrayElement(target.type);if(element.empty())return fail("Indexing requires a supported array field.");
+                    size_t n;if(!add("array:get:"+element,n)||!bind(n,"target",target)||!bind(n,"index",index))return false;
+                    v={element,"","result",n};return true;
+                }
                 if(take("."))
                 {
                     Value target;if(!field(id,target,instanceOnly)||!name(id))return false;
                     std::vector<Value> args;
-                    if(is("("))return arguments(args)&&api(id,args,&target,true,"",v,nullptr);
+                    if(is("("))
+                    {
+                        if(!arguments(args))return false;
+                        if(!blueprintArrayElement(target.type).empty())return arrayMethod(id,target,args,v,nullptr);
+                        return api(id,args,&target,true,"",v,nullptr);
+                    }
                     return api(id,args,&target,true,"get",v,nullptr);
                 }
                 if(is("("))
@@ -479,6 +532,14 @@ namespace nx
                     size_t n;if(!add("capture:"+type,n,local)||!bind(n,"value",v))return false;
                     chain(flow,n);locals.emplace(local,Value{type,"","result",n});return true;
                 }
+                if(take("["))
+                {
+                    if(handleAssignment||!prefix.empty())return fail("Unsupported array assignment.");
+                    Value array,index,v;if(!field(id,array,instanceOnly)||!arrayIndex(index)||!expect("=")||!expression(v)||!expect(";"))return false;
+                    const auto element=blueprintArrayElement(array.type);size_t n;
+                    if(element.empty()||!add("array:set:"+element,n)||!bind(n,"target",array)||!bind(n,"index",index)||!bind(n,"value",v))return false;
+                    chain(flow,n);return true;
+                }
                 Value target;const Value* member=nullptr;
                 if(take(".")){if(!field(id,target,instanceOnly)||!name(id))return false;member=&target;}
                 const bool increment=!prefix.empty()||is("++")||is("--");
@@ -552,6 +613,7 @@ namespace nx
                 }
                 std::vector<Value> args;Value unused;
                 if(!arguments(args)||!expect(";"))return false;
+                if(member&&!blueprintArrayElement(member->type).empty())return arrayMethod(id,*member,args,unused,&flow);
                 if(!member&&doc.function(doc.graphs[graph].owner,id))
                 {if(!functionCall(id,args,flow,unused,instanceOnly))return false;}
                 else
@@ -573,14 +635,15 @@ namespace nx
                 {
                     auto& declaredFields=classFields[owner];
                     const bool behaviour=owner.rfind("behaviour:",0)==0;
-                    std::string type,id;if(!name(type)||!name(id))return false;
+                    std::string type,id;if(!declaredType(type)||!name(id))return false;
                     if(is(";")||is("="))
                     {
                         auto& declarations=standalone?globals:declaredFields;
-                        if(!blueprintLiteralType(type)||(behaviour&&id=="entity")||!declarations.emplace(id,type).second)return fail("Only unique primitive variable declarations are supported.");
+                        if(!blueprintVariableType(type)||(behaviour&&id=="entity")||!declarations.emplace(id,type).second)return fail("Only unique supported primitive or array declarations are supported.");
                         BlueprintDocument::Field field{id,type,"",false};
                         if(take("="))
                         {
+                            if(!blueprintArrayElement(type).empty())return fail("Array initializers are not yet supported; use an empty array and explicit operations.");
                             field.initialized=true;
                             const bool negative=take("-");Value v;
                             if(peek().kind==Kind::Number){if(!numeric(v))return false;}

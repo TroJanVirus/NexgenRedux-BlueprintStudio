@@ -8,7 +8,7 @@
 using namespace nx;
 NX_TEST(nativeCatalogueContainsReferenceAPI)
 {
-    NX_EXPECT(blueprintCatalogue().size()==961);
+    NX_EXPECT(blueprintCatalogue().size()==1024);
     const auto* save=blueprintSpec("api:Save:Save::set:string,string");
     NX_EXPECT(save&&save->inputs.size()==3&&save->outputs.size()==1);
     if(save&&save->inputs.size()==3)NX_EXPECT(save->inputs[0].type=="exec"&&save->inputs[2].type=="string");
@@ -1044,4 +1044,18 @@ NX_TEST(nativeCollapseCompleteBranchRegionWithSingleContinuation)
     std::vector<size_t> nodes;for(size_t i=0;i<doc.graphs[0].nodes.size();++i)if(doc.graphs[0].nodes[i].kind!="entry")nodes.push_back(i);
     NX_EXPECT(doc.collapseToFunction(0,nodes,"Decision",error)&&compileBlueprint(doc,source,error));
     NX_EXPECT(doc.setInlineMacro(doc.graphs.size()-1,true,error)&&compileBlueprint(doc,source,error)&&source.find("inline macro Decision")!=std::string::npos);
+}
+
+NX_TEST(nativeArrayFieldsRoundTripAndGenerateNativeOperations)
+{
+    BlueprintDocument doc;std::string error,source,bytes;
+    const char* original=R"(array<int> shared; class Example : Screen { int[] scores; void onEnter(){scores.insertLast(3);scores.resize(2);scores[1]=7;shared.insertLast(scores[1]);shared.removeAt(0);if(scores.length()==2u){Save::set("arrays","ok");}}})";
+    NX_EXPECT(importBlueprintScreen(original,doc,error)&&doc.serialize(bytes,error));
+    BlueprintDocument restored;NX_EXPECT(restored.load(bytes.data(),bytes.size(),error)&&compileBlueprint(restored,source,error));
+    NX_EXPECT(source.find("array<int> bp_var_scores;")!=std::string::npos&&source.find("array<int> bp_global_shared;")!=std::string::npos);
+    NX_EXPECT(source.find(".insertLast(")!=std::string::npos&&source.find(".removeAt(")!=std::string::npos&&source.find(".resize(")!=std::string::npos);
+    NX_EXPECT(restored.editVariableDeclaration("Screen","field labels:array<string>",error));
+    NX_EXPECT(restored.addVariableNode(0,"labels",false,false,0,0,error));
+    NX_EXPECT(!restored.addVariableNode(0,"labels",false,true,0,0,error));
+    NX_EXPECT(!restored.editVariableDeclaration("Screen","field bad:array<int>=1",error));
 }

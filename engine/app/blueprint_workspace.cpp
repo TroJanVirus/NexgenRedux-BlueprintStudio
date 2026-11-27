@@ -30,7 +30,7 @@ namespace nx
         constexpr size_t kRows = 8;
         constexpr float kVariableTop=350,kVariableBottom=443;
         constexpr size_t kVariableRows=3;
-        constexpr const char* variableTypes[]={"bool","int","uint","float","double","string"};
+        constexpr const char* variableTypes[]={"bool","int","uint","float","double","string","array<int>","array<uint>","array<float>","array<bool>","array<string>","array<Vec2>","array<Color>"};
         constexpr Color text = {0.88f, 0.91f, 0.96f, 1};
         constexpr Color muted = {0.57f, 0.65f, 0.76f, 1};
         constexpr Color accent = {0.27f, 0.65f, 0.98f, 1};
@@ -993,7 +993,7 @@ namespace nx
         for(const auto& g:m_document.graphs)if(g.owner==owner)for(const auto& f:g.fields)rows.push_back({f,false,true});
         std::vector<BlueprintPin> inferred;std::string error;
         if(m_document.variables(inferred,error,owner))for(const auto& v:inferred)
-            if(blueprintLiteralType(v.type)&&std::none_of(rows.begin(),rows.end(),[&](const VariableRow& r){return r.field.name==v.name;}))
+            if(blueprintVariableType(v.type)&&std::none_of(rows.begin(),rows.end(),[&](const VariableRow& r){return r.field.name==v.name;}))
                 rows.push_back({{v.name,v.type,"",false},false,false});
         for(const auto& f:m_document.moduleGlobals(owner))rows.push_back({f,true,true});
         std::sort(rows.begin(),rows.end(),[](const VariableRow& a,const VariableRow& b){return a.global!=b.global?a.global<b.global:a.field.name<b.field.name;});
@@ -1220,6 +1220,7 @@ namespace nx
             {
                 const bool get=in(x,y,m_quickMenuX,m_quickMenuY+28,m_quickMenuX+210,m_quickMenuY+58);
                 const bool set=in(x,y,m_quickMenuX,m_quickMenuY+58,m_quickMenuX+210,m_quickMenuY+88);
+                if(set&&!blueprintArrayElement(m_quickVariable.field.type).empty()){m_status="Use array operations to modify elements.";m_quickMenu=false;m_left=left;return;}
                 if(get||set)
                 {
                     if(m_document.addVariableNode(m_graph,m_quickVariable.field.name,m_quickVariable.global,set,(m_quickX-kLeft-m_x)/m_zoom,(m_quickY-kTop-m_y)/m_zoom,m_status))
@@ -1300,8 +1301,12 @@ namespace nx
             }
             if(click)
             {
-                if(m_variableTypes&&in(x,y,650,302,1100,302+6*28))
-                {m_variableType=variableTypes[static_cast<size_t>((y-302)/28)];m_variableTypes=false;}
+                if(m_variableTypes&&in(x,y,650,302,1100,302+7*28))
+                {
+                    const size_t i=static_cast<size_t>((y-302)/28)+(x>=875?7:0);
+                    if(i<sizeof(variableTypes)/sizeof(variableTypes[0])){m_variableType=variableTypes[i];if(!blueprintArrayElement(m_variableType).empty()){m_variableInitialized=false;m_variableValue.clear();}}
+                    m_variableTypes=false;
+                }
                 else if(m_variableTypes){m_variableTypes=false;}
                 else if(in(x,y,974,116,1110,150)){m_focus=0;input.setTyping(false);m_status="Variables closed.";}
                 else if(in(x,y,170,156,370,186)){resetVariableEditor(false);m_status="New instance variable.";}
@@ -1318,7 +1323,7 @@ namespace nx
                 }
                 else if(in(x,y,650,222,1100,258))m_variableInput=1;
                 else if(in(x,y,650,266,1100,302)){m_variableTypes=true;m_variableInput=0;}
-                else if(in(x,y,650,322,1100,354)){m_variableInitialized=!m_variableInitialized;m_variableInput=m_variableInitialized?2:0;}
+                else if(in(x,y,650,322,1100,354)&&blueprintLiteralType(m_variableType)){m_variableInitialized=!m_variableInitialized;m_variableInput=m_variableInitialized?2:0;}
                 else if(in(x,y,650,370,1100,406)&&m_variableInitialized)m_variableInput=2;
                 else if(in(x,y,650,464,860,500))apply();
                 else if(in(x,y,870,464,1100,500)&&!m_variableOld.empty())
@@ -1956,7 +1961,7 @@ namespace nx
             c.roundRect(x,y,210,90,5,{0.12f,0.16f,0.22f,1});
             c.clip(x+6,y,198,28);c.text(*m_font,m_quickVariable.field.name.c_str(),x+8,y+5,accent);c.noClip();
             c.rect(x+4,y+28,202,29,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Get variable",x+10,y+34,text);
-            c.rect(x+4,y+58,202,29,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Set variable",x+10,y+64,text);
+            c.rect(x+4,y+58,202,29,{0.19f,0.33f,0.50f,1});c.text(*m_font,blueprintArrayElement(m_quickVariable.field.type).empty()?"Set variable":"Use array operations",x+10,y+64,blueprintArrayElement(m_quickVariable.field.type).empty()?text:muted);
         }
         if(m_assetBrowser||m_browsing||m_focus==5||m_focus==6||m_focus==9||m_focus==10||m_focus==11||m_focus==12||m_focus==13||m_focus==14)
         {
@@ -2012,20 +2017,20 @@ namespace nx
                     const auto label=std::string(r.global?"Global / ":"Field / ")+r.field.name+" : "+r.field.type+(r.explicitField?"":" (inferred)");
                     c.clip(178,y,434,33);c.text(*m_font,label.c_str(),180,y+7,text);c.noClip();
                 }
-                if(rows.empty())c.text(*m_font,"No primitive variables yet.",180,208,muted);
+                if(rows.empty())c.text(*m_font,"No declared variables yet.",180,208,muted);
                 c.text(*m_font,(std::to_string(rows.size())+" variables | wheel to scroll").c_str(),170,556,muted);
                 c.text(*m_font,m_variableGlobal?"MODULE VARIABLE":"INSTANCE FIELD",650,192,accent);
                 const auto field=[&](float y,const std::string& value,bool focused)
                 {c.roundRect(650,y,450,36,4,focused?Color{0.24f,0.35f,0.48f,1}:Color{0.17f,0.22f,0.30f,1});c.clip(658,y,434,36);c.text(*m_font,value.c_str(),660,y+8,text);c.noClip();};
                 field(222,m_variableName.empty()?"Name":m_variableName,m_variableInput==1);
                 field(266,"Type: "+m_variableType+"  v",m_variableTypes);
-                variableButton(650,322,450,m_variableInitialized?"Initial value: enabled":"Initial value: default");
+                variableButton(650,322,450,m_variableInitialized?"Initial value: enabled":"Initial value: default",blueprintLiteralType(m_variableType));
                 if(m_variableInitialized)field(370,m_variableValue.empty()?"":m_variableValue,m_variableInput==2);
                 else c.text(*m_font,"Uses the native default for this type.",650,380,muted);
                 c.text(*m_font,"String values are entered without quotes.",650,420,muted);
                 variableButton(650,464,210,"Apply");variableButton(870,464,230,"Delete",!m_variableOld.empty());
-                if(m_variableTypes)for(size_t i=0;i<6;++i)
-                {const float y=302+28*static_cast<float>(i);c.rect(650,y,450,28,{0.24f,0.35f,0.48f,1});c.text(*m_font,variableTypes[i],660,y+3,text);}
+                if(m_variableTypes)for(size_t i=0;i<sizeof(variableTypes)/sizeof(variableTypes[0]);++i)
+                {const float yy=302+28*static_cast<float>(i%7),xx=650+225*static_cast<float>(i/7);c.rect(xx,yy,225,28,{0.24f,0.35f,0.48f,1});c.text(*m_font,variableTypes[i],xx+10,yy+3,text);}
                 c.clip(170,576,940,25);c.text(*m_font,m_status.c_str(),170,576,text);c.noClip();
                 c.text(*m_font,"Enter applies | Escape closes",640,601,muted,Align::Center);
             }
