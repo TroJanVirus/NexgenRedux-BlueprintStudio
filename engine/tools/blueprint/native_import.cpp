@@ -110,6 +110,21 @@ namespace nx
                 if(peek().kind!=Kind::Name||peek().text.size()>64)return fail("Expected an identifier.");
                 out=peek().text;++at;return true;
             }
+            static bool supportedHandle(const std::string& type)
+            {return type=="Entity@"||type=="Playlist@"||type=="WebSocket@"||type=="Widget@";}
+            static bool compatible(const std::string& from,const std::string& to)
+            {
+                return from==to||(!blueprintArrayElement(from).empty()&&to==from+"@")||
+                    (from=="null"&&supportedHandle(to));
+            }
+            static std::string nullKind(const std::string& type)
+            {
+                if(type=="Entity@")return "null:entity";
+                if(type=="Playlist@")return "null:playlist";
+                if(type=="WebSocket@")return "null:websocket";
+                if(type=="Widget@")return "null:widget";
+                return "";
+            }
             bool declaredType(std::string& type)
             {
                 if(!name(type))return false;
@@ -119,6 +134,7 @@ namespace nx
                     type="array<"+element+">";
                 }
                 else if(take("[")){if(!expect("]"))return false;type="array<"+type+">";}
+                if(take("@"))type+="@";
                 return true;
             }
             bool add(const std::string& kind,size_t& index,const std::string& ref="")
@@ -135,7 +151,12 @@ namespace nx
                 auto& g=doc.graphs[graph];BlueprintNodeSpec spec;
                 if(!doc.nodeSpec(g,g.nodes[node],spec))return fail("Unknown imported node.");
                 const auto found=std::find_if(spec.inputs.begin(),spec.inputs.end(),[&](const BlueprintPin& p){return p.name==pin;});
-                if(found==spec.inputs.end()||found->type!=v.type)return fail("Implicit conversions are not imported: "+v.type+" to "+(found==spec.inputs.end()?"?":found->type)+".");
+                if(found==spec.inputs.end()||!compatible(v.type,found->type))return fail("Implicit conversions are not imported: "+v.type+" to "+(found==spec.inputs.end()?"?":found->type)+".");
+                if(v.type=="null")
+                {
+                    size_t n;if(!add(nullKind(found->type),n))return false;
+                    g.links.push_back({n,node,"value",pin});return true;
+                }
                 if(v.node==static_cast<size_t>(-1))g.nodes[node].values.push_back({pin,v.literal});
                 else g.links.push_back({v.node,node,v.pin,pin});
                 return true;
@@ -200,7 +221,7 @@ namespace nx
                 const BlueprintNodeSpec* selected=nullptr;
                 for(const auto& spec:blueprintCatalogue())
                 {
-                    if(spec.id.rfind("api:",0)!=0||spec.member!=(target!=nullptr)||spec.property!=property||spec.hasOut||spec.pure!=pure)continue;
+                    if((spec.id.rfind("api:",0)!=0&&spec.id!="create:playlist"&&spec.id!="create:websocket")||spec.member!=(target!=nullptr)||spec.property!=property||spec.hasOut||spec.pure!=pure)continue;
                     if((property.empty()?spec.call:propertyName(spec))!=id)continue;
                     // Never guess an overload or silently introduce a numeric/handle conversion.
                     if(!pure&&spec.result!="void"&&!blueprintSpec("capture:"+spec.result))continue;
@@ -222,7 +243,7 @@ namespace nx
                             continue;
                         }
                         const auto pin=std::find_if(spec.inputs.begin(),spec.inputs.end(),[&](const BlueprintPin& p){return p.name==arg.type;});
-                        if(pin==spec.inputs.end()||pin->type!=args[i].type){match=false;break;}
+                        if(pin==spec.inputs.end()||!compatible(args[i].type,pin->type)){match=false;break;}
                     }
                     if(!match)continue;
                     if(selected)return fail("Ambiguous API overload: "+id+".");
@@ -282,6 +303,7 @@ namespace nx
                 if(peek().kind==Kind::String){v={"string",peek().text,"",static_cast<size_t>(-1)};++at;return true;}
                 if(peek().kind==Kind::Number)return numeric(v);
                 if(is("true")||is("false")){v={"bool",peek().text,"",static_cast<size_t>(-1)};++at;return true;}
+                if(take("null")){v={"null","","",static_cast<size_t>(-1)};return true;}
                 std::string id;if(!name(id)||!qualified(id))return false;
                 const bool instanceOnly=id=="this";
                 if(instanceOnly&&inFreeFunction)return fail("Standalone functions cannot use this.");
@@ -397,7 +419,7 @@ namespace nx
                     size_t scan=at+1;std::string id=peek().text;
                     while(scan+1<tokens.size()&&tokens[scan].text=="::"&&tokens[scan+1].kind==Kind::Name)
                     {id+="::"+tokens[scan+1].text;scan+=2;}
-                    if(scan<tokens.size()&&tokens[scan].text=="("&&id.find("::")!=std::string::npos)
+                    if(scan<tokens.size()&&tokens[scan].text=="("&&(id.find("::")!=std::string::npos||id=="Playlist"||id=="WebSocket"))
                     {
                         bool action=false,pure=false;
                         for(const auto& spec:blueprintCatalogue())if(!spec.member&&spec.call==id&&spec.property.empty())
@@ -519,7 +541,7 @@ namespace nx
                 if(!prefix.empty()&&(handleAssignment||id.find("::")!=std::string::npos||!is(";")))
                     return fail("Prefix increment requires a standalone plain local or field.");
                 // A local declaration creates an execution-ordered capture, not an instance field.
-                if(!instanceOnly&&id=="Entity"&&take("@"))id+="@";
+                if(!instanceOnly&&supportedHandle(id+"@")&&take("@"))id+="@";
                 if(!instanceOnly&&!handleAssignment&&blueprintSpec("capture:"+id)&&peek().kind==Kind::Name)
                 {
                     const auto type=id;std::string local;
@@ -579,18 +601,19 @@ namespace nx
                         {
                             const auto& ref=local->second;
                             if(ref.pin=="index")return fail("The imported loop index cannot be reassigned.");
-                            if(handleAssignment!=(ref.type=="Entity@"))return fail("Entity handle reassignment requires explicit @; scalar assignment must not use @.");
+                            if(handleAssignment!=supportedHandle(ref.type))return fail("Handle reassignment requires explicit @; scalar assignment must not use @.");
                             size_t n;if(!add("local:set:"+ref.type,n)||!bind(n,"local",Value{"local:"+ref.type,"","local",ref.node})||!bind(n,"value",v))return false;
                             chain(flow,n);return true;
                         }
-                        if(handleAssignment)return fail("Handle assignment requires a declared entity local.");
                         const auto found=fields.find(id);
                         const auto& params=doc.graphs[graph].parameters;
                         if(!instanceOnly&&(id==eventArg||std::any_of(params.begin(),params.end(),[&](const BlueprintPin& p){return p.name==id;})))
                             return fail("Assignment to method parameters is unsupported.");
                         const auto global=globals.find(id);
                         if(found==fields.end()&&(instanceOnly||global==globals.end()))return fail("Assignment requires a declared field or module variable.");
-                        size_t n;if(!add(found==fields.end()?"global:set:"+global->second:"var:set:"+found->second,n,id)||!bind(n,"value",v))return false;
+                        const auto type=found==fields.end()?global->second:found->second;
+                        if(handleAssignment!=supportedHandle(type))return fail("Handle reassignment requires explicit @; scalar assignment must not use @.");
+                        size_t n;if(!add(found==fields.end()?"global:set:"+type:"var:set:"+type,n,id)||!bind(n,"value",v))return false;
                         chain(flow,n);
                     }
                     else
@@ -692,7 +715,7 @@ namespace nx
                     {
                         // Preserve only types supported by the native function signature model.
                         const auto supported=[](const std::string& t)
-                        {return blueprintLiteralType(t)||t=="Vec2"||t=="Vec3"||t=="Color";};
+                        {return blueprintLiteralType(t)||t=="Vec2"||t=="Vec3"||t=="Color"||supportedHandle(t);};
                         if(type!="void"&&!supported(type))return fail("Unsupported function return type.");
                         std::vector<BlueprintPin> parameters;
                         if(!is(")"))
@@ -700,7 +723,7 @@ namespace nx
                             do
                             {
                                 BlueprintPin p;
-                                if(parameters.size()>=8||!name(p.type)||!name(p.name)||!supported(p.type))
+                                if(parameters.size()>=8||!declaredType(p.type)||!name(p.name)||!supported(p.type))
                                     return fail("Unsupported function parameter.");
                                 if(std::any_of(parameters.begin(),parameters.end(),[&](const BlueprintPin& q){return q.name==p.name;}))
                                     return fail("Duplicate function parameter.");

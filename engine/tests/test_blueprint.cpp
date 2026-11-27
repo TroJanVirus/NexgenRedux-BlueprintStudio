@@ -2216,3 +2216,28 @@ NX_TEST(nativeUpstreamBlueprintFactoriesAndAnimationArrayPinsCompile)
     NX_EXPECT(authored&&compileBlueprint(doc,source,error));
     if(!source.empty())NX_EXPECT(compile(r.host,source.c_str()));
 }
+
+NX_TEST(nativeImportedUpstreamPlaylistGraphCompilesAndRuns)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    const char* script=R"AS(
+class Example : Screen {
+    Playlist@ music;
+    void onEnter() {
+        @music = Playlist();
+        music.shuffle = true;
+        if (music.shuffle) Save::set("playlist_ok","yes");
+        music.stop();
+        @music = null;
+    }
+}
+)AS";
+    BlueprintDocument doc;std::string error,source;
+    const bool ok=importBlueprintScreen(script,doc,error)&&compileBlueprint(doc,source,error);
+    NX_EXPECT(ok);if(!ok)return;
+    r.platform.files["showcase/main/screen.json"]="{\"title\":\"Playlist graph\"}";
+    r.platform.files["showcase/main/main.as"]=source;
+    if(!r.screens.init(r.services,"showcase","main")){NX_EXPECT(false);return;}
+    r.step(3);NX_EXPECT(!r.screens.failed());
+    NX_EXPECT(strcmp(r.save.get("playlist_ok","missing"),"yes")==0);
+}

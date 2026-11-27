@@ -66,3 +66,7 @@ Merged upstream through `ceeb83b4873806308f17fdd0c5ac5e8edc8bf786` with both his
 ## Native upstream API usability audit
 
 The regenerated reference catalogue grew from 804 to 865 API nodes (61 net), but methods alone did not provide a usable workflow. Added native Playlist/WebSocket factory nodes, typed persistent field/global and local reference support for Playlist, WebSocket and Widget, matching array-object-to-array-handle connections for animation blend APIs, an explicit null Entity pin and native document migration for older join/hinge node IDs. Compiler and actual AngelScript binding regressions verify these changes. This is still not a blanket guarantee of every script API: delegate-driven APIs, runtime feature differences by GPU/platform, editor-specific animation authoring and actual device verification need separate work. 
+
+## Upstream reverse-import coverage
+
+Native import recognizes Playlist/WebSocket constructor expressions, explicit handle declarations and reassignment for the supported reference types, null references, and safe array-object borrowing for matching API handle parameters. Function signatures accept supported handles. Import remains transactional and rejects missing @, incompatible types, ambiguous overloads and unsupported expressions. Added document round-trip/negative cases and an actual native playlist execution regression (no external connection is executed). General delegate expressions and arbitrary AngelScript are not yet supported.

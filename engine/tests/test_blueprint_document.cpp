@@ -8,7 +8,7 @@
 using namespace nx;
 NX_TEST(nativeCatalogueContainsReferenceAPI)
 {
-    NX_EXPECT(blueprintCatalogue().size()==1115);
+    NX_EXPECT(blueprintCatalogue().size()==1118);
     const auto* save=blueprintSpec("api:Save:Save::set:string,string");
     NX_EXPECT(save&&save->inputs.size()==3&&save->outputs.size()==1);
     if(save&&save->inputs.size()==3)NX_EXPECT(save->inputs[0].type=="exec"&&save->inputs[2].type=="string");
@@ -1248,4 +1248,48 @@ NX_TEST(nativeOldJointNodeIdsMigrate)
     BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error));
     NX_EXPECT(copy.graphs[0].nodes[1].kind=="api:Space:Space::join:Entity@,Entity@,Vec3,float");
     NX_EXPECT(copy.graphs[0].nodes[2].kind=="api:Space:Space::hinge:Entity@,Entity@,Vec3,Vec3,float,float");
+}
+
+NX_TEST(nativeImportUpstreamHandleAndBlendWorkflows)
+{
+    const char* script=R"AS(
+WebSocket@ socket;
+class Example : Screen {
+    Playlist@ music;
+    Widget@ label;
+    array<string> names;
+    array<float> speeds;
+    void onEnter() {
+        @music = Playlist();
+        music.shuffle = true;
+        music.play();
+        @socket = WebSocket("ws://127.0.0.1:9");
+        names.insertLast("idle");
+        speeds.insertLast(0.0f);
+        Entity@ actor = Space::spawn(Vec3(0.0f,0.0f,0.0f));
+        actor.animateBlend(names,speeds);
+        @label = Ui::find("health");
+    }
+    void onExit() {
+        socket.close();
+        @socket = null;
+        music.stop();
+        @music = null;
+        @label = null;
+    }
+}
+)AS";
+    BlueprintDocument doc;std::string error,source,bytes;
+    NX_EXPECT(importBlueprintScreen(script,doc,error)&&compileBlueprint(doc,source,error));
+    NX_EXPECT(source.find("Playlist()")!=std::string::npos&&source.find("WebSocket(")!=std::string::npos);
+    NX_EXPECT(source.find("animateBlend(")!=std::string::npos&&source.find("@bp_global_socket = null;")!=std::string::npos);
+    NX_EXPECT(doc.serialize(bytes,error));
+    for(const char* bad:{
+        "class Bad : Screen { Playlist@ p; void onEnter(){p = Playlist();} }",
+        "class Bad : Screen { Playlist@ p; void onEnter(){@p = WebSocket(\"ws://localhost\");} }",
+        "class Bad : Screen { int n; void onEnter(){@n=1;} }"})
+    {
+        NX_EXPECT(!importBlueprintScreen(bad,doc,error));
+        std::string after;NX_EXPECT(doc.serialize(after,error)&&after==bytes);
+    }
 }
