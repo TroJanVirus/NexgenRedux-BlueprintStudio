@@ -106,3 +106,7 @@ Drag a uniquely identified widget onto a container or Page Root to reparent it. 
 ## Responsive stack anchors
 
 Native Stack children support one of nine anchors and signed XY design-unit offsets, respecting parent padding and available size. A growing Stack supports responsive screen-relative HUD positioning. Unanchored layouts are unchanged. The designer provides anchor presets and offset entry; reparenting anchored children outside Stack is refused. Tests cover persistence, reset, undo and runtime layout at 1280x720 and 960x720. Direct free-position dragging on the preview, stretch anchors, theme and animation authoring remain outstanding.
+
+## Direct preview positioning
+
+Click a visible widget in the native preview to select it. Drag Stack children to change signed anchor offsets; existing anchors stay intact, ordinary Stack children convert to top-left anchoring without resetting their authored visual position. A translucent guide shows the target during the drag; release within the preview commits one undoable edit, while release outside or Escape cancels. Layout coordinates come from the actual native tree. This is a bounds-based editor hit test (not arbitrary rotated or animated visual geometry); flow-layout widgets remain selectable but must be reparented to Stack before free placement. Tests cover atomic positioning, undo/redo, invalid targets and no-op commits.

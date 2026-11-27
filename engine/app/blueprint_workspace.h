@@ -63,7 +63,10 @@ namespace nx
         void drawVisualPlacement(Canvas& canvas);
         void cancelVisualPlacement(){m_placementDragging=false;m_placementAsset.clear();m_placementGraph=m_placementNode=static_cast<size_t>(-1);}
         bool m_widgetDesigner=false,m_widgetPalette=false,m_widgetFourThree=false,m_widgetEvents=false,m_widgetUnbind=false,m_widgetAnchors=false;
-        bool m_widgetDragging=false;
+        bool m_widgetDragging=false,m_widgetPreviewDrag=false;
+        float m_widgetPreviewDx=0,m_widgetPreviewDy=0,m_widgetBaseX=0,m_widgetBaseY=0;
+        int m_widgetDragAnchor=0;
+        size_t m_widgetDragRevision=0;
         float m_widgetDragX=0,m_widgetDragY=0;
         std::string m_widgetDragId;
         std::string m_widgetSelection,m_designPreviewAsset,m_designPreviewError;

@@ -671,6 +671,21 @@ namespace nx
         }
         error="Select a widget page.";return false;
     }
+    bool BlueprintDocument::positionVisualWidget(const std::string& id,const std::string& widget,const std::string& anchor,float x,float y,std::string& error)
+    {
+        if(!std::isfinite(x)||!std::isfinite(y)||std::abs(x)>100000||std::abs(y)>100000)
+        {error="Invalid widget position.";return false;}
+        // Stage both edits so conversion from flow to anchored positioning is
+        // one history entry. Never publish an incomplete anchor/offset pair.
+        BlueprintDocument staged;staged.name=name;staged.assetRoot=assetRoot;staged.graphs=graphs;
+        staged.manifests=manifests;staged.m_visualAssets=m_visualAssets;
+        staged.m_visualSerial=m_visualSerial;staged.m_nextId=m_nextId;
+        if(!staged.setVisualWidgetProperty(id,widget,"anchor",anchor,error)||
+            !staged.setVisualWidgetProperty(id,widget,"offset",std::to_string(x)+","+std::to_string(y),error))return false;
+        const auto* before=visualAsset(id);const auto* after=staged.visualAsset(id);
+        if(before&&after&&before->source==after->source){error.clear();return true;}
+        return replaceVisualAssets(staged.m_visualAssets,error);
+    }
     bool BlueprintDocument::reparentVisualWidget(const std::string& id,const std::string& widget,const std::string& parent,std::string& error)
     {
         if(widget.empty()||widget==parent){error="Cannot move a widget into itself.";return false;}

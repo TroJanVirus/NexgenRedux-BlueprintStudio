@@ -707,7 +707,7 @@ namespace nx
     }
     void BlueprintWorkspace::refreshWidgetPreview(Services& s)
     {
-        if(!m_assetBrowser||!m_assetLibrary||!m_widgetDesigner){if(m_designUi)releaseWidgetPreview();return;}
+        if(!m_assetBrowser||!m_assetLibrary||!m_widgetDesigner){m_widgetPreviewDrag=false;if(m_designUi)releaseWidgetPreview();return;}
         if(m_visualInput)return;
         if(m_designPreviewAsset==m_visualSelection&&m_designRevision==m_document.revision())return;
         releaseWidgetPreview();
@@ -733,6 +733,26 @@ namespace nx
             if(s.input->wheel()<0&&m_widgetFirst+8<count)++m_widgetFirst;
             if(s.input->wheel()>0&&m_widgetFirst)--m_widgetFirst;
         }
+        constexpr float previewScale=208.f/720.f;
+        const float previewWidth=(m_widgetFourThree?960.f:1280.f)*previewScale;
+        const float previewX=815-previewWidth*0.5f,previewY=207;
+        if(m_widgetPreviewDrag)
+        {
+            m_widgetPreviewDx=(x-m_widgetDragX)/previewScale;
+            m_widgetPreviewDy=(y-m_widgetDragY)/previewScale;
+            if(left)return;
+            m_widgetPreviewDrag=false;
+            if(m_widgetDragRevision==m_document.revision()&&in(x,y,previewX,previewY,previewX+previewWidth,previewY+208)&&
+                (std::abs(x-m_widgetDragX)>2||std::abs(y-m_widgetDragY)>2))
+            {
+                const char* const names[]={"top-left","top-center","top-right","middle-left","center","middle-right","bottom-left","bottom-center","bottom-right"};
+                if(m_document.positionVisualWidget(m_visualSelection,m_widgetSelection,names[m_widgetDragAnchor],
+                    std::round(m_widgetBaseX+m_widgetPreviewDx),std::round(m_widgetBaseY+m_widgetPreviewDy),m_status))
+                    m_status="Widget position updated. Ctrl+Z undoes the entire drag.";
+            }
+            else m_status="Widget drag cancelled or unchanged.";
+            return;
+        }
         if(m_widgetDragging)
         {
             if(left)return;
@@ -747,6 +767,41 @@ namespace nx
             m_widgetDragId.clear();return;
         }
         if(!click)return;
+        if(!m_widgetPalette&&m_designUi&&m_designPreviewError.empty()&&
+            in(x,y,previewX,previewY,previewX+previewWidth,previewY+208))
+        {
+            const float localX=(x-previewX)/previewScale,localY=(y-previewY)/previewScale;
+            // Walk in reverse painting order, taking the deepest visible widget
+            // with a stable ID. Bounds use native layout, not a second renderer.
+            const auto hit=[&](auto&& self,Widget& item)->Widget*
+            {
+                if(!item.visible)return nullptr;
+                float sx=0,sy=0;m_designUi->place(item,sx,sy);
+                if(!in(localX,localY,sx,sy,sx+item.w,sy+item.h))return nullptr;
+                for(u32 j=item.children.count();j>0;--j)
+                    if(auto* found=self(self,*item.children[j-1]))return found;
+                return !item.id.empty()?&item:nullptr;
+            };
+            if(auto* item=hit(hit,m_designUi->root()))
+            {
+                m_widgetSelection=item->id;
+                if(item->parent&&item->parent->kind==WidgetKind::Stack)
+                {
+                    // Preserve the existing anchor, or convert the current
+                    // visual position to a top-left anchor with no jump.
+                    m_widgetDragAnchor=item->anchor>=0&&item->anchor<9?item->anchor:0;
+                    const auto& parent=*item->parent;
+                    m_widgetBaseX=item->anchor>=0?item->offsetX:item->x-parent.pad(0);
+                    m_widgetBaseY=item->anchor>=0?item->offsetY:item->y-parent.pad(1);
+                    m_widgetDragX=x;m_widgetDragY=y;m_widgetPreviewDx=m_widgetPreviewDy=0;
+                    m_widgetDragRevision=m_document.revision();m_widgetPreviewDrag=true;
+                    m_status="Drag to position; release to apply. Escape cancels.";
+                }
+                else m_status="Selected widget. Use a Stack container for free positioning.";
+            }
+            else m_widgetSelection.clear();
+            return;
+        }
         if(in(x,y,280,156,610,189)){m_widgetPalette=!m_widgetPalette;m_widgetFirst=0;return;}
         if(in(x,y,630,156,810,189)){m_widgetDesigner=false;releaseWidgetPreview();return;}
         if(in(x,y,820,156,1000,189)){m_widgetFourThree=!m_widgetFourThree;return;}
@@ -862,6 +917,12 @@ namespace nx
             {
                 float sx=0,sy=0;m_designUi->place(*selected,sx,sy);
                 c.roundLine(sx,sy,selected->w,selected->h,0,3,{0.25f,0.85f,0.55f,1});
+                if(m_widgetPreviewDrag)
+                {
+                    const float gx=sx+m_widgetPreviewDx,gy=sy+m_widgetPreviewDy;
+                    c.rect(gx,gy,selected->w,selected->h,{0.25f,0.85f,0.55f,0.12f});
+                    c.roundLine(gx,gy,selected->w,selected->h,0,4,{0.35f,0.95f,0.65f,1});
+                }
             }
             c.pop();
         }
@@ -913,6 +974,7 @@ namespace nx
             return;
         }
         if(m_placementDragging){updateVisualPlacement(x,y,left,click);return;}
+        if(m_widgetPreviewDrag){updateWidgetDesigner(s,x,y,left,click);return;}
         if(pressed&1u){saveCurrent(s);return;}
         if(pressed&2u){if(m_document.undo()){selectGraph(std::min(m_graph,m_document.graphs.size()-1));m_status="Library edit undone.";}return;}
         if(pressed&4u){if(m_document.redo()){selectGraph(std::min(m_graph,m_document.graphs.size()-1));m_status="Library edit redone.";}return;}
@@ -1061,7 +1123,7 @@ namespace nx
             return;
         }
         if(selected->kind!="widget")return;
-        if(in(x,y,280,548,610,581)){m_widgetDesigner=true;m_widgetPalette=false;m_widgetEvents=m_widgetUnbind=m_widgetDragging=m_widgetAnchors=false;m_widgetSelection.clear();m_widgetFirst=0;return;}
+        if(in(x,y,280,548,610,581)){m_widgetDesigner=true;m_widgetPalette=false;m_widgetEvents=m_widgetUnbind=m_widgetDragging=m_widgetAnchors=m_widgetPreviewDrag=false;m_widgetSelection.clear();m_widgetFirst=0;return;}
         if(in(x,y,630,232,1000,266))
         {m_visualInput=2;input.setTyping(true);m_status="Enter the next widget label, then press Enter.";return;}
         const char* kind=nullptr;
@@ -1822,7 +1884,7 @@ namespace nx
         refreshWidgetPreview(s);
         if (input.pressed(Action::Menu))
         {
-            if(m_assetBrowser){if(m_visualInput){m_visualInput=0;m_visualText.clear();input.setTyping(false);m_status="Input cancelled.";return;}if(m_placementDragging){cancelVisualPlacement();m_status="Placement cancelled.";return;}if(m_visualPlacement){m_visualPlacement=false;return;}if(m_widgetDesigner){if(m_widgetDragging){m_widgetDragging=false;m_widgetDragId.clear();return;}m_widgetDesigner=false;releaseWidgetPreview();return;}m_assetBrowser=false;m_status="Asset browser closed.";return;}
+            if(m_assetBrowser){if(m_visualInput){m_visualInput=0;m_visualText.clear();input.setTyping(false);m_status="Input cancelled.";return;}if(m_placementDragging){cancelVisualPlacement();m_status="Placement cancelled.";return;}if(m_visualPlacement){m_visualPlacement=false;return;}if(m_widgetDesigner){if(m_widgetPreviewDrag){m_widgetPreviewDrag=false;m_status="Widget drag cancelled.";return;}if(m_widgetDragging){m_widgetDragging=false;m_widgetDragId.clear();return;}m_widgetDesigner=false;releaseWidgetPreview();return;}m_assetBrowser=false;m_status="Asset browser closed.";return;}
             if(m_browsing){m_browsing=false;m_status="Open cancelled.";return;}
             if(m_focus){m_focus=0;input.setTyping(false);m_status="Input cancelled.";return;}
             if(m_layoutDragging||m_layoutMenu){m_layoutDragging=m_layoutMenu=false;m_status="Layout action cancelled.";return;}

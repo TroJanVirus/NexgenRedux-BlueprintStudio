@@ -1480,3 +1480,24 @@ NX_TEST(nativeWidgetStackAnchorsPersistAndProtectReparent)
     NX_EXPECT(copy.reparentVisualWidget(id,"item-2","",error));
     NX_EXPECT(copy.undo()&&copy.undo()&&!copy.reparentVisualWidget(id,"item-2","",error));
 }
+
+NX_TEST(nativeWidgetPreviewPositionIsOneUndoableEdit)
+{
+    BlueprintDocument doc;doc.create();std::string id,error,bytes;
+    NX_EXPECT(doc.createVisualAsset("widget",id,error));
+    NX_EXPECT(doc.appendVisualWidget(id,"stack","",error));
+    NX_EXPECT(doc.appendVisualWidget(id,"label","HUD",error,"item-1"));
+    const auto original=doc.visualAsset(id)->source;
+    NX_EXPECT(doc.positionVisualWidget(id,"item-2","top-left",32,48,error));
+    const auto moved=doc.visualAsset(id)->source;
+    NX_EXPECT(moved!=original);
+    NX_EXPECT(doc.undo()&&doc.visualAsset(id)->source==original);
+    NX_EXPECT(doc.redo()&&doc.visualAsset(id)->source==moved);
+    const auto revision=doc.revision();
+    NX_EXPECT(!doc.positionVisualWidget(id,"item-1","center",0,0,error)&&doc.revision()==revision);
+    NX_EXPECT(!doc.positionVisualWidget(id,"item-2","bad",0,0,error)&&doc.revision()==revision);
+    NX_EXPECT(doc.positionVisualWidget(id,"item-2","top-left",32,48,error)&&doc.revision()==revision);
+    NX_EXPECT(doc.serialize(bytes,error));
+    BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error));
+    NX_EXPECT(copy.visualAsset(id)->source==moved);
+}
