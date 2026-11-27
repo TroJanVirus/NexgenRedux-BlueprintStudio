@@ -235,10 +235,31 @@ namespace nx
         {m_status="Could not verify written file. Changes remain in memory.";return false;}
         return true;
     }
+    namespace
+    {
+        bool recoveryArchiveName(const std::string& file)
+        {
+            const std::string damaged="blueprint-recovery-damaged-",conflict="blueprint-recovery-conflict-";
+            const size_t prefix=file.rfind(damaged,0)==0?damaged.size():file.rfind(conflict,0)==0?conflict.size():0;
+            if(!prefix||file.size()>96||file.size()<=prefix+4||!file.ends_with(".bak"))return false;
+            const auto stamp=file.substr(prefix,file.size()-prefix-4);
+            const auto separator=stamp.find('-');
+            return separator!=std::string::npos&&separator>0&&separator+1<stamp.size()&&
+                stamp.substr(0,separator).find_first_not_of("0123456789")==std::string::npos&&
+                stamp.substr(separator+1).find_first_not_of("0123456789")==std::string::npos;
+        }
+        bool standaloneSourceName(const std::string& file)
+        {
+            return file.size()>3&&file.size()<=128&&file.front()!='.'&&file.ends_with(".as")&&
+                file.find_first_of("/\\:")==std::string::npos&&file.find("..")==std::string::npos&&
+                std::none_of(file.begin(),file.end(),[](unsigned char c){return c<32||c==127;});
+        }
+    }
+
     bool BlueprintWorkspace::importSource(Services& s,const std::string& file)
     {
         if(m_document.dirty()){m_status="Save changes before importing source.";return false;}
-        if(file.size()>128||!file.ends_with(".as")||file.find_first_of("/\\:")!=std::string::npos||file.find("..")!=std::string::npos)
+        if(!standaloneSourceName(file))
         {m_status="Drop a standalone AngelScript .as file.";return false;}
         FileData data;
         if(!s.platform->readFile(("own/"+file).c_str(),data,MemTag::General)||data.size>512*1024)
@@ -257,13 +278,15 @@ namespace nx
         m_document=std::move(candidate);m_filePath.clear();m_fileBaseline.clear();
         m_checkpointRevision=static_cast<size_t>(-1);m_first=0;selectGraph(0);m_browsing=false;
         m_status="Imported "+file+(m_document.assetRoot.empty()?" as editable graphs.":" with companion assets.")+" Save as a new project.";
+        NX_INFO("Blueprint Studio: %s",m_status.c_str());
         checkpoint(s,true);return true;
     }
 
     bool BlueprintWorkspace::openFile(Services& s,const std::string& file,bool managed)
     {
         if(m_document.dirty()){m_status="Save changes before opening another Blueprint.";return false;}
-        if(!blueprintFileName(file)){m_status="Choose a Blueprint .bp.json file.";return false;}
+        const bool archive=recoveryArchiveName(file);
+        if(!blueprintFileName(file)&&!archive){m_status="Choose a Blueprint or recovery archive.";return false;}
         const std::string path="own/"+file;
         FileData data;
         if(!s.platform->readFile(path.c_str(),data,MemTag::General))
@@ -271,15 +294,21 @@ namespace nx
         if(!m_document.load(reinterpret_cast<const char*>(data.data),data.size,m_status))return false;
         m_filePath.clear();m_fileBaseline.clear();
         std::string expected;
-        if(managed&&blueprintManagedName(m_document.name,expected)&&file==expected)
+        if(!archive&&managed&&blueprintManagedName(m_document.name,expected)&&file==expected)
         {
             m_filePath=path;
             m_fileBaseline.assign(reinterpret_cast<const char*>(data.data),data.size);
         }
         m_checkpointRevision=static_cast<size_t>(-1);
         m_first=0;selectGraph(0);m_browsing=false;
-        m_status="Opened "+file;
+        if(archive)
+        {
+            m_document.markRecovered();
+            m_status="Opened recovery archive "+file+". Save as a new project.";
+        }
+        else m_status="Opened "+file;
         NX_INFO("Blueprint Studio: %s",m_status.c_str());
+        if(archive)checkpoint(s,true);
         return true;
     }
     void BlueprintWorkspace::browseFiles(Services& s)
@@ -289,11 +318,16 @@ namespace nx
         s.platform->list("own",false,[](const char* name,void* user)
         {
             auto& files=*static_cast<std::vector<std::string>*>(user);
-            if(files.size()<4096&&blueprintFileName(name))files.emplace_back(name);
+            if(files.size()<4096&&(blueprintFileName(name)||recoveryArchiveName(name)||standaloneSourceName(name)))files.emplace_back(name);
         },&m_files);
-        std::sort(m_files.begin(),m_files.end());
+        std::sort(m_files.begin(),m_files.end(),[](const std::string& a,const std::string& b)
+        {
+            const auto rank=[](const std::string& file){return blueprintFileName(file)?0:recoveryArchiveName(file)?1:2;};
+            return rank(a)!=rank(b)?rank(a)<rank(b):a<b;
+        });
         m_files.erase(std::unique(m_files.begin(),m_files.end()),m_files.end());
         m_browsing=true;clearWire();cancelDrag();
+        m_status="Select a project, recovery archive or standalone source." ;
     }
     std::string BlueprintWorkspace::assetScreen() const
     {
@@ -781,7 +815,12 @@ namespace nx
             else if(click&&in(x,y,280,166,1000,166+12*36))
             {
                 const size_t row=m_fileFirst+static_cast<size_t>((y-166)/36);
-                if(row<m_files.size())openFile(s,m_files[row],true);
+                if(row<m_files.size())
+                {
+                    const auto file=m_files[row];
+                    if(standaloneSourceName(file))importSource(s,file);
+                    else openFile(s,file,true);
+                }
             }
             m_left=left;return;
         }
@@ -1271,15 +1310,17 @@ namespace nx
             else if(m_browsing)
             {
                 c.roundRect(260,100,760,525,9,{0.12f,0.16f,0.22f,1});
-                c.text(*m_font,"OPEN BLUEPRINT",280,122,accent);
+                c.text(*m_font,"OPEN / IMPORT BLUEPRINT",280,122,accent);
                 c.roundRect(860,116,140,34,4,{0.22f,0.31f,0.43f,1});c.text(*m_font,"Cancel",930,123,text,Align::Center);
                 for(size_t i=0;i<12&&m_fileFirst+i<m_files.size();++i)
                 {
                     const float y=166+36*static_cast<float>(i);
                     c.rect(280,y,720,33,{0.17f,0.22f,0.30f,1});
-                    c.clip(286,y,708,33);c.text(*m_font,m_files[m_fileFirst+i].c_str(),290,y+8,text);c.noClip();
+                    const auto& file=m_files[m_fileFirst+i];
+                    const std::string label=(recoveryArchiveName(file)?"RECOVERY  /  ":standaloneSourceName(file)?"SOURCE  /  ":"")+file;
+                    c.clip(286,y,708,33);c.text(*m_font,label.c_str(),290,y+8,text);c.noClip();
                 }
-                if(m_files.empty())c.text(*m_font,"No saved Blueprints. Save as or drop a .bp.json file.",640,330,muted,Align::Center);
+                if(m_files.empty())c.text(*m_font,"No projects, recovery archives or source files in own/.",640,330,muted,Align::Center);
                 c.clip(280,603,720,22);c.text(*m_font,shorten(m_status,90).c_str(),280,603,muted);c.noClip();
             }
             else if(m_focus==9)

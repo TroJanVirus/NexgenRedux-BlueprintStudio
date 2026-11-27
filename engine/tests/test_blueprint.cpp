@@ -1719,3 +1719,63 @@ NX_TEST(nativeBlueprintDropNamesProtectManagedFilesAndKeepExtensions)
     NX_EXPECT(blueprintDropName("texture.png",1)=="texture-2.png");
 }
 #endif
+
+#ifdef NX_DESKTOP_BLUEPRINT
+NX_TEST(nativeWorkspaceBrowserRecoversArchivesAndImportsSource)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    r.platform.workspaceFiles=true;
+    r.platform.files["showcase/main/screen.json"]="{\"title\":\"Home\"}";
+    r.platform.files["showcase/main/main.as"]="class Home : Screen {}";
+    if(!r.screens.init(r.services,"showcase","main")){NX_EXPECT(false);return;}
+    r.step(3);r.screens.setDevelopmentPaused(true);
+    const std::string archive="own/blueprint-recovery-conflict-123-1.bak";
+    const std::string corrupt="own/blueprint-recovery-damaged-123-2.bak";
+    const std::string source="class Source : Screen { void onEnter(){ Save::set(\"source\",\"ok\"); } }";
+    BlueprintDocument original;std::string error,bytes,code;
+    NX_EXPECT(importBlueprintScreen("class Archived : Screen { void onEnter(){ Save::set(\"archive\",\"ok\"); } }",original,error));
+    NX_EXPECT(original.serialize(bytes,error));
+    r.platform.files[archive]=bytes;r.platform.files[corrupt]="broken";
+    r.platform.files["own/example.as"]=source;
+    BlueprintWorkspace studio;studio.open(r.services);
+    NX_EXPECT(studio.active());if(!studio.active())return;
+    auto& state=r.platform.state;state.hasMouse=true;
+    auto frame=[&]()
+    {
+        r.assets.finish();r.input.update(state,1.0f/60);r.platform.now+=1.0/60;
+        studio.update(r.services);studio.checkpoint(r.services);
+        r.device->beginFrame({});r.canvas.begin();studio.draw(r.canvas);r.canvas.end();r.device->endFrame();
+    };
+    auto click=[&](float x,float y)
+    {
+        state.mouseX=x;state.mouseY=y;state.mouseButtons[0]=true;frame();
+        state.mouseButtons[0]=false;frame();
+    };
+    auto type=[&](const char* value)
+    {
+        for(const char* p=value;*p;++p){state.type(static_cast<u32>(*p));frame();}
+        state.type(13);frame();
+    };
+    frame();click(794,18);
+    // A malformed archive does not replace the current document or close the browser.
+    click(500,216);NX_EXPECT(r.platform.files[corrupt]=="broken");
+    click(500,180);
+    const std::string recovery="own/blueprint-recovery.bp.json";
+    NX_EXPECT(r.platform.files.count(recovery)&&studio.recoveryProtected());
+    BlueprintDocument restored;
+    const auto restoredBytes=r.platform.files[recovery];
+    NX_EXPECT(restored.load(restoredBytes.data(),restoredBytes.size(),error)&&compileBlueprint(restored,code,error));
+    NX_EXPECT(code.find("Save::set(\"archive\", \"ok\")")!=std::string::npos);
+    click(900,18);type("Restored Archive");
+    NX_EXPECT(r.platform.files.count("own/blueprint-project-Restored Archive.bp.json"));
+    NX_EXPECT(r.platform.files[archive]==bytes&&r.platform.files[corrupt]=="broken");
+    // Documents sort first, then recovery archives, then standalone source.
+    click(794,18);click(500,288);
+    const auto importedBytes=r.platform.files[recovery];
+    BlueprintDocument imported;
+    NX_EXPECT(imported.load(importedBytes.data(),importedBytes.size(),error)&&compileBlueprint(imported,code,error));
+    NX_EXPECT(code.find("Save::set(\"source\", \"ok\")")!=std::string::npos);
+    NX_EXPECT(r.platform.files["own/example.as"]==source&&r.platform.files[archive]==bytes);
+    studio.close(r.services);
+}
+#endif
