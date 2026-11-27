@@ -24,7 +24,7 @@ namespace nx
             const Graph& graph;
             std::string& source;
             std::string& error;
-            std::vector<bool> emitted;
+            std::vector<bool> emitted,available;
             size_t budget=8192;
             bool fail(size_t node,const std::string& why)
             {
@@ -96,9 +96,27 @@ namespace nx
                     if(!value(node,"a",a,depth)||!value(node,"b",b,depth))return false;
                     result="("+a+(n.kind=="add:float"?" + ":" < ")+b+")";return true;
                 }
+                if(n.kind=="event:delta"&&graph.name=="update"&&pin=="value"){result="dt";return true;}
+                if(n.kind=="event:canvas"&&graph.name=="draw"&&pin=="value"){result="canvas";return true;}
+                if(n.kind.rfind("make:",0)==0&&pin=="result")
+                {
+                    result=n.kind.substr(5)+"(";bool first=true;
+                    for(const auto& p:spec->inputs)
+                    {
+                        std::string v;if(!value(node,p.name,v,depth))return false;
+                        if(!first)result+=", ";
+                        first=false;result+=v;
+                    }
+                    result+=")";return true;
+                }
                 if(!spec->call.empty()&&spec->pure&&pin=="result")
                     return api(node,*spec,result,depth);
-                return fail(node,"This output is not supported by the native compiler yet (impure values need execution temporaries).");
+                if(!spec->call.empty()&&!spec->pure&&pin=="result"&&spec->result!="void")
+                {
+                    if(!available[node])return fail(node,"Action result used before execution or outside its branch.");
+                    result="bp_value_"+std::to_string(node);return true;
+                }
+                return fail(node,"This output is not supported by the native compiler yet.");
             }
             bool flow(size_t node,const std::string& pin,unsigned indent,unsigned depth)
             {
@@ -113,17 +131,25 @@ namespace nx
                 {
                     std::string condition;
                     if(!value(to,"condition",condition,0))return false;
+                    const auto outer=available;
                     source+=pad+"if ("+condition+")\n"+pad+"{\n";
                     if(!flow(to,"true",indent+1,depth+1))return false;
+                    available=outer;
                     source+=pad+"}\n"+pad+"else\n"+pad+"{\n";
                     if(!flow(to,"false",indent+1,depth+1))return false;
+                    available=outer;
                     source+=pad+"}\n";return true;
                 }
-                if(!spec||spec->call.empty()||spec->pure||spec->result!="void")
+                if(!spec||spec->call.empty()||spec->pure||spec->result.empty())
                     return fail(to,"This execution node is not supported by the native compiler yet.");
                 std::string statement;
                 if(!api(to,*spec,statement,0))return false;
-                source+=pad+statement+";\n";
+                if(spec->result!="void")
+                {
+                    source+=pad+spec->result+" bp_value_"+std::to_string(to)+" = "+statement+";\n";
+                    available[to]=true;
+                }
+                else source+=pad+statement+";\n";
                 if(source.size()>1024*1024)return fail(to,"Generated source exceeds the size limit.");
                 return flow(to,"then",indent,depth+1);
             }
@@ -142,7 +168,7 @@ namespace nx
             const auto index=static_cast<size_t>(entry-graph.nodes.begin());
             const auto signature=graph.name=="update"?"float dt":graph.name=="draw"?"Canvas@ canvas":"";
             result+="    void "+graph.name+"("+signature+")\n    {\n";
-            Emitter e{graph,result,error,std::vector<bool>(graph.nodes.size(),false)};
+            Emitter e{graph,result,error,std::vector<bool>(graph.nodes.size(),false),std::vector<bool>(graph.nodes.size(),false)};
             if(!e.flow(index,"then",2,0))return false;
             result+="    }\n";
         }

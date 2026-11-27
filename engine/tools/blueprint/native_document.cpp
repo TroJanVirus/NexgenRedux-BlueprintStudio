@@ -26,6 +26,11 @@ namespace nx
             {"literal:double","Double","Values","","value:double"},
             {"add:float","Add (float)","Math","a:float|b:float","result:float"},
             {"less:float","Less than (float)","Math","a:float|b:float","result:bool"},
+            {"make:Vec2","Make Vec2","Values","x:float|y:float","result:Vec2"},
+            {"make:Vec3","Make Vec3","Values","x:float|y:float|z:float","result:Vec3"},
+            {"make:Color","Make Color","Values","r:float|g:float|b:float|a:float","result:Color"},
+            {"event:delta","Delta time","Events","","value:float"},
+            {"event:canvas","Canvas","Events","","value:Canvas@"},
 #include "tools/blueprint/native_catalog.inc"
         };
         std::vector<BlueprintPin> parsePins(const std::string& text)
@@ -48,6 +53,8 @@ namespace nx
         }
         constexpr size_t kMaxNodes=1024,kMaxLinks=4096,kMaxGraphs=64,kHistory=48;
         bool coordinate(float v){return std::isfinite(v)&&std::abs(v)<=1000000;}
+        bool context(const std::string& event,const std::string& kind)
+        {return (kind!="event:delta"||event=="update")&&(kind!="event:canvas"||event=="draw");}
         bool validText(JsonTree::Value v){return v.isString()&&v.text()[0]&&std::strlen(v.text())<=512;}
         bool literal(const std::string& kind,const std::string& value)
         {
@@ -145,7 +152,7 @@ namespace nx
             {
                 const std::string kind=n["kind"].text(),ref=n["value"].text();
                 const float x=n["x"].number(),y=n["y"].number();
-                if(!validText(n["id"])||!blueprintSpec(kind)||!n["x"].isNumber()||!n["y"].isNumber()||
+                if(!validText(n["id"])||!blueprintSpec(kind)||!context(g.name,kind)||!n["x"].isNumber()||!n["y"].isNumber()||
                     !coordinate(x)||!coordinate(y)||!ids.emplace(n["id"].text(),g.nodes.size()).second||
                     (kind.rfind("literal:",0)==0&&(!n["value"].isString()||!literal(kind,ref))))
                 {error="Invalid node in "+g.name;return false;}
@@ -205,7 +212,9 @@ namespace nx
     {
         if(graph>=graphs.size()||!blueprintSpec(kind)||kind=="entry"||!coordinate(x)||!coordinate(y)||graphs[graph].nodes.size()>=kMaxNodes)
         {error="Cannot add this node.";return false;}
-        auto& g=graphs[graph];std::string id;
+        auto& g=graphs[graph];
+        if(!context(g.name,kind)){error="This event value belongs to a different event graph.";return false;}
+        std::string id;
         do{id="n"+std::to_string(++m_nextId);}while(std::any_of(g.nodes.begin(),g.nodes.end(),[&](const Node& n){return n.id==id;}));
         const std::string value=kind=="literal:string"?"":kind=="literal:bool"?"false":kind.rfind("literal:",0)==0?"0":"";
         record(graph);g.nodes.push_back({id,kind,value,x,y});error.clear();return true;

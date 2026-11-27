@@ -2,6 +2,7 @@
 #include "rig.h"
 #include "blueprint_fixtures.h"
 #include "scene/world.h"
+#include "tools/blueprint/native_compile.h"
 
 #include <math.h>
 #include <stdlib.h>
@@ -442,4 +443,27 @@ NX_TEST(blueprintMixedScriptsKeepOriginalBehaviour)
         NX_EXPECT(!r.screens.failed());
         NX_EXPECT(strcmp(r.save.get("mixed_result", "missing"), "yes") == 0);
     }
+}
+
+NX_TEST(nativeBlueprintCompilerRunsThroughReduxScreenLifecycle)
+{
+    BlueprintDocument doc;doc.create();
+    std::string error,source;
+    const bool authored=doc.addNode(0,"api:Save:Save::set:string,string",300,50,error)&&
+        doc.addNode(0,"literal:string",20,200,error)&&doc.addNode(0,"literal:string",20,300,error)&&
+        doc.setLiteral(0,2,"native_graph",error)&&doc.setLiteral(0,3,"ran",error)&&
+        doc.connect(0,0,"then",1,"in",error)&&doc.connect(0,2,"value",1,"key",error)&&
+        doc.connect(0,3,"value",1,"value",error)&&compileBlueprint(doc,source,error);
+    NX_EXPECT(authored);
+    if(!authored)return;
+    Rig r;
+    NX_EXPECT(r.ok);
+    if(!r.ok||!compile(r.host,source.c_str())){NX_EXPECT(false);return;}
+    auto* type=r.host.findClass("blueprint","Screen");
+    auto* object=type?r.host.create(type):nullptr;
+    NX_EXPECT(object!=nullptr);
+    if(!object)return;
+    NX_EXPECT(r.host.callMethod(object,type->GetMethodByDecl("void onEnter()")));
+    NX_EXPECT(strcmp(r.save.get("native_graph","missing"),"ran")==0);
+    r.host.release(object);
 }

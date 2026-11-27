@@ -30,6 +30,7 @@ namespace nx
         { return x >= left && x < right && y >= top && y < bottom; }
         std::string title(const BlueprintDocument::Node& node)
         {
+            if(const auto* spec=blueprintSpec(node.kind))return spec->title;
             if (node.kind.rfind("api:", 0) == 0)
             {
                 const auto start = node.kind.find(':', 4);
@@ -328,7 +329,7 @@ namespace nx
                         if(std::abs(x-px)>9||std::abs(y-(ny+pinY(p)*m_zoom))>9)continue;
                         m_selection=i-1;
                         if(control){if(m_document.disconnect(m_graph,i-1,pins[p],side!=0)){rebuildPins();m_status="Disconnected pin.";}clearWire();}
-                        else if(side){m_pending=i-1;m_pendingPin=pins[p];m_status="Choose an input pin (Esc cancels).";}
+                        else if(side){m_pending=i-1;m_pendingPin=pins[p];m_status="Choose an input pin (Esc cancels): "+pins[p];}
                         else if(m_pending!=static_cast<size_t>(-1))
                         {
                             if(m_document.connect(m_graph,m_pending,m_pendingPin,i-1,pins[p],m_status)){rebuildPins();clearWire();m_status="Connected pins.";}
