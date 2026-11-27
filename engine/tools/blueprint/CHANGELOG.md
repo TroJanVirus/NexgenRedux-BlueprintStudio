@@ -1,5 +1,12 @@
 # Changes
 
+## Shared media
+
+- Keep textures, sounds, models and other files in one project library. Use Nexgen’s native `global:` paths in graphs and UI pages.
+- Import, preview, replace and remove shared files from Assets. Copy screen files into the library without breaking existing paths.
+- Package shared files once. Play testing stages and removes only the project’s own shared folder and refuses collisions.
+- Check managed global paths and total project asset limits. Added a native test that reads one shared file from two generated screens.
+
 ## Shared behaviours
 
 - Keep one Behaviour definition in the project and link it to several screens.

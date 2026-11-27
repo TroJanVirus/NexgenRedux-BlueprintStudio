@@ -24,7 +24,7 @@ Double-click a linked Behaviour to edit it. Returning to the screen or saving up
 
 The project file keeps the shared definition and its links. Screen copies are refreshed from the library when opened, checked or packaged. Individual graph exports contain independent copies so they work outside the project. Sharing changes the editor's source management, not how Nexgen runs scripts.
 
-**Check project** reports compile errors and warns about missing files in literal asset-loading calls. A shared Behaviour uses the current screen's asset folder; add the files it needs to each linked screen. Paths built from variables or other code and files referenced inside models or scene JSON are not checked by this warning. The warnings do not prevent packaging. Existing projects with local components continue to work.
+**Check project** reports compile errors and warns about missing files in literal asset-loading calls. A shared Behaviour can use the current screen’s own `asset:` files or shared `global:` files from the project library. Paths built from variables or other code and files referenced inside models or scene JSON are not checked by this warning. The warnings do not prevent packaging. Existing projects with local components continue to work.
 
 ## Keep graphs small
 
@@ -78,6 +78,14 @@ Open a screen's Behaviour Components list and double-click a behaviour to edit i
 
 Use **Assets** to import files or folders into the current screen. Search by name or folder, preview images, audio and text, copy the asset path or export a file. For an unconnected string input, open **Use a project asset** in Details to choose a file without typing its path. The editor prevents duplicate or unsafe file paths and asks before replacing files. Model files can be stored and exported but are not rendered in the browser.
 
+### Share files between screens
+
+In Assets, switch to **Shared project files** to import files that every screen can use. The project chooses a stable folder name from its name when you first add shared files. Select a shared file from a node's asset picker or the UI Designer's image picker; the resulting path starts with `global:blueprint_`, for example `global:blueprint_demo/textures/player.png`.
+
+The package includes these files once under `media/global/blueprint_<name>/`. Nexgen already understands `global:` paths; no engine changes are needed. Replacing a shared file keeps its existing path (including letter case) and affects every screen that uses it. **Copy to shared** copies an existing screen file without changing or deleting the original. Update any old `asset:` references to use the new shared path before removing the local file. Shared files and local files together count towards the 64 MiB / 4096-file project limit. Save the project to keep the library; individual `.bp.json` exports do not include media.
+
+Removing a shared file asks for confirmation and lists known references. Check project warns about missing managed global files in supported literal graph calls and checks registered UI image, font and sound paths. Other engine-wide global paths, computed filenames and arbitrary references inside models or scene files are not fully validated. Asset imports, replacements and removals are not graph undo steps; keep project backups.
+
 **Check project** checks the graphs in every screen and lists any errors before packaging. Projects with unfinished graphs can be saved and reopened; only packaging requires every screen to compile. Checking a project does not run the game or prove that assets are valid for Nexgen or the Xbox.
 
 ## Design a menu or HUD
@@ -91,7 +99,7 @@ For a button, choose a click function or create one from **Widget events**. The 
 - **Save page** saves native JSON and any new functions with the project. It can save a draft even if a function is unfinished.
 - **Save + connect to screen** adds native theme/load nodes to On Enter and a draw node to Draw if needed. It appends to simple action chains. If an event branches, or has disconnected matching nodes, save the page and connect those nodes yourself. The automatic command does not remove or replace existing gameplay logic.
 - Save the project with Ctrl+S. The normal game package includes the page and theme in the screen's assets. Undo and redo UI Designer saves and handler renames restore both graph and UI files. Renaming a function updates registered pages; unlink a handler before deleting it or changing its required types.
-- Check project reports missing page/theme files, missing local image/font/sound paths, and invalid widget handlers or theme properties. It cannot check every dynamic asset path or guarantee how a screen will look. To remove a registered page or theme, first remove the matching load/theme node, then remove the asset in Assets.
+- Check project reports missing page/theme files, missing local and project-managed shared image/font/sound paths, and invalid widget handlers or theme properties. It cannot check every dynamic asset path or guarantee how a screen will look. To remove a registered page or theme, first remove the matching load/theme node, then remove the asset in Assets.
 
 Use Play test to see the actual game interface in a desktop Nexgen build. The null-GPU native tests load a generated page and theme and verify that gamepad Accept executes the connected function. Full rendering, custom fonts and on-console UI performance have not yet been verified.
 
@@ -119,7 +127,7 @@ node debug_bridge.js --preview-engine /path/to/test-copy/nexgen
 
 On Windows use the path to `nexgen.exe`. For a macOS app bundle use the executable inside `Contents/MacOS`. Put quotes around paths with spaces. Open `http://127.0.0.1:8765/`, choose **Play test**, select the starting screen and click **Run game**. This launches the desktop engine, not an emulator inside the browser.
 
-While it is running, edit your graphs and choose **Update scripts** to send the latest compiled scripts to Nexgen's existing `--dev` reload system. Changes to assets, screen names or the list of screens need a stop and restart. **Stop** closes the test and removes the screen folders and temporary saves created for that run. The bridge refuses to overwrite any existing screen folder. If the bridge is killed abruptly, leftover test folders may need manual removal; it will not delete them on the next run. Do not put irreplaceable files in test folders.
+While it is running, edit your graphs and choose **Update scripts** to send the latest compiled scripts to Nexgen's existing `--dev` reload system. Changes to assets, screen names or the list of screens need a stop and restart. **Stop** closes the test and removes the screen folders and temporary saves created for that run. The bridge refuses to overwrite any existing screen folder or the project’s shared media folder. Stop and restart after changing shared files. If the bridge is killed abruptly, leftover test folders may need manual removal; it will not delete them on the next run. Do not put irreplaceable files in test folders.
 
 The launcher and script updates have been tested with a real local child process. A full Nexgen window, live game reload and platform-specific launches still need testing. The standalone HTML editor can be used without the bridge, but cannot start a game process by itself.
 
@@ -160,9 +168,10 @@ node test_game_tools.js
 node test_playtest.js
 node test_ui_design.js
 node test_shared_behaviours.js
+node test_shared_media.js
 ```
 
-No npm packages are needed. To run the optional browser tests, install Python Playwright and Chromium, then run `python test_browser.py` and `python test_layout_browser.py` and `python test_workspace_browser.py` and `python test_polish_browser.py` and `python test_organise_browser.py` and `python test_game_tools_browser.py` and `python test_playtest_browser.py`, `python test_ui_design_browser.py` and `python test_shared_behaviours_browser.py`. Set `CHROMIUM_PATH` if Chromium is installed outside Playwright's usual location. The recovery test uses real browser storage by default; `BLUEPRINT_MOCK_STORAGE=1` checks its UI with a simulated storage backend on restricted test hosts. Actual storage across a browser restart has not been verified on this branch.
+No npm packages are needed. To run the optional browser tests, install Python Playwright and Chromium, then run `python test_browser.py` and `python test_layout_browser.py` and `python test_workspace_browser.py` and `python test_polish_browser.py` and `python test_organise_browser.py` and `python test_game_tools_browser.py` and `python test_playtest_browser.py`, `python test_ui_design_browser.py` , `python test_shared_behaviours_browser.py` and `python test_shared_media_browser.py`. Set `CHROMIUM_PATH` if Chromium is installed outside Playwright's usual location. The recovery test uses real browser storage by default; `BLUEPRINT_MOCK_STORAGE=1` checks its UI with a simulated storage backend on restricted test hosts. Actual storage across a browser restart has not been verified on this branch.
 
 The 720 engine API definitions are based on Nexgen's script reference. The compiler checks data types and graph structure; the native engine compiler checks the resulting AngelScript. Neither check guarantees that all assets are present or that a game performs well on real hardware.
 

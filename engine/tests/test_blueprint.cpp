@@ -375,3 +375,21 @@ NX_TEST(blueprintDesignedMenuUsesNativeWidgets)
     NX_EXPECT(!r.screens.failed());
     NX_EXPECT(strcmp(r.save.get("ui_clicked", "missing"), "yes") == 0);
 }
+
+#include "blueprint_media_fixture.h"
+
+NX_TEST(blueprintSharedMediaReadsFromBothScreens)
+{
+    for (const char* script : {blueprint_media::screen0, blueprint_media::screen1})
+    {
+        Rig r;
+        NX_EXPECT(r.ok);
+        r.platform.files["showcase/main/screen.json"] = "{\"title\":\"Shared media\"}";
+        r.platform.files["showcase/main/main.as"] = script;
+        r.platform.files["global/blueprint_demo/data/message.txt"] = "Shared message";
+        if (!r.screens.init(r.services, "showcase", "main")) { NX_EXPECT(false); continue; }
+        r.step(2);
+        NX_EXPECT(!r.screens.failed());
+        NX_EXPECT(strcmp(r.save.get("shared_result", "missing"), "Shared message") == 0);
+    }
+}
