@@ -68,6 +68,10 @@ namespace nx
         std::string m_placementSelectedId,m_placementSelectedOwner;
         size_t m_placementFirst=0,m_placementDragRevision=0;
         float m_placementStartX=0,m_placementStartY=0;
+        int m_gizmoAxis=-1;
+        unsigned m_gizmoMode=0; // translate, rotate, scale
+        float m_gizmoDx=0,m_gizmoDy=0,m_gizmoInitial[3]={};
+        bool gizmoAxis(float wx,float wy,float wz,unsigned axis,float& x,float& y,float& dx,float& dy)const;
         World* m_placementWorld=nullptr;
         size_t m_placementRevision=static_cast<size_t>(-1);
         std::string m_placementScreen;
@@ -79,7 +83,7 @@ namespace nx
         bool placementProject(float wx,float wy,float wz,float& x,float& y) const;
         void updateVisualPlacement(Services& services,float x,float y,bool left,bool click);
         void drawVisualPlacement(Canvas& canvas);
-        void cancelVisualPlacement(){m_placementDragging=false;m_placementAsset.clear();m_placementGraph=m_placementNode=static_cast<size_t>(-1);}
+        void cancelVisualPlacement(){m_gizmoAxis=-1;m_placementDragging=false;m_placementAsset.clear();m_placementGraph=m_placementNode=static_cast<size_t>(-1);}
         bool m_widgetDesigner=false,m_widgetPalette=false,m_widgetFourThree=false,m_widgetEvents=false,m_widgetUnbind=false,m_widgetAnchors=false;
         bool m_widgetTimeline=false,m_widgetTimelinePlay=false;
         unsigned m_widgetTimelineTrack=0;

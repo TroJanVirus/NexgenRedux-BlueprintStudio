@@ -41,7 +41,7 @@ namespace nx
         struct Point { float x=0,y=0; };
         struct Link { size_t from=0,to=0; std::string output,input; std::vector<Point> route{}; };
         struct Comment { std::string title; std::vector<std::string> members; };
-        struct Field { std::string name,type,value; bool initialized=false; };
+        struct Field { std::string name,type,value; bool initialized=false; bool exposed=false; };
         struct Graph
         {
             std::string owner,name,kind;
@@ -55,6 +55,7 @@ namespace nx
             std::vector<Field> globals{};
             std::vector<Comment> comments{};
             std::string moduleOwner{}; // optional screen scope on Behaviour start graph
+            std::string parentBehaviour{}; // shared parent class, on start only
         };
         std::string name;
         std::string assetRoot; // external project directory, separate from graph history
@@ -148,6 +149,12 @@ namespace nx
         std::vector<std::string> screens() const;
         std::vector<std::string> behaviours() const;
         bool addBehaviour(const std::string& name,std::string& error);
+        std::string parentBehaviour(const std::string& owner)const;
+        bool ensureActorBehaviour(const std::string& id,std::string& owner,std::string& error);
+        bool setActorFieldExposed(const std::string& owner,const std::string& field,bool enabled,std::string& error);
+        std::string actorBehaviour(const std::string& id)const;
+        std::vector<Field> actorSpawnFields(const std::string& id)const;
+        bool validateBehaviourInheritance(std::string& error)const;
         bool removeBehaviour(const std::string& name,std::string& error);
         bool removeFunction(size_t graph,std::string& error);
         bool setInlineMacro(size_t graph,bool enabled,std::string& error);

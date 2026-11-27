@@ -1238,6 +1238,96 @@ namespace nx
         if(!staged.serialize(verified,error))return false;
         recordGraphList();graphs.swap(staged.graphs);m_nextId=staged.m_nextId;error.clear();return true;
     }
+    std::string BlueprintDocument::parentBehaviour(const std::string& owner)const
+    {
+        for(const auto& g:graphs)if(g.owner==owner&&g.name=="start"&&!g.parentBehaviour.empty())return "behaviour:"+g.parentBehaviour;
+        return "";
+    }
+    std::string BlueprintDocument::actorBehaviour(const std::string& id)const
+    {
+        std::string source,error;
+        if(!visualActorRoot(id,source,error))return "";
+        JsonTree tree;if(!tree.parse(source.data(),source.size()))return "";
+        const std::string behaviourName=tree.root()["behaviour"].text();
+        return behaviourName.rfind("BP_Behaviour_",0)==0?"behaviour:"+behaviourName.substr(13):"";
+    }
+    std::vector<BlueprintDocument::Field> BlueprintDocument::actorSpawnFields(const std::string& id)const
+    {
+        std::vector<Field> result;std::string owner=actorBehaviour(id);
+        std::vector<std::string> chain;
+        for(unsigned i=0;!owner.empty()&&i<16;++i){chain.push_back(owner);owner=parentBehaviour(owner);}
+        for(auto it=chain.rbegin();it!=chain.rend();++it)for(const auto& g:graphs)if(g.owner==*it&&g.name=="start")
+            for(const auto& field:g.fields)
+            {
+                auto found=std::find_if(result.begin(),result.end(),[&](const Field& item){return item.name==field.name;});
+                if(found!=result.end()){const bool exposed=found->exposed;*found=field;found->exposed=exposed||field.exposed;}
+                else if(field.exposed)result.push_back(field);
+            }
+        return result;
+    }
+    bool BlueprintDocument::setActorFieldExposed(const std::string& owner,const std::string& field,bool enabled,std::string& error)
+    {
+        BlueprintDocument staged;staged.name=name;staged.assetRoot=assetRoot;staged.graphs=graphs;staged.manifests=manifests;
+        staged.m_visualAssets=m_visualAssets;staged.m_visualSerial=m_visualSerial;staged.m_nextId=m_nextId;
+        for(auto& g:staged.graphs)if(g.owner==owner&&behaviourOwner(owner)&&g.name=="start")
+            for(auto& item:g.fields)if(item.name==field)
+            {
+                if(!blueprintLiteralType(item.type)){error="Only primitive typed fields can be exposed on spawn.";return false;}
+                if(item.exposed==enabled){error.clear();return true;}
+                item.exposed=enabled;std::string checked;
+                if(!staged.serialize(checked,error))return false;
+                recordGraphList();graphs.swap(staged.graphs);return true;
+            }
+        error="Declare a typed Behaviour field first.";return false;
+    }
+    bool BlueprintDocument::ensureActorBehaviour(const std::string& id,std::string& owner,std::string& error)
+    {
+        BlueprintDocument staged;staged.name=name;staged.assetRoot=assetRoot;staged.graphs=graphs;staged.manifests=manifests;
+        staged.m_visualAssets=m_visualAssets;staged.m_visualSerial=m_visualSerial;staged.m_nextId=m_nextId;
+        const auto ensure=[&](auto&& self,const std::string& assetId,std::string& result)->bool
+        {
+            const auto* asset=staged.visualAsset(assetId);
+            if(!asset||asset->kind!="actor"){error="Select an actor class.";return false;}
+            const auto parentId=asset->dependencies.empty()?std::string():asset->dependencies.front();
+            std::string parent;
+            if(!parentId.empty()&&!self(self,parentId,parent))return false;
+            const auto current=staged.actorBehaviour(assetId);
+            if(!current.empty()&&current!=parent){result=current;return true;}
+            const std::string local="Actor_"+assetId.substr(6);
+            if(!staged.addBehaviour(local,error))return false;
+            result="behaviour:"+local;
+            for(auto& g:staged.graphs)if(g.owner==result&&g.name=="start"&&!parent.empty())g.parentBehaviour=parent.substr(10);
+            return staged.setVisualActorProperty(assetId,0,"behaviour",local,error);
+        };
+        if(!ensure(ensure,id,owner))return false;
+        std::string checked;if(!staged.serialize(checked,error))return false;
+        if(staged.graphs.size()==graphs.size()){error.clear();return true;}
+        recordGraphList();graphs.swap(staged.graphs);m_visualAssets.swap(staged.m_visualAssets);m_nextId=staged.m_nextId;error.clear();return true;
+    }
+    bool BlueprintDocument::validateBehaviourInheritance(std::string& error)const
+    {
+        for(const auto& behaviourName:behaviours())
+        {
+            const auto owner="behaviour:"+behaviourName;
+            std::unordered_set<std::string> seen;
+            for(auto at=owner;!at.empty();at=parentBehaviour(at))
+            {
+                if(!seen.insert(at).second||seen.size()>16||std::none_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==at&&g.name=="start";})||
+                    (!moduleForOwner(at).empty()&&at!=owner))
+                {error="Invalid or cyclic shared Behaviour inheritance.";return false;}
+            }
+            for(const auto& g:graphs)if(g.owner==owner&&g.kind=="function")
+            {
+                if(g.name=="Construction"&&(g.inlineMacro||g.returnType!="void"||!g.parameters.empty()))
+                {error="Construction must be a callable void() graph.";return false;}
+                const auto* base=function(parentBehaviour(owner),g.name);
+                if(base&&(g.inlineMacro||base->inlineMacro||base->returnType!=g.returnType||base->parameters.size()!=g.parameters.size()||
+                    !std::equal(base->parameters.begin(),base->parameters.end(),g.parameters.begin(),[](const BlueprintPin& a,const BlueprintPin& b){return a.name==b.name&&a.type==b.type;})))
+                {error="Override must preserve the inherited function signature: "+g.name;return false;}
+            }
+        }
+        return true;
+    }
     bool BlueprintDocument::createVisualActorChild(const std::string& parentId,std::string& id,std::string& error)
     {
         std::string resolved;if(!visualActorSource(parentId,resolved,error))return false;
@@ -1847,8 +1937,18 @@ namespace nx
                         (behaviourOwner(owner)&&field.name=="entity")||
                         (field.initialized&&(!f["value"].isString()||!literal("literal:"+field.type,field.value))))
                     {error="Invalid or duplicate field declaration.";return false;}
-                    g.fields.push_back(std::move(field));
+                    const auto exposed=f["exposed"];
+                    if(exposed.exists()&&(exposed.type()!=JsonTree::Type::Bool||!behaviourOwner(owner)||!blueprintLiteralType(field.type)))
+                    {error="Invalid exposed spawn field.";return false;}
+                    field.exposed=exposed.flag();g.fields.push_back(std::move(field));
                 }
+            }
+            const auto parent=value["parentBehaviour"];
+            if(parent.exists())
+            {
+                if(!behaviourOwner(owner)||g.name!="start"||g.kind!="event"||!parent.isString()||!identifier(parent.text()))
+                {error="Invalid parent Behaviour.";return false;}
+                g.parentBehaviour=parent.text();
             }
             const auto scope=value["moduleOwner"];
             if(scope.exists())
@@ -1874,6 +1974,7 @@ namespace nx
             }
             candidate.graphs.push_back(std::move(g));
         }
+        if(!candidate.validateBehaviourInheritance(error))return false;
         size_t graphIndex=0;
         for(auto value=gs.first();value.exists();value=value.next(),++graphIndex)
         {
@@ -1899,8 +2000,10 @@ namespace nx
                 if(n["watch"].exists()&&n["watch"].type()!=JsonTree::Type::Bool){error="Invalid node watch flag.";return false;}
                 node.watch=n["watch"].flag();
                 BlueprintNodeSpec resolved;
-                if(!candidate.nodeSpec(g,node,resolved)){error="Invalid function node in "+g.name;return false;}
                 const auto values=n["values"];
+                if(kind=="actor:spawn-asset"&&values["id"].isString())node.values.push_back({"id",values["id"].text()});
+                if(!candidate.nodeSpec(g,node,resolved)){error="Invalid function node in "+g.name;return false;}
+                node.values.clear();
                 if(values.exists())
                 {
                     if(!values.isObject()||values.count()>resolved.inputs.size())
@@ -2015,7 +2118,7 @@ namespace nx
                 {error="Unknown or incompatible module variable: "+n.ref;return false;}
             }
         }
-        if(!candidate.functions(error))return false;
+        if(!candidate.validateBehaviourInheritance(error)||!candidate.functions(error))return false;
         *this=std::move(candidate);error.clear();return true;
     }
     bool BlueprintDocument::serialize(std::string& result,std::string& error)const
@@ -2071,8 +2174,10 @@ namespace nx
                 {
                     auto* item=fields->add();if(!item||!text(*item,"name",f.name)||!text(*item,"type",f.type))return fail();
                     if(f.initialized&&!text(*item,"value",f.value))return fail();
+                    if(f.exposed){auto* exposed=item->put("exposed");if(!exposed)return fail();exposed->setFlag(true);}
                 }
             }
+            if(!g.parentBehaviour.empty()&&!text(*v,"parentBehaviour",g.parentBehaviour))return fail();
             if(!g.moduleOwner.empty()&&!text(*v,"moduleOwner",g.moduleOwner))return fail();
             if(!g.globals.empty())
             {
@@ -2450,11 +2555,14 @@ namespace nx
     bool BlueprintDocument::variables(std::vector<BlueprintPin>& values,std::string& error,const std::string& owner)const
     {
         std::vector<BlueprintPin> result;
+        const auto parent=parentBehaviour(owner);
+        if(!parent.empty()&&!variables(result,error,parent))return false;
         for(const auto& graph:graphs)if(graph.owner==owner)for(const auto& field:graph.fields)
         {
-            if(!identifier(field.name)||!blueprintVariableType(field.type)||std::any_of(result.begin(),result.end(),[&](const BlueprintPin& p){return p.name==field.name;}))
-            {error="Invalid or duplicate declared field: "+field.name;return false;}
-            result.push_back({field.name,field.type});
+            const auto inherited=std::find_if(result.begin(),result.end(),[&](const BlueprintPin& p){return p.name==field.name;});
+            if(!identifier(field.name)||!blueprintVariableType(field.type)||(inherited!=result.end()&&inherited->type!=field.type))
+            {error="Invalid or conflicting declared field: "+field.name;return false;}
+            if(inherited==result.end())result.push_back({field.name,field.type});
         }
         for(const auto& graph:graphs)if(graph.owner==owner)for(const auto& node:graph.nodes)
         {
@@ -2480,6 +2588,7 @@ namespace nx
         const auto event=behaviourOwner(scope)?"start":"onEnter";
         if(scope.empty()){error="Shared Behaviours have no single module. Select a screen for global variables.";return false;}
         BlueprintDocument staged;staged.name=name;staged.assetRoot=assetRoot;staged.graphs=graphs;staged.manifests=manifests;
+        staged.m_visualAssets=m_visualAssets;staged.m_visualSerial=m_visualSerial;staged.m_nextId=m_nextId;
         auto graph=std::find_if(staged.graphs.begin(),staged.graphs.end(),[&](const Graph& g){return g.owner==scope&&g.name==event;});
         if(graph==staged.graphs.end()){error="Unknown declaration owner.";return false;}
         auto& fields=global?graph->globals:graph->fields;
@@ -2532,7 +2641,7 @@ namespace nx
                 if(fields.size()>=256){error="Declaration limit reached.";return false;}
                 fields.push_back(std::move(next));
             }
-            else *old=std::move(next);
+            else {next.exposed=old->exposed;*old=std::move(next);}
         }
         std::string checked;
         if(!staged.serialize(checked,error))return false;
@@ -2582,9 +2691,9 @@ namespace nx
         for(size_t i=0;i<graphs.size();++i)for(const auto& node:graphs[i].nodes)
         {
             if(node.kind!="call:function")continue;
-            const auto it=index.find(scoped(graphs[i].owner,node.ref));
-            if(it==index.end()){error="Missing function: "+node.ref;return false;}
-            calls[i].push_back(it->second);
+            const auto* target=function(graphs[i].owner,node.ref);
+            if(!target){error="Missing function: "+node.ref;return false;}
+            calls[i].push_back(static_cast<size_t>(target-graphs.data()));
         }
         // Topological elimination avoids recursion and catches indirect cycles.
         std::vector<size_t> indegree(graphs.size(),0),ready;
@@ -2608,14 +2717,25 @@ namespace nx
     }
     const BlueprintDocument::Graph* BlueprintDocument::function(const std::string& owner,const std::string& functionName) const
     {
-        const auto found=std::find_if(graphs.begin(),graphs.end(),[&](const Graph& g)
-        {return g.owner==owner&&g.name==functionName&&g.kind=="function";});
-        return found==graphs.end()?nullptr:&*found;
+        std::string at=owner;
+        for(unsigned depth=0;depth<16&&!at.empty();++depth,at=parentBehaviour(at))
+        {
+            const auto found=std::find_if(graphs.begin(),graphs.end(),[&](const Graph& g)
+            {return g.owner==at&&g.name==functionName&&g.kind=="function";});
+            if(found!=graphs.end())return &*found;
+        }
+        return nullptr;
     }
     bool BlueprintDocument::nodeSpec(const Graph& graph,const Node& node,BlueprintNodeSpec& spec) const
     {
         const auto* base=blueprintSpec(node.kind);if(!base)return false;
         spec=*base;
+        if(node.kind=="actor:spawn-asset")
+        {
+            const auto id=std::find_if(node.values.begin(),node.values.end(),[](const InputValue& v){return v.pin=="id";});
+            if(id!=node.values.end())for(const auto& field:actorSpawnFields(id->value))
+                spec.inputs.push_back({"spawn_"+field.name,field.type});
+        }
         if(node.kind=="entry"&&graph.kind=="function")
             for(const auto& p:graph.parameters)spec.outputs.push_back({"arg_"+p.name,p.type});
         if(node.kind=="return:function")
@@ -2693,8 +2813,13 @@ namespace nx
             std::any_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==owner&&g.name==functionName;})||
             ownerEvent(owner,functionName))
         {error="Choose a unique function name (letters, digits and underscores).";return false;}
-        recordGraphList();
         Graph g;g.owner=owner;g.name=functionName;g.kind="function";
+        if(const auto* inherited=function(parentBehaviour(owner),functionName))
+        {
+            if(inherited->inlineMacro){error="Inline macros cannot be overridden.";return false;}
+            g.parameters=inherited->parameters;g.returnType=inherited->returnType;
+        }
+        recordGraphList();
         g.nodes.push_back({"entry","entry","",24,60});graphs.push_back(std::move(g));
         error.clear();return true;
     }
@@ -2904,6 +3029,7 @@ namespace nx
     bool BlueprintDocument::removeBehaviour(const std::string& behaviourName,std::string& error)
     {
         const auto owner="behaviour:"+behaviourName;
+        for(const auto& g:graphs)if(g.parentBehaviour==behaviourName){error="Remove derived Behaviours first.";return false;}
         if(std::none_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==owner;}))
         {error="Unknown behaviour.";return false;}
         for(const auto& g:graphs)for(const auto& n:g.nodes)

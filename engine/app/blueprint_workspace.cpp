@@ -264,7 +264,7 @@ namespace nx
         {
             if(base->id=="call:function")
             {
-                for(const auto& fn:m_document.graphs)if(fn.owner==graph.owner&&fn.kind=="function"&&m_document.canCallFunction(m_graph,fn.name))
+                for(const auto& fn:m_document.graphs)if(fn.kind=="function"&&m_document.function(graph.owner,fn.name)==&fn&&m_document.canCallFunction(m_graph,fn.name))
                 {
                     BlueprintNodeSpec resolved;
                     if(m_document.nodeSpec(graph,{"",base->id,fn.name},resolved))consider(resolved,fn.name,std::string(fn.inlineMacro?"Macro ":"Call ")+fn.name);
@@ -649,6 +649,13 @@ namespace nx
         Vec2 p;if(!m_placementWorld->space().toScreen({wx,wy,wz},p))return false;
         x=p.x;y=p.y;return std::isfinite(x)&&std::isfinite(y);
     }
+    bool BlueprintWorkspace::gizmoAxis(float wx,float wy,float wz,unsigned axis,float& x,float& y,float& dx,float& dy)const
+    {
+        float endX=0,endY=0;
+        if(!placementProject(wx,wy,wz,x,y)||!placementProject(wx+(axis==0?1.f:0.f),wy+(axis==1?1.f:0.f),wz+(axis==2?1.f:0.f),endX,endY))return false;
+        dx=endX-x;dy=endY-y;
+        return dx*dx+dy*dy>0.25f;
+    }
     void BlueprintWorkspace::updateVisualPlacement(Services& s,float x,float y,bool left,bool click)
     {
         m_placementX=x;m_placementY=y;
@@ -665,10 +672,24 @@ namespace nx
                     const auto markers=actorMarkers(m_document,assetScreen());
                     for(const auto& marker:markers)if(marker.graph==m_placementGraph&&marker.node==m_placementNode)
                     {
-                        const float height=m_placement3D?m_placementHeight:marker.y;
-                        float wx=0,wz=0;
-                        if(placementPoint(x,y,height,wx,wz))ok=m_document.editVisualActorPlacement(assetScreen(),marker.id,"place",std::to_string(wx)+","+std::to_string(height)+","+std::to_string(wz),m_status);
-                        else m_status="No forward intersection with placement plane.";
+                        if(m_gizmoAxis>=0)
+                        {
+                            const float delta=((x-m_placementStartX)*m_gizmoDx+(y-m_placementStartY)*m_gizmoDy)/(m_gizmoDx*m_gizmoDx+m_gizmoDy*m_gizmoDy);
+                            auto values=std::vector<float>{m_gizmoInitial[0],m_gizmoInitial[1],m_gizmoInitial[2]};
+                            auto& v=values[static_cast<size_t>(m_gizmoAxis)];
+                            if(m_gizmoMode==0)v+=std::round(delta*10.f)/10.f;
+                            else if(m_gizmoMode==1)v+=std::round(delta*15.f);
+                            else v=std::max(0.01f,v+delta*0.25f);
+                            const char* property=m_gizmoMode==0?"place":m_gizmoMode==1?"rotationOverride":"sizeOverride";
+                            ok=m_document.editVisualActorPlacement(assetScreen(),marker.id,property,std::to_string(values[0])+","+std::to_string(values[1])+","+std::to_string(values[2]),m_status);
+                        }
+                        else
+                        {
+                            const float height=m_placement3D?m_placementHeight:marker.y;
+                            float wx=0,wz=0;
+                            if(placementPoint(x,y,height,wx,wz))ok=m_document.editVisualActorPlacement(assetScreen(),marker.id,"place",std::to_string(wx)+","+std::to_string(height)+","+std::to_string(wz),m_status);
+                            else m_status="No forward intersection with placement plane.";
+                        }
                         break;
                     }
                 }
@@ -723,10 +744,11 @@ namespace nx
             else {m_placementYaw=0.65f;m_placementDistance=25;m_placementHeight=0;}
             m_placementReady=false;return;
         }
-        if(m_placement3D&&in(x,y,630,575,1000,591))
+        if(m_placement3D&&in(x,y,630,575,1000,598))
         {
             if(x<740)m_placementHeight=std::max(-100.f,m_placementHeight-1);
             else if(x>890)m_placementHeight=std::min(100.f,m_placementHeight+1);
+            else m_gizmoMode=(m_gizmoMode+1)%3;
             return;
         }
         const auto& assets=m_document.visualAssets();
@@ -741,6 +763,30 @@ namespace nx
             return;
         }
         if(!in(x,y,planLeft,planTop,planRight,planBottom))return;
+        if(m_placement3D&&!m_placementSelectedId.empty())for(const auto& marker:listed)if(marker.id==m_placementSelectedId)
+        {
+            for(unsigned axis=0;axis<3;++axis)
+            {
+                float ox=0,oy=0,dx=0,dy=0;
+                if(!gizmoAxis(marker.x,marker.y,marker.z,axis,ox,oy,dx,dy))continue;
+                const float len=std::sqrt(dx*dx+dy*dy),ex=ox+40*dx/len,ey=oy+40*dy/len;
+                if(std::abs(x-ex)>9||std::abs(y-ey)>9)continue;
+                m_gizmoInitial[0]=marker.x;m_gizmoInitial[1]=marker.y;m_gizmoInitial[2]=marker.z;
+                if(m_gizmoMode)
+                {
+                    std::string json;JsonTree tree;
+                    if(!m_document.visualActorInstance(marker.asset,owner,m_document.graphs[marker.graph].nodes[marker.node].values,json,m_status)||!tree.parse(json.data(),json.size()))return;
+                    const auto value=tree.root()["entities"][0u][m_gizmoMode==1?"angles":"size"];
+                    const float fallback=m_gizmoMode==2?1.f:0.f;
+                    for(u32 i=0;i<3;++i)m_gizmoInitial[i]=value.isArray()?value[i].number(fallback):value.isNumber()?(m_gizmoMode==1?(i==1?value.number():0.f):value.number()):fallback;
+                }
+                m_gizmoAxis=static_cast<int>(axis);m_gizmoDx=dx;m_gizmoDy=dy;
+                m_placementGraph=marker.graph;m_placementNode=marker.node;m_placementAsset=marker.asset;
+                m_placementStartX=x;m_placementStartY=y;m_placementDragRevision=m_document.revision();m_placementDragging=true;
+                m_status="Drag axis; release to apply one undoable transform.";return;
+            }
+            break;
+        }
         m_placementSelectedId.clear();
         const auto& markers=listed;
         for(auto it=markers.rbegin();it!=markers.rend();++it)
@@ -795,6 +841,17 @@ namespace nx
             const bool selected=marker.id==m_placementSelectedId&&m_placementSelectedOwner==assetScreen();
             c.roundRect(x-8,y-8,16,16,3,selected?Color{0.95f,0.72f,0.24f,1}:Color{0.26f,0.56f,0.85f,1});
             c.text(*m_font,marker.label.c_str(),x+11,y-8,text);
+            if(selected&&m_placement3D)
+            {
+                const Color colors[]={{0.95f,0.2f,0.2f,1},{0.2f,0.9f,0.35f,1},{0.25f,0.5f,1,1}};
+                for(unsigned axis=0;axis<3;++axis)
+                {
+                    float ox=0,oy=0,dx=0,dy=0;if(!gizmoAxis(marker.x,marker.y,marker.z,axis,ox,oy,dx,dy))continue;
+                    const float len=std::sqrt(dx*dx+dy*dy),ex=ox+40*dx/len,ey=oy+40*dy/len;
+                    c.line(ox,oy,ex,ey,2,colors[axis]);c.roundRect(ex-5,ey-5,10,10,2,colors[axis]);
+                    c.text(*m_font,axis==0?"X":axis==1?"Y":"Z",ex+6,ey-6,text);
+                }
+            }
         }
         if(m_placementDragging&&in(m_placementX,m_placementY,planLeft,planTop,planRight,planBottom))
         {
@@ -809,7 +866,7 @@ namespace nx
             const char* labels[]={"Orbit L","Orbit R","Zoom +","Zoom -","Reset"};
             for(unsigned i=0;i<5;++i){const float x=630+74*static_cast<float>(i);c.rect(x,551,71,22,{0.19f,0.33f,0.50f,1});c.text(*m_font,labels[i],x+35,552,text,Align::Center);}
             c.text(*m_font,"Height -",635,575,text);c.text(*m_font,"Height +",925,575,text);
-            char label[80];snprintf(label,sizeof(label),"Y %.1f m | %u omitted",m_placementHeight,m_placementOmitted);c.text(*m_font,label,815,575,muted,Align::Center);
+            c.text(*m_font,m_gizmoMode==0?"Move XYZ":m_gizmoMode==1?"Rotate XYZ":"Scale XYZ",815,575,accent,Align::Center);
         }
         else
         {
@@ -1248,6 +1305,12 @@ namespace nx
                         m_themeStyle=m_visualText;
                     }
                     if(m_visualInput==7&&!m_document.setVisualThemeProperty(m_visualSelection,m_themeStyle,themeStates[m_themeState],m_visualProperty,m_visualText,m_status))break;
+                    if(m_visualInput==11)
+                    {
+                        const auto owner=m_document.actorBehaviour(m_visualSelection);
+                        if(!m_document.setActorFieldExposed(owner,m_visualText,true,m_status))break;
+                        rebuildPins();filterCatalogue();
+                    }
                     if(m_visualInput==10&&!m_document.editVisualActorPlacement(m_placementSelectedOwner,m_placementSelectedId,m_visualProperty,m_visualText,m_status))break;
                     if(m_visualInput==9&&!m_document.setWidgetKey(m_visualSelection,m_widgetSelection,m_visualProperty,m_visualText,m_widgetTimelineTime,m_status))break;
                     if(m_visualInput==8)
@@ -1360,6 +1423,18 @@ namespace nx
             {if(m_document.resetVisualActorOverrides(m_visualSelection,m_status,m_visualComponent))m_status="Selected component overrides cleared.";return;}
             if(in(x,y,280,548,610,581)){m_visualPlacement=true;m_placementOutliner=false;m_placementSelectedId.clear();m_placementSelectedOwner=assetScreen();m_placementFirst=0;cancelVisualPlacement();m_status="Drag actors into placement or open the World outliner.";return;}
             if(in(x,y,630,232,1000,266)){m_visualInspector=!m_visualInspector;m_visualPhysics=false;return;}
+            if(!m_visualInspector&&in(x,y,630,548,810,581))
+            {
+                std::string owner;
+                if(m_document.ensureActorBehaviour(m_visualSelection,owner,m_status))
+                {
+                    for(size_t i=0;i<m_document.graphs.size();++i)if(m_document.graphs[i].owner==owner&&m_document.graphs[i].name=="start")
+                    {m_assetBrowser=false;selectGraph(i);m_status="Class graphs: declare variables, add Construction or override inherited functions by name.";break;}
+                }
+                return;
+            }
+            if(!m_visualInspector&&in(x,y,630,583,1000,609))
+            {m_visualProperty="Expose declared primitive field";m_visualText.clear();m_visualInput=11;input.setTyping(true);return;}
             if(m_visualInspector)
             {
                 if(in(x,y,630,m_visualPhysics?548.f:558.f,1000,m_visualPhysics?581.f:591.f)){m_visualPhysics=!m_visualPhysics;return;}
@@ -1620,7 +1695,8 @@ namespace nx
                     }
                 }
                 button(630,505,185,"Add child");button(820,505,180,"Add camera");
-                button(630,548,370,"Add linked actor to screen");
+                button(630,548,180,"Class graphs");button(820,548,180,"Add to screen");
+                button(630,583,370,"Expose declared field on spawn");
                 }
             }
         }

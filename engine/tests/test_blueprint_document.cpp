@@ -1688,3 +1688,25 @@ NX_TEST(nativeDerivedActorComponentLimitRejectsParentChangeAtomically)
     NX_EXPECT(doc.visualActorSource(child,source,error));
     JsonTree tree;NX_EXPECT(tree.parse(source.data(),source.size())&&tree.root()["entities"].count()==32);
 }
+
+NX_TEST(nativeActorBehaviourInheritanceAndExposedSpawnFields)
+{
+    BlueprintDocument doc;doc.create();std::string base,child,baseOwner,childOwner,error,source,bytes;
+    NX_EXPECT(doc.createVisualAsset("actor",base,error)&&doc.createVisualActorChild(base,child,error));
+    NX_EXPECT(doc.ensureActorBehaviour(child,childOwner,error)&&doc.ensureActorBehaviour(base,baseOwner,error));
+    NX_EXPECT(doc.parentBehaviour(childOwner)==baseOwner);
+    NX_EXPECT(doc.editVariableDeclaration(baseOwner,"field health:int=100",error)&&doc.setActorFieldExposed(baseOwner,"health",true,error));
+    NX_EXPECT(doc.editVariableDeclaration(childOwner,"field health:int=75",error));
+    NX_EXPECT(!doc.editVariableDeclaration(childOwner,"field health:string=bad",error));
+    NX_EXPECT(doc.addFunction("Construction",error,baseOwner)&&doc.addFunction("Construction",error,childOwner));
+    NX_EXPECT(doc.addFunction("Score",error,baseOwner));
+    const auto* fn=doc.function(baseOwner,"Score");NX_EXPECT(fn);
+    if(!fn)return;
+    NX_EXPECT(doc.editFunctionSignature(static_cast<size_t>(fn-doc.graphs.data()),"int(amount:int)",error));
+    NX_EXPECT(doc.addFunction("Score",error,childOwner));
+    const auto* overrideFn=doc.function(childOwner,"Score");NX_EXPECT(overrideFn&&overrideFn->returnType=="int"&&overrideFn->parameters.size()==1);
+    NX_EXPECT(doc.placeVisualActor("Screen",child,"0,0,0",error)&&doc.setInputValue(0,1,"spawn_health","42",error));
+    NX_EXPECT(doc.serialize(bytes,error));BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error));
+    NX_EXPECT(copy.actorSpawnFields(child).size()==1&&copy.parentBehaviour(childOwner)==baseOwner);
+    NX_EXPECT(!copy.setActorFieldExposed(baseOwner,"health",false,error));
+}

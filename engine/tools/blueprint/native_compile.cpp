@@ -306,7 +306,27 @@ namespace nx
                     if(it==n.values.end()||!document.visualActorInstance(it->value,graph.owner,n.values,json,why))
                         return fail(to,why.empty()?"Select a linked actor asset.":why);
                     if(!literalValue(to,"string",json,sourceJson)||!value(to,"place",place,0))return false;
-                    source+=pad+"Entity@ bp_value_"+std::to_string(to)+" = Space::makeActor(Json("+sourceJson+"), "+place+");\n";
+                    const auto actor="bp_value_"+std::to_string(to);
+                    source+=pad+"Entity@ "+actor+" = Space::makeActor(Json("+sourceJson+"), "+place+");\n";
+                    const auto owner=document.actorBehaviour(it->value);
+                    const auto fields=document.actorSpawnFields(it->value);
+                    const auto* construction=document.function(owner,"Construction");
+                    if(!owner.empty()&&(!fields.empty()||construction))
+                    {
+                        const auto instance="bp_actor_behaviour_"+std::to_string(to),type="BP_Behaviour_"+owner.substr(10);
+                        source+=pad+"if (Space::validEntity("+actor+"))\n"+pad+"{\n";
+                        source+=pad+"    "+type+"@ "+instance+" = cast<"+type+">("+actor+".behaviour);\n";
+                        source+=pad+"    if ("+instance+" !is null)\n"+pad+"    {\n";
+                        for(const auto& field:fields)
+                        {
+                            const auto pin="spawn_"+field.name;
+                            if(!incoming(to,pin)&&std::none_of(n.values.begin(),n.values.end(),[&](const BlueprintDocument::InputValue& v){return v.pin==pin;}))continue;
+                            std::string expr;if(!value(to,pin,expr,0))return false;
+                            source+=pad+"        "+instance+".bp_var_"+field.name+" = "+expr+";\n";
+                        }
+                        if(construction)source+=pad+"        "+instance+".bp_fn_Construction();\n";
+                        source+=pad+"    }\n"+pad+"}\n";
+                    }
                     available[to]=true;mark(start,to);return flow(to,"then",indent,depth+1);
                 }
                 if(n.kind=="render:space")
@@ -614,15 +634,31 @@ namespace nx
             const auto scope=document.moduleForOwner(classOwner);
             if(scope.empty()||scope==owner)classes.push_back(classOwner);
         }
+        const auto depth=[&](const std::string& value){unsigned n=0;for(auto at=document.parentBehaviour(value);!at.empty()&&n<16;at=document.parentBehaviour(at))++n;return n;};
+        std::stable_sort(classes.begin(),classes.end(),[&](const std::string& a,const std::string& b){return depth(a)<depth(b);});
         classes.push_back(owner);
         for(const auto& classOwner:classes)
         {
         const bool behaviour=classOwner!=owner;
-        result+=behaviour?"class BP_Behaviour_"+classOwner.substr(10)+" : Behaviour\n{\n":"class BP_NativeScreen : Screen\n{\n";
+        const auto parent=document.parentBehaviour(classOwner);
+        result+=behaviour?"class BP_Behaviour_"+classOwner.substr(10)+" : "+(parent.empty()?"Behaviour":"BP_Behaviour_"+parent.substr(10))+"\n{\n":"class BP_NativeScreen : Screen\n{\n";
         if(!behaviour&&usesLevel)result+="    Level bp_level;\n";
         if(!document.variables(vars,error,classOwner))return false;
+        std::vector<BlueprintPin> inherited;
+        if(!parent.empty()&&!document.variables(inherited,error,parent))return false;
+        std::string initializers;
         for(const auto& v:vars)
         {
+            if(std::any_of(inherited.begin(),inherited.end(),[&](const BlueprintPin& p){return p.name==v.name;}))
+            {
+                for(const auto& g:document.graphs)if(g.owner==classOwner)for(const auto& field:g.fields)if(field.name==v.name&&field.initialized)
+                {
+                    std::string literal;Emitter e{document,g,result,error,{}, {},0,location,spans};
+                    if(!e.literalValue(0,field.type,field.value,literal))return false;
+                    initializers+="        bp_var_"+field.name+" = "+literal+";\n";
+                }
+                continue;
+            }
             result+="    "+v.type+" bp_var_"+v.name;
             for(const auto& g:document.graphs)if(g.owner==classOwner)for(const auto& f:g.fields)
                 if(f.name==v.name&&f.initialized)
@@ -635,6 +671,7 @@ namespace nx
                 }
             result+=";\n";
         }
+        if(!initializers.empty())result+="    BP_Behaviour_"+classOwner.substr(10)+"()\n    {\n"+initializers+"    }\n";
         // Each Timeline belongs to one screen/Behaviour instance and one Update node.
         for(size_t gi=0;gi<document.graphs.size();++gi)
         {
@@ -652,6 +689,7 @@ namespace nx
         {
             const auto& graph=document.graphs[graphIndex];
             if(graph.owner!=classOwner)continue;
+            if(!parent.empty()&&graph.kind=="event"&&graph.nodes.size()==1)continue;
             if(graph.inlineMacro)
             {
                 // Validate even unused macro bodies, without emitting a callable method.
