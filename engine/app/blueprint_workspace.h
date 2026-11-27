@@ -33,6 +33,7 @@ namespace nx
         bool saveCurrent(Services& services);
         bool writeVerified(Services& services,const std::string& path,const std::string& bytes);
         bool compileAndExport(Services& services);
+        bool validateProject(Services& services,const std::vector<BlueprintScreenOutput>& screens);
         void focusDiagnostic(BlueprintLocation location);
         void focusPreviewError(const std::string& error);
         std::vector<BlueprintScreenOutput> m_previewOutputs;

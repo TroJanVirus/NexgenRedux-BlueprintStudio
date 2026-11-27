@@ -174,10 +174,11 @@ namespace nx
         auto lower=[](std::string value){for(char& c:value)c=static_cast<char>(std::tolower(static_cast<unsigned char>(c)));return value;};
         const auto query=lower(m_query);
         const auto& graph=m_document.graphs[m_graph];const bool behaviour=graph.owner.rfind("behaviour:",0)==0;
+        const bool hasBehaviours=!m_document.behaviours().empty();
         for(const auto& node:blueprintCatalogue())
             if(node.id!="entry"&&(node.id!="event:entity"||behaviour)&&
                 (node.id!="event:other"||(behaviour&&(graph.name=="onHit"||graph.name=="onLeave")))&&
-                (node.id!="attach:behaviour"||(!behaviour&&!m_document.behaviours().empty()))&&(node.id!="event:delta"||m_document.graphs[m_graph].name=="update")&&
+                (node.id!="attach:behaviour"||(!behaviour&&hasBehaviours))&&(node.id!="event:delta"||m_document.graphs[m_graph].name=="update")&&
                 (node.id!="event:canvas"||m_document.graphs[m_graph].name=="draw")&&
                 lower(node.category+" "+node.title+" "+node.id).find(query)!=std::string::npos)m_palette.push_back(&node);
     }
@@ -299,10 +300,8 @@ namespace nx
         }
     }
 
-    bool BlueprintWorkspace::compileAndExport(Services& s)
+    bool BlueprintWorkspace::validateProject(Services& s,const std::vector<BlueprintScreenOutput>& screens)
     {
-        std::vector<BlueprintScreenOutput> screens;BlueprintLocation location;m_diagnostic={};
-        if(!compileBlueprintProject(m_document,screens,m_status,&location)){focusDiagnostic(location);return false;}
         const char* module="bp_native_validation";
         for(const auto& screen:screens)
         {
@@ -314,6 +313,14 @@ namespace nx
             }
             s.host->discard(module);if(!valid)return false;
         }
+        return true;
+    }
+
+    bool BlueprintWorkspace::compileAndExport(Services& s)
+    {
+        std::vector<BlueprintScreenOutput> screens;BlueprintLocation location;m_diagnostic={};
+        if(!compileBlueprintProject(m_document,screens,m_status,&location)){focusDiagnostic(location);return false;}
+        if(!validateProject(s,screens))return false;
         static unsigned sequence=0;
         std::string root;
         for(unsigned attempt=0;attempt<100;++attempt)
@@ -501,7 +508,7 @@ namespace nx
                 BlueprintLocation location;m_diagnostic={};m_previewOutputs.clear();
                 checkpoint(s,true);
                 if(!compileBlueprintProject(m_document,m_previewOutputs,m_status,&location))focusDiagnostic(location);
-                else
+                else if(validateProject(s,m_previewOutputs))
                 {
                     std::vector<Screens::PreviewScreen> screens;
                     for(const auto& output:m_previewOutputs)

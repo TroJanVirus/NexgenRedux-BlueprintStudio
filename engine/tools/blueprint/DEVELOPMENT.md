@@ -31,7 +31,7 @@ Blueprint Studio is a development tool for the desktop Nexgen application, not j
 
 | Area | Use from Nexgen | What Studio adds |
 |---|---|---|
-| Gameplay | AngelScript, Screens, Behaviours | Visual functions, graphs, variables and reusable logic. Ordinary compiled scripts. |
+| Gameplay | AngelScript, Screens, Behaviours | Visual functions, graphs, variables and reusable native Behaviour classes. Ordinary compiled scripts; per-entity state and lifetime are managed by the original World. |
 | 3D levels | Original scene editor, Space, Level helper | Launch the original editor, bring its files into the project, assign Behaviours and connect load/update/draw nodes. Removed the duplicate browser 3D renderer and camera. |
 | 2D scenes | Scene, prefabs, children | Simple layout and native prefab selection. Prefer native prefabs to graph spawn trees unless named child output pins are needed. |
 | Animation and waiting | Sprite/model animation, Tween, coroutines | Native API nodes and visual state/curve graphs. Prefer native Tween for simple animation. Existing graph Delay and Timeline have their own continuation and multi-track semantics; keep old graphs compatible and use native helpers wherever equivalent. |

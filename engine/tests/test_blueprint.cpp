@@ -742,3 +742,59 @@ NX_TEST(nativeGeneratedBehaviourAttachesAndRunsInOriginalWorld)
     r.step(5);
     NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("native_behaviour","missing"),"started")==0);
 }
+
+NX_TEST(nativeBehaviourStateAndCollisionValuesArePerEntity)
+{
+    BlueprintDocument doc;doc.create();std::string error,source;
+    bool ok=doc.addBehaviour("Counter",error);
+    // start: increment the instance field; check that every instance begins at one.
+    auto add=[&](size_t g,const char* kind){ok=ok&&doc.addNode(g,kind,0,0,error);};
+    auto wire=[&](size_t g,size_t a,const char* out,size_t b,const char* in)
+    {ok=ok&&doc.connect(g,a,out,b,in,error);};
+    auto input=[&](size_t g,size_t n,const char* pin,const char* value)
+    {ok=ok&&doc.setInputValue(g,n,pin,value,error);};
+    add(6,"var:get:int");add(6,"add:int");add(6,"var:set:int");
+    add(6,"equal:int");add(6,"branch");add(6,"event:entity");
+    add(6,"api:Entity:get_name:Entity@");add(6,"api:Save:Save::set:string,string");
+    wire(6,1,"value",2,"a");input(6,2,"b","1");wire(6,2,"result",3,"value");
+    wire(6,0,"then",3,"in");wire(6,3,"then",5,"in");
+    wire(6,1,"value",4,"a");input(6,4,"b","1");wire(6,4,"result",5,"condition");
+    wire(6,6,"value",7,"target");wire(6,7,"result",8,"key");
+    wire(6,5,"true",8,"in");input(6,8,"value","started");
+    // onHit: store the owning entity name under the collision partner's name.
+    add(8,"event:entity");add(8,"event:other");
+    add(8,"api:Entity:get_name:Entity@");add(8,"api:Entity:get_name:Entity@");
+    add(8,"api:Save:Save::set:string,string");
+    wire(8,1,"value",3,"target");wire(8,2,"value",4,"target");
+    wire(8,4,"result",5,"key");wire(8,3,"result",5,"value");wire(8,0,"then",5,"in");
+    NX_EXPECT(ok&&compileBlueprint(doc,source,error));if(!ok||source.empty())return;
+    source+=R"(
+        void setup() {
+            Entity@ a = Scene::spawn(Vec2(0,0));
+            a.name = "first";
+            a.circle(10, 1, 1 << 2);
+            a.add(BP_Behaviour_Counter());
+            Entity@ b = Scene::spawn(Vec2(100,0));
+            b.name = "second";
+            b.circle(10, 1, 1 << 2);
+            b.add(BP_Behaviour_Counter());
+            Entity@ c = Scene::spawn(Vec2(0,0));
+            c.name = "partner_a";
+            c.circle(10, 2, 0);
+            Entity@ d = Scene::spawn(Vec2(100,0));
+            d.name = "partner_b";
+            d.circle(10, 2, 0);
+        }
+    )";
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    World world(r.assets,r.host,"blueprint",64,32);world.space().init(&r.solids,&r.audio);
+    r.services.world=&world;
+    if(!compile(r.host,source.c_str())){NX_EXPECT(false);r.services.world=nullptr;return;}
+    NX_EXPECT(r.host.call(r.host.find("blueprint","void setup()")));
+    NX_EXPECT(world.update(1.0f/60));NX_EXPECT(world.update(1.0f/60));
+    NX_EXPECT(strcmp(r.save.get("first","missing"),"started")==0);
+    NX_EXPECT(strcmp(r.save.get("second","missing"),"started")==0);
+    NX_EXPECT(strcmp(r.save.get("partner_a","missing"),"first")==0);
+    NX_EXPECT(strcmp(r.save.get("partner_b","missing"),"second")==0);
+    r.services.world=nullptr;
+}
