@@ -10,6 +10,7 @@
 #include <ctime>
 #include <cstring>
 #include <unordered_map>
+#include <cctype>
 
 namespace nx
 {
@@ -17,7 +18,7 @@ namespace nx
     {
         constexpr float kWidth = 1280, kHeight = 720, kLeft = 248, kRight = 1012, kTop = 76, kBottom = 674;
         constexpr float kNodeWidth = 196, kNodeHeight = 72;
-        // The current renderer shows connected pins only; the full typed catalog will follow.
+        // Each native pin is provided by the generated catalogue.
         constexpr float kPinStart=38, kPinStep=22;
         constexpr size_t kRows = 19;
         constexpr Color text = {0.88f, 0.91f, 0.96f, 1};
@@ -66,24 +67,19 @@ namespace nx
         s.input->consume();
         m_left = m_pan = m_drag = false;
         m_shortcuts = 0;
-        if (m_document.graphs.empty())
+        m_previousTyping=s.input->typing();m_focus=0;s.input->setTyping(false);
+        if(m_document.graphs.empty())
         {
-            FileData example;
-            if (s.platform->readFile("blueprint/spinner.bp.json", example, MemTag::General) &&
-                m_document.load(reinterpret_cast<const char*>(example.data), example.size, m_status))
-            {
-                selectGraph(0);
-                m_status = "Example graph. Drag nodes or drop your own Blueprint JSON." ;
-            }
-            else
-                m_status = "Drop a .bp.json or .bp.project.json file here.";
+            m_document.create();selectGraph(0);
+            m_status="New Blueprint. Search the node library to start.";
         }
+        filterCatalogue();
     }
 
     void BlueprintWorkspace::close(Services& s)
     {
         if (!active()) return;
-        cancelDrag();
+        cancelDrag();clearWire();m_focus=0;s.input->setTyping(m_previousTyping);
         s.assets->release(m_font);
         m_font = nullptr;
         s.input->setWantsPointer(m_wantedPointer);
@@ -93,7 +89,7 @@ namespace nx
     void BlueprintWorkspace::selectGraph(size_t index)
     {
         if (index >= m_document.graphs.size()) return;
-        cancelDrag();
+        cancelDrag();clearWire();
         m_graph = index; m_selection = static_cast<size_t>(-1);
         rebuildPins();fitGraph();
         if (index < m_first) m_first = index;
@@ -114,11 +110,28 @@ namespace nx
             if(result.second)rows.push_back(pin);
             return result.first->second;
         };
+        for(size_t i=0;i<graph.nodes.size();++i)
+        {
+            if(const auto* spec=blueprintSpec(graph.nodes[i].kind))
+            {
+                for(const auto& pin:spec->inputs)add(m_rows[i].inputs,lookup[i].inputs,pin.name);
+                for(const auto& pin:spec->outputs)add(m_rows[i].outputs,lookup[i].outputs,pin.name);
+            }
+        }
         for(const auto& link:graph.links)
             m_wirePins.push_back({add(m_rows[link.from].outputs,lookup[link.from].outputs,link.output),
                                   add(m_rows[link.to].inputs,lookup[link.to].inputs,link.input)});
         for(auto& row:m_rows)
             row.height=std::max(kNodeHeight,kPinStart+kPinStep*static_cast<float>(std::max(row.inputs.size(),row.outputs.size()))+8);
+    }
+
+    void BlueprintWorkspace::filterCatalogue()
+    {
+        m_palette.clear();m_paletteFirst=0;
+        auto lower=[](std::string value){for(char& c:value)c=static_cast<char>(std::tolower(static_cast<unsigned char>(c)));return value;};
+        const auto query=lower(m_query);
+        for(const auto& node:blueprintCatalogue())
+            if(node.id!="entry"&&lower(node.category+" "+node.title+" "+node.id).find(query)!=std::string::npos)m_palette.push_back(&node);
     }
 
     void BlueprintWorkspace::fitGraph()
@@ -147,7 +160,7 @@ namespace nx
         // A new copy every time: never use the source name or replace an earlier snapshot.
         for(unsigned attempt=0;attempt<100;++attempt)
         {
-            name="blueprint-layout-"+std::to_string(static_cast<long long>(std::time(nullptr)))+"-"+std::to_string(++sequence)+(m_document.isProject()?".bp.project.json":".bp.json");
+            name="blueprint-native-"+std::to_string(static_cast<long long>(std::time(nullptr)))+"-"+std::to_string(++sequence)+(m_document.isProject()?".bp.project.json":".bp.json");
             path="own/"+name;
             if(!s.platform->fileTime(path.c_str()))break;
             path.clear();
@@ -175,11 +188,13 @@ namespace nx
         auto& input = *s.input;
         if (input.pressed(Action::Menu))
         {
+            if(m_focus){m_focus=0;input.setTyping(false);m_status="Input cancelled.";return;}
+            if(m_pending!=static_cast<size_t>(-1)){clearWire();m_status="Connection cancelled.";return;}
             if(m_drag){cancelDrag();m_left=input.raw().mouseButtons[0];m_status="Drag cancelled.";return;}
             close(s);return;
         }
         std::string dropped;
-        if (!m_drag && s.platform->takeDropped(dropped))
+        if (!m_drag && !m_focus && s.platform->takeDropped(dropped))
         {
             if (m_document.dirty()) m_status="Save your changes first (Ctrl+S), then drop the file again.";
             else if (dropped.size() < 8 || dropped.find_first_of("/\\:") != std::string::npos ||
@@ -193,7 +208,7 @@ namespace nx
                 else if (m_document.load(reinterpret_cast<const char*>(file.data), file.size, m_status))
                 {
                     m_first = 0; selectGraph(0);
-                    m_status = "Opened " + dropped + " | Layout editing";
+                    m_status = "Opened " + dropped;
                 }
             }
         }
@@ -212,14 +227,59 @@ namespace nx
             (control&&(held(Key::Y)||(held(Key::Z)&&held(Key::Shift)))?4u:0u);
         const unsigned pressed=keys&~m_shortcuts;m_shortcuts=keys;
         const bool click=left&&!m_left;
+        if(m_focus)
+        {
+            auto& value=m_focus==1?m_query:m_edit;
+            bool changed=false;
+            for(u32 i=0;i<input.typedCount();++i)
+            {
+                const u32 ch=input.typed(i);
+                if(ch==8&&!value.empty()){value.pop_back();changed=true;}
+                else if(ch>=32&&ch<127&&value.size()< (m_focus==1?80u:4096u)){value+=static_cast<char>(ch);changed=true;}
+                else if(ch==13)
+                {
+                    if(m_focus==2&&!m_document.setLiteral(m_graph,m_selection,m_edit,m_status))break;
+                    m_focus=0;input.setTyping(false);m_status="Ready.";break;
+                }
+            }
+            if(changed&&m_focus!=2)filterCatalogue();
+            if(click&&m_focus==1&&!in(x,y,kRight+8,kTop+38,kWidth-8,kTop+68)){m_focus=0;input.setTyping(false);}
+            else {m_left=left;return;}
+        }
         if(!m_drag)
         {
             if(click&&in(x,y,1134,39,1266,69)){close(s);return;}
             if(m_document.graphs.empty()){m_left=left;return;}
             if((pressed&1u)||(click&&in(x,y,748,39,858,69)))saveCopy(s);
-            if(((pressed&2u)||(click&&in(x,y,864,39,948,69)))&&m_document.undo())m_status="Undid layout change.";
-            if(((pressed&4u)||(click&&in(x,y,954,39,1038,69)))&&m_document.redo())m_status="Redid layout change.";
+            if(((pressed&2u)||(click&&in(x,y,864,39,948,69)))&&m_document.undo()){clearWire();m_selection=static_cast<size_t>(-1);rebuildPins();m_status="Undid graph change.";}
+            if(((pressed&4u)||(click&&in(x,y,954,39,1038,69)))&&m_document.redo()){clearWire();m_selection=static_cast<size_t>(-1);rebuildPins();m_status="Redid graph change.";}
             if(click&&in(x,y,1044,39,1128,69))fitGraph();
+        }
+        if(click&&in(x,y,8,kBottom-40,kLeft-8,kBottom-8))
+        {
+            if(m_document.dirty())m_status="Save changes before creating a new Blueprint.";
+            else{m_document.create();selectGraph(0);m_status="New Blueprint.";}
+            m_left=left;return;
+        }
+        if(!m_drag&&in(x,y,kRight,kTop,kWidth,kBottom))
+        {
+            if(input.wheel()<0&&m_paletteFirst+10<m_palette.size())++m_paletteFirst;
+            if(input.wheel()>0&&m_paletteFirst)--m_paletteFirst;
+            if(click&&in(x,y,kRight+8,kTop+38,kWidth-8,kTop+68)){m_focus=1;input.setTyping(true);m_left=left;return;}
+            if(click&&in(x,y,kRight+8,kTop+80,kWidth-8,kTop+340))
+            {
+                const size_t row=m_paletteFirst+static_cast<size_t>((y-kTop-80)/26);
+                if(row<m_palette.size()&&m_document.addNode(m_graph,m_palette[row]->id,(kRight-kLeft)*0.5f/m_zoom-m_x/m_zoom,(kBottom-kTop)*0.4f/m_zoom-m_y/m_zoom,m_status))
+                {clearWire();rebuildPins();m_selection=m_document.graphs[m_graph].nodes.size()-1;m_status="Added "+m_palette[row]->title;}
+                m_left=left;return;
+            }
+            if(click&&m_selection<m_document.graphs[m_graph].nodes.size())
+            {
+                const auto& n=m_document.graphs[m_graph].nodes[m_selection];
+                if(in(x,y,kRight+8,kTop+456,kWidth-8,kTop+486)&&n.kind.rfind("literal:",0)==0){m_edit=n.ref;m_focus=2;input.setTyping(true);}
+                else if(in(x,y,kRight+8,kBottom-40,kWidth-8,kBottom-8)&&m_document.deleteNode(m_graph,m_selection,m_status)){clearWire();m_selection=static_cast<size_t>(-1);rebuildPins();m_status="Deleted node.";}
+            }
+            m_left=left;return;
         }
         if (left && !m_left && in(x,y,0,kTop,kLeft,kBottom))
         {
@@ -230,7 +290,31 @@ namespace nx
         {
             const auto& graph=m_document.graphs[m_graph];const auto& nodes=graph.nodes;
             const auto& rows=m_rows;
-            m_selection = static_cast<size_t>(-1);
+            // Pin clicks take precedence over node dragging. Ctrl+click removes a connection.
+            for(size_t i=nodes.size();i>0;--i)
+            {
+                const auto& n=nodes[i-1];const auto& row=rows[i-1];
+                const float nx=kLeft+m_x+n.x*m_zoom,ny=kTop+m_y+n.y*m_zoom;
+                for(unsigned side=0;side<2;++side)
+                {
+                    const auto& pins=side?row.outputs:row.inputs;
+                    const float px=nx+(side?kNodeWidth*m_zoom:0);
+                    for(size_t p=0;p<pins.size();++p)
+                    {
+                        if(std::abs(x-px)>9||std::abs(y-(ny+pinY(p)*m_zoom))>9)continue;
+                        m_selection=i-1;
+                        if(control){if(m_document.disconnect(m_graph,i-1,pins[p],side!=0)){rebuildPins();m_status="Disconnected pin.";}clearWire();}
+                        else if(side){m_pending=i-1;m_pendingPin=pins[p];m_status="Choose an input pin (Esc cancels).";}
+                        else if(m_pending!=static_cast<size_t>(-1))
+                        {
+                            if(m_document.connect(m_graph,m_pending,m_pendingPin,i-1,pins[p],m_status)){rebuildPins();clearWire();m_status="Connected pins.";}
+                        }
+                        else m_status="Choose an output pin first.";
+                        m_left=left;return;
+                    }
+                }
+            }
+            clearWire();m_selection = static_cast<size_t>(-1);
             for (size_t i = nodes.size(); i > 0; --i)
             {
                 const auto& n = nodes[i-1];
@@ -294,7 +378,7 @@ namespace nx
         c.rect(0,0,kWidth,kHeight,{0.06f,0.08f,0.12f,1});
         c.rect(0,0,kWidth,kTop,{0.12f,0.16f,0.22f,1});
         c.text(*m_font,"NEXGEN  /  BLUEPRINT STUDIO",18,13,text);
-        c.text(*m_font,"Native layout editor",1260,13,muted,Align::Right);
+        c.text(*m_font,"Native Blueprint editor",1260,13,muted,Align::Right);
         const std::string titleText=(m_document.name.empty()?"No document open":m_document.name)+(m_document.dirty()?" *":"");
         c.clip(12,38,726,34);c.text(*m_font,shorten(titleText,65).c_str(),18,43,accent);c.noClip();
         const auto button=[&](float x,float width,const char* label,bool enabled){
@@ -331,6 +415,12 @@ namespace nx
                 const float mid=(x1+x2)*0.5f;
                 const Color color=l.output=="then"||l.input=="in"?text:accent;
                 c.line(x1,y1,mid,y1,2,color);c.line(mid,y1,mid,y2,2,color);c.line(mid,y2,x2,y2,2,color);
+            }
+            if(m_pending<graph.nodes.size())
+            {
+                const auto& n=graph.nodes[m_pending];const auto& pins=rows[m_pending].outputs;
+                const auto pin=std::find(pins.begin(),pins.end(),m_pendingPin);
+                if(pin!=pins.end())c.ring(kLeft+m_x+(n.x+kNodeWidth)*m_zoom,kTop+m_y+(n.y+pinY(static_cast<size_t>(pin-pins.begin())))*m_zoom,9,2,accent);
             }
             for(size_t i=0;i<graph.nodes.size();++i)
             {
@@ -369,30 +459,39 @@ namespace nx
             c.clip(5,y,kLeft-10,31);
             c.text(*m_font,shorten(g.owner+" / "+g.name,32).c_str(),12,y+6,text);c.noClip();
         }
-        c.text(*m_font,"DETAILS",kRight+12,kTop+12,accent);
-        if(!m_document.graphs.empty())
+        c.roundRect(8,kBottom-40,kLeft-16,32,5,{0.19f,0.33f,0.50f,1});
+        c.text(*m_font,"New Blueprint",kLeft*0.5f,kBottom-34,text,Align::Center);
+        c.text(*m_font,"NODE LIBRARY",kRight+12,kTop+10,accent);
+        c.roundRect(kRight+8,kTop+38,kWidth-kRight-16,30,4,m_focus==1?Color{0.24f,0.35f,0.48f,1}:Color{0.16f,0.21f,0.28f,1});
+        c.clip(kRight+12,kTop+38,kWidth-kRight-24,30);
+        c.text(*m_font,m_query.empty()?"Search nodes...":m_query.c_str(),kRight+14,kTop+43,text);c.noClip();
+        for(size_t row=0;row<10&&m_paletteFirst+row<m_palette.size();++row)
         {
-            const auto& g=m_document.graphs[m_graph];
-            c.paragraph(*m_font,g.name.c_str(),kRight+12,kTop+45,244,text);
-            if(m_selection<g.nodes.size())
+            const auto* n=m_palette[m_paletteFirst+row];const float y=kTop+80+26*static_cast<float>(row);
+            c.rect(kRight+8,y,kWidth-kRight-16,24,{0.15f,0.20f,0.27f,1});
+            c.clip(kRight+12,y,kWidth-kRight-24,24);
+            c.text(*m_font,shorten(n->category+" / "+n->title,34).c_str(),kRight+14,y+2,text);c.noClip();
+        }
+        c.text(*m_font,(std::to_string(m_palette.size())+" results | wheel to scroll").c_str(),kRight+12,kTop+346,muted);
+        c.text(*m_font,"DETAILS",kRight+12,kTop+378,accent);
+        if(!m_document.graphs.empty()&&m_selection<m_document.graphs[m_graph].nodes.size())
+        {
+            const auto& n=m_document.graphs[m_graph].nodes[m_selection];
+            const auto* spec=blueprintSpec(n.kind);
+            c.clip(kRight+8,kTop+404,kWidth-kRight-16,44);
+            c.paragraph(*m_font,spec?spec->title.c_str():n.kind.c_str(),kRight+12,kTop+408,244,text);c.noClip();
+            if(n.kind.rfind("literal:",0)==0)
             {
-                const auto& n=g.nodes[m_selection];
-                c.paragraph(*m_font,shorten(n.kind,180).c_str(),kRight+12,kTop+95,244,muted);
-                c.paragraph(*m_font,("ID: "+shorten(n.id,90)).c_str(),kRight+12,kTop+205,244,text);
-                float y=kTop+260;
-                for(const auto& l:g.links)
-                {
-                    if(l.from!=m_selection&&l.to!=m_selection) continue;
-                    if(y>kBottom-35)break;
-                    const std::string line=l.from==m_selection?"Out: "+l.output:"In: "+l.input;
-                    c.clip(kRight+8,y,252,28);c.text(*m_font,shorten(line,30).c_str(),kRight+12,y,muted);c.noClip();
-                    y+=28;
-                }
+                c.roundRect(kRight+8,kTop+456,kWidth-kRight-16,30,4,m_focus==2?Color{0.24f,0.35f,0.48f,1}:Color{0.16f,0.21f,0.28f,1});
+                c.clip(kRight+12,kTop+456,kWidth-kRight-24,30);
+                c.text(*m_font,(m_focus==2?m_edit:n.ref).c_str(),kRight+14,kTop+461,text);c.noClip();
+                c.text(*m_font,"Click value, type, Enter",kRight+12,kTop+490,muted);
             }
-            else c.text(*m_font,"Select a node",kRight+12,kTop+95,muted);
+            c.roundRect(kRight+8,kBottom-40,kWidth-kRight-16,32,5,{0.38f,0.19f,0.23f,1});
+            c.text(*m_font,"Delete selected", (kWidth+kRight)*0.5f,kBottom-34,text,Align::Center);
         }
         c.rect(0,kBottom,kWidth,kHeight-kBottom,{0.12f,0.16f,0.22f,1});
         c.text(*m_font,shorten(m_status,110).c_str(),12,kBottom+6,text);
-        c.text(*m_font,"Drag: move node   Wheel: zoom   Right/middle drag: pan   Ctrl+Z/Y: undo/redo   Ctrl+S: save copy",12,kBottom+26,muted);
+        c.text(*m_font,"Click output then input: connect | Ctrl+click pin: disconnect | Drag: move | Ctrl+S: save copy",12,kBottom+26,muted);
     }
 }

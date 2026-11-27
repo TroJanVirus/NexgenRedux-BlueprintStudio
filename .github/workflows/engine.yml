@@ -60,6 +60,7 @@ jobs:
     - name: Test Blueprint graph compiler
       run: |
         python3 engine/tools/blueprint/generate_catalog.py --check
+        python3 engine/tools/blueprint/generate_native_catalog.py --check
         node engine/tools/blueprint/make_examples.js --check
         node engine/tools/blueprint/test_compiler.js
         node engine/tools/blueprint/test_scene_editor.js

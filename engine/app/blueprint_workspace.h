@@ -21,6 +21,8 @@ namespace nx
         void selectGraph(size_t index);
         void fitGraph();
         void rebuildPins();
+        void filterCatalogue();
+        void clearWire(){m_pending=static_cast<size_t>(-1);m_pendingPin.clear();}
         bool saveCopy(Services& services);
         void cancelDrag() { m_drag = false; }
         struct NodePins { std::vector<std::string> inputs, outputs; float height = 72; };
@@ -37,5 +39,10 @@ namespace nx
         float m_dragX = 0, m_dragY = 0, m_grabX = 0, m_grabY = 0;
         float m_pressX = 0, m_pressY = 0;
         unsigned m_shortcuts = 0;
+        size_t m_pending=static_cast<size_t>(-1),m_paletteFirst=0;
+        std::string m_pendingPin,m_query,m_edit;
+        std::vector<const BlueprintNodeSpec*> m_palette;
+        int m_focus=0; // 1 catalogue search, 2 literal value
+        bool m_previousTyping=false;
     };
 }

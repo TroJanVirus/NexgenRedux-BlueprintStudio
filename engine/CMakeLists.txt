@@ -270,17 +270,6 @@ if(NX_PLATFORM)
     if(NX_PLATFORM MATCHES "^(win32|linux|macos)$")
       target_sources(${_app} PRIVATE app/blueprint_workspace.cpp tools/blueprint/native_document.cpp)
       target_compile_definitions(${_app} PRIVATE NX_DESKTOP_BLUEPRINT=1)
-      if(APPLE)
-        set(_blueprint_media "$<TARGET_BUNDLE_CONTENT_DIR:${_app}>/Resources/media/blueprint")
-      else()
-        set(_blueprint_media "$<TARGET_FILE_DIR:${_app}>/media/blueprint")
-      endif()
-      add_custom_target(${_app}_blueprint_example
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${_blueprint_media}"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_CURRENT_SOURCE_DIR}/tools/blueprint/examples/spinner.bp.json" "${_blueprint_media}/spinner.bp.json"
-        VERBATIM)
-      add_dependencies(${_app}_blueprint_example ${_app}_media)
-      add_dependencies(${_app} ${_app}_blueprint_example)
     endif()
     nx_options(${_app})
     set_target_properties(${_app} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/${_app})

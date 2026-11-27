@@ -3,7 +3,9 @@ on:
   push:
     branches: ["blueprint/review-native-ui"]
     paths:
-      - "engine/tools/blueprint/native_document.*"
+      - "engine/tools/blueprint/native_*"
+      - "engine/tools/blueprint/generate_native_catalog.py"
+      - "engine/tools/blueprint/catalog.js"
       - "engine/tests/test_blueprint_document.cpp"
       - "engine/base/**"
       - ".github/workflows/blueprint-native.yml"
@@ -19,12 +21,14 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v5
+      - name: Check generated catalogue
+        run: python3 engine/tools/blueprint/generate_native_catalog.py --check
       - name: Compile native document tests with sanitizers
         run: |
           g++ -std=c++20 -Wall -Wextra -Werror -fno-exceptions -fno-rtti -g -O1 \
             -fsanitize=address,undefined -fno-omit-frame-pointer -fno-pie -no-pie \
             -Iengine engine/tests/main.cpp engine/tests/test_blueprint_document.cpp \
-            engine/tools/blueprint/native_document.cpp engine/base/json_tree.cpp \
+            engine/tools/blueprint/native_document.cpp engine/base/json_tree.cpp engine/base/json_value.cpp \
             engine/base/memory.cpp engine/base/log.cpp -o /tmp/nx-blueprint-document-tests
       - name: Run regression tests
         env:

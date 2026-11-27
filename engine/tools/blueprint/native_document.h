@@ -42,7 +42,7 @@ namespace nx
         bool dirty()const{return m_revision!=m_savedRevision;}
         bool canUndo()const{return !m_undo.empty();}
         bool canRedo()const{return !m_redo.empty();}
-        bool isProject()const{return true;}
+        bool isProject()const{return false;}
         void markSaved(){m_savedRevision=m_revision;}
     private:
         struct Edit { size_t graph; Graph state; size_t revision; };

@@ -22,8 +22,8 @@ Do not push changes to Team Resurgent's repository. If a safe merge cannot be co
 Blueprint Studio is a development tool for the desktop Nexgen application, not just a separate download. Users should be able to open it from Nexgen's own graphical interface, with project creation, existing project import, native scene editing, play testing and packaging available as one connected workflow.
 
 - Use Redux's own native rendering, input, JSON and platform services. No external browser, embedded webview, Node.js or HTTP server is required by the native editor.
-- Keep the existing graph/project schema and the legacy compiler fixtures as compatibility contracts. Port functionality in tested slices; do not silently replace unsupported logic or claim feature parity prematurely.
-- The native layout editor opens existing graph and project files, moves nodes, supports undo/redo and saves coordinate-only copies without reserializing unknown data. Add typed semantic graph editing and compiler parity before removing the legacy reference source. Keep the previous review branch available during migration.
+- No projects have been made with the pre-release browser prototype. Prefer a clean native versioned schema over legacy compatibility. Keep compiler fixtures as behavioural references, not file-format obligations. Do not silently replace unsupported logic or claim feature parity prematurely.
+- Native v2 is the canonical authoring model. Use the generated script-reference catalogue, typed pins, stable node IDs and bounded undo/redo. Keep editor and compiler on the same model; legacy browser files are not supported. Reuse the engine's JSON parser and writer.
 - Do not ship the reference HTML/bridge as part of the desktop application; desktop development tooling stays out of Xbox game packages.
 - Reuse the native scene editor, debugger, profiler, asset cooker and runtime. Do not create duplicate implementations or put the desktop editor into Xbox game packages.
 
