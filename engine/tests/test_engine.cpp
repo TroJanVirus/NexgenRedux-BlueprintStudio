@@ -538,7 +538,7 @@ NX_TEST(brokenScreensDontStopTheApp)
     }
 
     const struct { const char* code; const char* error; } cases[] = {
-        { "class A : Screen { void update(float dt) { }", "compile" },
+        { "class A : Screen { void update(float dt) { }", "shapes/main.as:1: Expected '}'" },
         { "void nothing() {}", "implements Screen" },
         { "class A : Screen { A() { int z = 0; z = 1 / z; } }", "Divide by zero" },
         { "int z = 0; int bad = 1 / z; class A : Screen {}", "Divide by zero" },
