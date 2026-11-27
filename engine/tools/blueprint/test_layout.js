@@ -1,0 +1,10 @@
+'use strict';
+const assert=require('node:assert/strict'),B=require('./blueprint'),R=require('./refactor'),P=require('./project');
+const doc=require('./examples/arcade.bp.json'),copy=x=>JSON.parse(JSON.stringify(x));
+const base=B.compile(doc).source,edited=copy(doc),g=edited.graphs[0];
+edited.appearance={background:'#ffffff',width:400,wireStyle:'Right angle',showGrid:false};g.folder='Setup';g.frames=[{title:'Player',color:'#cc4400',nodes:['spawn','name']}];g.nodes[1].appearance={title:'Create player',color:'#123456',width:350};g.nodes[1].x=700;g.nodes[1].y=-50;
+assert.equal(B.compile(edited).source,base,'appearance cannot change generated gameplay');
+const all=g.nodes.filter(n=>n.kind!=='entry').map(n=>n.id),r=R.extract(B,edited,g.name,all,'CreatePlayer');assert.equal(B.compile(r.doc).ok,true);assert.equal(r.doc.graphs[0].nodes.length,2);assert.equal(r.doc.graphs.at(-1).nodes.length,all.length+1);assert.equal(r.doc.graphs.at(-1).frames[0].title,'Player');assert.equal(B.compile(r.doc).source.includes('this.CreatePlayer()'),true);assert.equal(B.compile(edited).source,base,'refactoring does not mutate the input');
+assert.throws(()=>R.extract(B,edited,g.name,['name','rect'],'Invalid'),/complete action chain/);assert.throws(()=>R.extract(B,edited,g.name,['begin','spawn'],'Invalid'),/outside the selection/);assert.throws(()=>R.extract(B,edited,g.name,all,'score'),/new function name/);
+const project={version:1,kind:'BlueprintProject',name:'Layout',screens:[{id:'arcade',title:'Arcade',blueprint:edited,assets:[]}]};assert.ok(P.pack(project).entries.some(x=>x.path.endsWith('main.as')));
+console.log('PASS appearance does not change source, function extraction, group preservation, unsafe selection rejection, project packaging');

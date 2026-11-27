@@ -1,30 +1,25 @@
-# Scene layout review increment
+# Changes
 
-- Native 2D/3D scene JSON import, schematic entity placement, typed coordinates and advanced entity properties.
-- Scene asset integration with existing Blueprint projects; preconfigured native Scene/Space load nodes.
-- Additional compiler/project regression checks. Both load-node variants passed native AngelScript compilation; the desktop browser workflow was tested locally.
-- No runtime changes. Full rendered 3D viewport and native scene loading/rendering on console remain unverified.
+## Graph editing
 
-# Blueprint Studio v3 — 27 November 2026
+- Select, move, align and space several nodes at once. Put related nodes in named, coloured groups.
+- Move a self-contained action chain into its own function. Double-click calls to open their graphs.
+- Create functions using name, type and input fields. Organise functions and macros into folders.
+- Customise the canvas, nodes, pins, wires, colours, text and panel widths. Choose a light theme or reset to the original dark style.
+- Added tests for graph appearance, function extraction, and browser editing. Appearance changes do not affect generated script code.
 
-Upstream source: `54bc84ce91be85d4c7e29b26f4d748547477266e`. The graphics/video update is retained unchanged. This release includes all previous v1/v2 Blueprint work.
+## Scene layouts
 
-## New
+- Open native 2D/3D scene JSON, drag entity markers and edit properties.
+- Save scenes with a project and add the native load node to a graph.
+- The preview is top-down; a full rendered viewport is not included.
 
-- Typed Blueprint interface assets, implementation function scaffolding, reusable contracts, and safe entity-to-behaviour message nodes. The runtime adds `Entity.behaviourAt(uint)` for indexed lookup. Interface-message graphs require a rebuilt v3 engine binary.
-- Multi-track timelines: float, Vec2, Vec3, Color, independently editable channel curves, forward/reverse/loop/ping-pong playback.
-- Generic, sprite and model animation state machines: visual transition diagram, ordered conditions, per-state execution, reset, entered and elapsed outputs; one-shot sprite clips no longer restart every update.
-- Reusable 2D/3D entity hierarchy templates: parent tree, local transforms, primitive/image/model visuals, attached imported behaviours, root and per-entity output pins, import/export and schematic editor.
-- Six additional editable examples, expanded native and browser integration tests; nine-screen example project.
+## v3 — 27 November 2026
 
-## Verification
+- Interfaces for calling matching behaviours on other entities. Added `Entity.behaviourAt(uint)` to Nexgen; rebuild the engine to use these nodes.
+- Timelines with several typed tracks, editable curves and playback modes.
+- Gameplay and animation state machines for sprites and models.
+- Reusable 2D/3D entity hierarchies.
+- Includes the earlier graph compiler, reusable functions and macros, inheritance, local dispatchers, project packaging and debugger.
 
-- 53 JavaScript compiler/project checks.
-- 15 focused native tests, 136 checks, 0 failures (720 API signatures compiled in 15 suites).
-- All 14 standalone example graphs compiled with native AngelScript.
-- CTest: Blueprint runtime, real TCP debugger, self-contained repository checks.
-- Chromium: editing interface contracts, track curves, state transitions and entity hierarchies, plus previous project and debugger workflows.
-
-## Limits
-
-No full graphical rendering test or RXDK/Windows/macOS build was performed; external media and docs submodules are empty in the supplied archive. Model animation code was native-compiled but not tested with loaded skeletal assets. Hierarchy preview is schematic, not a 3D scene viewport. No automatic replication/RPCs, cross-instance multicast delegates, pose-blend editor, timeline seek/stop, or multi-object debug selection yet. No XBE is supplied. See README.md for integration and feature details.
+Upstream: `54bc84ce91be85d4c7e29b26f4d748547477266e`. Original Xbox, Windows and macOS builds and full graphical tests remain unverified. See README.md and ADVANCED.md for details.
