@@ -92,6 +92,7 @@ namespace nx
         bool m_previousTyping=false;
         bool m_playing=false;
         bool m_checkpointPresent=false;
+        bool m_protectDamagedRecovery=false;
         size_t m_checkpointRevision=static_cast<size_t>(-1);
         double m_nextCheckpoint=0;
     };

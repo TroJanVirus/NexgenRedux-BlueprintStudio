@@ -1572,3 +1572,41 @@ NX_TEST(nativeWorkspaceRepeatedRecoveryPreviewAndFailedCheckpointRetry)
     NX_EXPECT(source.find("recovery_cycle")!=std::string::npos);
 }
 #endif
+
+#ifdef NX_DESKTOP_BLUEPRINT
+NX_TEST(nativeWorkspaceArchivesDamagedRecoveryBeforeReplacingIt)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    r.platform.workspaceFiles=true;
+    r.platform.files["showcase/main/screen.json"]="{\"title\":\"Home\"}";
+    r.platform.files["showcase/main/main.as"]="class Home : Screen {}";
+    if(!r.screens.init(r.services,"showcase","main")){NX_EXPECT(false);return;}
+    r.step(3);r.screens.setDevelopmentPaused(true);
+    const std::string path="own/blueprint-recovery.bp.json";
+    const std::string damaged="{\"version\":2,\"graphs\":[";
+    r.platform.files[path]=damaged;
+    r.platform.files["own/new.as"]="class NewScreen : Screen { void onEnter(){ Save::set(\"new\",\"ok\"); } }";
+    BlueprintWorkspace studio;studio.open(r.services);
+    NX_EXPECT(studio.active());if(!studio.active())return;
+    NX_EXPECT(r.platform.files[path]==damaged);
+    r.platform.failOwnWrites=true;
+    r.platform.dropped="new.as";
+    r.input.update(r.platform.state,1.0f/60);studio.update(r.services);
+    NX_EXPECT(r.platform.files[path]==damaged);
+    studio.checkpoint(r.services,true);
+    NX_EXPECT(r.platform.files[path]==damaged);
+    r.platform.failOwnWrites=false;
+    studio.checkpoint(r.services,true);
+    NX_EXPECT(r.platform.files[path]!=damaged);
+    size_t archives=0;
+    for(const auto& item:r.platform.files)
+        if(item.first.rfind("own/blueprint-recovery-damaged-",0)==0)
+        {++archives;NX_EXPECT(item.second==damaged);}
+    NX_EXPECT(archives==1);
+    BlueprintDocument doc;std::string error,code;
+    const auto& bytes=r.platform.files[path];
+    NX_EXPECT(doc.load(bytes.data(),bytes.size(),error)&&compileBlueprint(doc,code,error));
+    NX_EXPECT(code.find("Save::set(\"new\", \"ok\")")!=std::string::npos);
+    studio.close(r.services);
+}
+#endif

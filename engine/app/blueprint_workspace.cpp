@@ -106,9 +106,11 @@ namespace nx
         if(m_document.graphs.empty())
         {
             FileData recovery;
-            const bool found=s.platform->fileTime("own/blueprint-recovery.bp.json")&&
-                s.platform->readFile("own/blueprint-recovery.bp.json",recovery,MemTag::General)&&recovery.size>0;
-            if(found&&m_document.load(reinterpret_cast<const char*>(recovery.data),recovery.size,m_status))
+            const bool exists=s.platform->fileTime("own/blueprint-recovery.bp.json")!=0;
+            const bool readable=exists&&s.platform->readFile("own/blueprint-recovery.bp.json",recovery,MemTag::General);
+            const bool found=exists&&(!readable||recovery.size>0);
+            m_protectDamagedRecovery=false;
+            if(readable&&recovery.size>0&&m_document.load(reinterpret_cast<const char*>(recovery.data),recovery.size,m_status))
             {
                 m_document.markRecovered();m_checkpointPresent=true;m_checkpointRevision=m_document.revision();
                 selectGraph(0);m_status="Recovered unsaved Blueprint. Save as to keep it.";
@@ -116,7 +118,8 @@ namespace nx
             else
             {
                 m_document.create();selectGraph(0);
-                m_status=found?"Recovery file could not be read. Original recovery file retained.":"New Blueprint. Search the node library to start.";
+                m_protectDamagedRecovery=found;
+                m_status=found?"Recovery damaged or unreadable. Original will be archived before autosave.":"New Blueprint. Search the node library to start.";
             }
         }
         filterCatalogue();
@@ -625,7 +628,31 @@ namespace nx
         }
         if(m_checkpointPresent&&m_checkpointRevision==m_document.revision())return;
         std::string output,error;
-        if(!m_document.serialize(output,error)||!s.platform->writeFile(path,output.data(),output.size()))
+        if(!m_document.serialize(output,error))
+        {NX_WARN("Blueprint Studio: recovery serialization failed: %s",error.c_str());return;}
+        if(m_protectDamagedRecovery)
+        {
+            // Do not silently destroy the only copy of an unreadable or damaged draft.
+            // A failed archive must leave the original untouched and retry later.
+            FileData damaged;
+            if(!s.platform->readFile(path,damaged,MemTag::General))
+            {NX_WARN("Blueprint Studio: damaged recovery cannot be archived; autosave deferred");return;}
+            static unsigned sequence=0;
+            std::string archive;
+            for(unsigned attempt=0;attempt<100;++attempt)
+            {
+                const auto candidate="own/blueprint-recovery-damaged-"+std::to_string(static_cast<long long>(std::time(nullptr)))+"-"+std::to_string(++sequence)+".bak";
+                if(!s.platform->fileTime(candidate.c_str())){archive=candidate;break;}
+            }
+            FileData verified;
+            if(archive.empty()||!s.platform->writeFile(archive.c_str(),damaged.data,damaged.size)||
+                !s.platform->readFile(archive.c_str(),verified,MemTag::General)||verified.size!=damaged.size||
+                (damaged.size&&std::memcmp(verified.data,damaged.data,damaged.size)!=0))
+            {NX_WARN("Blueprint Studio: damaged recovery archive failed; original retained");return;}
+            m_protectDamagedRecovery=false;
+            NX_WARN("Blueprint Studio: damaged recovery archived at %s",archive.c_str());
+        }
+        if(!s.platform->writeFile(path,output.data(),output.size()))
         {NX_WARN("Blueprint Studio: recovery checkpoint failed: %s",error.c_str());return;}
         FileData check;
         if(!s.platform->readFile(path,check,MemTag::General)||check.size!=output.size()||
