@@ -1666,3 +1666,20 @@ NX_TEST(nativeWorkspacePreservesExternallyReplacedRecoveryAcrossEditAndSave)
     NX_EXPECT(r.platform.files[path]==other);
 }
 #endif
+
+#ifdef NX_DESKTOP_BLUEPRINT
+NX_TEST(nativeWorkspaceRejectsConcurrentLeaseAndReleasesOnClose)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    r.platform.workspaceFiles=true;
+    BlueprintWorkspace first,second;
+    first.open(r.services);NX_EXPECT(first.active()&&r.platform.blueprintLease);
+    if(!first.active())return;
+    second.open(r.services);NX_EXPECT(!second.active()&&r.platform.blueprintLease);
+    second.recover(r.services);second.close(r.services);
+    NX_EXPECT(r.platform.blueprintLease);
+    first.close(r.services);NX_EXPECT(!r.platform.blueprintLease);
+    second.open(r.services);NX_EXPECT(second.active()&&r.platform.blueprintLease);
+    second.close(r.services);NX_EXPECT(!r.platform.blueprintLease);
+}
+#endif

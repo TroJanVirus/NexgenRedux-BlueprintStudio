@@ -2,6 +2,8 @@
 #include "base/log.h"
 
 #include <dirent.h>
+#include <fcntl.h>
+#include <sys/file.h>
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
@@ -75,6 +77,25 @@ namespace nx
         }
         const bool ok = fwrite(data, 1, size, file) == size;
         return fclose(file) == 0 && ok && rename(fresh, full) == 0;
+    }
+
+    PlatformPosix::~PlatformPosix(){releaseBlueprintLease();}
+
+    bool PlatformPosix::acquireBlueprintLease()
+    {
+        if(m_blueprintLease>=0)return false;
+        char folder[kMaxPath],full[kMaxPath];
+        if(!mediaPath("own",folder)||!mediaPath("own/.blueprint-studio.lock",full))return false;
+        makeFolders(folder);
+        const int fd=open(full,O_CREAT|O_RDWR|O_CLOEXEC|O_NOFOLLOW,0600);
+        if(fd<0)return false;
+        if(flock(fd,LOCK_EX|LOCK_NB)!=0){close(fd);return false;}
+        m_blueprintLease=fd;return true;
+    }
+    void PlatformPosix::releaseBlueprintLease()
+    {
+        // Never unlink: another process could acquire the same inode between close and unlink.
+        if(m_blueprintLease>=0){close(m_blueprintLease);m_blueprintLease=-1;}
     }
 
     bool PlatformPosix::setFolders(const char* media, const char* saves)
@@ -167,6 +188,7 @@ namespace nx
 
     bool PlatformPosix::setSaveFolder(const char* path)
     {
+        if(m_blueprintLease>=0)return false;
         const int length = snprintf(m_saves, sizeof(m_saves), "%s", path);
         return length > 0 && static_cast<size_t>(length) < sizeof(m_saves);
     }

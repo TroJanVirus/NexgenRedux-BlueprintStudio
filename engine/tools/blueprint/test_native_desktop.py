@@ -111,6 +111,16 @@ def run_session(index):
                      "native workspace ready", process)
             time.sleep(0.5)
             if index == 1:
+                # A second process using the same own/ directory must fail closed.
+                before_recovery = recovery.read_bytes()
+                contender = subprocess.run([str(binary), "--blueprint-studio", "--null",
+                                            "--frames", "1", "--saves", str(root)],
+                                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                           timeout=30, text=True)
+                print(contender.stdout, flush=True)
+                assert contender.returncode != 0
+                assert "save directory is busy or unavailable" in contender.stdout
+                assert recovery.read_bytes() == before_recovery
                 click(900, 18)
                 xdo("type", "--delay", 100, "Desktop Smoke")
                 key("Return")

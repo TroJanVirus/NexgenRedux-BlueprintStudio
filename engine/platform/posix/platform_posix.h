@@ -10,6 +10,9 @@ namespace nx
     class PlatformPosix : public Platform
     {
     public:
+        ~PlatformPosix() override;
+        bool acquireBlueprintLease() override;
+        void releaseBlueprintLease() override;
         double seconds() override;
         void sleep(double seconds) override;
         bool readFile(const char* path, FileData& out, MemTag tag) override;
@@ -42,5 +45,6 @@ namespace nx
         char m_saves[kMaxPath] = {};
         std::vector<std::string> m_dropped;
         double m_start = 0;
+        int m_blueprintLease = -1;
     };
 }

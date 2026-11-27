@@ -28,6 +28,9 @@ namespace nx::test
         std::string written;                       // the last file
         std::set<std::string> ownFolders;
         bool workspaceFiles=false;                 // opt-in writable virtual own/ filesystem
+        bool blueprintLease=false;
+        bool acquireBlueprintLease() override {if(blueprintLease)return false;blueprintLease=true;return true;}
+        void releaseBlueprintLease() override {blueprintLease=false;}
         bool failOwnWrites=false;                  // inject failed writes without touching existing data
         double now = 0;
         std::string extraPath, extraText;

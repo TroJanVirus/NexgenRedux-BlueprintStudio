@@ -78,6 +78,24 @@ namespace nx
         return ok && MoveFileExW(fresh, full, MOVEFILE_REPLACE_EXISTING);
     }
 
+    PlatformWindows::~PlatformWindows(){releaseBlueprintLease();}
+
+    bool PlatformWindows::acquireBlueprintLease()
+    {
+        if(m_blueprintLease)return false;
+        wchar_t folder[kMaxPath],full[kMaxPath];
+        if(!mediaPath("own",L"",folder)||!mediaPath("own/.blueprint-studio.lock",L"",full))return false;
+        CreateDirectoryW(m_saves,nullptr);
+        if(!CreateDirectoryW(folder,nullptr)&&GetLastError()!=ERROR_ALREADY_EXISTS)return false;
+        const HANDLE file=CreateFile2(full,GENERIC_READ|GENERIC_WRITE,0,OPEN_ALWAYS,nullptr);
+        if(file==INVALID_HANDLE_VALUE)return false;
+        m_blueprintLease=file;return true;
+    }
+    void PlatformWindows::releaseBlueprintLease()
+    {
+        if(m_blueprintLease){CloseHandle(m_blueprintLease);m_blueprintLease=nullptr;}
+    }
+
     bool PlatformWindows::setFolders(const wchar_t* base, const wchar_t* saves)
     {
         LARGE_INTEGER value;
@@ -151,6 +169,7 @@ namespace nx
 
     bool PlatformWindows::setSaveFolder(const char* path)
     {
+        if(m_blueprintLease)return false;
         wchar_t full[kMaxPath];
         return MultiByteToWideChar(CP_UTF8, 0, path, -1, full, kMaxPath) > 1 && wcscpy_s(m_saves, full) == 0;
     }

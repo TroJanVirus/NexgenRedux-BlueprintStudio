@@ -88,11 +88,17 @@ namespace nx
     void BlueprintWorkspace::open(Services& s)
     {
         if (active()) return;
+        if(!s.platform->acquireBlueprintLease())
+        {
+            m_status="Cannot open Blueprint Studio: save directory is busy or unavailable.";
+            NX_ERROR("Blueprint Studio: %s",m_status.c_str());return;
+        }
         m_font = s.assets->font("global/freesans.sfn", 18);
         if (!m_font || m_font->failed)
         {
             if (m_font) s.assets->release(m_font);
             m_font = nullptr;
+            s.platform->releaseBlueprintLease();
             NX_ERROR("Blueprint Studio: cannot load the native workspace font.");
             return;
         }
@@ -137,6 +143,7 @@ namespace nx
         cancelDrag();clearWire();m_focus=0;m_browsing=false;m_assetBrowser=false;s.input->setTyping(m_previousTyping);
         s.assets->release(m_font);
         m_font = nullptr;
+        s.platform->releaseBlueprintLease();
         s.input->setWantsPointer(m_wantedPointer);
         s.input->consume();
     }
@@ -613,7 +620,7 @@ namespace nx
 
     void BlueprintWorkspace::checkpoint(Services& s,bool force)
     {
-        if(m_document.graphs.empty())return;
+        if(!active()||m_document.graphs.empty())return;
         const double now=s.platform->seconds();
         if(!force&&now<m_nextCheckpoint)return;
         m_nextCheckpoint=now+2.0;
