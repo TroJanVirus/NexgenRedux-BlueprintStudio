@@ -84,6 +84,10 @@ jobs:
         node engine/tools/blueprint/test_mixed_script.js
         node engine/tools/blueprint/test_folder_import.js
 
+    - name: Native Blueprint Studio startup
+      if: runner.os == 'Linux'
+      run: build/showcase/nexgen --blueprint-studio --null --frames 10
+
     # With a real window and GPU driver, though a software one.
     - name: Draw every screen
       if: runner.os == 'Linux'

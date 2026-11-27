@@ -1,6 +1,7 @@
 #include "app/blueprint_workspace.h"
 #include "bindings/bindings.h"
 #include "assets/assets.h"
+#include "base/log.h"
 #include "canvas/canvas.h"
 #include "input/input.h"
 #include "platform/platform.h"
@@ -50,6 +51,7 @@ namespace nx
         {
             if (m_font) s.assets->release(m_font);
             m_font = nullptr;
+            NX_ERROR("Blueprint Studio: cannot load the native workspace font.");
             return;
         }
         m_wantedPointer = s.input->wantsPointer();
@@ -57,6 +59,18 @@ namespace nx
         s.platform->lockMouse(false);
         s.input->consume();
         m_left = m_pan = false;
+        if (m_document.graphs.empty())
+        {
+            FileData example;
+            if (s.platform->readFile("blueprint/spinner.bp.json", example, MemTag::General) &&
+                m_document.load(reinterpret_cast<const char*>(example.data), example.size, m_status))
+            {
+                selectGraph(0);
+                m_status = "Example graph (read-only). Drop your own Blueprint JSON to open it.";
+            }
+            else
+                m_status = "Drop a .bp.json or .bp.project.json file here.";
+        }
     }
 
     void BlueprintWorkspace::close(Services& s)

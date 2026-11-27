@@ -67,6 +67,9 @@ namespace
         int debug = 0;             // the port a script debugger connects to, if one may
         bool debugWait = false;
         bool debugRemote = false;
+#ifdef NX_DESKTOP_BLUEPRINT
+        bool blueprintStudio = false;
+#endif
     };
 
     // A 32-bit BMP, stored top row first.
@@ -590,6 +593,14 @@ namespace
                     screens.push(options.screen);
                 }
                 bool done = false;
+#ifdef NX_DESKTOP_BLUEPRINT
+                if (options.blueprintStudio)
+                {
+                    studio.open(services);
+                    if (studio.active()) screens.setDevelopmentPaused(true);
+                    else { ok = false; done = true; }
+                }
+#endif
                 Tour tour(options.tour);
                 device->setWait(!options.bench && !options.record);
                 Recording recording;
@@ -635,9 +646,9 @@ namespace
                     {
                         nextLook = now + 0.5;
                         assets.reloadChanged();
-                        #ifdef NX_DESKTOP_BLUEPRINT
+#ifdef NX_DESKTOP_BLUEPRINT
                         if (!studio.active())
-                        #endif
+#endif
                         screens.reloadChanged();
                     }
 
@@ -759,9 +770,9 @@ namespace
                     ok = saveCapture(*device, options.capture) && ok;
                 }
             }
-            #ifdef NX_DESKTOP_BLUEPRINT
+#ifdef NX_DESKTOP_BLUEPRINT
             studio.close(services);
-            #endif
+#endif
             screens.shutdown();
             // No pad goes on shaking after the program has gone.
             for (u32 i = 0; i < kMaxPads; i++)
@@ -863,6 +874,9 @@ int main(int argc, char** argv)
         else if (strcmp(a, "--clean") == 0) options.clean = true;
         else if (strcmp(a, "--null") == 0) options.null = true;
         else if (strcmp(a, "--menu") == 0) options.menu = true;
+#ifdef NX_DESKTOP_BLUEPRINT
+        else if (strcmp(a, "--blueprint-studio") == 0) options.blueprintStudio = true;
+#endif
         else if (strcmp(a, "--bench") == 0) options.bench = true;
         else if (strcmp(a, "--dev") == 0) options.dev = true;
         else if (strcmp(a, "--debug") == 0) options.debug = i + 1 < argc && atoi(argv[i + 1]) > 0 ? atoi(argv[++i]) : 4711;
