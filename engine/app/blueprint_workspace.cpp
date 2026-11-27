@@ -44,6 +44,16 @@ namespace nx
             return node.kind;
         }
         float pinY(size_t row){return kPinStart+static_cast<float>(row)*kPinStep;}
+        Color pinColor(const std::string& type)
+        {
+            if(type=="exec")return text;
+            if(type=="bool")return {0.95f,0.39f,0.45f,1};
+            if(type=="string")return {0.84f,0.47f,0.90f,1};
+            if(type=="float"||type=="double")return {0.46f,0.83f,0.48f,1};
+            if(type=="int"||type=="uint")return {0.34f,0.82f,0.81f,1};
+            if(type=="Vec2"||type=="Vec3"||type=="Color")return {0.96f,0.71f,0.32f,1};
+            return accent;
+        }
         std::string shorten(const std::string& s, size_t length)
         {
             if (s.size() <= length) return s;
@@ -94,7 +104,7 @@ namespace nx
         if (index >= m_document.graphs.size()) return;
         cancelDrag();clearWire();
         m_graph = index; m_selection = static_cast<size_t>(-1);
-        rebuildPins();fitGraph();
+        rebuildPins();fitGraph();filterCatalogue();
         if (index < m_first) m_first = index;
         if (index >= m_first + kRows) m_first = index - kRows + 1;
     }
@@ -117,8 +127,8 @@ namespace nx
         {
             if(const auto* spec=blueprintSpec(graph.nodes[i].kind))
             {
-                for(const auto& pin:spec->inputs)add(m_rows[i].inputs,lookup[i].inputs,pin.name);
-                for(const auto& pin:spec->outputs)add(m_rows[i].outputs,lookup[i].outputs,pin.name);
+                for(const auto& pin:spec->inputs){add(m_rows[i].inputs,lookup[i].inputs,pin.name);m_rows[i].inputTypes.push_back(pin.type);}
+                for(const auto& pin:spec->outputs){add(m_rows[i].outputs,lookup[i].outputs,pin.name);m_rows[i].outputTypes.push_back(pin.type);}
             }
         }
         for(const auto& link:graph.links)
@@ -131,10 +141,13 @@ namespace nx
     void BlueprintWorkspace::filterCatalogue()
     {
         m_palette.clear();m_paletteFirst=0;
+        if(m_graph>=m_document.graphs.size())return;
         auto lower=[](std::string value){for(char& c:value)c=static_cast<char>(std::tolower(static_cast<unsigned char>(c)));return value;};
         const auto query=lower(m_query);
         for(const auto& node:blueprintCatalogue())
-            if(node.id!="entry"&&lower(node.category+" "+node.title+" "+node.id).find(query)!=std::string::npos)m_palette.push_back(&node);
+            if(node.id!="entry"&&(node.id!="event:delta"||m_document.graphs[m_graph].name=="update")&&
+                (node.id!="event:canvas"||m_document.graphs[m_graph].name=="draw")&&
+                lower(node.category+" "+node.title+" "+node.id).find(query)!=std::string::npos)m_palette.push_back(&node);
     }
 
     void BlueprintWorkspace::fitGraph()
@@ -329,12 +342,12 @@ namespace nx
                         if(std::abs(x-px)>9||std::abs(y-(ny+pinY(p)*m_zoom))>9)continue;
                         m_selection=i-1;
                         if(control){if(m_document.disconnect(m_graph,i-1,pins[p],side!=0)){rebuildPins();m_status="Disconnected pin.";}clearWire();}
-                        else if(side){m_pending=i-1;m_pendingPin=pins[p];m_status="Choose an input pin (Esc cancels): "+pins[p];}
+                        else if(side){m_pending=i-1;m_pendingPin=pins[p];m_status="Connect "+pins[p]+" ("+row.outputTypes[p]+") to a matching input."; }
                         else if(m_pending!=static_cast<size_t>(-1))
                         {
                             if(m_document.connect(m_graph,m_pending,m_pendingPin,i-1,pins[p],m_status)){rebuildPins();clearWire();m_status="Connected pins.";}
                         }
-                        else m_status="Choose an output pin first.";
+                        else m_status="Input "+pins[p]+" ("+row.inputTypes[p]+"): choose an output pin first.";
                         m_left=left;return;
                     }
                 }
@@ -438,7 +451,7 @@ namespace nx
                 const float x2=kLeft+m_x+nodeX(l.to)*m_zoom,y2=kTop+m_y+(nodeY(l.to)+pinY(pins.input))*m_zoom;
                 if(std::max(x1,x2)<kLeft||std::min(x1,x2)>kRight||std::max(y1,y2)<kTop||std::min(y1,y2)>kBottom)continue;
                 const float mid=(x1+x2)*0.5f;
-                const Color color=l.output=="then"||l.input=="in"?text:accent;
+                const Color color=pinColor(rows[l.from].outputTypes[pins.output]);
                 c.line(x1,y1,mid,y1,2,color);c.line(mid,y1,mid,y2,2,color);c.line(mid,y2,x2,y2,2,color);
             }
             if(m_pending<graph.nodes.size())
@@ -459,9 +472,9 @@ namespace nx
                 const size_t first=static_cast<size_t>(std::max(0.0f,std::floor(((kTop-y)/m_zoom-kPinStart)/kPinStep)-1));
                 const size_t last=static_cast<size_t>(std::max(0.0f,std::ceil(((kBottom-y)/m_zoom-kPinStart)/kPinStep)+2));
                 for(size_t p=first;p<std::min(last,rows[i].inputs.size());++p)
-                    c.circle(x,y+pinY(p)*m_zoom,4*m_zoom,rows[i].inputs[p]=="in"?text:accent);
+                    c.circle(x,y+pinY(p)*m_zoom,4*m_zoom,pinColor(rows[i].inputTypes[p]));
                 for(size_t p=first;p<std::min(last,rows[i].outputs.size());++p)
-                    c.circle(x+w,y+pinY(p)*m_zoom,4*m_zoom,rows[i].outputs[p]=="then"?text:accent);
+                    c.circle(x+w,y+pinY(p)*m_zoom,4*m_zoom,pinColor(rows[i].outputTypes[p]));
                 if(m_zoom>=0.65f)
                 {
                     c.push();c.clip(x+2,y+1,w-4,24*m_zoom);

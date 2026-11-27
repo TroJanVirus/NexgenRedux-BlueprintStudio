@@ -1,4 +1,4 @@
-name: Native Blueprint document
+name: Native Blueprint
 on:
   push:
     branches: ["blueprint/review-native-ui"]
@@ -6,7 +6,10 @@ on:
       - "engine/tools/blueprint/native_*"
       - "engine/tools/blueprint/generate_native_catalog.py"
       - "engine/tools/blueprint/catalog.js"
-      - "engine/tests/test_blueprint_document.cpp"
+      - "engine/tests/test_blueprint*.cpp"
+      - "engine/app/blueprint_workspace.*"
+      - "engine/app/main.cpp"
+      - "engine/CMakeLists.txt"
       - "engine/base/**"
       - ".github/workflows/blueprint-native.yml"
   workflow_dispatch:
@@ -35,3 +38,24 @@ jobs:
           ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
         run: /tmp/nx-blueprint-document-tests
+
+  workspace:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    needs: document
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: true
+      - name: Install native desktop build dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libx11-dev libgl-dev xvfb libgl1-mesa-dri xauth
+      - name: Configure
+        run: cmake -S engine -B build -DCMAKE_BUILD_TYPE=Release
+      - name: Build native editor and regression executables
+        run: cmake --build build --target showcase nx_blueprint_tests nx_blueprint_document_tests --parallel 4
+      - name: Run native document and engine tests
+        run: ctest --test-dir build --output-on-failure --timeout 300 -R '^(blueprint_runtime|blueprint_native_document)$'
+      - name: Start editor with null GPU
+        run: build/showcase/nexgen --blueprint-studio --null --frames 10
+      - name: Start editor with native desktop renderer
+        run: xvfb-run -a -s "-screen 0 1280x720x24" build/showcase/nexgen --blueprint-studio --hidden --frames 10

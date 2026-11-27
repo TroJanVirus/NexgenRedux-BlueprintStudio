@@ -47,7 +47,7 @@ References: [original scene editor](https://github.com/Team-Resurgent/NexgenRedu
 
 - Does the change solve a real problem for someone making a game or keeping a graph tidy?
 - Is there already a native API or tool that does the work? Can Studio call it or hand off its native files instead?
-- Are existing projects still editable and runnable? Avoid silent changes to game logic or file formats.
+- Are native v2 projects still editable and runnable? Before release, schema changes are allowed when they improve the design; avoid silent changes to gameplay semantics.
 - Can users change layout and appearance without changing the generated code?
 - Is the documentation simple, with clear instructions and honest test limits?
 - Test the graph compiler and real engine where possible. Report substitutes and untested platforms as such.

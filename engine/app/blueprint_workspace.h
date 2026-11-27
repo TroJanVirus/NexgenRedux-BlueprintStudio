@@ -26,7 +26,7 @@ namespace nx
         bool saveCopy(Services& services);
         bool compileAndExport(Services& services);
         void cancelDrag() { m_drag = false; }
-        struct NodePins { std::vector<std::string> inputs, outputs; float height = 72; };
+        struct NodePins { std::vector<std::string> inputs, outputs, inputTypes, outputTypes; float height = 72; };
         struct WirePins { size_t output, input; };
         std::vector<NodePins> m_rows;
         std::vector<WirePins> m_wirePins;
