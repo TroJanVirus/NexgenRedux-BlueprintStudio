@@ -76,6 +76,21 @@ namespace nx
             {"var:set:Vec3","Set Vec3 variable","Variables","in:exec|value:Vec3","then:exec"},
             {"var:get:Color","Get Color variable","Variables","","value:Color"},
             {"var:set:Color","Set Color variable","Variables","in:exec|value:Color","then:exec"},
+            {"create:playlist","Create music playlist","Playlist","in:exec","then:exec|result:Playlist@","Playlist","","","","Playlist@"},
+            {"create:websocket","Connect WebSocket","WebSocket","in:exec|url:string","then:exec|result:WebSocket@","WebSocket","","","","WebSocket@","","in:url"},
+            {"null:entity","No entity (null)","Values","","value:Entity@"},
+            {"var:get:Playlist@","Get Playlist@ variable","Variables","","value:Playlist@"},
+            {"var:set:Playlist@","Set Playlist@ variable","Variables","in:exec|value:Playlist@","then:exec"},
+            {"global:get:Playlist@","Get Playlist@ global","Module variables","","value:Playlist@"},
+            {"global:set:Playlist@","Set Playlist@ global","Module variables","in:exec|value:Playlist@","then:exec"},
+            {"var:get:WebSocket@","Get WebSocket@ variable","Variables","","value:WebSocket@"},
+            {"var:set:WebSocket@","Set WebSocket@ variable","Variables","in:exec|value:WebSocket@","then:exec"},
+            {"global:get:WebSocket@","Get WebSocket@ global","Module variables","","value:WebSocket@"},
+            {"global:set:WebSocket@","Set WebSocket@ global","Module variables","in:exec|value:WebSocket@","then:exec"},
+            {"var:get:Widget@","Get Widget@ variable","Variables","","value:Widget@"},
+            {"var:set:Widget@","Set Widget@ variable","Variables","in:exec|value:Widget@","then:exec"},
+            {"global:get:Widget@","Get Widget@ global","Module variables","","value:Widget@"},
+            {"global:set:Widget@","Set Widget@ global","Module variables","in:exec|value:Widget@","then:exec"},
             {"var:get:Entity@","Get Entity@ variable","Variables","","value:Entity@"},
             {"var:set:Entity@","Set Entity@ variable","Variables","in:exec|value:Entity@","then:exec"},
             {"sequence","Sequence","Flow","in:exec","first:exec|second:exec|then:exec"},
@@ -153,7 +168,7 @@ namespace nx
                 (kind!="attach:behaviour"||!behaviour)&&(!behaviour||kind.rfind("level:",0)!=0);
         }
         bool signatureType(const std::string& type)
-        {return blueprintLiteralType(type)||type=="Vec2"||type=="Vec3"||type=="Color"||type=="Entity@";}
+        {return blueprintLiteralType(type)||type=="Vec2"||type=="Vec3"||type=="Color"||type=="Entity@"||type=="Playlist@"||type=="WebSocket@"||type=="Widget@";}
         bool validSignature(const std::vector<BlueprintPin>& parameters,const std::string& result)
         {
             if(parameters.size()>8||(result!="void"&&!signatureType(result)))return false;
@@ -182,13 +197,16 @@ namespace nx
             if(blueprintLiteralType(type))return literal("literal:"+type,value);
             std::vector<std::string> components;return blueprintInputComponents(type,value,components);
         }
+        // A declared array object can be passed to an API handle pin without copying it.
+        bool arrayBorrow(const std::string& from,const std::string& to)
+        {return !blueprintArrayElement(from).empty()&&to==from+"@";}
         bool validWire(const BlueprintDocument& doc,const BlueprintDocument::Graph& g,size_t from,const std::string& output,size_t to,const std::string& input,std::string& error)
         {
             if(from>=g.nodes.size()||to>=g.nodes.size()||from==to){error="Choose two different nodes.";return false;}
             BlueprintNodeSpec a,b;
             if(!doc.nodeSpec(g,g.nodes[from],a)||!doc.nodeSpec(g,g.nodes[to],b)){error="Unknown node or function.";return false;}
             const auto* out=findPin(a.outputs,output);const auto* in=findPin(b.inputs,input);
-            if(!out||!in||out->type!=in->type){error="Pins must have matching types and opposite directions.";return false;}
+            if(!out||!in||(out->type!=in->type&&!arrayBorrow(out->type,in->type))){error="Pins must have matching types and opposite directions.";return false;}
             for(const auto& l:g.links)
             {
                 if(l.to==to&&l.input==input){error="Input already connected. Disconnect it first.";return false;}
@@ -245,9 +263,9 @@ namespace nx
         const auto element=type.substr(6,type.size()-7);
         return element=="int"||element=="uint"||element=="float"||element=="bool"||element=="string"||element=="Vec2"||element=="Color"?element:"";
     }
-    bool blueprintVariableType(const std::string& type){return blueprintLiteralType(type)||!blueprintArrayElement(type).empty();}
+    bool blueprintVariableType(const std::string& type){return blueprintLiteralType(type)||!blueprintArrayElement(type).empty()||type=="Playlist@"||type=="WebSocket@"||type=="Widget@";}
     bool blueprintLosslessConversion(const std::string& from,const std::string& to)
-    {return to=="double"&&(from=="int"||from=="uint"||from=="float");}
+    {return arrayBorrow(from,to)||(to=="double"&&(from=="int"||from=="uint"||from=="float"));}
     bool blueprintFileName(const std::string& file)
     {
         return file.size()>8&&file.size()<=240&&file.ends_with(".bp.json")&&file!="blueprint-recovery.bp.json"&&
@@ -307,7 +325,7 @@ namespace nx
                 for(const std::string target:{"int","uint","float","double"})
                     if(target!=type)operation("cast:"+type+":"+target,"Convert "+type+" to "+target,"Conversions",type,target,"cast",true);
             }
-            for(const std::string type:{"bool","int","uint","float","double","string","Vec2","Vec3","Color","Entity@"})
+            for(const std::string type:{"bool","int","uint","float","double","string","Vec2","Vec3","Color","Entity@","Playlist@","WebSocket@","Widget@"})
             {
                 BlueprintNodeSpec spec;
                 spec.id="capture:"+type;spec.title="Capture "+type;spec.category="Variables";
@@ -760,7 +778,11 @@ namespace nx
             std::unordered_map<std::string,size_t> ids;unsigned entries=0;
             for(auto n=ns.first();n.exists();n=n.next())
             {
-                const std::string kind=n["kind"].text(),ref=n["value"].text();
+                std::string kind=n["kind"].text();const std::string ref=n["value"].text();
+                // Upstream extended joint signatures with optional limits. Old
+                // links and values remain valid, with native defaults for new pins.
+                if(kind=="api:Space:Space::join:Entity@,Entity@,Vec3")kind="api:Space:Space::join:Entity@,Entity@,Vec3,float";
+                if(kind=="api:Space:Space::hinge:Entity@,Entity@,Vec3,Vec3")kind="api:Space:Space::hinge:Entity@,Entity@,Vec3,Vec3,float,float";
                 const float x=n["x"].number(),y=n["y"].number();
                 if(!validText(n["id"])||!blueprintSpec(kind)||!context(g.name,kind,g.owner)||!n["x"].isNumber()||!n["y"].isNumber()||
                     !coordinate(x)||!coordinate(y)||!ids.emplace(n["id"].text(),g.nodes.size()).second||
@@ -1172,7 +1194,7 @@ namespace nx
         if(!nodeSpec(g,g.nodes[from],a)||!nodeSpec(g,g.nodes[to],b)){error="Unknown node.";return false;}
         const auto* out=findPin(a.outputs,output);const auto* in=findPin(b.inputs,input);
         if(!out||!in){error="Unknown pin.";return false;}
-        if(out->type==in->type)return connect(graph,from,output,to,input,error);
+        if(out->type==in->type||arrayBorrow(out->type,in->type))return connect(graph,from,output,to,input,error);
         if(!blueprintLosslessConversion(out->type,in->type)){error="Pins need matching types or an explicit conversion.";return false;}
         BlueprintDocument staged;staged.name=name;staged.assetRoot=assetRoot;staged.graphs=graphs;staged.manifests=manifests;staged.m_nextId=m_nextId;
         const float x=(g.nodes[from].x+g.nodes[to].x)*0.5f,y=(g.nodes[from].y+g.nodes[to].y)*0.5f+100.f;

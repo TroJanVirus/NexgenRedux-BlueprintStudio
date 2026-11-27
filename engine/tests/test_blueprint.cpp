@@ -2194,3 +2194,25 @@ NX_TEST(nativeLinkedWidgetPageRunsWithoutSnapshotFile)
     NX_EXPECT(label&&label->text=="Health");
     NX_EXPECT(progress&&progress->value==0.75f);
 }
+
+NX_TEST(nativeUpstreamBlueprintFactoriesAndAnimationArrayPinsCompile)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    BlueprintDocument doc;doc.create();std::string error,source;
+    // Compile, but do not execute a real network connection.
+    const bool authored=doc.editVariableDeclaration("Screen","field music:Playlist@",error)&&
+        doc.editVariableDeclaration("Screen","global socket:WebSocket@",error)&&
+        doc.editVariableDeclaration("Screen","field names:array<string>",error)&&
+        doc.editVariableDeclaration("Screen","field points:array<float>",error)&&
+        doc.addNode(0,"create:playlist",0,0,error)&&doc.addVariableNode(0,"music",false,true,0,0,error)&&
+        doc.connect(0,0,"then",1,"in",error)&&doc.connect(0,1,"then",2,"in",error)&&doc.connect(0,1,"result",2,"value",error)&&
+        doc.addNode(0,"create:websocket",0,0,error)&&doc.setInputValue(0,3,"url","ws://127.0.0.1:9",error)&&
+        doc.addVariableNode(0,"socket",true,true,0,0,error)&&doc.connect(0,2,"then",3,"in",error)&&doc.connect(0,3,"then",4,"in",error)&&doc.connect(0,3,"result",4,"value",error)&&
+        doc.addNode(1,"null:entity",0,0,error)&&doc.addVariableNode(1,"names",false,false,0,0,error)&&
+        doc.addVariableNode(1,"points",false,false,0,0,error)&&
+        doc.addNode(1,"api:Entity:animateBlend:Entity@,array<string>@,array<float>@,float",0,0,error)&&
+        doc.connect(1,0,"then",4,"in",error)&&doc.connect(1,1,"value",4,"target",error)&&
+        doc.connectCompatible(1,2,"value",4,"names",error)&&doc.connectCompatible(1,3,"value",4,"at",error);
+    NX_EXPECT(authored&&compileBlueprint(doc,source,error));
+    if(!source.empty())NX_EXPECT(compile(r.host,source.c_str()));
+}

@@ -1,7 +1,7 @@
 name: Native Blueprint
 on:
   push:
-    branches: ["blueprint/visual-authoring"]
+    branches: ["blueprint/visual-authoring", "blueprint/upstream-ceeb83b"]
   pull_request:
     branches: ["blueprint/verification-base"]
   workflow_dispatch:

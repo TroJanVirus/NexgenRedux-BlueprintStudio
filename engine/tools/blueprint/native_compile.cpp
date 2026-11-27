@@ -179,6 +179,7 @@ namespace nx
                     if(!value(node,"b",b,depth))return false;
                     result="("+a+" "+spec->operation+" "+b+")";return true;
                 }
+                if(n.kind=="null:entity"&&pin=="value"){result="null";return true;}
                 if(n.kind=="event:delta"&&graph.name=="update"&&pin=="value"){result="dt";return true;}
                 if(n.kind=="event:canvas"&&graph.name=="draw"&&pin=="value"){result="canvas";return true;}
                 if(n.kind=="event:entity"&&pin=="value"){result="entity";return true;}
@@ -351,7 +352,7 @@ namespace nx
                 if(n.kind.rfind("global:set:",0)==0)
                 {
                     std::string v;if(!value(to,"value",v,0))return false;
-                    source+=pad+"bp_global_"+n.ref+" = "+v+";\n";mark(start,to);return flow(to,"then",indent,depth+1);
+                    source+=pad+(n.kind.ends_with("@")?"@":"")+"bp_global_"+n.ref+" = "+v+";\n";mark(start,to);return flow(to,"then",indent,depth+1);
                 }
                 if(n.kind.rfind("var:set:",0)==0)
                 {

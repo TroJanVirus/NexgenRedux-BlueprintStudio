@@ -8,7 +8,7 @@
 using namespace nx;
 NX_TEST(nativeCatalogueContainsReferenceAPI)
 {
-    NX_EXPECT(blueprintCatalogue().size()==1094);
+    NX_EXPECT(blueprintCatalogue().size()==1115);
     const auto* save=blueprintSpec("api:Save:Save::set:string,string");
     NX_EXPECT(save&&save->inputs.size()==3&&save->outputs.size()==1);
     if(save&&save->inputs.size()==3)NX_EXPECT(save->inputs[0].type=="exec"&&save->inputs[2].type=="string");
@@ -1206,4 +1206,46 @@ NX_TEST(nativeLinkedWidgetCompilesCurrentPageAndProtectsIdentity)
     NX_EXPECT(loaded.addNode(other,"branch",300,40,error)&&loaded.connect(other,0,"then",1,"in",error));
     const auto before=loaded.revision();
     NX_EXPECT(!loaded.connectVisualWidget("other",id,error)&&loaded.revision()==before);
+}
+
+NX_TEST(nativeUpstreamFactoriesReferencesAndArrayBorrow)
+{
+    BlueprintDocument doc;doc.create();std::string error,source,bytes;
+    NX_EXPECT(doc.editVariableDeclaration("Screen","field music:Playlist@",error));
+    NX_EXPECT(doc.editVariableDeclaration("Screen","global socket:WebSocket@",error));
+    NX_EXPECT(doc.editVariableDeclaration("Screen","field names:array<string>",error));
+    NX_EXPECT(doc.editVariableDeclaration("Screen","field points:array<float>",error));
+    NX_EXPECT(doc.addNode(0,"create:playlist",0,0,error));
+    NX_EXPECT(doc.addVariableNode(0,"music",false,true,0,0,error));
+    NX_EXPECT(doc.connect(0,0,"then",1,"in",error)&&doc.connect(0,1,"then",2,"in",error)&&doc.connect(0,1,"result",2,"value",error));
+    NX_EXPECT(doc.addNode(0,"create:websocket",0,0,error)&&doc.setInputValue(0,3,"url","ws://127.0.0.1:9",error));
+    NX_EXPECT(doc.addVariableNode(0,"socket",true,true,0,0,error));
+    NX_EXPECT(doc.connect(0,2,"then",3,"in",error)&&doc.connect(0,3,"then",4,"in",error)&&doc.connect(0,3,"result",4,"value",error));
+    NX_EXPECT(doc.addVariableNode(1,"names",false,false,0,0,error)&&doc.addVariableNode(1,"points",false,false,0,0,error));
+    NX_EXPECT(doc.addNode(1,"api:Entity:animateBlend:Entity@,array<string>@,array<float>@,float",0,0,error));
+    NX_EXPECT(doc.connectCompatible(1,1,"value",3,"names",error)&&doc.connectCompatible(1,2,"value",3,"at",error));
+    NX_EXPECT(!doc.connectCompatible(1,2,"value",3,"names",error));
+    NX_EXPECT(doc.serialize(bytes,error));
+    BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error));
+    NX_EXPECT(compileBlueprint(copy,source,error));
+    NX_EXPECT(source.find("Playlist()")!=std::string::npos&&source.find("WebSocket(")!=std::string::npos);
+    NX_EXPECT(source.find("@bp_var_music = ")!=std::string::npos&&source.find("@bp_global_socket = ")!=std::string::npos);
+}
+NX_TEST(nativeOldJointNodeIdsMigrate)
+{
+    BlueprintDocument doc;doc.create();std::string error,bytes;
+    NX_EXPECT(doc.addNode(0,"api:Space:Space::join:Entity@,Entity@,Vec3,float",0,0,error));
+    NX_EXPECT(doc.addNode(0,"api:Space:Space::hinge:Entity@,Entity@,Vec3,Vec3,float,float",0,0,error));
+    NX_EXPECT(doc.serialize(bytes,error));
+    for(const auto& pair:std::vector<std::pair<std::string,std::string>>{
+        {"api:Space:Space::join:Entity@,Entity@,Vec3,float","api:Space:Space::join:Entity@,Entity@,Vec3"},
+        {"api:Space:Space::hinge:Entity@,Entity@,Vec3,Vec3,float,float","api:Space:Space::hinge:Entity@,Entity@,Vec3,Vec3"}})
+    {
+        const auto at=bytes.find(pair.first);
+        NX_EXPECT(at!=std::string::npos);
+        if(at!=std::string::npos)bytes.replace(at,pair.first.size(),pair.second);
+    }
+    BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error));
+    NX_EXPECT(copy.graphs[0].nodes[1].kind=="api:Space:Space::join:Entity@,Entity@,Vec3,float");
+    NX_EXPECT(copy.graphs[0].nodes[2].kind=="api:Space:Space::hinge:Entity@,Entity@,Vec3,Vec3,float,float");
 }

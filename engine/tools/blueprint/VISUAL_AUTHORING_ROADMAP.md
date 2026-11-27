@@ -62,3 +62,7 @@ The Content Browser Link to screen command adds a visible Load linked widget pag
 ## Upstream integration
 
 Merged upstream through `ceeb83b4873806308f17fdd0c5ac5e8edc8bf786` with both histories and upstream submodule pins. The integration branch regenerates the script-reference catalogue and existing fixtures with their original generators, adds the new Playlist and WebSocket handle types, then verifies the exact generated revision. The working visual-authoring branch and Beta 1 tag are unchanged until verification. Do not confuse a source merge with a verified platform release.
+
+## Native upstream API usability audit
+
+The regenerated reference catalogue grew from 804 to 865 API nodes (61 net), but methods alone did not provide a usable workflow. Added native Playlist/WebSocket factory nodes, typed persistent field/global and local reference support for Playlist, WebSocket and Widget, matching array-object-to-array-handle connections for animation blend APIs, an explicit null Entity pin and native document migration for older join/hinge node IDs. Compiler and actual AngelScript binding regressions verify these changes. This is still not a blanket guarantee of every script API: delegate-driven APIs, runtime feature differences by GPU/platform, editor-specific animation authoring and actual device verification need separate work. 
