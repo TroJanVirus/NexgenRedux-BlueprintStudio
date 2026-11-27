@@ -351,6 +351,7 @@ namespace nx
 
     void Space::clear()
     {
+        m_cameraEntity=0;m_cameraUp={0,1,0};
         m_decals.clear();
         if (m_navMesh && m_solids)
         {
@@ -634,8 +635,24 @@ namespace nx
 
     // --- Every step ---
 
+    void Space::refreshActorCamera(bool focus)
+    {
+        if(!m_cameraEntity)return;
+        const auto* e=m_world.find(m_cameraEntity);const auto* camera=getSpatial(m_cameraEntity);
+        if(!e||!camera||camera->cameraFov<=0){m_cameraEntity=0;m_cameraUp={0,1,0};return;}
+        Vec3 forward=camera->turn.rotate({0,0,1}),up=camera->turn.rotate({0,1,0});
+        for(u32 at=e->parent;at!=kNone;at=m_world.m_entities[at].parent)
+        {
+            const u32 part=m_world.m_entities[at].parts3[0];
+            if(part!=kNone){forward=m_spatials[part].turn.rotate(forward);up=m_spatials[part].turn.rotate(up);}
+        }
+        m_from=worldPlace(m_cameraEntity);m_to=m_from+forward;m_cameraUp=up;m_angle=camera->cameraFov;
+        if(focus){m_focusTo[m_focusCount<3?m_focusCount:3]=m_to;m_focus[m_focusCount<3?m_focusCount++:3]=m_from;}
+    }
+
     void Space::update(float dt)
     {
+        refreshActorCamera(true);
         m_look.exposureAdapt = 1 - expf(-dt * m_exposureSpeed);
         m_time += dt;
         listen(dt);
@@ -1510,6 +1527,7 @@ namespace nx
 
     void Space::draw(Canvas& canvas, float x, float y, float w, float h)
     {
+        refreshActorCamera(false);
         if (m_solids == nullptr || !m_solids->make())
         {
             return;
@@ -1532,7 +1550,7 @@ namespace nx
         }
         const float aspect = static_cast<float>(view.area.width) / static_cast<float>(view.area.height);
         const float angle = m_angle * kDegrees;
-        view.view = Mat4::lookAt(m_from, m_to, { 0, 1, 0 });
+        view.view = Mat4::lookAt(m_from, m_to, m_cameraUp);
         view.projection = Mat4::perspective(angle, aspect, 0.1f, m_far);
         view.eye = m_from;
         const float tall = tanf(angle * 0.5f);

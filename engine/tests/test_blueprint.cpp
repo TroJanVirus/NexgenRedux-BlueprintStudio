@@ -2478,3 +2478,22 @@ NX_TEST(nativeLinkedWidgetComponentsLoadWithIndependentIDs)
     auto* first=r.services.ui->find("item-1/item-1");auto* second=r.services.ui->find("item-2/item-1");
     NX_EXPECT(first&&second&&first!=second);
 }
+
+NX_TEST(nativeActorCameraTracksParentAndRespectsManualCamera)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    BlueprintDocument doc;doc.create();std::string id,error,source;
+    NX_EXPECT(doc.createVisualAsset("actor",id,error)&&doc.appendVisualActorComponent(id,0,"camera","0,2,-5",error));
+    NX_EXPECT(doc.setVisualActorProperty(id,1,"camera","75",error)&&doc.visualActorSource(id,source,error));
+    JsonTree tree;NX_EXPECT(tree.parse(source.data(),source.size()));
+    World world(r.assets,r.host,"blueprint",64,32);auto& space=world.space();space.init(&r.solids,&r.audio);
+    const u32 root=space.makeActor(tree.root(),"showcase/main",{3,4,5});NX_EXPECT(root);if(!root)return;
+    const u32 camera=world.findNamed("Camera1");NX_EXPECT(camera&&world.parentOf(camera)==root);
+    NX_EXPECT(space.getAppearance(camera)==nullptr);
+    space.update(1.f/60);auto eye=space.cameraPlace();
+    NX_EXPECT(fabsf(eye.x-3)<0.001f&&fabsf(eye.y-6)<0.001f&&fabsf(eye.z)<0.001f);
+    space.getSpatial(root)->place={8,4,5};space.update(1.f/60);eye=space.cameraPlace();
+    NX_EXPECT(fabsf(eye.x-8)<0.001f);
+    space.setCamera({0,5,8},{0,0,0},60);space.update(1.f/60);eye=space.cameraPlace();
+    NX_EXPECT(eye.x==0&&eye.y==5&&eye.z==8);
+}

@@ -1161,6 +1161,7 @@ namespace nx
                 else if(in(x,y,820,318,1000,351))prop="size";
                 else if(in(x,y,630,359,810,392))prop="model";
                 else if(in(x,y,820,359,1000,392))prop="behaviour";
+                else if(in(x,y,630,520,1000,553))prop="camera";
                 if(!prop)return;
                 JsonTree tree;if(!tree.parse(selected->source.data(),selected->source.size()))return;
                 const auto item=tree.root()["entities"][static_cast<u32>(m_visualComponent)];
@@ -1216,8 +1217,9 @@ namespace nx
             }
             else if(in(x,y,630,505,1000,538))
             {
-                if(m_document.appendVisualActorComponent(m_visualSelection,m_visualComponent,"box","0,1.5,0",m_status))
-                    m_status="Added box child under selected component.";
+                const bool camera=x>=820;
+                if(m_document.appendVisualActorComponent(m_visualSelection,m_visualComponent,camera?"camera":"box",camera?"0,2,-5":"0,1.5,0",m_status))
+                    m_status=camera?"Added camera child; it follows its parent when spawned.":"Added box child under selected component.";
             }
             else if(in(x,y,630,548,1000,581))
             {
@@ -1230,7 +1232,7 @@ namespace nx
             return;
         }
         if(selected->kind!="widget")return;
-        if(in(x,y,630,510,1000,543)){m_visualInput=5;m_visualText=selected->dependencies.empty()?"":selected->dependencies.front();input.setTyping(true);m_status="Enter theme asset ID or blank for native defaults.";return;}
+        if(in(x,y,630,510,1000,543)){m_visualInput=5;m_visualText.clear();for(const auto& dependency:selected->dependencies)if(const auto* a=m_document.visualAsset(dependency);a&&a->kind=="theme")m_visualText=dependency;input.setTyping(true);m_status="Enter theme asset ID or blank for native defaults.";return;}
         if(in(x,y,280,548,610,581)){m_widgetDesigner=true;m_widgetPalette=false;m_widgetEvents=m_widgetUnbind=m_widgetDragging=m_widgetAnchors=m_widgetPreviewDrag=false;m_widgetSelection.clear();m_widgetFirst=0;return;}
         if(in(x,y,630,232,1000,266))
         {m_visualInput=2;input.setTyping(true);m_status="Enter the next widget label, then press Enter.";return;}
@@ -1355,8 +1357,9 @@ namespace nx
                         }
                         const auto model=std::string("Model: ")+item["model"].text("(none)");
                         const auto behaviour=std::string("Behaviour: ")+item["behaviour"].text("(none)");
-                        c.clip(630,510,370,25);c.text(*m_font,model.c_str(),630,512,muted);c.noClip();
-                        c.clip(630,535,370,20);c.text(*m_font,behaviour.c_str(),630,537,muted);c.noClip();
+                        c.clip(630,490,370,20);c.text(*m_font,model.c_str(),630,490,muted);c.noClip();
+                        c.clip(630,510,370,20);c.text(*m_font,behaviour.c_str(),630,510,muted);c.noClip();
+                        button(630,525,370,item["camera"].exists()?(std::string("Camera FOV: ")+std::to_string(item["camera"].number())).c_str():"Camera FOV (blank = off)");
                     }
                     button(630,558,370,"Physics and animation");
                     }
@@ -1373,13 +1376,13 @@ namespace nx
                     {
                         const auto index=static_cast<u32>(i+m_visualComponentFirst);
                         const auto item=entries[index];const float yy=366+33*static_cast<float>(i);
-                        const auto label=std::to_string(index)+"  "+item["name"].text("Component")+" / "+item["shape"].text("custom")+
+                        const auto label=std::to_string(index)+"  "+item["name"].text("Component")+" / "+item["shape"].text(item["camera"].exists()?"camera":"custom")+
                             (index?"  (parent "+std::to_string(static_cast<int>(parents[index].number()))+")":"  (root)");
                         c.rect(630,yy,370,31,index==m_visualComponent?Color{0.19f,0.33f,0.50f,1}:Color{0.17f,0.22f,0.30f,1});
                         c.clip(635,yy,360,31);c.text(*m_font,label.c_str(),638,yy+6,text);c.noClip();
                     }
                 }
-                button(630,505,370,"Add child to selected component");
+                button(630,505,185,"Add child");button(820,505,180,"Add camera");
                 button(630,548,370,"Add linked actor to screen");
                 }
             }

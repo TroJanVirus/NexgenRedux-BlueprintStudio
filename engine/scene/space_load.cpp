@@ -116,6 +116,8 @@ namespace nx
             }
             if(i)m_world.setParent(ids[i],ids[parent[i]]);
         }
+        for(u32 i=0;i<count;++i)if(const auto* camera=getSpatial(ids[i]);camera&&camera->cameraFov>0)m_cameraEntity=ids[i];
+        refreshActorCamera(false);
         return ids[0];
     }
 
@@ -224,6 +226,11 @@ namespace nx
                 {
                     m_assets.release(sound);
                 }
+            }
+            else if(is("camera"))
+            {
+                if(!v.isNumber()||!(v.exact()>=5&&v.exact()<=150))return m_world.fail(file,v.line(),"%s","Camera FOV must be 5 to 150 degrees");
+                s->cameraFov=v.number();
             }
             else if (is("shape"))
             {

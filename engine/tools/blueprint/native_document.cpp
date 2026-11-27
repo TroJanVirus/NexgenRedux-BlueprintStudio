@@ -1214,7 +1214,7 @@ namespace nx
     bool BlueprintDocument::appendVisualActorComponent(const std::string& id,size_t parent,const std::string& shape,const std::string& place,std::string& error)
     {
         std::vector<std::string> xyz;
-        if((shape!="box"&&shape!="sphere"&&shape!="capsule"&&shape!="plane")||
+        if((shape!="box"&&shape!="sphere"&&shape!="capsule"&&shape!="plane"&&shape!="camera")||
             !blueprintInputComponents("Vec3",place,xyz))
         {error="Choose a shape and valid local XYZ.";return false;}
         std::string source;if(!visualActorSource(id,source,error))return false;
@@ -1230,7 +1230,8 @@ namespace nx
             for(auto at=parent;at;at=static_cast<size_t>(parents->at(static_cast<unsigned>(at))->number()))++depth;
             if(depth>8){error="Actor hierarchy nesting limit reached.";return false;}
             auto* child=entities->add();auto* p=parents->add();
-            if(!child||!p||!text(*child,"name","Component"+std::to_string(entities->count()-1))||!text(*child,"shape",shape))
+            if(!child||!p||!text(*child,"name",std::string(shape=="camera"?"Camera":"Component")+std::to_string(entities->count()-1))||
+                (shape=="camera"?!number(*child,"camera",60):!text(*child,"shape",shape)))
             {error="Cannot allocate component.";return false;}
             p->setNumber(static_cast<double>(parent));
             auto* position=child->put("place");if(!position)return false;position->setArray();
@@ -1312,6 +1313,17 @@ namespace nx
             else if(property=="name")
             {
                 if(!actorName(*item,value,error))return false;
+            }
+            else if(property=="camera")
+            {
+                if(value.empty())item->remove("camera");
+                else
+                {
+                    if(!literal("literal:float",value)){error="Enter a finite vertical camera FOV.";return false;}
+                    const double n=std::strtod(value.c_str(),nullptr);
+                    if(n<5||n>150){error="Camera FOV must be between 5 and 150 degrees.";return false;}
+                    if(!number(*item,"camera",n))return false;
+                }
             }
             else if(property=="mass"||property=="friction"||property=="bounce"||property=="gravity"||property=="drag")
             {

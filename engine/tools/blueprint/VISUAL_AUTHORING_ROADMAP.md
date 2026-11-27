@@ -122,3 +122,8 @@ The theme editor now exposes minimum width/height, nine-slice size and text alig
 ## Linked widget composition
 
 Add a component from the native widget palette using its reusable asset ID. References expand through the existing document/compiler into native column wrappers; repeated and nested instances receive namespaced IDs. The preview selects the outer instance and supports unlinking it without deleting the original. Cycles, depth and expansion limits are checked; referenced assets cannot be deleted. The owning page's theme applies to all nested widgets. Nested callback methods use the consuming screen's functions and may require relinking the containing page after changes. Per-instance override editors and a dropdown component picker are not yet implemented.
+
+
+## Actor camera components
+
+Create an invisible camera child with a local position, rotation and vertical FOV (5–150 degrees). Linked actor spawning activates the last camera in the successfully constructed hierarchy; subsequent native frames follow the parent's position and orientation. An explicit Space::camera call relinquishes that automatic follow. The camera uses the native Space view and does not add a mesh or collider. Multi-camera selection and camera blending are not yet exposed as editor commands.

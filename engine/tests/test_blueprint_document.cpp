@@ -1556,3 +1556,14 @@ NX_TEST(nativeLinkedWidgetComponentsExpandAndTrackDefinitions)
     NX_EXPECT(doc.removeVisualAsset(child,error));NX_EXPECT(doc.undo()&&doc.undo());
     NX_EXPECT(doc.visualWidgetPage(page,source,error)&&source.find("item-2/item-1/item-1")!=std::string::npos);
 }
+
+NX_TEST(nativeActorCameraComponentPersistsWithValidatedFov)
+{
+    BlueprintDocument doc;doc.create();std::string id,error,source;
+    NX_EXPECT(doc.createVisualAsset("actor",id,error)&&doc.appendVisualActorComponent(id,0,"camera","0,2,-5",error));
+    NX_EXPECT(doc.setVisualActorProperty(id,1,"camera","75",error));
+    NX_EXPECT(!doc.setVisualActorProperty(id,1,"camera","180",error));
+    NX_EXPECT(doc.placeVisualActor("Screen",id,"3,4,5",error)&&compileBlueprint(doc,source,error));
+    NX_EXPECT(source.find("Camera1")!=std::string::npos);
+    NX_EXPECT(doc.visualActorSource(id,source,error)&&source.find("75")!=std::string::npos);
+}

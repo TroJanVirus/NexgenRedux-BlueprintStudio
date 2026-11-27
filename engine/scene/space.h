@@ -100,6 +100,7 @@ namespace nx
         Quat turn;
         Vec3 size;
         bool streamed;
+        float cameraFov;       // 0: ordinary entity; otherwise a linked actor camera
         Mat4 world;
         float made[10];        // the place, turn and size that it was made from
         u32 version;           // goes up when it moves
@@ -351,7 +352,7 @@ namespace nx
 
         // --- Surroundings ---
 
-        void setCamera(const Vec3& from, const Vec3& to, float angle) { m_from = from; m_to = to; m_focusTo[m_focusCount < 3 ? m_focusCount : 3] = to; m_focus[m_focusCount < 3 ? m_focusCount++ : 3] = from; m_angle = angle < 5 ? 5 : angle > 150 ? 150 : angle; }
+        void setCamera(const Vec3& from, const Vec3& to, float angle) { m_cameraEntity=0; m_cameraUp={0,1,0}; m_from = from; m_to = to; m_focusTo[m_focusCount < 3 ? m_focusCount : 3] = to; m_focus[m_focusCount < 3 ? m_focusCount++ : 3] = from; m_angle = angle < 5 ? 5 : angle > 150 ? 150 : angle; }
         void setSun(const Vec3& direction, const gpu::Color& color) { m_sun = direction.normalized(); m_sunColor = color; }
         void setAmbient(const gpu::Color& sky, const gpu::Color& ground) { m_ambientSky = sky; m_ambientGround = ground; }
         void setSky(const gpu::Color& top, const gpu::Color& horizon) { m_skyTop = top; m_skyHorizon = horizon; m_hasSky = true; }
@@ -896,6 +897,9 @@ namespace nx
         Audio* m_audio = nullptr;
 
         Vec3 m_from = { 0, 2, 6 }, m_to;
+        Vec3 m_cameraUp={0,1,0};
+        u32 m_cameraEntity=0;
+        void refreshActorCamera(bool focus);
         float m_angle = 60, m_far = 400;
         Vec3 m_sun = { 0.4f, 0.8f, 0.45f };
         gpu::Color m_sunColor = { 0.9f, 0.86f, 0.78f, 1 };
