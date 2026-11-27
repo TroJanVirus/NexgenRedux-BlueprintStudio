@@ -53,6 +53,14 @@ in the Debug Console. Its profiler, on the debug toolbar, shows which functions 
 started with `--debug`, which listens on that machine only unless `--debug-remote` is given. On a console, a folder called `debug`
 beside the title lets a computer on the network attach to it.
 
+While it runs, *Nexgen entities* beside the call stack lists the entities of the screen on top, each with its children and what it
+is like: where it is, how it is turned and big, its colour, model, animation, body and collider. The pencil beside a property
+changes it there and then, as the game goes on: a robot moved to `1, 5, 2`, a body sent off at `0, 8, 0`.
+
+To see what touches what, `Space::showShapes` and `Scene::showShapes` draw every collider over the picture: grey walls, green
+bodies (darker asleep), blue walkers and characters, orange ragdolls, yellow areas that only feel. `Space::showNavigation` draws the
+squares that `Space::navigate` found can be walked on. In Guards, Tumble, Topple and Physics, C or the left trigger shows them.
+
 ## Screens
 
 A screen is a class that implements `Screen`. The engine calls the methods it has:
@@ -280,6 +288,65 @@ and draws those when it is small on the screen. What can't be seen isn't drawn.
 `Space::sun`, `ambient`, `sky`, `fog` and `shadows` set the scene. Shadows are the shape of what casts them, on the original Xbox too,
 where the land casts none.
 
+### Mixing animations
+
+`animate` plays one animation at a time. A model can do more:
+
+```cpp
+robot.animateBlend(array<string> = { "idle", "walk", "run" }, array<float> = { 0, 1.5f, 4 });  // each at a point
+robot.blendBy = speed;                                            // between two points, some of each, in step
+robot.animateLayer("wave", "chest");                              // over the top half, on top of the rest
+robot.stopLayer();
+robot.rootMotion = true;                                          // the animation moves it, so its feet don't slide
+robot.lookAt("head", ball.place);                                 // the head turns toward a place, up to 75 degrees
+robot.lookAway();
+```
+
+- **Blends** mix animations by a number, usually speed: idle at 0, walk at 1.5 metres a second, run at 4. Between two points the
+  robot is some of each, and both are kept at the same point of their steps, so the feet don't stumble. `animate` changes back.
+- **A layer** plays an animation over one bone and every bone that hangs from it: waving with `"chest"` while the legs keep
+  walking. It comes in and goes over a quarter of a second; `layerPlayed` says when one that doesn't loop has finished.
+- **Root motion** moves the whole thing as far as the animation carries its highest moving bone along the ground, which way it faces,
+  so a stride made in a modelling program covers exactly the ground its feet do. A walker so moved still stops at walls.
+- **Looking** turns a bone after the animation, smoothly, and can be asked every update as the place moves.
+
+The Moves demo has one of each, and the robot's "stride" is a walk that goes forward, for root motion.
+
+`robot.reach("hand.r", place)` bends a limb's two bones, over whatever it plays, so that its end touches a place: a hand on a lever,
+a foot on a step. Up to four at once; amount 0 lets one go. In the Moves demo, Fire makes the robots reach for the drone.
+
+For more than a few animations, `#include "global:states.as"` brings in `AnimationStates`: states, each an animation, and links
+between them, with how long each change takes and whether it waits for the first to finish. `travel` goes the shortest way along
+the links, playing each state between, and a state that doesn't loop can say what comes after it:
+
+```cpp
+AnimationStates moves(robot);
+moves.add("idle");
+moves.add("walk");
+moves.add("leap", "jump", false, "idle");    // jumps once, then idles
+moves.link("idle", "walk", 0.2f, true);      // both ways
+moves.link("walk", "leap", 0.1f);
+moves.start("idle");
+// each update:
+moves.update(dt);
+moves.travel(jumping ? "leap" : speed > 0.1f ? "walk" : "idle");
+```
+
+### Ragdolls
+
+`ragdoll(true)` makes a model go limp. It gets a body for each bone that moves some of its skin, sized from that skin and pinned
+where the bones meet, and each swings no more than about 57 degrees from how it sits on the one above. It falls from the pose it
+was in, carried on as it was moving, plus whatever push you give it:
+
+```cpp
+robot.ragdoll(true, away * 4 + Vec3(0, 2, 0));   // knocked over
+robot.push(blow, hitPlace);                      // limp, a blow moves the limb nearest the place
+robot.ragdoll(false);                            // gets up where it lies, into what it plays, over 0.6 seconds
+```
+
+While it is limp its own collider isn't there, what hits one of its limbs (a ray, say) hits it, and its `place` follows where it lies.
+The robot has a dozen bodies; a few robots at once suit the original Xbox. The Topple demo knocks robots off a ledge.
+
 ### Holding things, and joints
 
 `attach(parent)` makes one thing move with another. `attach(parent, "hand.r")` makes it move with one of the parent's bones instead,
@@ -295,6 +362,23 @@ Space::spring(weight, null, Vec3(3, 3, 0), Vec3(3, 6, 0), 40, 1, 2);  // stiffne
 ```
 
 A joint goes when either thing does, or with `Space::unjoin`. The Tumble demo's *Swings* has one of each.
+
+Joints can be held within limits, as a door stops against a wall or a neck turns only so far:
+
+```cpp
+Space::hinge(door, null, Vec3(0, 1, 0), Vec3(0, 1, 0), 0, 100);   // opens one way, to 100 degrees
+Space::join(head, neck, at, 40);                                    // swings no more than 40 degrees from how it hangs now
+```
+
+A ray can slip past what something thick would hit. `Space::sphereCast` moves a ball along a line instead, and says where its
+middle is when it first touches, and which way that faces; `Space::spherePick` says what it touched. For a character's way ahead,
+a thrown thing, or a camera kept out of walls:
+
+```cpp
+Vec3 at, normal;
+if (Space::sphereCast(target, wanted, 0.3f, at, normal))
+    camera = at;                    // as near as it can be without going into the wall
+```
 
 ### A world to walk in
 
@@ -640,9 +724,47 @@ float4 paint(float4 color, float2 uv, float3 place, float3 normal, inout float g
 | `picture(uv)` | The picture so far, anywhere; `uv` is 0 to 1 from the top left |
 | `size`, `time` | Of the picture in pixels, and seconds |
 | `values[0]` to `values[3]` | Sixteen numbers, set with `Effect::set` |
+| `depthAt(uv)` | After `Space::draw`, how far away what is there is, in metres; `farthest` for the sky |
+| `sunPlace`, `sunInFront` | Where the sun is, 0 to 1 across the view, and 1 if it is ahead of the camera |
+| `upward`, `farthest` | Which way is up as the camera sees it (right, up, away), and how far it sees |
+
+The last three rows are on GPUs where `Space::depthEffects`: Windows, Linux, macOS, the Xbox One and the Xbox 360. They are enough for god rays,
+fog by distance, outlines where things meet and the like: `global:effect/rays.fx` is god rays, written that way.
 
 It is written as HLSL is, and every number with a point in it. `float2` to `float4`, `lerp`, `frac`, `saturate` and `fmod` have their
-OpenGL names put in for you; keep to what both have. Don't name anything `out`, `in`, `sample` or `texture`.
+OpenGL names put in for you; keep to what both have. Don't name anything `out`, `in`, `sample`, `texture`, `step`, `distance` or any
+of the words in the table.
+
+### Blur, and finishing a view
+
+`c.blur(8)` blurs all that has been drawn so far, about 8 pixels across on a screen 720 high, or only inside the clip: frosted glass
+behind a pause menu, or a dream. It works on every GPU.
+
+Where `Space::depthEffects`, each view in space can be finished from how far away each of its pixels is:
+
+```cpp
+Space::occlusion(1, 0.6f);          // corners and creases darker, within 0.6 metres
+Space::reflections(0.6f);           // wet floors and still water show what is around
+Space::focus(5, 1, 12);             // sharp at 5 metres, 1 either side; 12 pixels of blur, with bokeh
+Space::autoExposure(0.4f);          // brighter in the dark and darker in the light, gradually
+```
+
+Each takes 0 for none. Reflections show only what is on the screen and in what faces up; the further a pixel is from the focus, the
+more it is blurred, and the brightest spread into round bokeh. The Lens demo has them all, god rays and decals too, behind a frosted
+panel.
+
+### Decals
+
+```cpp
+Vec3 hit, normal;
+if (Space::raycast(from, to, hit, normal))
+    Space::decal(splash, hit, normal, 1.2f, random(0, 360), Red);
+```
+
+A decal lays a picture over whatever is at a place, as a sticker would be: a mark, a hole, a splash or a footprint. It wraps over the
+models and meshes there that don't bend, the land and the ground, and stays where it is put, as an entity of its own that can be
+coloured, faded or destroyed. `Space::decals` is how many there can be, 64 to begin with; past it, the oldest goes. They work on every
+GPU. `global:picture/decal-splash.png` (white, for colouring), `decal-scorch.png` and `decal-hole.png` are there to use.
 
 ### Grading
 
@@ -716,6 +838,24 @@ Audio::clearEffects();
 
 A screen starts with none, and they go when it closes. The Sounds demo puts its pads in a room, a hall, a canyon, under water and
 on the radio.
+
+Sounds in space, from `playAt` or an entity's `sound`, are quieter further away and come from where they are. `Space::doppler = 1`
+bends them as well, higher coming closer and lower going away, as a car or a siren passing is; more than 1 makes it plainer. A
+camera that cuts somewhere new isn't taken for a speed. The Moves demo's drone is heard going by.
+
+Music from one track to the next is a `Playlist`:
+
+```cpp
+Playlist@ list = Playlist();
+list.add(Assets::sound("asset:one.ogg"));
+list.add(Assets::sound("asset:two.ogg"));
+list.shuffle = true;                // any but the last, each time
+list.crossfade = 3;                 // each fades into the next over 3 seconds
+list.play();
+list.next();                        // now, over crossfade; previous(), stop(), index, paused, position and seconds too
+```
+
+It goes on by itself while its screen is on top, round again unless `loop` is false. The Music demo is one.
 
 ### Video
 
@@ -886,6 +1026,23 @@ if (request.done && !request.failed)
 
 Certificates are checked, against those in `media/global/certificates.pem`: a server that can't be trusted is refused, and `error`
 says why. An answer may be up to 4 MB. `Net::post` sends something.
+
+A `WebSocket` stays open, for messages both ways with a web server: a chat, a lobby, scores as they change.
+
+```cpp
+WebSocket@ socket = WebSocket("wss://example.com/chat");
+
+if (socket.connected)
+    socket.send("hello");
+string message;
+while (socket.receive(message))
+    show(message);
+if (socket.closed)
+    show(socket.error);
+```
+
+It connects, sends and reads on a thread of its own, so nothing waits; `wss://` is over TLS, its certificate checked as for `Net::get`.
+Messages may be up to 4 MB, and pings are answered for you.
 
 ### Anything else
 

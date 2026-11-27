@@ -3,6 +3,7 @@
 #include "base/json.h"
 #include "base/log.h"
 #include "bindings/bindings.h"
+#include "screens/playlist.h"
 #include "video/video.h"
 #include "save/save.h"
 #include <algorithm>
@@ -770,6 +771,7 @@ namespace nx
                 fail(entry);
             }
             Video::updateGroup(entry.group, dt);
+            Playlist::updateGroup(entry.group, dt);
         }
         applyChanges();
     }

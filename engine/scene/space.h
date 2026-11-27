@@ -108,6 +108,8 @@ namespace nx
         int bone;              // which that is, once the model has come; -1 until then
     };
 
+    struct Moves;
+
     // What it looks like.
     struct Appearance
     {
@@ -123,6 +125,7 @@ namespace nx
         gpu::Color color;
         float glow, shine;
         bool impostor;         // far away, a picture of it instead
+        bool decal;            // laid over what is there: nothing else is laid over it
         Asset* sprite;         // held; a picture of angles across and frames down, instead of a model
         u8 spriteAngles, spriteFrames;
         u16 spriteFrame;
@@ -137,6 +140,48 @@ namespace nx
         gpu::Mesh bent;
         bool bentReady;
         float bentAt;
+        struct Moves* moves;     // owned; what more it does, once it is asked for
+    };
+
+    // Animation of a model beyond one animation at a time, made only for those that use it.
+    struct Moves
+    {
+        static constexpr u32 kBlends = 8;
+        // Animations at points along a line, mixed by where `blendBy` is between them, their steps kept together.
+        u8 blend[kBlends];
+        float blendAt[kBlends];
+        u32 blendCount;
+        float blendBy;
+        // One played over some bones, and what hangs from them, on top of the rest.
+        int layer, layerBone;
+        float layerTime, layerWeight, layerRate;   // how much of it there is, and how fast that changes a second
+        bool layerLoop;
+        bool only[kModelBones];
+        // A bone turned toward a place in the world.
+        int lookBone;
+        Vec3 lookAt;
+        float lookAmount, lookWanted;
+        // Limbs bent so that their ends touch places in the world: two bones each, the one named and the one above.
+        static constexpr u32 kReaches = 4;
+        int reachBone[kReaches];
+        Vec3 reachAt[kReaches];
+        float reachAmount[kReaches], reachWanted[kReaches];
+        // The highest moving bone's travel moves the whole thing instead.
+        bool root;
+        struct Ragdoll* ragdoll;   // owned; made the first time it goes limp
+    };
+
+    // A model gone limp: a body for each bone that moves some of its skin, pinned to the one above.
+    struct Ragdoll
+    {
+        u32 parts[kModelBones];       // the bodies' ids, or 0
+        Vec3 middle[kModelBones];     // each body's middle and turn in its bone's own space
+        Quat frame[kModelBones];
+        float low[kModelBones];       // how far below its middle a body reaches, at most
+        BonePose last[kModelBones];   // where it lay, to get up from
+        float leaving, leaveFor;      // seconds left of getting up, and all of them
+        float mass, scale;
+        bool on;
     };
 
     struct Light3
@@ -152,7 +197,9 @@ namespace nx
         Shape3 shape;
         u8 group;
         bool wall;
+        bool off;              // not there for anything: a ragdoll's owner while it is limp
         u16 hits;
+        u32 together;          // a ragdoll's bodies: its owner's id; they don't touch each other
         Vec3 half;             // a sphere's radius is x; a capsule's radius is x and its half height, ends and all, y
         Vec3 middle;           // from the entity's place
         // Where that is, kept until it moves or is changed.
@@ -178,6 +225,7 @@ namespace nx
         Vec3 ground;           // which way the ground faces
         float still;           // seconds it has hardly moved
         u32 touched;           // how many things, last step
+        Vec3 carried;          // for a walker: how far its animation takes it this step
     };
 
     struct Emitter3
@@ -237,6 +285,32 @@ namespace nx
         // Nothing if it is already playing.
         bool play(u32 id, const char* animation, bool loop, float change);
         bool played(u32 id) const;
+        // Several animations mixed by a number, as idle, walk and run by speed. False if any isn't there.
+        bool blend(u32 id, const char* const* names, const float* at, u32 count, float change);
+        // One over a bone and those under it, as a wave while walking. False if either isn't there.
+        bool playLayer(u32 id, const char* animation, const char* bone, bool loop, float change);
+        void stopLayer(u32 id, float change);
+        bool layerPlayed(u32 id) const;
+        // Turns a bone, as a head, toward a place; amount 0 turns it back.
+        bool lookAt(u32 id, const char* bone, const Vec3& place, float amount);
+        // Bends a bone and the one above it so that the bone's end touches a place, as a hand on a ledge or a foot on a
+        // step; amount 0 lets it go. False if the bone isn't there or has nothing above it.
+        bool reach(u32 id, const char* bone, const Vec3& place, float amount);
+        // Goes limp, falling as bodies pinned together, sent off at some speed; or gets up again over some seconds.
+        // False if it has no model that bends.
+        bool ragdoll(u32 id, bool on, float mass, const Vec3& push, float change);
+        bool ragdolled(u32 id) const;
+        // A picture laid over whatever is drawn at a place, facing a way (the surface's), so big across and turned by
+        // degrees: what doesn't bend there, the land and the ground, cut to a square. Its own entity, or 0 if there is
+        // nothing there. Past the limit, the oldest goes.
+        u32 decal(Asset* picture, const Vec3& place, const Vec3& facing, float size, float degrees, const gpu::Color& color);
+        u32 decalLimit() const { return m_decalLimit; }
+        // How each view is finished, where the GPU can: see gpu::SpaceLook.
+        gpu::SpaceLook& look() { return m_look; }
+        void setExposureSpeed(float speed) { m_exposureSpeed = speed > 0 ? speed : 0.01f; }
+        bool seesDepth() const { return m_solids && m_solids->device() && m_solids->device()->seesDepth(); }
+        void setDecalLimit(u32 limit) { m_decalLimit = limit; }
+        Moves* moves(u32 id);   // made if it isn't there
         void pendingAnimation(u32 id, const char* name);
         Vec3 worldPlace(u32 id) const;
         // Makes it move with one of the parent's model's bones, by name: a sword in a hand, a hat on a head. Its place,
@@ -259,9 +333,21 @@ namespace nx
         // --- Sound ---
 
         // A voice that gets quieter with distance and comes from where it is: from an entity, or a place.
-        void follow(Voice voice, u32 entity, const Vec3& place, float volume, float range);
+        void follow(Voice voice, u32 entity, const Vec3& place, float volume, float range, float pitch = 1);
         // How loud and how far to one side it would be.
-        void hear(const Vec3& place, float volume, float range, float& gain, float& pan) const;
+        void hear(const Vec3& place, float volume, float range, float& gain, float& pan, float* nearest = nullptr) const;
+        // What a voice heard in space was last bent to, by Doppler; 0 if it isn't one.
+        float pitchOf(Voice voice) const
+        {
+            for (const Heard& h : m_heard)
+            {
+                if (h.voice.value == voice.value)
+                {
+                    return h.bent;
+                }
+            }
+            return 0;
+        }
 
         // --- Surroundings ---
 
@@ -426,13 +512,18 @@ namespace nx
 
         // The land counts as group 0, and has no id.
         bool raycast(const Vec3& from, const Vec3& to, u32 groups, u32 except, u32& id, Vec3& hit, Vec3& normal) const;
+        // A ball moved along a line: where its middle is when it first touches something, which way that faces, and
+        // what it is (0 for the land or the ground).
+        bool sweep(const Vec3& from, const Vec3& to, float radius, u32 groups, u32 except, u32& id, Vec3& at, Vec3& normal) const;
 
         // --- Joints between bodies: b may be 0, for the world itself. Each needs colliders. ---
         enum class JointKind : u8 { Pin, Hinge, Rope, Spring };
-        // Held together at a place, free to turn about it.
-        bool pin(u32 a, u32 b, const Vec3& at);
-        // The same, turning only about an axis, as a door or a wheel does.
-        bool hinge(u32 a, u32 b, const Vec3& at, const Vec3& axis);
+        // Held together at a place, free to turn about it; swinging no more than so many radians from how a sits on b
+        // now, if swing isn't 0.
+        bool pin(u32 a, u32 b, const Vec3& at, float swing = 0);
+        // The same, turning only about an axis, as a door or a wheel does; between low and high radians from how it is
+        // now, if low is less than high.
+        bool hinge(u32 a, u32 b, const Vec3& at, const Vec3& axis, float low = 0, float high = 0);
         // No further apart than a length, between a place on each; a length below 0 is as far apart as they are now.
         bool rope(u32 a, u32 b, const Vec3& atA, const Vec3& atB, float length);
         // Pulled towards a length and pushed away from it, by stiffness (newtons a metre) and slowed by damping.
@@ -514,6 +605,9 @@ namespace nx
             Vec3 place;
             float volume, range;
             float gain, pan;   // as last told
+            float pitch;       // its own, before Doppler
+            float far;         // from the nearest ear, last time; below 0 before that
+            float bent;        // the pitch last told
         };
 
         // A sound that an entity makes, over and over, once it has arrived and there is a voice for it.
@@ -540,6 +634,7 @@ namespace nx
         struct Rigid
         {
             u32 entity;        // index, or kNone
+            u32 together;      // a ragdoll's: its owner, whose bodies don't touch each other
             u32 body;          // or kNone for something that doesn't move
             Shape3 shape;
             Vec3 place, velocity, spin;
@@ -596,6 +691,18 @@ namespace nx
         // space.cpp
         void animate(float dt);
         bool bend(Appearance& a);
+        // Every bone of its model now, ready for the vertices.
+        void poseOf(const Appearance& a, Mat4* out) const;
+        void posed(const Appearance& a, BonePose* out) const;
+        void ragdollPose(const Appearance& a, BonePose* bones) const;
+        void reachWith(const Appearance& a, BonePose* bones, u32 lower, const Vec3& place, float amount) const;
+        void followRagdoll(Appearance& a);
+        void dropRagdoll(Appearance& a);
+        void sampleTrack(const Appearance& a, int animation, float time, BonePose* out) const;
+        float trackLength(const Appearance& a, int animation) const;
+        int rootOf(const Appearance& a, int animation) const;
+        Vec3 travelled(const Appearance& a, int animation, float from, float to, bool wrapped) const;
+        void advance(const Appearance& a, int animation, float& time, float dt, bool loop) const;
         void drawAppearance(const Appearance& a, u32 detail, const gpu::View& view, bool shadow, bool see);
         void pickLights(const gpu::View& view, const Vec3& middle, float radius, gpu::MeshDraw& draw) const;
         void boundsOf(const Appearance& a, const Mat4& world, Vec3& middle, float& radius) const;
@@ -603,7 +710,9 @@ namespace nx
         void emitParticles(float dt);
         void moveParticles(float dt);
         void drawParticles(const gpu::View& view);
-        void listen();
+        // Colliders and where things can walk, drawn as lines over the view.
+        void drawOverlays();
+        void listen(float dt);
         void startSounds();
 
         // land.cpp
@@ -741,6 +850,14 @@ namespace nx
             bool known;
             Vec3 bodyA, bodyB, bodyAxisA, bodyAxisB;
             float length, stiffness, damping;
+            float cone;               // a pin's: how far A's axis may swing from B's, in radians; 0 for as far as it likes
+            float low, high;          // a hinge's: how far it may turn either way, in radians, if low < high
+            Vec3 refA, refB, bodyRefA, bodyRefB;   // a hinge's: a way across its axis, in each, to measure the turn by
+            float limitBias, limitMass, limitImpulse;
+            float limitSide;          // this step: 1 if it has turned too far back, -1 too far on, 0 neither
+            // A pin swung past its cone, where A's middle is away from it: that middle pushed back across.
+            Vec3 stopWay, stopFromB;
+            float stopMass, stopBias, stopImpulse;
             // This step's:
             u32 rigidA, rigidB;
             Vec3 fromA, fromB, axis, across[2];
@@ -825,6 +942,17 @@ namespace nx
         GrowArray<u32> m_navFrom, m_navSeen;
 
         bool m_landOn = false, m_island = false, m_started = false;
+        GrowArray<u32> m_decals;
+        u32 m_decalLimit = 64;
+        gpu::SpaceLook m_look;
+        gpu::Mesh m_navMesh;
+        u32 m_navVersion = 0, m_navMeshVersion = 0;
+    public:
+        bool m_showShapes = false;      // colliders drawn as lines: grey walls, green bodies, blue walkers, orange ragdolls, yellow areas
+        bool m_showNavigation = false;  // where things can walk, from navigate
+        float m_doppler = 0;      // how much sounds in space bend with how fast they come and go; 1 as they would
+    private:
+        float m_exposureSpeed = 2;
         u32 m_landSquares = 0;       // 0: endless
         u32 m_landSeed = 0, m_reach = 0, m_regionsWaiting = 0;
         float m_landSpacing = 1, m_landHeight = 0, m_landRough = 0;

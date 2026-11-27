@@ -227,6 +227,113 @@ NX_TEST(jointsHoldInSpace)
     NX_EXPECT(!p.space.pin(door, door, {}) && !p.space.pin(0, door, {}));
 }
 
+NX_TEST(limitsAndSweptBalls)
+{
+    Place p;
+    // A door that opens one way to 90 degrees, pushed hard both ways, keeps between them.
+    const u32 door = p.thing({ 0.5f, 3, 0 }, Shape3::Box, { 0.5f, 1, 0.05f }, 1);
+    p.space.getBody(door)->gravity = 0;
+    NX_EXPECT(p.space.hinge(door, 0, { 0, 3, 0 }, { 0, 1, 0 }, 0, 1.5707963f));
+    p.step();
+    float least = 10, most = -10;
+    const auto turned = [&] {
+        const Vec3 along = p.space.getSpatial(door)->turn.rotate({ 1, 0, 0 });
+        return atan2f(-along.z, along.x);
+    };
+    for (int i = 0; i < 240; i++)
+    {
+        // Thrown open, then shut, then open again.
+        if (i % 80 == 0)
+        {
+            p.space.getBody(door)->velocity = { 0, 0, i % 160 == 0 ? -6.0f : 6.0f };
+            p.space.forget();
+        }
+        p.step();
+        least = fminf(least, turned());
+        most = fmaxf(most, turned());
+    }
+    NX_EXPECT(least > -0.12f && most < 1.5707963f + 0.12f && most > 1.2f);
+
+    // A ball hanging from a pin, that may swing no more than 30 degrees from straight down, struck hard.
+    const u32 bob = p.thing({ 10, 4, 0 }, Shape3::Sphere, { 0.2f, 0.2f, 0.2f }, 1);
+    NX_EXPECT(p.space.pin(bob, 0, { 10, 6, 0 }, 0.5235988f));
+    p.space.getBody(bob)->velocity = { 12, 0, 0 };
+    p.space.forget();
+    float widest = 0;
+    for (int i = 0; i < 180; i++)
+    {
+        p.step();
+        const Vec3 hang = (p.at(bob) - Vec3(10, 6, 0)).normalized();
+        widest = fmaxf(widest, acosf(fminf(1, -hang.y)));
+    }
+    NX_EXPECT(widest > 0.4f && widest < 0.5235988f + 0.1f);
+
+    // A ball along a line stops its own width short of a wall, facing back.
+    const u32 wall = p.thing({ 25, 1, 0 }, Shape3::Box, { 0.5f, 0.5f, 0.5f }, 0);
+    u32 id = 0;
+    Vec3 at, normal;
+    NX_EXPECT(p.space.sweep({ 20, 1, 0 }, { 30, 1, 0 }, 0.5f, 0xFFFF, 0, id, at, normal));
+    NX_EXPECT(id == wall && fabsf(at.x - 24) < 0.03f && normal.x < -0.9f);
+    // What a thin ray passes over, a thick ball catches.
+    Vec3 hit;
+    NX_EXPECT(!p.space.raycast({ 20, 1.8f, 0 }, { 30, 1.8f, 0 }, 0xFFFF, 0, id, hit, normal));
+    NX_EXPECT(p.space.sweep({ 20, 1.8f, 0 }, { 30, 1.8f, 0 }, 0.5f, 0xFFFF, 0, id, at, normal) && id == wall && at.x < 25);
+    NX_EXPECT(!p.space.sweep({ 20, 1.8f, 0 }, { 30, 1.8f, 0 }, 0.5f, 0xFFFF, wall, id, at, normal));
+    // Down onto the ground.
+    p.space.setGround(0);
+    NX_EXPECT(p.space.sweep({ 40, 5, 0 }, { 40, -5, 0 }, 0.5f, 0xFFFF, 0, id, at, normal) && id == 0 && fabsf(at.y - 0.5f) < 0.03f && normal.y > 0.99f);
+    // Nothing there.
+    NX_EXPECT(!p.space.sweep({ 50, 5, 0 }, { 60, 5, 0 }, 0.5f, 0xFFFF, 0, id, at, normal) && close(at, { 60, 5, 0 }));
+}
+
+NX_TEST(soundsBendAsTheyPass)
+{
+    Place p;
+    Asset* engine = p.rig.assets.sound("global/sound/engine.wav");
+    p.rig.assets.finish();
+    NX_EXPECT(engine->ready && engine->sound);
+    p.space.setCamera({ 0, 0, 0 }, { 0, 0, -1 }, 60);
+    const u32 car = p.world.spawn({});
+    p.space.spatial(car)->place = { 0, 0, -120 };
+    PlayOptions o;
+    o.loop = true;
+    p.rig.assets.addRef(engine);
+    const Voice voice = p.rig.audio.play(*engine->sound, engine, o);
+    NX_EXPECT(voice.value != 0);
+    p.space.follow(voice, car, { 0, 0, -120 }, 1, 300, 1);
+    // Without Doppler, as it is.
+    for (int i = 0; i < 20; i++)
+    {
+        p.space.spatial(car)->place.z += 40.0f / 60;
+        p.step();
+    }
+    NX_EXPECT(p.space.pitchOf(voice) == 1);
+    // Coming at 40 metres a second, higher; going at that, lower.
+    p.space.m_doppler = 1;
+    for (int i = 0; i < 60; i++)
+    {
+        p.space.spatial(car)->place.z += 40.0f / 60;
+        p.step();
+    }
+    const float coming = p.space.pitchOf(voice);
+    NX_EXPECT(fabsf(coming - 343.0f / 303) < 0.03f);
+    p.space.spatial(car)->place.z = 5;
+    p.step();
+    for (int i = 0; i < 60; i++)
+    {
+        p.space.spatial(car)->place.z += 40.0f / 60;
+        p.step();
+    }
+    const float going = p.space.pitchOf(voice);
+    NX_EXPECT(fabsf(going - 343.0f / 383) < 0.03f);
+    // A jump is not a speed.
+    p.space.spatial(car)->place.z = -200;
+    p.step();
+    NX_EXPECT(fabsf(p.space.pitchOf(voice) - going) < 0.02f);
+    p.rig.audio.stop(voice, 0);
+    p.rig.assets.release(engine);
+}
+
 NX_TEST(ballsBounceAndRoll)
 {
     Place p;
@@ -841,6 +948,35 @@ NX_TEST(thingsAreHeldByBones)
                 }
                 if (frames == 72)
                     check(abs(held.worldPlace.y - 3) < 0.01f && abs(held.worldPlace.x - 3) < 0.01f);
+                if (frames == 74)
+                {
+                    array<string> names = { "idle", "walk", "run" };
+                    array<float> at = { 0, 1.5f, 4 };
+                    check(robot.animateBlend(names, at));
+                    array<string> wrong = { "idle", "fly" };
+                    array<float> two = { 0, 1 };
+                    check(!robot.animateBlend(wrong, two) && !robot.animateBlend(names, two));
+                    robot.blendBy = 2;
+                    check(robot.blendBy == 2 && !robot.animated);
+                    check(robot.animateLayer("wave", "chest") && !robot.layerPlayed);
+                    check(!robot.animateLayer("wave", "tail") && !robot.animateLayer("fly", "chest"));
+                    check(robot.lookAt("head", Vec3(10, 1, 0)) && !robot.lookAt("tail", Vec3()));
+                    robot.rootMotion = true;
+                    check(robot.rootMotion);
+                }
+                if (frames == 84)
+                {
+                    robot.stopLayer(0.1f);
+                    robot.lookAway();
+                    robot.rootMotion = false;
+                }
+                if (frames == 96)
+                {
+                    check(robot.layerPlayed && !robot.ragdolled);
+                    check(robot.ragdoll(true, Vec3(0, 0, 2)) && robot.ragdolled);
+                }
+                if (frames == 99)
+                    check(robot.ragdoll(false) && !robot.ragdolled);
             }
             void draw(Canvas@ c) { Space::draw(c); }
         }
@@ -848,10 +984,323 @@ NX_TEST(thingsAreHeldByBones)
     NX_EXPECT(r.screens.init(r.services, "showcase", "main"));
     r.step(2);
     r.screens.push("shapes");
-    r.step(80);
+    r.step(104);
     NX_EXPECT(!r.screens.failed());
     r.screens.home();
     r.step(3);
+}
+
+NX_TEST(animationsBlendLayerTravelAndLook)
+{
+    Place p;
+    Asset* asset = p.rig.assets.model("global/model/robot.glb");
+    p.rig.assets.finish();
+    NX_EXPECT(asset->ready && asset->model);
+    auto robot = [&](const Vec3& at) {
+        const u32 id = p.world.spawn({});
+        p.space.spatial(id)->place = at;
+        p.space.setModel(id, asset);
+        p.space.transform(id & 0xFFFF);
+        return id;
+    };
+    auto holder = [&](u32 parent, const char* bone) {
+        const u32 id = p.world.spawn({});
+        NX_EXPECT(p.space.attachToBone(id, parent, bone));
+        return id;
+    };
+    auto where = [&](u32 id) {
+        p.space.transform(id & 0xFFFF);
+        const Mat4& w = p.space.getSpatial(id)->world;
+        return Vec3(w.m[12], w.m[13], w.m[14]);
+    };
+    auto facing = [&](u32 id) {
+        p.space.transform(id & 0xFFFF);
+        const Mat4& w = p.space.getSpatial(id)->world;
+        return Vec3(w.m[8], w.m[9], w.m[10]).normalized();
+    };
+    const Vec3 apart(5, 0, 0);
+
+    // All the way along a blend is the last animation, in step with it.
+    const char* names[] = { "idle", "walk", "run" };
+    const float points[] = { 0, 1.5f, 4 };
+    const char* wrong[] = { "idle", "fly" };
+    const u32 mixed = robot({ 0, 0, 0 }), ran = robot(apart);
+    NX_EXPECT(!p.space.blend(mixed, wrong, points, 2, 0));
+    NX_EXPECT(p.space.blend(mixed, names, points, 3, 0));
+    p.space.moves(mixed)->blendBy = 4;
+    NX_EXPECT(p.space.play(ran, "run", true, 0));
+    const u32 mixedHand = holder(mixed, "hand.r"), ranHand = holder(ran, "hand.r");
+    p.step(20);
+    NX_EXPECT(close(where(mixedHand) + apart, where(ranHand), 0.01f));
+    NX_EXPECT(!p.space.played(mixed));
+    // Between two it is neither, and still moves.
+    p.space.moves(mixed)->blendBy = 2.75f;
+    const Vec3 between = where(mixedHand);
+    p.step(7);
+    NX_EXPECT(!close(where(mixedHand) + apart, where(ranHand), 0.01f) && !close(where(mixedHand), between, 0.01f));
+
+    // A layer moves only the bones under it.
+    const u32 waving = robot({ 10, 0, 0 }), walking = robot(Vec3(10, 0, 0) + apart);
+    NX_EXPECT(p.space.play(waving, "walk", true, 0) && p.space.play(walking, "walk", true, 0));
+    NX_EXPECT(p.space.playLayer(waving, "wave", "chest", true, 0.25f));
+    NX_EXPECT(!p.space.playLayer(waving, "wave", "tail", true, 0.25f));
+    const u32 hands[] = { holder(waving, "hand.r"), holder(walking, "hand.r") };
+    const u32 feet[] = { holder(waving, "foot.l"), holder(walking, "foot.l") };
+    p.step(30);
+    NX_EXPECT(where(hands[0]).y > where(hands[1]).y + 0.3f);
+    NX_EXPECT(close(where(feet[0]) + apart, where(feet[1]), 0.001f));
+    NX_EXPECT(!p.space.layerPlayed(waving));
+    p.space.stopLayer(waving, 0.25f);
+    p.step(30);
+    NX_EXPECT(p.space.layerPlayed(waving));
+    NX_EXPECT(close(where(hands[0]) + apart, where(hands[1]), 0.001f));
+
+    // Root motion: the stride carries it 1.3 metres a step, round the loop, its hips staying over it.
+    const u32 striding = robot({ 0, 0, 10 }), still = robot({ 20, 0, 10 }), turned = robot({ 40, 0, 10 });
+    p.space.spatial(turned)->turn = Quat::axisAngle({ 0, 1, 0 }, 1.5707963f);
+    p.space.moves(striding)->root = p.space.moves(turned)->root = true;
+    for (const u32 id : { striding, still, turned })
+    {
+        NX_EXPECT(p.space.play(id, "stride", true, 0));
+    }
+    const u32 hips = holder(striding, "hips");
+    p.step(60);
+    const float expected = 1.3f / 0.86f;
+    NX_EXPECT(fabsf(p.at(striding).z - 10 - expected) < 0.05f && fabsf(p.at(striding).x) < 0.001f);
+    NX_EXPECT(close(p.at(still), { 20, 0, 10 }));
+    NX_EXPECT(fabsf(p.at(turned).x - 40 - expected) < 0.05f && fabsf(p.at(turned).z - 10) < 0.01f);
+    const Vec3 h = where(hips);
+    NX_EXPECT(fabsf(h.x - p.at(striding).x) < 0.05f && fabsf(h.z - p.at(striding).z) < 0.05f);
+
+    // A walker so carried stops at a wall.
+    p.thing({ 0, -0.5f, 30 }, Shape3::Box, { 20, 0.5f, 20 }, 0);
+    p.thing({ 0, 1, 33.5f }, Shape3::Box, { 3, 1, 0.5f }, 0);
+    const u32 walker = p.walker({ 0, 0, 30 });
+    p.space.setModel(walker, asset);
+    p.space.moves(walker)->root = true;
+    NX_EXPECT(p.space.play(walker, "stride", true, 0));
+    p.step(240);
+    NX_EXPECT(p.at(walker).z > 32 && p.at(walker).z < 32.65f);
+
+    // Looking: the head turns toward a place to its left, and back.
+    const u32 looker = robot({ 0, 0, -20 });
+    NX_EXPECT(p.space.play(looker, "idle", true, 0));
+    const u32 head = holder(looker, "head");
+    p.step(2);
+    NX_EXPECT(fabsf(facing(head).x) < 0.3f);
+    NX_EXPECT(p.space.lookAt(looker, "head", { 10, 1.5f, -20 }, 1));
+    NX_EXPECT(!p.space.lookAt(looker, "tail", { 10, 1.5f, -20 }, 1));
+    p.step(60);
+    NX_EXPECT(facing(head).x > 0.85f);
+    p.space.getAppearance(looker)->moves->lookWanted = 0;
+    p.step(60);
+    NX_EXPECT(fabsf(facing(head).x) < 0.3f);
+
+    // Reaching: the end of the forearm goes to a place it can reach, and lets go again.
+    const u32 reacher = robot({ 0, 0, -30 });
+    NX_EXPECT(p.space.play(reacher, "idle", true, 0));
+    const u32 wrist = p.world.spawn({});
+    NX_EXPECT(p.space.attachToBone(wrist, reacher, "hand.r"));
+    p.space.spatial(wrist)->place = { -0.02f, -0.3f, 0 };
+    p.step(2);
+    const Vec3 resting = where(wrist);
+    const Vec3 target(-0.5f, 1.1f, -29.6f);
+    NX_EXPECT(!close(resting, target, 0.2f));
+    NX_EXPECT(p.space.reach(reacher, "hand.r", target, 1));
+    NX_EXPECT(!p.space.reach(reacher, "tail", target, 1) && !p.space.reach(reacher, "hips", target, 1));
+    p.step(40);
+    NX_EXPECT(close(where(wrist), target, 0.04f));
+    NX_EXPECT(p.space.reach(reacher, "hand.r", target, 0));
+    p.step(40);
+    NX_EXPECT(close(where(wrist), resting, 0.1f));
+
+    p.space.setCamera({ 0, 2, 8 }, { 0, 1, 0 }, 60);
+    p.draw(2);
+    NX_EXPECT(p.rig.device->stats().rejected == 0);
+    p.world.clear();
+    p.rig.assets.release(asset);
+}
+
+NX_TEST(ragdollsFallAndGetUp)
+{
+    Place p;
+    Asset* asset = p.rig.assets.model("global/model/robot.glb");
+    p.rig.assets.finish();
+    NX_EXPECT(asset->ready && asset->model);
+    p.thing({ 0, -0.5f, 0 }, Shape3::Box, { 30, 0.5f, 30 }, 0);
+    const u32 robot = p.walker({ 0, 0, 0 });
+    p.space.setModel(robot, asset);
+    NX_EXPECT(p.space.play(robot, "run", true, 0));
+    const u32 head = p.world.spawn({});
+    NX_EXPECT(p.space.attachToBone(head, robot, "head"));
+    p.step(20);
+    auto where = [&](u32 id) {
+        p.space.transform(id & 0xFFFF);
+        const Mat4& w = p.space.getSpatial(id)->world;
+        return Vec3(w.m[12], w.m[13], w.m[14]);
+    };
+    const float standing = where(head).y;
+    NX_EXPECT(standing > 1.3f);
+    const u32 before = p.world.count();
+
+    // Limp, sent backwards: a body for each bone that moves skin, and down it goes.
+    NX_EXPECT(!p.space.ragdolled(robot));
+    NX_EXPECT(p.space.ragdoll(robot, true, 60, { 0, 1, -3 }, 0.5f));
+    NX_EXPECT(p.space.ragdolled(robot));
+    const u32 bodies = p.world.count() - before;
+    NX_EXPECT(bodies >= 10 && bodies <= 12);
+    NX_EXPECT(p.space.joints() == bodies - 1);
+    p.step(180);
+    NX_EXPECT(where(head).y < 0.7f && where(head).y > 0);
+    // It went where it was sent, and lies on the ground rather than under it.
+    NX_EXPECT(p.at(robot).z < -0.3f && p.at(robot).y > -0.2f && p.at(robot).y < 0.4f);
+    const Ragdoll& limp = *p.space.getAppearance(robot)->moves->ragdoll;
+    for (const u32 part : limp.parts)
+    {
+        if (part)
+        {
+            NX_EXPECT(p.space.getCollider(part)->together == robot && p.space.getSpatial(part)->place.y > -0.05f);
+        }
+    }
+    // What hits a body hits it.
+    u32 hit = 0;
+    Vec3 at, normal;
+    const Vec3 lying = where(head);
+    NX_EXPECT(p.space.raycast(lying + Vec3(0, 3, 0), lying - Vec3(0, 1, 0), 0xFFFF, 0, hit, at, normal) && hit == robot);
+    NX_EXPECT(!p.space.raycast(lying + Vec3(0, 3, 0), lying + Vec3(0, -0.1f, 0), 0xFFFF, robot, hit, at, normal) || hit != robot);
+    // A blow moves it.
+    const Vec3 was = p.at(robot);
+    p.space.push(robot, Vec3(60 * 4, 0, 0), nullptr);
+    p.step(30);
+    NX_EXPECT(p.at(robot).x > was.x + 0.3f);
+
+    // Up again, into what it plays: the bodies go and it stands.
+    NX_EXPECT(p.space.ragdoll(robot, false, 60, {}, 0.5f));
+    NX_EXPECT(!p.space.ragdolled(robot));
+    p.step(2);
+    NX_EXPECT(p.world.count() == before && p.space.joints() == 0);
+    NX_EXPECT(where(head).y < standing - 0.3f);
+    p.step(40);
+    NX_EXPECT(where(head).y > standing - 0.25f);
+
+    // Down again, and gone with it.
+    NX_EXPECT(p.space.ragdoll(robot, true, 60, {}, 0.5f));
+    NX_EXPECT(p.world.count() > before);
+    p.step(10);
+    p.space.setCamera({ 0, 2, 8 }, { 0, 1, 0 }, 60);
+    p.draw(2);
+    NX_EXPECT(p.rig.device->stats().rejected == 0);
+    p.world.destroyEntity(robot);
+    p.step(2);
+    NX_EXPECT(p.world.count() == before - 2 && p.space.joints() == 0);
+
+    // A shape with no bones can't.
+    const u32 box = p.thing({ 5, 1, 0 }, Shape3::Box, { 0.5f, 0.5f, 0.5f }, 1);
+    NX_EXPECT(!p.space.ragdoll(box, true, 60, {}, 0.5f));
+    p.rig.assets.release(asset);
+}
+
+NX_TEST(decalsLieOverWhatIsThere)
+{
+    Place p;
+    p.space.setGround(0);
+    // On the ground: a square, just above it.
+    const u32 mark = p.space.decal(nullptr, { 0, 0, 0 }, { 0, 1, 0 }, 1, 0, { 1, 1, 1, 1 });
+    NX_EXPECT(mark != 0);
+    const CustomMesh* m = p.space.getAppearance(mark)->custom;
+    NX_EXPECT(m && m->data.indices.count() == 6);
+    for (const gpu::MeshVertex& v : m->data.vertices)
+    {
+        NX_EXPECT(fabsf(v.x) <= 0.501f && fabsf(v.z) <= 0.501f && v.y > 0 && v.y < 0.02f && v.ny > 0.99f);
+        NX_EXPECT(v.u >= -0.001f && v.u <= 1.001f && v.v >= -0.001f && v.v <= 1.001f);
+    }
+    // Over the corner of a box: only its front, cut at its edges.
+    CustomMesh* box = create<CustomMesh>(MemTag::General);
+    box->device = p.rig.device;
+    box->data.box({ 0, 0, 0 }, { 1, 1, 1 }, { 1, 1, 1, 1 });
+    const u32 cube = p.world.spawn({});
+    p.space.spatial(cube)->place = { 10, 1, 0 };
+    p.space.transform(cube & 0xFFFF);
+    p.space.setCustom(cube, box);
+    box->release();
+    const u32 corner = p.space.decal(nullptr, { 11, 2, 1 }, { 0, 0, 1 }, 1, 30, { 1, 0, 0, 1 });
+    NX_EXPECT(corner != 0);
+    const CustomMesh* c = p.space.getAppearance(corner)->custom;
+    NX_EXPECT(c && c->data.indices.count() >= 3);
+    for (const gpu::MeshVertex& v : c ? c->data.vertices : m->data.vertices)
+    {
+        NX_EXPECT(v.x <= 11.001f && v.y <= 2.001f && v.z > 1 && v.z < 1.02f && v.nz > 0.99f);
+    }
+    // Nowhere: nothing.
+    NX_EXPECT(p.space.decal(nullptr, { 100, 50, 100 }, { 0, 1, 0 }, 1, 0, { 1, 1, 1, 1 }) == 0);
+    // Past the limit, the oldest go.
+    p.space.setDecalLimit(3);
+    u32 made[5];
+    for (u32 i = 0; i < 5; i++)
+    {
+        made[i] = p.space.decal(nullptr, { static_cast<float>(i) * 2, 0, 5 }, { 0, 1, 0 }, 1, 0, { 1, 1, 1, 1 });
+    }
+    p.step(2);
+    NX_EXPECT(!p.world.alive(mark) && !p.world.alive(made[0]) && !p.world.alive(made[1]) && p.world.alive(made[2]) && p.world.alive(made[4]));
+    p.space.setCamera({ 0, 3, 8 }, { 0, 0, 0 }, 60);
+    p.draw(2);
+    NX_EXPECT(p.rig.device->stats().rejected == 0);
+}
+
+NX_TEST(animationStatesTravel)
+{
+    Rig r;
+    NX_EXPECT(r.ok);
+    r.platform.extraPath = "showcase/shapes/main.as";
+    // The script's include, put together so that the check for what the engine includes doesn't take it for one of its own.
+    r.platform.extraText = std::string("#") + R"(include "global:states.as"
+        class A : Screen
+        {
+            Entity@ robot;
+            AnimationStates@ moves;
+            array<string> been;
+            int frames = 0;
+            void check(bool good) { if (!good) { array<int> nope; nope[1] = 0; } }
+            void came(const string &in state) { been.insertLast(state); }
+            void onEnter()
+            {
+                @robot = Space::spawn(Vec3());
+                robot.model(Assets::model("global:model/robot.glb"));
+                @moves = AnimationStates(robot);
+                @moves.entered = AnimationEntered(this.came);
+                moves.add("idle");
+                moves.add("walk");
+                moves.add("leap", "jump", false, "idle");
+                moves.link("idle", "walk", 0.2f, true);
+                moves.link("walk", "leap", 0.1f);
+                moves.start("idle");
+                check(!moves.travel("nowhere"));
+            }
+            void update(float dt)
+            {
+                frames++;
+                moves.update(dt);
+                if (frames == 10)
+                    check(moves.travel("leap") && moves.route.length() == 2);
+                if (frames == 120)
+                {
+                    // Idle, through walk to the leap, and back to idle once it was done.
+                    check(been.length() == 4 && been[0] == "idle" && been[1] == "walk" && been[2] == "leap" && been[3] == "idle");
+                    check(moves.state == "idle" && !moves.finished);
+                    Screens::home();
+                }
+            }
+            void draw(Canvas@ c) { Space::draw(c); }
+        }
+    )";
+    NX_EXPECT(r.screens.init(r.services, "showcase", "main"));
+    r.step(2);
+    r.screens.push("shapes");
+    for (int i = 0; i < 200 && (i < 5 || r.screens.depth() > 1); i++)
+    {
+        r.step();
+    }
+    NX_EXPECT(!r.screens.failed() && r.screens.depth() == 1);
 }
 
 NX_TEST(scriptsDrawIntoPictures)
@@ -1250,7 +1699,7 @@ NX_TEST(everyModelCanBeUsed)
         p.space.setModel(id, asset);
         if (strcmp(name, "robot") == 0)
         {
-            NX_EXPECT(asset->model->animations.count() == 6 && asset->model->weights.count() > 0);
+            NX_EXPECT(asset->model->animations.count() == 7 && asset->model->weights.count() > 0);
             NX_EXPECT(p.space.play(id, "walk", true, 0.2f));
             p.step(10);
             NX_EXPECT(p.space.play(id, "jump", false, 0.2f));

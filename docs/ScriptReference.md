@@ -251,6 +251,7 @@ What each colour of a picture becomes: warmer, colder, faded, harder. Settings, 
 | `void glow(float x, float y, float radius, const Color &in color)` | A round glow, fading to nothing at its edge. With BlendAdd it is light. |
 | `void triangle(const Vec2 &in a, const Vec2 &in b, const Vec2 &in c, const Color &in ca, const Color &in cb, const Color &in cc)` | A triangle with a colour at each corner. |
 | `bool effect(Effect@+ effect)` | Puts all that has been drawn so far through a shader. False where there are none. |
+| `bool blur(float pixels = 8)` | Blurs all that has been drawn so far, about so many pixels across on a screen 720 high: only inside the clip, if there is one, for frosted glass behind a panel. Draw the panel after. On every GPU; false where it can't be done. |
 | `bool bloom(float strength = 0.8, float threshold = 0.7, float spread = 1)` | Lets light spill from what is bright, of all that has been drawn so far. False where it can't be done. |
 | `bool grade(Look@+ look, float strength = 1)` | Turns each colour of all that has been drawn so far into what a look makes of it, mixed with what it was by strength (0 to 1). Only inside the clip, if there is one, so a part can be shown before and after. One pass over the screen, on every GPU; the look is worked out again only when it changes. Usually last, before text that should stay as it is. False where it can't be done. |
 | `bool beginPicture(Texture@+ picture, const Color &in clear = Color(0, 0, 0, 0))` | Draws into a picture from Assets::picture instead of the screen, 2D and 3D alike, until endPicture: cleared to a colour first, and with a design of its own pixels until it is changed. One at a time; effects, bloom and grading are for the screen and do nothing in it. False if it can't be, and drawing goes on to the screen. |
@@ -340,6 +341,35 @@ Something that is playing. Safe to use after it has ended.
 | `float get_seconds() const property` | How long it is; 0 if that isn't known. |
 | `bool get_ready() const property` | Whether it has arrived. Until then it plays as silence. |
 | `bool get_failed() const property` | Whether the file could not be loaded. |
+
+## Playlist
+
+Music, one track after another, the next fading in as the last fades out: in order or shuffled, round again or not. It moves on by itself while its screen is on top.
+
+| | |
+|---|---|
+| `void add(Sound@+ track)` | One more, at the end. Up to 64. |
+| `void clear()` | None, and quiet. |
+| `void play(float fadeSeconds = 0)` | From the track it is at, fading in. A track that hasn't arrived starts once it has. |
+| `void next(float fadeSeconds = -1)` | On to the next now, over crossfade seconds unless told. |
+| `void previous(float fadeSeconds = -1)` | Back to the one before. |
+| `void stop(float fadeSeconds = 1)` | Quiet, fading out; play starts the same track again. |
+| `uint get_count() const property` | How many tracks. |
+| `uint get_index() const property` | Which is playing, from 0. |
+| `void set_index(uint) property` | Straight to one, fading across. |
+| `bool get_playing() const property` | Whether it is playing, or about to. |
+| `bool get_shuffle() const property` | Whether each next is any but the last. |
+| `void set_shuffle(bool) property` | Each next any but the last, or in order. |
+| `bool get_loop() const property` | Whether it goes round again after the last; true to begin with. |
+| `void set_loop(bool) property` | Round again after the last, or stop. |
+| `float get_crossfade() const property` | Seconds each track overlaps the next; 2 to begin with. |
+| `void set_crossfade(float) property` | Seconds each track overlaps the next; 0 for one straight after another. |
+| `float get_volume() const property` | How loud, 1 as it is. |
+| `void set_volume(float) property` | Louder or softer, gradually. |
+| `bool get_paused() const property` | Whether it is held where it is. |
+| `void set_paused(bool) property` | Holds it where it is, or lets it go on. |
+| `float get_position() const property` | Seconds into the track playing. |
+| `float get_seconds() const property` | How long the track playing is; 0 if that isn't known. |
 
 ## Audio
 
@@ -599,6 +629,8 @@ Entities that move, collide and are drawn by the engine. Each screen has its own
 | `array<Entity@>@ Scene::within(const Vec2 &in position, float radius, uint groups = 0xFFFF)` | Everything whose collider touches a circle. |
 | `Entity@ Scene::raycast(const Vec2 &in from, const Vec2 &in to, Vec2 &out hit, uint groups = 0xFFFF)` | The first collider on a line, and where, or null. |
 | `Vec2 Scene::get_gravity() property` | What pulls on those that feel it. |
+| `bool Scene::get_showShapes() property` | Whether colliders are drawn over the scene. |
+| `void Scene::set_showShapes(bool) property` | Draws every collider over the scene, to see what touches what: grey walls, green bodies with mass, blue characters and the rest, yellow areas that only feel. |
 | `void Scene::set_gravity(const Vec2 &in) property` | Units a second, each second. |
 | `Color Scene::get_ambient() property` | The light everywhere, before lights add to it. White, as it starts, is no lighting at all; anything darker turns lighting on, so that entities' lights show and solid tiles and occluders cast shadows. |
 | `void Scene::set_ambient(const Color &in) property` | The light everywhere, before lights add to it: Color(0.1f, 0.1f, 0.2f) is a dark night. |
@@ -663,6 +695,19 @@ Entities that move, collide and are drawn by the engine. Each screen has its own
 | `bool get_animated() const property` | Whether an animation that doesn't loop has finished. |
 | `float get_animationSpeed() const property` | How fast its animation plays. |
 | `void set_animationSpeed(float) property` | 1 is normal. |
+| `bool animateBlend(array<string>@+ names, array<float>@+ at, float change = 0.25)` | Plays several of its model's animations at once, mixed by `blendBy`: each is at a point along a line, as idle at 0, walk at 1.5 and run at 4 for its speed, and between two points it is some of each, their steps kept together. Changes to it over some seconds; asking again only changes the points. Up to 8. False if any isn't there, or the model hasn't arrived. |
+| `float get_blendBy() const property` | Where along the line of `animateBlend` it is. |
+| `void set_blendBy(float) property` | Where along the line of `animateBlend` it is: its speed, say. |
+| `bool animateLayer(const string &in name, const string &in bone, bool loop = true, float change = 0.25)` | Plays an animation over one bone and those that hang from it, on top of the rest, as waving while walking: "chest" for the top half. Comes in over some seconds. Asking again for what is playing does nothing. False if either isn't there. |
+| `void stopLayer(float change = 0.25)` | Lets the layer go over some seconds. |
+| `bool get_layerPlayed() const property` | Whether there is no layer, or one that doesn't loop has finished, or it is going. |
+| `bool get_rootMotion() const property` | Whether its animations move it. |
+| `void set_rootMotion(bool) property` | Where its animations carry the model's highest bone along the ground, the whole thing goes instead, so its feet don't slide: a walker so moved still stops at walls. |
+| `bool lookAt(const string &in bone, const Vec3 &in place, float amount = 1)` | Turns a bone of its model, as a head, toward a place, up to 75 degrees, over whatever its animation does; amount is how much. It turns there smoothly, and can be asked every update as the place moves. False if the bone isn't there. |
+| `void lookAway()` | Turns the bone back to what its animation does. |
+| `bool reach(const string &in bone, const Vec3 &in place, float amount = 1)` | Bends a bone and the one above it, over whatever the animation does, so that the bone's end touches a place: "hand.r" on a lever, "foot.l" on a step. Its end is where the bone below it starts, or as far again as it is from the one above. Up to four at once; amount 0 lets one go, smoothly, and it can be asked every update as the place moves. False if the bone isn't there. |
+| `bool ragdoll(bool limp, const Vec3 &in push = Vec3(), float change = 0.6f)` | Goes limp: a body for each bone of its model that moves some of its skin, pinned where the bones meet and swinging only so far, falls as it is pushed, sent off at a speed as well as how it was moving; its own collider isn't there meanwhile, and what hits a body hits it. `push` on it then pushes the body nearest the place. false gets it up again, into whatever it plays, over some seconds. False if its model doesn't bend. |
+| `bool get_ragdolled() const property` | Whether it is limp. |
 | `Vec3 get_motion() const property` | Metres a second. |
 | `void set_motion(const Vec3 &in) property` | Sets it going. |
 | `Vec3 get_turning() const property` | Degrees a second about each axis. |
@@ -718,6 +763,17 @@ The scene in three dimensions: x right, y up, z towards you, in metres. Entities
 | `void Space::sun(const Vec3 &in direction, const Color &in color)` | Light from far away; the direction is towards it. |
 | `void Space::ambient(const Color &in sky, const Color &in ground)` | Light from everywhere: on what faces up, and on what faces down. |
 | `void Space::sky(const Color &in top, const Color &in horizon)` | Draws a sky, with the sun in it. Without one, what is on the canvas already is behind. |
+| `void Space::occlusion(float strength = 1, float radius = 0.6)` | Darkens corners, creases and what is under things, as light reaches them less: ambient occlusion, from how far away each pixel is, within so many metres. 0 for none. Where `depthEffects`. |
+| `void Space::reflections(float strength = 0.6)` | Shows what is around in what faces up, wet floors and still water, where it is on the screen: screen-space reflections. 0 for none. Where `depthEffects`. |
+| `void Space::focus(float distance, float depth = 1, float blur = 10, float falloff = 6, float bokeh = 1)` | Depth of field: sharp at so many metres and depth either side, blurred further from it, most so falloff metres on, by blur pixels across (at 720 high); the brightest spread into round bokeh, by bokeh. A distance of 0 for none. Where `depthEffects`. |
+| `void Space::autoExposure(float brightness = 0.4, float range = 2.5, float speed = 2)` | Makes the view brighter or darker, gradually, toward an average brightness (0 to 1), by as much as range times either way, as eyes adjust going in and out of the dark. 0 for none. Where `depthEffects`. |
+| `bool Space::get_showShapes() property` | Whether colliders are drawn. |
+| `void Space::set_showShapes(bool) property` | Draws every collider as lines over the view, to see what touches what: grey walls, green bodies (darker asleep), blue walkers, orange ragdolls, yellow areas that only feel. |
+| `bool Space::get_showNavigation() property` | Whether where things can walk is drawn. |
+| `void Space::set_showNavigation(bool) property` | Draws the squares that navigate found can be walked on, in green. |
+| `float Space::get_doppler() property` | How much sounds in space rise as they come closer and fall as they go, as a car or a siren passing does: 0, none, to begin with; 1 as they would. |
+| `void Space::set_doppler(float) property` | How much sounds in space rise as they come closer and fall as they go: 1 as they would, more to make it plain. |
+| `bool Space::get_depthEffects() property` | Whether this GPU can do occlusion, reflections, focus and autoExposure, and depthAt in picture effects: everywhere but the original Xbox. |
 | `void Space::fog(const Color &in color, float start, float end)` | Hides what is far away. |
 | `void Space::grass(Model@+ tuft, float perSquareMetre = 3, float distance = 30)` | Grows tufts of a model over the land near the camera, where it is green, flat enough and dry, coloured as the land is there; they bend in the wind. null for none. |
 | `bool Space::navigate(const Vec3 &in middle, float size, float cell = 1, float climb = 0.6f, uint groups = 0xFFFD)` | Works out where things can walk, in squares over a part of the world as it is now: what is under each square, of the groups given (all but group 1, those that walk, unless told otherwise), not too steep and not under water; a step from one to the next no higher than a climb. Up to 256 squares a side. Again if the world changes. |
@@ -786,14 +842,19 @@ The scene in three dimensions: x right, y up, z towards you, in metres. Entities
 | `void Space::clearField()` | Takes them all away. To move them, clear and add them again each update. |
 | `void Space::fieldLook(float shine, float reflection = 0, float repeat = 0, float farthest = 60, uint steps = 80)` | How they look; repeat makes the whole thing again every so many metres. |
 | `void Space::burst(const string &in particles, const Vec3 &in place, uint count, const Vec3 &in aim = Vec3(0, 1, 0))` | Throws out some particles. A spread of 360 goes every way, 90 is a cone. |
-| `bool Space::join(Entity@+ a, Entity@+ b, const Vec3 &in at)` | Pins two bodies together at a place, free to turn about it; null for b pins a to the world there. Both need colliders, and a mass to move. |
-| `bool Space::hinge(Entity@+ a, Entity@+ b, const Vec3 &in at, const Vec3 &in axis)` | The same, turning only about an axis through that place, as a door, a lid or a wheel does. |
+| `bool Space::join(Entity@+ a, Entity@+ b, const Vec3 &in at, float swing = 0)` | Pins two bodies together at a place, free to turn about it; null for b pins a to the world there. Both need colliders, and a mass to move. A swing of more than 0 lets a swing no more than so many degrees from how it hangs from the pin now, as a shoulder or a neck does. |
+| `bool Space::hinge(Entity@+ a, Entity@+ b, const Vec3 &in at, const Vec3 &in axis, float low = 0, float high = 0)` | The same, turning only about an axis through that place, as a door, a lid or a wheel does. If low is less than high, it turns only between them, in degrees from how it is now: a door that opens one way to 100, say 0 and 100. |
 | `bool Space::rope(Entity@+ a, Entity@+ b, const Vec3 &in atA, const Vec3 &in atB, float length = -1)` | A place on each kept no further apart than a length, as a rope or a chain does: it pulls but never pushes. A length below 0 is as far apart as they are now. |
 | `bool Space::spring(Entity@+ a, Entity@+ b, const Vec3 &in atA, const Vec3 &in atB, float stiffness = 60, float damping = 3, float length = -1)` | A place on each pulled towards a length and pushed away from it: stiffness in newtons a metre, damping slows the bouncing. A length below 0 is as far apart as they are now. |
 | `void Space::unjoin(Entity@+ e)` | Lets go of every joint it is in. They also go when it does. |
 | `uint Space::get_joints() property` | How many there are. |
 | `bool Space::raycast(const Vec3 &in from, const Vec3 &in to, Vec3 &out hit, Vec3 &out normal, uint groups = 0xFFFF, Entity@+ except = null)` | Whether there is anything on a line, where, and which way it faces. The land counts as group 0. |
 | `Entity@ Space::pick(const Vec3 &in from, const Vec3 &in to, Vec3 &out hit, uint groups = 0xFFFF, Entity@+ except = null)` | The first collider on a line, or null if there is none or the land comes first. |
+| `bool Space::sphereCast(const Vec3 &in from, const Vec3 &in to, float radius, Vec3 &out at, Vec3 &out normal, uint groups = 0xFFFF, Entity@+ except = null)` | A ball moved along a line, as something that thick would: whether it touches anything, where its middle is when it first does, and which way that faces. For what a ray would slip past: a character's way ahead, a thrown thing, a camera kept out of walls. The land counts as group 0. |
+| `Entity@ Space::spherePick(const Vec3 &in from, const Vec3 &in to, float radius, Vec3 &out at, uint groups = 0xFFFF, Entity@+ except = null)` | What such a ball first touches, or null if nothing or the land. |
+| `Entity@ Space::decal(Texture@+ picture, const Vec3 &in place, const Vec3 &in facing, float size, float degrees = 0, const Color &in color = White)` | Lays a picture over whatever is at a place, as a sticker would be: a mark, a hole, a splash, a footprint. Facing is the way the surface there faces (a ray's normal), size how big across, degrees how it is turned. It wraps over the models and meshes there that don't bend, the land and the ground, and stays where it is put, as an entity of its own that can be coloured, faded or destroyed. null if there is nothing there. On every GPU. |
+| `uint Space::get_decals() property` | How many decals there can be; past it, the oldest goes. 64 to begin with. |
+| `void Space::set_decals(uint) property` | How many decals there can be; past it, the oldest goes. 0 for no limit. |
 | `array<Entity@>@ Space::within(const Vec3 &in place, float radius, uint groups = 0xFFFF)` | Everything whose collider touches a ball. |
 | `bool Space::toScreen(const Vec3 &in place, Vec2 &out screen)` | Where a place was when last drawn. False if it is behind the camera. |
 | `Vec3 Space::ray(const Vec2 &in screen)` | The direction from the camera through a place on the screen. |
@@ -1081,6 +1142,20 @@ Something asked of a web server, over http:// or https://, whose certificate is 
 | `string get_error() const property` | Why it failed. |
 | `uint get_received() const property` | Bytes that have come. |
 | `float get_progress() const property` | 0 to 1, or 0 while nobody knows. |
+
+## WebSocket
+
+Messages both ways with a web server, kept open: ws://, or wss:// whose certificate is checked. It connects by itself; what comes waits until it is read.
+
+| | |
+|---|---|
+| `bool get_connecting() const property` | Whether it is still connecting. |
+| `bool get_connected() const property` | Whether messages can go both ways. |
+| `bool get_closed() const property` | Whether it is over; error says why, unless it was closed here. |
+| `string get_error() const property` | Why it closed or never opened. |
+| `bool send(const string &in text)` | Sends a message, once it is connected; in order. False once it has closed. |
+| `bool receive(string &out message)` | The next message that has come, oldest first. False if there is none. |
+| `void close()` | Says goodbye, and closes it. |
 
 ## Connection
 
