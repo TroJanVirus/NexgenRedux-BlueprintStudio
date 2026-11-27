@@ -23,7 +23,7 @@ Blueprint Studio is a development tool for the desktop Nexgen application, not j
 
 - Use Redux's own native rendering, input, JSON and platform services. No external browser, embedded webview, Node.js or HTTP server is required by the native editor.
 - No projects have been made with the pre-release browser prototype. Prefer a clean native versioned schema over legacy compatibility. Keep compiler fixtures as behavioural references, not file-format obligations. Do not silently replace unsupported logic or claim feature parity prematurely.
-- Native v2 is the canonical authoring model. Use the generated script-reference catalogue, typed pins, stable node IDs and bounded undo/redo. Keep editor and compiler on the same model; legacy browser files are not supported. Reuse the engine's JSON parser and writer.
+- Native v2 is the canonical authoring model. Use the generated script-reference catalogue, typed pins, stable node IDs, structured execution, per-instance variables, acyclic function graphs and bounded undo/redo. Keep editor and compiler on the same model; legacy browser files are not supported. Reuse the engine's JSON parser and writer.
 - Do not ship the reference HTML/bridge as part of the desktop application; desktop development tooling stays out of Xbox game packages.
 - Reuse the native scene editor, debugger, profiler, asset cooker and runtime. Do not create duplicate implementations or put the desktop editor into Xbox game packages.
 

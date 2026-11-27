@@ -125,8 +125,8 @@ namespace nx
             }
             return true;
         }
-        void text(JsonValue& j,const char* key,const std::string& value){j.put(key)->setText(value);}
-        void number(JsonValue& j,const char* key,double value){j.put(key)->setNumber(value);}
+        bool text(JsonValue& j,const char* key,const std::string& value){auto* v=j.put(key);if(!v)return false;v->setText(value);return true;}
+        bool number(JsonValue& j,const char* key,double value){auto* v=j.put(key);if(!v)return false;v->setNumber(value);return true;}
     }
     const std::vector<BlueprintNodeSpec>& blueprintCatalogue()
     {
@@ -179,7 +179,7 @@ namespace nx
             const auto kind=value["kind"].text("event");
             g.kind=kind;
             if((g.kind=="event"&&g.name!="onEnter"&&g.name!="update"&&g.name!="draw")||
-                (g.kind=="function"&&!identifier(g.name))||(g.kind!="event"&&g.kind!="function"))
+                (g.kind=="function"&&(!identifier(g.name)||g.name=="onEnter"||g.name=="update"||g.name=="draw"))||(g.kind!="event"&&g.kind!="function"))
             {error="Invalid event or function graph.";return false;}
             std::unordered_map<std::string,size_t> ids;unsigned entries=0;
             for(auto n=ns.first();n.exists();n=n.next())
@@ -204,6 +204,8 @@ namespace nx
             }
             candidate.graphs.push_back(std::move(g));
         }
+        for(const char* event:{"onEnter","update","draw"})
+            if(!graphNames.count(event)){error="Missing required event graph.";return false;}
         std::vector<BlueprintPin> vars;
         if(!candidate.variables(vars,error)||!candidate.functions(error))return false;
         *this=std::move(candidate);error.clear();return true;
@@ -211,23 +213,26 @@ namespace nx
     bool BlueprintDocument::serialize(std::string& result,std::string& error)const
     {
         if(graphs.empty()){error="No Blueprint open.";return false;}
-        JsonValue root;number(root,"version",2);text(root,"kind","NativeBlueprint");text(root,"name",name);
-        auto* gs=root.put("graphs");gs->setArray();
+        auto fail=[&](){error="Not enough memory to serialize Blueprint.";return false;};
+        JsonValue root;
+        if(!number(root,"version",2)||!text(root,"kind","NativeBlueprint")||!text(root,"name",name))return fail();
+        auto* gs=root.put("graphs");if(!gs)return fail();gs->setArray();
         for(const auto& g:graphs)
         {
-            auto* v=gs->add();text(*v,"name",g.name);text(*v,"kind",g.kind);auto* ns=v->put("nodes");ns->setArray();
+            auto* v=gs->add();if(!v||!text(*v,"name",g.name)||!text(*v,"kind",g.kind))return fail();
+            auto* ns=v->put("nodes");if(!ns)return fail();ns->setArray();
             for(const auto& n:g.nodes)
             {
-                auto* j=ns->add();text(*j,"id",n.id);text(*j,"kind",n.kind);
-                number(*j,"x",n.x);number(*j,"y",n.y);
-                if(n.kind.rfind("literal:",0)==0||variableKind(n.kind)||n.kind=="call:function")text(*j,"value",n.ref);
+                auto* j=ns->add();if(!j||!text(*j,"id",n.id)||!text(*j,"kind",n.kind)||!number(*j,"x",n.x)||!number(*j,"y",n.y))return fail();
+                if((n.kind.rfind("literal:",0)==0||variableKind(n.kind)||n.kind=="call:function")&&!text(*j,"value",n.ref))return fail();
             }
-            auto* ls=v->put("links");ls->setArray();
+            auto* ls=v->put("links");if(!ls)return fail();ls->setArray();
             for(const auto& l:g.links)
             {
                 if(l.from>=g.nodes.size()||l.to>=g.nodes.size()){error="Dangling connection.";return false;}
-                auto* j=ls->add();text(*j,"from",g.nodes[l.from].id);text(*j,"to",g.nodes[l.to].id);
-                text(*j,"output",l.output);text(*j,"input",l.input);
+                auto* j=ls->add();
+                if(!j||!text(*j,"from",g.nodes[l.from].id)||!text(*j,"to",g.nodes[l.to].id)||
+                    !text(*j,"output",l.output)||!text(*j,"input",l.input))return fail();
             }
         }
         auto output=root.write(false);BlueprintDocument check;
@@ -264,12 +269,15 @@ namespace nx
         }
         if(kind=="call:function")
         {
-            const auto found=std::find_if(graphs.begin(),graphs.end(),[&](const Graph& fn){return fn.kind=="function"&&fn.name!=g.name;});
-            if(found==graphs.end()){error="Create another function graph first.";return false;}
-            value=found->name;
-            // Adding an unconnected call must also maintain the acyclic call graph.
-            g.nodes.push_back({id,kind,value,x,y});
-            const bool valid=functions(error);g.nodes.pop_back();if(!valid)return false;
+            // Choose the first valid target, not merely the first function in the list.
+            bool valid=false;
+            for(const auto& fn:graphs)
+            {
+                if(fn.kind!="function"||fn.name==g.name)continue;
+                value=fn.name;g.nodes.push_back({id,kind,value,x,y});
+                valid=functions(error);g.nodes.pop_back();if(valid)break;
+            }
+            if(!valid){error="No nonrecursive function target. Create another function first.";return false;}
         }
         record(graph);g.nodes.push_back({id,kind,value,x,y});error.clear();return true;
     }

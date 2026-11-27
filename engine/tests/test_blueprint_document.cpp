@@ -144,3 +144,14 @@ NX_TEST(nativeFunctionGraphsAreReusableAndHistorySafe)
     NX_EXPECT(doc.undo()&&doc.graphs.size()==6&&doc.undo()&&doc.graphs.size()==5);
     NX_EXPECT(doc.redo()&&doc.graphs.size()==6&&doc.redo()&&doc.graphs.size()==5);
 }
+
+NX_TEST(nativeCompilerUsesReferenceDefaultsAndOutputOrdering)
+{
+    BlueprintDocument doc;doc.create();std::string error,source;
+    NX_EXPECT(doc.addNode(0,"api:Scene:Scene::raycast:Vec2,Vec2,uint:Vec2 out",0,0,error));
+    NX_EXPECT(doc.addNode(0,"make:Vec2",0,0,error)&&doc.addNode(0,"literal:float",0,0,error));
+    NX_EXPECT(doc.connect(0,0,"then",1,"in",error)&&doc.connect(0,2,"result",1,"from",error)&&doc.connect(0,2,"result",1,"to",error));
+    NX_EXPECT(doc.connect(0,3,"value",2,"x",error)&&doc.connect(0,3,"value",2,"y",error));
+    NX_EXPECT(compileBlueprint(doc,source,error));
+    NX_EXPECT(source.find("bp_out_1_hit, uint(65535)")!=std::string::npos);
+}

@@ -56,6 +56,17 @@ namespace nx
             if(type=="Vec2"||type=="Vec3"||type=="Color")return {0.96f,0.71f,0.32f,1};
             return accent;
         }
+        bool appendCharacter(std::string& value,u32 ch,size_t limit)
+        {
+            if(ch<32||ch==127||ch>0x10ffff||(ch>=0xd800&&ch<=0xdfff))return false;
+            char bytes[4];size_t count=0;
+            if(ch<0x80)bytes[count++]=static_cast<char>(ch);
+            else if(ch<0x800){bytes[count++]=static_cast<char>(0xc0|(ch>>6));bytes[count++]=static_cast<char>(0x80|(ch&63));}
+            else if(ch<0x10000){bytes[count++]=static_cast<char>(0xe0|(ch>>12));bytes[count++]=static_cast<char>(0x80|((ch>>6)&63));bytes[count++]=static_cast<char>(0x80|(ch&63));}
+            else{bytes[count++]=static_cast<char>(0xf0|(ch>>18));bytes[count++]=static_cast<char>(0x80|((ch>>12)&63));bytes[count++]=static_cast<char>(0x80|((ch>>6)&63));bytes[count++]=static_cast<char>(0x80|(ch&63));}
+            if(value.size()+count>limit)return false;
+            value.append(bytes,count);return true;
+        }
         std::string shorten(const std::string& s, size_t length)
         {
             if (s.size() <= length) return s;
@@ -274,8 +285,12 @@ namespace nx
             for(u32 i=0;i<input.typedCount();++i)
             {
                 const u32 ch=input.typed(i);
-                if(ch==8&&!value.empty()){value.pop_back();changed=true;}
-                else if(ch>=32&&ch<127&&value.size()< (focus==1?80u:focus==2?4096u:64u)){value+=static_cast<char>(ch);changed=true;}
+                if(ch==8&&!value.empty())
+                {
+                    size_t end=value.size()-1;while(end&&(static_cast<unsigned char>(value[end])&0xc0)==0x80)--end;
+                    value.resize(end);changed=true;
+                }
+                else if(ch>=32&&(focus==1||focus==2||ch<127)&&appendCharacter(value,ch,focus==1?80u:focus==2?4096u:64u))changed=true;
                 else if(ch==13)
                 {
                     if(focus==2&&!m_document.setLiteral(m_graph,m_selection,m_edit,m_status))break;
@@ -304,7 +319,7 @@ namespace nx
         }
         if(click&&in(x,y,8,kBottom-114,kLeft-8,kBottom-82))
         {
-            m_edit="function_"+std::to_string(m_document.graphs.size()-2);m_focus=4;input.setTyping(true);m_left=left;return;
+            m_edit.clear();m_focus=4;input.setTyping(true);m_status="Type a new function name, then Enter.";m_left=left;return;
         }
         if(click&&in(x,y,8,kBottom-77,kLeft-8,kBottom-45))
         {
@@ -518,9 +533,9 @@ namespace nx
         }
         c.roundRect(8,kBottom-114,kLeft-16,32,5,{0.19f,0.33f,0.50f,1});
         c.clip(8,kBottom-114,kLeft-16,32);
-        c.text(*m_font,m_focus==4?m_edit.c_str():"New function",kLeft*0.5f,kBottom-108,text,Align::Center);c.noClip();
+        c.text(*m_font,m_focus==4?(m_edit.empty()?"Type name...":m_edit.c_str()):"New function",kLeft*0.5f,kBottom-108,text,Align::Center);c.noClip();
         c.roundRect(8,kBottom-77,kLeft-16,32,5,{0.32f,0.19f,0.23f,1});
-        c.text(*m_font,"Delete function",kLeft*0.5f,kBottom-71,text,Align::Center);
+        c.text(*m_font,"Delete function",kLeft*0.5f,kBottom-71,m_document.graphs[m_graph].kind=="function"?text:muted,Align::Center);
         c.roundRect(8,kBottom-40,kLeft-16,32,5,{0.19f,0.33f,0.50f,1});
         c.text(*m_font,"New Blueprint",kLeft*0.5f,kBottom-34,text,Align::Center);
         c.text(*m_font,"NODE LIBRARY",kRight+12,kTop+10,accent);

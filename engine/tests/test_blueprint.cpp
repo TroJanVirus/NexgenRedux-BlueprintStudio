@@ -467,3 +467,31 @@ NX_TEST(nativeBlueprintCompilerRunsThroughReduxScreenLifecycle)
     NX_EXPECT(strcmp(r.save.get("native_graph","missing"),"ran")==0);
     r.host.release(object);
 }
+
+NX_TEST(nativeBlueprintStateSurvivesAcrossRealScreenEvents)
+{
+    BlueprintDocument doc;doc.create();std::string error,source;
+    const bool authored=doc.addNode(0,"var:set:string",0,0,error)&&doc.addNode(0,"literal:string",0,0,error)&&
+        doc.setReference(0,1,"message",error)&&doc.setLiteral(0,2,"persisted",error)&&
+        doc.connect(0,0,"then",1,"in",error)&&doc.connect(0,2,"value",1,"value",error)&&
+        doc.addNode(1,"api:Save:Save::set:string,string",0,0,error)&&doc.addNode(1,"literal:string",0,0,error)&&
+        doc.addNode(1,"var:get:string",0,0,error)&&doc.setLiteral(1,2,"native_state",error)&&doc.setReference(1,3,"message",error)&&
+        doc.connect(1,0,"then",1,"in",error)&&doc.connect(1,2,"value",1,"key",error)&&doc.connect(1,3,"value",1,"value",error)&&
+        compileBlueprint(doc,source,error);
+    NX_EXPECT(authored);if(!authored)return;
+    Rig r;NX_EXPECT(r.ok);
+    if(!r.ok||!compile(r.host,source.c_str())){NX_EXPECT(false);return;}
+    auto* type=r.host.findClass("blueprint","Screen");auto* object=type?r.host.create(type):nullptr;
+    auto* fresh=type?r.host.create(type):nullptr;
+    NX_EXPECT(object&&fresh);
+    if(object&&fresh)
+    {
+        NX_EXPECT(r.host.callMethod(object,type->GetMethodByDecl("void onEnter()")));
+        NX_EXPECT(r.host.callMethod(object,type->GetMethodByDecl("void update(float)"),1.0f/60));
+        NX_EXPECT(strcmp(r.save.get("native_state","missing"),"persisted")==0);
+        NX_EXPECT(r.host.callMethod(fresh,type->GetMethodByDecl("void update(float)"),1.0f/60));
+        NX_EXPECT(strcmp(r.save.get("native_state","missing"),"")==0);
+    }
+    if(object)r.host.release(object);
+    if(fresh)r.host.release(fresh);
+}
