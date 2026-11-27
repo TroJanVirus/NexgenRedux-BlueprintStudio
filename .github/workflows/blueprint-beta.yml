@@ -82,7 +82,7 @@ jobs:
             echo "Tag already exists: $tag"; exit 1
           fi
           cat > notes.md <<'EOF'
-          First public beta of the integrated native Blueprint Studio for Nexgen Redux.
+          Native Blueprint Studio prerelease for Nexgen Redux.
           Open Blueprint Studio from the desktop engine menu, or start nexgen with --blueprint-studio.
 
           Desktop editor: Windows x64/ARM64, Linux x64, macOS Intel/Apple Silicon.
@@ -97,6 +97,20 @@ jobs:
           The Linux suite exercises real native GUI authoring, camera orbits, save/recovery and preview.
           Desktop and console build coverage does not imply identical interactive testing on every platform.
           EOF
+          if [[ "$suffix" == 2 ]]; then
+            cat >> notes.md <<'EOF'
+
+          ## Beta 2 changes
+          - Updated upstream engine and generated script node catalogue.
+          - Native content library with linked reusable actors, widget pages and themes.
+          - Native widget hierarchy editing, responsive stack anchors, direct positioning, RGBA colour controls, theme media selection and isolated state preview.
+          - Nested linked widgets, linear widget keyframe tracks and runtime playback.
+          - Actor hierarchies with native transforms, physics, behaviour assignment and camera children.
+          - Native 3D viewport for constant linked actor placements, with camera orbit, zoom and height-plane snapping.
+
+          These are initial implementations. Named animation clips, graph-triggered playback, per-instance widget overrides, camera selection/blending, arbitrary scene entity editing and transform gizmos remain future work. Test exported projects on the intended hardware.
+          EOF
+          fi
           printf '\nBuilt from commit %s.\n' "$GITHUB_SHA" >> notes.md
           printf '\nVerification: %s/%s/actions/runs/%s\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> notes.md
           gh release create "$tag" dist/* --target "$GITHUB_SHA" --title "Blueprint Studio Beta $suffix" --notes-file notes.md --prerelease --latest=false

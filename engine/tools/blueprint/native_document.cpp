@@ -778,7 +778,7 @@ namespace nx
                 if(!literal("literal:float",value)){error="Enter a duration in seconds.";return false;}
                 const double n=std::strtod(value.c_str(),nullptr);
                 if(n<0.01||n>60){error="Duration must be 0.01 to 60 seconds.";return false;}
-                for(const auto* name:tracks)if(const auto* keys=a->find(name))
+                for(const auto* trackName:tracks)if(const auto* keys=a->find(trackName))
                     for(u32 j=0;j<keys->count();++j)if(keys->at(j)->at(0)->number()>n)
                     {error="Remove keys beyond the new duration first.";return false;}
                 if(!number(*a,"duration",n))return false;
