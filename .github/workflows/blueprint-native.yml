@@ -73,6 +73,9 @@ jobs:
       - name: Exercise timed camera action and capture native frames
         if: ${{ !cancelled() }}
         run: xvfb-run -a -s "-screen 0 1280x720x24 -noreset" /usr/bin/python3 engine/tools/blueprint/test_camera_orbit_desktop.py build/showcase/nexgen "$RUNNER_TEMP/bp-camera-timed" camera-orbit-timed.bp.json
+      - name: Author the seven-node timed orbit from a blank workspace
+        if: ${{ !cancelled() }}
+        run: xvfb-run -a -s "-screen 0 1280x720x24 -noreset" /usr/bin/python3 engine/tools/blueprint/test_camera_orbit_desktop.py build/showcase/nexgen "$RUNNER_TEMP/bp-camera-timed-authored" camera-orbit-timed.bp.json --author
       - name: Retain native camera orbit evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v5
@@ -83,6 +86,7 @@ jobs:
             ${{ runner.temp }}/bp-camera-timeline/
             ${{ runner.temp }}/bp-camera-timed/
             ${{ runner.temp }}/bp-camera-authored/
+            ${{ runner.temp }}/bp-camera-timed-authored/
           if-no-files-found: ignore
       - name: Verify native process contention and crash release
         run: python3 engine/tools/blueprint/test_native_lease.py build/showcase/nexgen "$RUNNER_TEMP/bp-linux-lease"

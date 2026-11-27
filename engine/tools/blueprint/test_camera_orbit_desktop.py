@@ -17,6 +17,8 @@ own.mkdir(parents=True)
 fixture = pathlib.Path(__file__).parent / "examples" / (sys.argv[3] if len(sys.argv) > 3 else "camera-orbit.bp.json")
 project = json.loads(fixture.read_text(encoding="utf-8"))
 author = "--author" in sys.argv
+timed = fixture.name == "camera-orbit-timed.bp.json"
+operations = {"insert": 0, "wire": 0, "value": 0, "graph_switch": 0}
 recovery = own / "blueprint-recovery.bp.json"
 if not author:
     recovery.write_text(json.dumps(project), encoding="utf-8")
@@ -45,6 +47,7 @@ def click(x, y):
     time.sleep(0.2)
 
 def right_add(x, y, query):
+    operations["insert"] += 1
     xdo("mousemove", "--window", window, x, y)
     time.sleep(0.12)
     xdo("mousedown", 3)
@@ -57,12 +60,14 @@ def right_add(x, y, query):
     time.sleep(0.3)
 
 def value(x, y, text):
+    operations["value"] += 1
     click(x, y)
     xdo("type", "--delay", 35, text)
     xdo("key", "Return")
     time.sleep(0.3)
 
 def wire(x1, y1, x2, y2):
+    operations["wire"] += 1
     xdo("mousemove", "--window", window, x1, y1)
     time.sleep(0.12)
     xdo("mousedown", 1)
@@ -92,7 +97,8 @@ def assert_authored(process, graph_index, nodes, links):
         for key, val in n.get("values", {}).items():
             assert ref.get("values", {}).get(key) == val, (key, val, ref)
     required = {"spawn:box": {"name": "Cube"}, "time:timeline": {"duration": "8"},
-                "make:Vec3": {"x": "0", "y": "0.5", "z": "0"}}
+                "make:Vec3": {"x": "0", "y": "0.5", "z": "0"},
+                "camera:orbit-timed": {"name": "Cube", "duration": "8"}}
     for n in actual["nodes"]:
         if n["kind"] in required:
             assert all(n.get("values", {}).get(k) == v for k, v in required[n["kind"]].items()), n
@@ -107,30 +113,46 @@ def author_scene(process):
     wire(696, 138, 760, 138)
     assert_authored(process, 0, 3, 2)
     capture("01-on-enter")
+    operations["graph_switch"] += 1
     click(100, 122)
-    right_add(500, 100, "time:timeline")
-    right_add(272, 330, "make:Vec3")
-    right_add(500, 330, "math:orbit-position")
-    right_add(760, 100, "api:Space:Space::camera:Vec3,Vec3,float")
-    value(500, 182, "8")
-    value(272, 368, "0")
-    value(272, 390, "0.5")
-    value(272, 412, "0")
-    wire(468, 138, 500, 138)
-    wire(696, 138, 760, 138)
-    wire(696, 160, 500, 434)
-    wire(468, 368, 500, 368)
-    wire(468, 368, 760, 182)
-    wire(696, 368, 760, 160)
-    assert_authored(process, 1, 5, 6)
-    capture("02-update")
-    click(100, 153)
-    right_add(272, 250, "event:canvas")
-    right_add(500, 100, "api:Space:Space::draw:Canvas@")
-    wire(468, 138, 500, 138)
-    wire(468, 288, 500, 160)
-    assert_authored(process, 2, 3, 2)
-    capture("03-draw")
+    if timed:
+        right_add(500, 100, "camera:orbit-timed")
+        value(500, 160, "Cube")
+        value(500, 226, "8")
+        wire(468, 138, 500, 138)
+        assert_authored(process, 1, 2, 1)
+        capture("02-update")
+        operations["graph_switch"] += 1
+        click(100, 153)
+        right_add(500, 100, "render:space")
+        wire(468, 138, 500, 138)
+        assert_authored(process, 2, 2, 1)
+        capture("03-draw")
+    else:
+        right_add(500, 100, "time:timeline")
+        right_add(272, 330, "make:Vec3")
+        right_add(500, 330, "math:orbit-position")
+        right_add(760, 100, "api:Space:Space::camera:Vec3,Vec3,float")
+        value(500, 182, "8")
+        value(272, 368, "0")
+        value(272, 390, "0.5")
+        value(272, 412, "0")
+        wire(468, 138, 500, 138)
+        wire(696, 138, 760, 138)
+        wire(696, 160, 500, 434)
+        wire(468, 368, 500, 368)
+        wire(468, 368, 760, 182)
+        wire(696, 368, 760, 160)
+        assert_authored(process, 1, 5, 6)
+        capture("02-update")
+        operations["graph_switch"] += 1
+        click(100, 153)
+        right_add(272, 250, "event:canvas")
+        right_add(500, 100, "api:Space:Space::draw:Canvas@")
+        wire(468, 138, 500, 138)
+        wire(468, 288, 500, 160)
+        assert_authored(process, 2, 3, 2)
+        capture("03-draw")
     # Retain the actual GUI-authored editable project, before launch.
     (root / "gui-authored-camera-orbit.bp.json").write_bytes(recovery.read_bytes())
     click(675, 53)
@@ -138,7 +160,10 @@ def author_scene(process):
     exported = sorted(own.glob("bp-*/Screen/main.as"))[-1].read_text(encoding="utf-8")
     assert "SolidBox" in exported and "SolidPlane" in exported and "Space::camera" in exported
     (root / "gui-authored-main.as").write_text(exported, encoding="utf-8")
-    print("GUI-authored camera orbit: 11 active nodes, 10 links, exported native source.", flush=True)
+    expected = {"insert": 4 if timed else 8, "wire": 4 if timed else 10, "value": 3 if timed else 5, "graph_switch": 2}
+    assert operations == expected, (operations, expected)
+    (root / "authoring-operations.json").write_text(json.dumps(operations, indent=2), encoding="utf-8")
+    print(f"GUI-authored camera orbit: {operations}, exported native source.", flush=True)
 
 def capture(label):
     win = conn.create_resource_object("window", window)
