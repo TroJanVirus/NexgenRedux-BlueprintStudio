@@ -18,7 +18,7 @@ namespace nx
             Type type = Type::Null;
             bool flag = false;
             double number = 0;
-            u32 text = 0;    // into the text
+            u32 text = 0;    // into the text: decoded string or original number start
             u32 key = 0;     // of its place in an object
             u32 first = 0;   // child; 0 is none, as the root is nobody's child
             u32 next = 0;
@@ -53,6 +53,8 @@ namespace nx
             const char* text(const char* otherwise = "") const { return isString() ? m_tree->m_text + m_tree->m_nodes[m_index].text : otherwise; }
             float number(float otherwise = 0) const { return isNumber() ? static_cast<float>(m_tree->m_nodes[m_index].number) : otherwise; }
             double exact() const { return isNumber() ? m_tree->m_nodes[m_index].number : 0; }
+            // Zero-based offset into original input, for surgical edits of number tokens.
+            size_t numberOffset() const { return isNumber() ? m_tree->m_nodes[m_index].text - 1u : static_cast<size_t>(-1); }
             bool flag(bool otherwise = false) const { return type() == Type::Bool ? m_tree->m_nodes[m_index].flag : otherwise; }
 
         private:
