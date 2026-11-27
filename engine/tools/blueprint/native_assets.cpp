@@ -170,6 +170,29 @@ namespace nx
             if(ext==type)return "sound/"+file;
         return file;
     }
+    bool blueprintImportSourceAssets(Platform& p,const std::string& sourceFile,std::string& root,std::string& error)
+    {
+        if(!sourceFile.ends_with(".as")||sourceFile.find_first_of("/\\:")!=std::string::npos)
+        {error="Invalid standalone source filename.";return false;}
+        const auto stem=sourceFile.substr(0,sourceFile.size()-3);
+        if(!blueprintAssetName(stem,true)){root.clear();error.clear();return true;}
+        const auto base="own/"+stem+"/asset";
+        if(!p.fileTime(base.c_str())){root.clear();error.clear();return true;}
+        std::vector<std::string> files;size_t directories=0;
+        if(!collect(p,base,"",0,directories,files,error))return false;
+        if(files.empty()){root.clear();error.clear();return true;}
+        std::string fresh;
+        if(!blueprintCreateAssetRoot(p,fresh,error)||!blueprintEnsureAssetFolder(p,fresh,"Screen",error))return false;
+        const auto dest=fresh+"/Screen/asset";
+        size_t total=0;
+        for(const auto& file:files)
+        {
+            for(size_t at=file.find('/');at!=std::string::npos;at=file.find('/',at+1))
+                if(!ensure(p,dest+"/"+file.substr(0,at))){error="Cannot create imported asset folder.";return false;}
+            if(!copy(p,base+"/"+file,"own/"+dest+"/"+file,total,error))return false;
+        }
+        root=std::move(fresh);error.clear();return true;
+    }
     bool blueprintImportAsset(Platform& p,const std::string& root,const std::string& screen,const std::string& file,std::string& error)
     {
         if(!blueprintAssetName(file)){error="Use a lowercase portable asset filename (letters, digits, _, -, .).";return false;}

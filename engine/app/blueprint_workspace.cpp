@@ -238,9 +238,11 @@ namespace nx
         if(!compileBlueprintProject(candidate,output,m_status))return false;
         for(const auto& screen:output)
             if(!s.screens->validateBlueprintSource(screen.source,m_status)){m_status="Converted source: "+m_status;return false;}
+        if(!blueprintImportSourceAssets(*s.platform,file,candidate.assetRoot,m_status))
+        {m_status="Companion assets: "+m_status;return false;}
         m_document=std::move(candidate);m_filePath.clear();m_fileBaseline.clear();
         m_checkpointRevision=static_cast<size_t>(-1);m_first=0;selectGraph(0);m_browsing=false;
-        m_status="Imported "+file+" as editable graphs. Save as a new project.";
+        m_status="Imported "+file+(m_document.assetRoot.empty()?" as editable graphs.":" with companion assets.")+" Save as a new project.";
         checkpoint(s,true);return true;
     }
 
@@ -451,7 +453,7 @@ namespace nx
             {location=blueprintSourceLocation(screen.map,static_cast<size_t>(line));break;}
         if(location.graph>=m_document.graphs.size()||location.node>=m_document.graphs[location.graph].nodes.size())return;
         const auto& node=m_document.graphs[location.graph].nodes[location.node];
-        const bool firstWatch=node.watch&&!m_tracePending;
+        const bool firstWatch=node.watch||m_traceStep;
         if(!firstWatch&&!m_traceBudget)return;
         if(!m_traceHits.empty())
         {
@@ -483,6 +485,7 @@ namespace nx
     void BlueprintWorkspace::resumeTrace(Services& s,bool step)
     {
         m_tracePaused=false;m_tracePending=false;m_traceStep=step;m_traceBudget=128;
+        if(step){m_traceLocation={};m_traceValues.clear();}
         s.input->setWantsPointer(m_tracePointer);s.input->setTyping(m_traceTyping);
         s.input->consume();s.screens->setDevelopmentPaused(false);
     }

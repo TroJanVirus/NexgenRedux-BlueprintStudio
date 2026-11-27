@@ -370,7 +370,7 @@ namespace nx
                 terminal=yes&&no;
                 return true;
             }
-            bool block(Flow flow,unsigned depth,bool* returned=nullptr)
+            bool block(Flow flow,unsigned depth,bool* returned=nullptr,Flow* continuation=nullptr)
             {
                 LocalScope scope{locals,locals};
                 bool terminal=false;
@@ -382,11 +382,13 @@ namespace nx
                     if(!statement(flow,depth,terminal))return false;
                 }
                 if(returned)*returned=terminal;
+                if(continuation)*continuation=flow;
                 return true;
             }
             bool statement(Flow& flow,unsigned depth,bool& terminal)
             {
                 if(take(";"))return true;
+                if(is("{"))return block(flow,depth+1,&terminal,&flow);
                 if(take("return"))
                 {
                     const auto& g=doc.graphs[graph];
@@ -404,13 +406,16 @@ namespace nx
                     // semantics as Repeat. Never clamp an imported dynamic loop silently.
                     std::string index,condition,increment;
                     if(!expect("(")||!expect("int")||!name(index)||!expect("=")||!expect("0")||
-                        !expect(";")||!name(condition)||condition!=index||!expect("<"))
+                        !expect(";")||!name(condition)||condition!=index)
                         return fail("Use a zero-based int loop with a constant upper bound.");
+                    const bool inclusive=take("<=");
+                    if(!inclusive&&!expect("<"))return false;
                     if(peek().kind!=Kind::Number)return fail("Loop limit must be a decimal integer constant.");
                     const auto limit=peek().text;
                     if(limit.empty()||limit.size()>5||limit.find_first_not_of("0123456789")!=std::string::npos||
                         (limit.size()>1&&limit[0]=='0'))return fail("Invalid decimal loop limit.");
                     unsigned count=0;for(char c:limit)count=count*10+static_cast<unsigned>(c-'0');
+                    if(inclusive)++count;
                     if(count>10000)return fail("Loop limit exceeds the native Repeat maximum of 10000.");
                     ++at;
                     if(!expect(";"))return false;
@@ -421,7 +426,7 @@ namespace nx
                     if(locals.count(index)||fields.count(index)||index==eventArg||
                         std::any_of(params.begin(),params.end(),[&](const BlueprintPin& p){return p.name==index;}))
                         return fail("Loop index shadowing is not supported.");
-                    size_t n;if(!add("repeat",n)||!bind(n,"count",Value{"int",limit,"",static_cast<size_t>(-1)}))return false;
+                    size_t n;if(!add("repeat",n)||!bind(n,"count",Value{"int",std::to_string(count),"",static_cast<size_t>(-1)}))return false;
                     chain(flow,n);locals.emplace(index,Value{"int","","index",n});
                     bool bodyReturned=false;
                     if(!body({n,"body"},depth+1,bodyReturned))return false;
@@ -600,6 +605,56 @@ namespace nx
                 return true;
             }
         };
+        void layoutImportedGraphs(BlueprintDocument& doc)
+        {
+            for(auto& g:doc.graphs)
+            {
+                const size_t count=g.nodes.size();
+                std::vector<bool> exec(count,false);
+                std::vector<size_t> group(count,0),column(count,0);
+                std::vector<float> height(count,72.f);
+                size_t groups=0;
+                for(size_t i=0;i<count;++i)
+                {
+                    BlueprintNodeSpec spec;
+                    if(!doc.nodeSpec(g,g.nodes[i],spec))continue;
+                    exec[i]=g.nodes[i].kind=="entry"||std::any_of(spec.inputs.begin(),spec.inputs.end(),
+                        [](const BlueprintPin& p){return p.type=="exec";});
+                    if(exec[i])group[i]=groups++;
+                    height[i]=std::max(72.f,46.f+22.f*static_cast<float>(std::max(spec.inputs.size(),spec.outputs.size())));
+                }
+                if(!groups)continue;
+                // Imported value nodes precede their consumers. Walk backwards to put
+                // dependencies in columns left of their first execution consumer.
+                for(size_t i=count;i-- >0;)
+                {
+                    if(exec[i])continue;
+                    size_t first=groups,rank=1;
+                    for(const auto& link:g.links)if(link.from==i&&link.to<count)
+                    {
+                        first=std::min(first,group[link.to]);
+                        rank=std::max(rank,column[link.to]+1);
+                    }
+                    group[i]=first==groups?0:first;
+                    column[i]=rank;
+                }
+                float y=60.f;
+                for(size_t row=0;row<groups;++row)
+                {
+                    std::vector<float> offsets(count+1,0.f);
+                    float tallest=0.f;
+                    for(size_t i=0;i<count;++i)if(group[i]==row)
+                    {
+                        const size_t col=std::min(column[i],count);
+                        g.nodes[i].x=360.f-252.f*static_cast<float>(col);
+                        g.nodes[i].y=y+offsets[col];
+                        offsets[col]+=height[i]+36.f;
+                        tallest=std::max(tallest,offsets[col]);
+                    }
+                    y+=std::max(108.f,tallest);
+                }
+            }
+        }
     }
     bool importBlueprintScreen(const std::string& source,BlueprintDocument& document,std::string& error)
     {
@@ -612,6 +667,7 @@ namespace nx
             if(error.rfind("Source line ",0)!=0)error="Source line "+std::to_string(parser.peek().line)+": "+error;
             return false;
         }
+        layoutImportedGraphs(parser.doc);
         std::string json,generated;
         if(!parser.doc.serialize(json,error)||!compileBlueprint(parser.doc,generated,error))
         {error="Imported graph cannot be represented safely: "+error;return false;}

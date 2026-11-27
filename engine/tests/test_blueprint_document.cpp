@@ -623,3 +623,36 @@ NX_TEST(nativeImportExplicitInstanceReferencesDoNotResolveToParameters)
         NX_EXPECT(doc.serialize(after,error)&&after==saved);
     }
 }
+
+NX_TEST(nativeImportedLayoutAndScopedBlocksAreDeterministic)
+{
+    BlueprintDocument doc,other;std::string error,code,saved,again;
+    const auto* original=R"(class Example : Screen {
+        int score;
+        void onEnter() {
+            int total=1;
+            { int local=2; total+=local; }
+            { int local=3; total+=local; }
+            for(int i=0;i<=2;++i) total+=i;
+            if(total==9) Save::set("scoped","yes");
+        }
+    })";
+    NX_EXPECT(importBlueprintScreen(original,doc,error)&&compileBlueprint(doc,code,error));
+    NX_EXPECT(doc.serialize(saved,error));
+    NX_EXPECT(importBlueprintScreen(original,other,error)&&other.serialize(again,error)&&saved==again);
+    for(const auto& g:doc.graphs)for(size_t i=0;i<g.nodes.size();++i)
+    {
+        BlueprintNodeSpec spec;NX_EXPECT(doc.nodeSpec(g,g.nodes[i],spec));
+        const auto h=46.f+22.f*static_cast<float>(std::max(spec.inputs.size(),spec.outputs.size()));
+        for(size_t j=i+1;j<g.nodes.size();++j)
+        {
+            BlueprintNodeSpec second;NX_EXPECT(doc.nodeSpec(g,g.nodes[j],second));
+            const auto h2=46.f+22.f*static_cast<float>(std::max(second.inputs.size(),second.outputs.size()));
+            const auto& a=g.nodes[i];const auto& b=g.nodes[j];
+            NX_EXPECT(a.x+196<=b.x||b.x+196<=a.x||a.y+std::max(72.f,h)<=b.y||b.y+std::max(72.f,h2)<=a.y);
+        }
+    }
+    NX_EXPECT(!importBlueprintScreen("class Bad : Screen { void onEnter(){ {int x=1;} int y=x; } }",doc,error));
+    NX_EXPECT(!importBlueprintScreen("class Bad : Screen { void onEnter(){ for(int i=0;i<=10000;++i) {} } }",doc,error));
+    NX_EXPECT(doc.serialize(again,error)&&again==saved);
+}

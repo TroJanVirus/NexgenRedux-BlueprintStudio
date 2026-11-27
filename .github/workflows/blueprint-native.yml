@@ -6,8 +6,10 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Each distinct revision completes independently. A newer push must not cancel
+  # an older revision's runtime or renderer verification.
+  group: ${{ github.workflow }}-${{ github.sha }}
+  cancel-in-progress: false
 jobs:
   document:
     runs-on: ubuntu-latest
@@ -48,7 +50,10 @@ jobs:
         run: ctest --test-dir build --output-on-failure --timeout 300 -R '^(blueprint_runtime|blueprint_native_document)$'
       - name: Start editor with null GPU
         if: ${{ !cancelled() }}
-        run: build/showcase/nexgen --blueprint-studio --null --frames 10 --saves "$RUNNER_TEMP/bp-null-saves"
+        run: build/showcase/nexgen --blueprint-studio --null --frames 180 --saves "$RUNNER_TEMP/bp-null-saves"
       - name: Start editor with native desktop renderer
         if: ${{ !cancelled() }}
-        run: xvfb-run -a -s "-screen 0 1280x720x24" build/showcase/nexgen --blueprint-studio --hidden --frames 10 --saves "$RUNNER_TEMP/bp-desktop-saves"
+        run: xvfb-run -a -s "-screen 0 1280x720x24" build/showcase/nexgen --blueprint-studio --hidden --frames 600 --saves "$RUNNER_TEMP/bp-desktop-saves"
+      - name: Reopen native editor with existing save directory
+        if: ${{ !cancelled() }}
+        run: xvfb-run -a -s "-screen 0 1280x720x24" build/showcase/nexgen --blueprint-studio --hidden --frames 120 --saves "$RUNNER_TEMP/bp-desktop-saves"

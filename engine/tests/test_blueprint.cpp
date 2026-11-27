@@ -1457,3 +1457,48 @@ NX_TEST(nativeImportedExplicitInstanceReferencesMatchOriginal)
         NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("instance",""),"correct")==0);
     }
 }
+
+NX_TEST(nativeImportedStandaloneBlocksAndInclusiveLoopsMatchOriginal)
+{
+    const std::string original=R"(class Example : Screen {
+        void onEnter() {
+            int total=1;
+            { int local=2; total+=local; }
+            { int local=3; total+=local; }
+            for(int i=0;i<=2;++i) total+=i;
+            if(total==9) Save::set("scoped","yes");
+        }
+    })";
+    BlueprintDocument doc;std::string error,generated;
+    NX_EXPECT(importBlueprintScreen(original,doc,error)&&compileBlueprint(doc,generated,error));if(generated.empty())return;
+    for(const std::string* source:std::vector<const std::string*>{&original,&generated})
+    {
+        Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+        r.platform.files["showcase/imported/screen.json"]="{\"title\":\"Import\"}";
+        r.platform.files["showcase/imported/main.as"]=*source;
+        if(!r.screens.init(r.services,"showcase","imported")){NX_EXPECT(false);return;}
+        r.step(3);NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("scoped",""),"yes")==0);
+    }
+}
+
+#ifdef NX_DESKTOP_BLUEPRINT
+NX_TEST(nativeSourceCompanionAssetsCopyOriginalTree)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    r.platform.workspaceFiles=true;
+    NX_EXPECT(r.platform.createOwnFolder("original"));
+    NX_EXPECT(r.platform.createOwnFolder("original/asset"));
+    const std::string binary("x\0y",3);
+    r.platform.files["own/original/asset/model/mesh.glb"]=binary;
+    r.platform.files["own/original/asset/level.json"]="data";
+    std::string root,error;
+    NX_EXPECT(blueprintImportSourceAssets(r.platform,"original.as",root,error)&&!root.empty());
+    NX_EXPECT(r.platform.files["own/"+root+"/Screen/asset/model/mesh.glb"]==binary);
+    NX_EXPECT(r.platform.files["own/"+root+"/Screen/asset/level.json"]=="data");
+    NX_EXPECT(r.platform.files["own/original/asset/model/mesh.glb"]==binary);
+    std::string none;
+    NX_EXPECT(blueprintImportSourceAssets(r.platform,"missing.as",none,error)&&none.empty());
+    r.platform.files["own/original/asset/Bad.bin"]="invalid";
+    NX_EXPECT(!blueprintImportSourceAssets(r.platform,"original.as",none,error)&&none.empty());
+}
+#endif
