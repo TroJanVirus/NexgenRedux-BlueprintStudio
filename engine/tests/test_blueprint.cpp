@@ -2116,7 +2116,7 @@ NX_TEST(nativeInlineMacrosPreserveRuntimeAcrossRepeatedCalls)
 
 NX_TEST(nativeImportedArraysExecuteLikeOriginalScript)
 {
-    const std::string original=R"(array<int> shared;class Example : Screen {array<int> scores;void onEnter(){scores.insertLast(3);scores.resize(2);scores[1]=7;shared.insertLast(scores[1]);if(shared.length()==1u&&shared[0]==7){Save::set("arrays","ok");}shared.removeAt(0);if(shared.length()==0u){Save::set("empty","ok");}}})";
+    const std::string original=R"(array<int> shared;class Example : Screen {array<int> scores;void onEnter(){scores.insertLast(3);scores.resize(2);scores[1]=7;shared.insertLast(scores[1]);if(shared.length()==uint(1)&&shared[0]==7){Save::set("arrays","ok");}shared.removeAt(0);if(shared.length()==uint(0)){Save::set("empty","ok");}}})";
     BlueprintDocument doc;std::string error,source;
     if(!importBlueprintScreen(original,doc,error)||!compileBlueprint(doc,source,error)){NX_ERROR("Array import: %s",error.c_str());NX_EXPECT(false);return;}
     for(const auto& code:std::vector<std::string>{original,source})
@@ -2126,4 +2126,33 @@ NX_TEST(nativeImportedArraysExecuteLikeOriginalScript)
         if(!r.screens.init(r.services,"project","main")){NX_EXPECT(false);return;}
         r.step(5);NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("arrays","missing"),"ok")==0&&strcmp(r.save.get("empty","missing"),"ok")==0);
     }
+}
+
+#include "blueprint_orbit_fixture.h"
+NX_TEST(nativeBlueprintCameraOrbitKeepsCubeCenteredAndReturnsToStart)
+{
+    BlueprintDocument doc;std::string error,source,manifest;
+    if(!blueprint_orbit::author(doc,error)||!compileBlueprintScreen(doc,source,manifest,error)){NX_ERROR("Orbit compile: %s",error.c_str());NX_EXPECT(false);return;}
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    r.platform.files["project/main/screen.json"]=manifest;r.platform.files["project/main/main.as"]=source;
+    if(!r.screens.init(r.services,"project","main")){NX_EXPECT(false);return;}
+    r.step();if(r.screens.failed()||!r.services.world){NX_EXPECT(false);return;}
+    auto& world=*r.services.world;auto& space=world.space();
+    const auto cube=world.findNamed("Cube"),floor=world.findNamed("Floor");NX_EXPECT(cube&&floor);if(!cube||!floor)return;
+    const auto* box=space.getAppearance(cube);const auto* plane=space.getAppearance(floor);
+    NX_EXPECT(box&&box->solid==Solid::Box&&plane&&plane->solid==Solid::Plane);
+    const auto* cubeSpatial=space.getSpatial(cube);const auto* floorSpatial=space.getSpatial(floor);
+    NX_EXPECT(cubeSpatial&&fabsf(cubeSpatial->place.y-0.5f)<0.001f&&floorSpatial&&fabsf(floorSpatial->place.y)<0.001f&&fabsf(floorSpatial->size.x-20)<0.001f);
+    auto check=[&](float x,float z,float tolerance)
+    {
+        const Vec3 eye=space.cameraPlace();Vec2 projected;
+        NX_EXPECT(fabsf(eye.x-x)<tolerance&&fabsf(eye.y-2.5f)<0.001f&&fabsf(eye.z-z)<tolerance);
+        NX_EXPECT(fabsf(sqrtf(eye.x*eye.x+eye.z*eye.z)-6)<0.001f);
+        NX_EXPECT(space.toScreen({0,0.5f,0},projected)&&fabsf(projected.x-640)<1&&fabsf(projected.y-360)<1);
+        NX_EXPECT(space.stats().drawn>=2&&r.device->stats().rejected==0);
+    };
+    check(0,6,0.20f);r.step(120);check(6,0,0.20f);r.step(120);check(0,-6,0.20f);r.step(120);check(-6,0,0.20f);r.step(122);check(0,6,0.001f);
+    const auto stopped=space.cameraPlace();r.step(120);const auto later=space.cameraPlace();
+    NX_EXPECT(fabsf(stopped.x-later.x)<0.00001f&&fabsf(stopped.z-later.z)<0.00001f&&!r.screens.failed());
+    NX_INFO("Blueprint orbit: floor and cube created, four quadrants verified, centered projection and stationary return verified.");
 }

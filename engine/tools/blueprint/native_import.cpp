@@ -176,7 +176,7 @@ namespace nx
                 auto s=peek().text;++at;
                 std::string type="int";
                 if(s.ends_with("f")||s.ends_with("F")){type="float";s.pop_back();}
-                else if(s.ends_with("u")||s.ends_with("U")){type="uint";s.pop_back();}
+                else if(s.ends_with("u")||s.ends_with("U"))return fail("Unsigned literal suffix is not supported by Redux AngelScript; use uint(value).");
                 else if(s.find_first_of(".eE")!=std::string::npos)type="double";
                 if((type=="int"||type=="uint")&&(s.find_first_not_of("0123456789")!=std::string::npos||s.empty()||(s.size()>1&&s[0]=='0')))
                     return fail("Only ordinary decimal integer literals are supported.");
@@ -536,7 +536,7 @@ namespace nx
                 {
                     if(handleAssignment||!prefix.empty())return fail("Unsupported array assignment.");
                     Value array,index,v;if(!field(id,array,instanceOnly)||!arrayIndex(index)||!expect("=")||!expression(v)||!expect(";"))return false;
-                    const auto element=blueprintArrayElement(array.type);size_t n;
+                    const auto element=blueprintArrayElement(array.type);size_t n=0;
                     if(element.empty()||!add("array:set:"+element,n)||!bind(n,"target",array)||!bind(n,"index",index)||!bind(n,"value",v))return false;
                     chain(flow,n);return true;
                 }
@@ -645,11 +645,15 @@ namespace nx
                         {
                             if(!blueprintArrayElement(type).empty())return fail("Array initializers are not yet supported; use an empty array and explicit operations.");
                             field.initialized=true;
+                            const bool explicitUint=type=="uint"&&take("uint");
+                            if(explicitUint&&!expect("("))return false;
                             const bool negative=take("-");Value v;
                             if(peek().kind==Kind::Number){if(!numeric(v))return false;}
+                            else if(explicitUint)return fail("Expected an unsigned decimal literal.");
                             else if(!negative&&peek().kind==Kind::String){v.type="string";v.literal=peek().text;++at;}
                             else if(!negative&&(is("true")||is("false"))){v.type="bool";v.literal=peek().text;++at;}
                             else return fail("Field initializer must be a supported typed literal.");
+                            if(explicitUint){if(v.type!="int"||negative||!expect(")"))return fail("Expected uint(decimal).");v.type="uint";}
                             if(v.type!=type||(negative&&(type=="uint"||type=="bool"||type=="string")))return fail("Field initializer requires an exact literal type.");
                             field.value=(negative?"-":"")+v.literal;
                         }

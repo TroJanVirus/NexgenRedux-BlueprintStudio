@@ -143,6 +143,18 @@ namespace nx
                 {
                     return literalValue(node,n.kind.substr(8),n.ref,result);
                 }
+                if(n.kind=="math:orbit-position"&&pin=="result")
+                {
+                    std::string center,radius,height,turns;
+                    if(!value(node,"center",center,depth)||!value(node,"radius",radius,depth)||!value(node,"height",height,depth)||!value(node,"turns",turns,depth))return false;
+                    const auto phase="(("+turns+") == floor("+turns+") ? float(0) : ("+turns+") * float(6.283185307179586))";
+                    result="(("+center+") + Vec3(sin("+phase+") * ("+radius+"), "+height+", cos("+phase+") * ("+radius+")))";return true;
+                }
+                if((n.kind=="spawn:box"||n.kind=="spawn:plane")&&pin=="result")
+                {
+                    if(!available[node])return fail(node,"Spawn result used before execution or outside its branch.");
+                    result="bp_value_"+std::to_string(node);return true;
+                }
                 if(!spec->operation.empty()&&pin=="result")
                 {
                     std::string a,b;
@@ -223,6 +235,14 @@ namespace nx
                 const auto& n=graph.nodes[to];const auto* spec=blueprintSpec(n.kind);
                 const std::string pad(indent*4,' ');
                 const size_t start=source.size();
+                if(n.kind=="spawn:box"||n.kind=="spawn:plane")
+                {
+                    std::string place,size,color,entityName;
+                    if(!value(to,"place",place,0)||!value(to,"size",size,0)||!value(to,"color",color,0)||!value(to,"name",entityName,0))return false;
+                    const auto result="bp_value_"+std::to_string(to);
+                    source+=pad+"Entity@ "+result+" = Space::spawn("+place+");\n"+pad+result+".name = "+entityName+";\n"+pad+result+".size = "+size+";\n"+pad+result+".shape("+(n.kind=="spawn:box"?"SolidBox":"SolidPlane")+", "+color+");\n";
+                    available[to]=true;mark(start,to);return flow(to,"then",indent,depth+1);
+                }
                 if(n.kind=="branch")
                 {
                     std::string condition;

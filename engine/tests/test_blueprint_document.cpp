@@ -8,7 +8,7 @@
 using namespace nx;
 NX_TEST(nativeCatalogueContainsReferenceAPI)
 {
-    NX_EXPECT(blueprintCatalogue().size()==1024);
+    NX_EXPECT(blueprintCatalogue().size()==1029);
     const auto* save=blueprintSpec("api:Save:Save::set:string,string");
     NX_EXPECT(save&&save->inputs.size()==3&&save->outputs.size()==1);
     if(save&&save->inputs.size()==3)NX_EXPECT(save->inputs[0].type=="exec"&&save->inputs[2].type=="string");
@@ -850,7 +850,7 @@ NX_TEST(nativeImportedPrimitiveFieldsPreserveDeclarationsAndInitialValues)
 {
     BlueprintDocument doc;std::string error,source,bytes;
     const char* code=R"(class Counter : Behaviour {int count=7;void start(){if(count==7){Save::set("counter","ok");}}}
-        class Example : Screen {int unused;int score=-4;string label="initial";float speed=1.5f;bool flag=true;uint count=3u;double precise=1.25;void onEnter(){Save::set("label",label);}})";
+        class Example : Screen {int unused;int score=-4;string label="initial";float speed=1.5f;bool flag=true;uint count=uint(3);double precise=1.25;void onEnter(){Save::set("label",label);}})";
     NX_EXPECT(importBlueprintScreen(code,doc,error)&&doc.serialize(bytes,error));
     BlueprintDocument restored;NX_EXPECT(restored.load(bytes.data(),bytes.size(),error)&&compileBlueprint(restored,source,error));
     NX_EXPECT(source.find("int bp_var_unused;")!=std::string::npos&&source.find("int bp_var_score = int(-4);")!=std::string::npos);
@@ -1049,7 +1049,7 @@ NX_TEST(nativeCollapseCompleteBranchRegionWithSingleContinuation)
 NX_TEST(nativeArrayFieldsRoundTripAndGenerateNativeOperations)
 {
     BlueprintDocument doc;std::string error,source,bytes;
-    const char* original=R"(array<int> shared; class Example : Screen { int[] scores; void onEnter(){scores.insertLast(3);scores.resize(2);scores[1]=7;shared.insertLast(scores[1]);shared.removeAt(0);if(scores.length()==2u){Save::set("arrays","ok");}}})";
+    const char* original=R"(array<int> shared; class Example : Screen { int[] scores; void onEnter(){scores.insertLast(3);scores.resize(2);scores[1]=7;shared.insertLast(scores[1]);shared.removeAt(0);if(scores.length()==uint(2)){Save::set("arrays","ok");}}})";
     NX_EXPECT(importBlueprintScreen(original,doc,error)&&doc.serialize(bytes,error));
     BlueprintDocument restored;NX_EXPECT(restored.load(bytes.data(),bytes.size(),error)&&compileBlueprint(restored,source,error));
     NX_EXPECT(source.find("array<int> bp_var_scores;")!=std::string::npos&&source.find("array<int> bp_global_shared;")!=std::string::npos);
@@ -1058,4 +1058,15 @@ NX_TEST(nativeArrayFieldsRoundTripAndGenerateNativeOperations)
     NX_EXPECT(restored.addVariableNode(0,"labels",false,false,0,0,error));
     NX_EXPECT(!restored.addVariableNode(0,"labels",false,true,0,0,error));
     NX_EXPECT(!restored.editVariableDeclaration("Screen","field bad:array<int>=1",error));
+}
+
+#include "blueprint_orbit_fixture.h"
+NX_TEST(nativeCameraOrbitIsAuthoredThroughDocumentOperations)
+{
+    BlueprintDocument doc,fixture;std::string error,source,expected;
+    if(!blueprint_orbit::author(doc,error)){NX_ERROR("Orbit author: %s",error.c_str());NX_EXPECT(false);return;}
+    NX_EXPECT(doc.graphs[0].nodes.size()==3&&doc.graphs[1].nodes.size()==6&&doc.graphs[2].nodes.size()==8);
+    NX_EXPECT(fixture.load(blueprint_orbit::project,sizeof(blueprint_orbit::project)-1,error));
+    NX_EXPECT(compileBlueprint(doc,source,error)&&compileBlueprint(fixture,expected,error)&&source==expected);
+    NX_EXPECT(source.find("SolidBox")!=std::string::npos&&source.find("SolidPlane")!=std::string::npos&&source.find("Space::camera")!=std::string::npos);
 }
