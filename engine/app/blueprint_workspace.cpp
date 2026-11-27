@@ -9,6 +9,7 @@
 #include <cmath>
 #include <ctime>
 #include <cstring>
+#include <unordered_map>
 
 namespace nx
 {
@@ -38,25 +39,7 @@ namespace nx
             }
             return node.kind;
         }
-        struct PinRows
-        {
-            std::vector<std::string> inputs,outputs;
-            static size_t add(std::vector<std::string>& rows,const std::string& pin)
-            {
-                const auto at=std::find(rows.begin(),rows.end(),pin);
-                if(at!=rows.end())return static_cast<size_t>(at-rows.begin());
-                rows.push_back(pin);return rows.size()-1;
-            }
-            static float y(const std::vector<std::string>& rows,const std::string& pin)
-            {return kPinStart+static_cast<float>(std::find(rows.begin(),rows.end(),pin)-rows.begin())*kPinStep;}
-            float height()const{return std::max(kNodeHeight,kPinStart+kPinStep*static_cast<float>(std::max(inputs.size(),outputs.size()))+8);}
-        };
-        std::vector<PinRows> pinRows(const BlueprintDocument::Graph& g)
-        {
-            std::vector<PinRows> rows(g.nodes.size());
-            for(const auto& l:g.links){PinRows::add(rows[l.from].outputs,l.output);PinRows::add(rows[l.to].inputs,l.input);}
-            return rows;
-        }
+        float pinY(size_t row){return kPinStart+static_cast<float>(row)*kPinStep;}
         std::string shorten(const std::string& s, size_t length)
         {
             if (s.size() <= length) return s;
@@ -112,9 +95,30 @@ namespace nx
         if (index >= m_document.graphs.size()) return;
         cancelDrag();
         m_graph = index; m_selection = static_cast<size_t>(-1);
-        fitGraph();
+        rebuildPins();fitGraph();
         if (index < m_first) m_first = index;
         if (index >= m_first + kRows) m_first = index - kRows + 1;
+    }
+
+    void BlueprintWorkspace::rebuildPins()
+    {
+        m_rows.clear();m_wirePins.clear();
+        const auto& graph=m_document.graphs[m_graph];
+        m_rows.resize(graph.nodes.size());
+        m_wirePins.reserve(graph.links.size());
+        struct Lookup { std::unordered_map<std::string,size_t> inputs,outputs; };
+        std::vector<Lookup> lookup(graph.nodes.size());
+        const auto add=[](std::vector<std::string>& rows,std::unordered_map<std::string,size_t>& index,const std::string& pin)
+        {
+            auto result=index.emplace(pin,rows.size());
+            if(result.second)rows.push_back(pin);
+            return result.first->second;
+        };
+        for(const auto& link:graph.links)
+            m_wirePins.push_back({add(m_rows[link.from].outputs,lookup[link.from].outputs,link.output),
+                                  add(m_rows[link.to].inputs,lookup[link.to].inputs,link.input)});
+        for(auto& row:m_rows)
+            row.height=std::max(kNodeHeight,kPinStart+kPinStep*static_cast<float>(std::max(row.inputs.size(),row.outputs.size()))+8);
     }
 
     void BlueprintWorkspace::fitGraph()
@@ -123,12 +127,12 @@ namespace nx
         if(m_graph>=m_document.graphs.size())return;
         const auto& graph=m_document.graphs[m_graph];const auto& nodes=graph.nodes;
         if(nodes.empty())return;
-        const auto rows=pinRows(graph);
+        const auto& rows=m_rows;
         float left=nodes.front().x,top=nodes.front().y,right=left+kNodeWidth,bottom=top+kNodeHeight;
         for(size_t i=0;i<nodes.size();++i)
         {
             const auto& n=nodes[i];left=std::min(left,n.x);top=std::min(top,n.y);
-            right=std::max(right,n.x+kNodeWidth);bottom=std::max(bottom,n.y+rows[i].height());
+            right=std::max(right,n.x+kNodeWidth);bottom=std::max(bottom,n.y+rows[i].height);
         }
         m_zoom=std::clamp(std::min((kRight-kLeft-48)/(right-left),(kBottom-kTop-48)/(bottom-top)),0.25f,1.0f);
         m_x=24-left*m_zoom;m_y=24-top*m_zoom;
@@ -225,13 +229,13 @@ namespace nx
         if (left && !m_left && over)
         {
             const auto& graph=m_document.graphs[m_graph];const auto& nodes=graph.nodes;
-            const auto rows=pinRows(graph);
+            const auto& rows=m_rows;
             m_selection = static_cast<size_t>(-1);
             for (size_t i = nodes.size(); i > 0; --i)
             {
                 const auto& n = nodes[i-1];
                 const float nx = kLeft+m_x+n.x*m_zoom, ny = kTop+m_y+n.y*m_zoom;
-                if (in(x,y,nx,ny,nx+kNodeWidth*m_zoom,ny+rows[i-1].height()*m_zoom))
+                if (in(x,y,nx,ny,nx+kNodeWidth*m_zoom,ny+rows[i-1].height*m_zoom))
                 {
                     m_selection=i-1;
                     m_drag=true;m_dragMoved=false;m_dragX=n.x;m_dragY=n.y;
@@ -315,13 +319,14 @@ namespace nx
         else
         {
             const auto& graph=m_document.graphs[m_graph];
-            const auto rows=pinRows(graph);
+            const auto& rows=m_rows;
             const auto nodeX=[&](size_t i){return m_drag&&i==m_selection?m_dragX:graph.nodes[i].x;};
             const auto nodeY=[&](size_t i){return m_drag&&i==m_selection?m_dragY:graph.nodes[i].y;};
-            for(const auto& l:graph.links)
+            for(size_t wire=0;wire<graph.links.size();++wire)
             {
-                const float x1=kLeft+m_x+(nodeX(l.from)+kNodeWidth)*m_zoom,y1=kTop+m_y+(nodeY(l.from)+PinRows::y(rows[l.from].outputs,l.output))*m_zoom;
-                const float x2=kLeft+m_x+nodeX(l.to)*m_zoom,y2=kTop+m_y+(nodeY(l.to)+PinRows::y(rows[l.to].inputs,l.input))*m_zoom;
+                const auto& l=graph.links[wire];const auto& pins=m_wirePins[wire];
+                const float x1=kLeft+m_x+(nodeX(l.from)+kNodeWidth)*m_zoom,y1=kTop+m_y+(nodeY(l.from)+pinY(pins.output))*m_zoom;
+                const float x2=kLeft+m_x+nodeX(l.to)*m_zoom,y2=kTop+m_y+(nodeY(l.to)+pinY(pins.input))*m_zoom;
                 if(std::max(x1,x2)<kLeft||std::min(x1,x2)>kRight||std::max(y1,y2)<kTop||std::min(y1,y2)>kBottom)continue;
                 const float mid=(x1+x2)*0.5f;
                 const Color color=l.output=="then"||l.input=="in"?text:accent;
@@ -330,23 +335,28 @@ namespace nx
             for(size_t i=0;i<graph.nodes.size();++i)
             {
                 const auto& n=graph.nodes[i];
-                const float x=kLeft+m_x+nodeX(i)*m_zoom,y=kTop+m_y+nodeY(i)*m_zoom,w=kNodeWidth*m_zoom,h=rows[i].height()*m_zoom;
+                const float x=kLeft+m_x+nodeX(i)*m_zoom,y=kTop+m_y+nodeY(i)*m_zoom,w=kNodeWidth*m_zoom,h=rows[i].height*m_zoom;
                 if(x+w<kLeft||x>kRight||y+h<kTop||y>kBottom) continue;
                 c.roundRect(x,y,w,h,5,{0.15f,0.20f,0.27f,1});
                 c.rect(x,y,w,24*m_zoom,n.kind=="entry"?Color{0.54f,0.20f,0.25f,1}:Color{0.19f,0.35f,0.53f,1});
                 if(i==m_selection)c.roundLine(x,y,w,h,5,2,accent);
-                for(const auto& pin:rows[i].inputs)c.circle(x,y+PinRows::y(rows[i].inputs,pin)*m_zoom,4*m_zoom,pin=="in"?text:accent);
-                for(const auto& pin:rows[i].outputs)c.circle(x+w,y+PinRows::y(rows[i].outputs,pin)*m_zoom,4*m_zoom,pin=="then"?text:accent);
+                // Draw only the visible rows of tall nodes.
+                const size_t first=static_cast<size_t>(std::max(0.0f,std::floor(((kTop-y)/m_zoom-kPinStart)/kPinStep)-1));
+                const size_t last=static_cast<size_t>(std::max(0.0f,std::ceil(((kBottom-y)/m_zoom-kPinStart)/kPinStep)+2));
+                for(size_t p=first;p<std::min(last,rows[i].inputs.size());++p)
+                    c.circle(x,y+pinY(p)*m_zoom,4*m_zoom,rows[i].inputs[p]=="in"?text:accent);
+                for(size_t p=first;p<std::min(last,rows[i].outputs.size());++p)
+                    c.circle(x+w,y+pinY(p)*m_zoom,4*m_zoom,rows[i].outputs[p]=="then"?text:accent);
                 if(m_zoom>=0.65f)
                 {
                     c.push();c.clip(x+2,y+1,w-4,24*m_zoom);
                     c.text(*m_font,shorten(title(n),24).c_str(),x+8,y+3,text);c.pop();
                     // Clip each column separately to prevent long pin names overlapping.
                     c.push();c.clip(x+6,y+24*m_zoom,w*0.5f-8,h-24*m_zoom);
-                    for(const auto& pin:rows[i].inputs)c.text(*m_font,shorten(pin,12).c_str(),x+8,y+PinRows::y(rows[i].inputs,pin)*m_zoom-8,muted);
+                    for(size_t p=first;p<std::min(last,rows[i].inputs.size());++p)c.text(*m_font,shorten(rows[i].inputs[p],12).c_str(),x+8,y+pinY(p)*m_zoom-8,muted);
                     c.pop();
                     c.push();c.clip(x+w*0.5f,y+24*m_zoom,w*0.5f-6,h-24*m_zoom);
-                    for(const auto& pin:rows[i].outputs)c.text(*m_font,shorten(pin,12).c_str(),x+w-8,y+PinRows::y(rows[i].outputs,pin)*m_zoom-8,muted,Align::Right);
+                    for(size_t p=first;p<std::min(last,rows[i].outputs.size());++p)c.text(*m_font,shorten(rows[i].outputs[p],12).c_str(),x+w-8,y+pinY(p)*m_zoom-8,muted,Align::Right);
                     c.pop();
                 }
             }

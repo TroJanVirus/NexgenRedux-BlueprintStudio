@@ -20,8 +20,13 @@ namespace nx
     private:
         void selectGraph(size_t index);
         void fitGraph();
+        void rebuildPins();
         bool saveCopy(Services& services);
         void cancelDrag() { m_drag = false; }
+        struct NodePins { std::vector<std::string> inputs, outputs; float height = 72; };
+        struct WirePins { size_t output, input; };
+        std::vector<NodePins> m_rows;
+        std::vector<WirePins> m_wirePins;
         BlueprintDocument m_document;
         Asset* m_font = nullptr;
         std::string m_status = "Drop a .bp.json or .bp.project.json file here.";
