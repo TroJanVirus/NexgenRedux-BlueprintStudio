@@ -393,3 +393,36 @@ NX_TEST(blueprintSharedMediaReadsFromBothScreens)
         NX_EXPECT(strcmp(r.save.get("shared_result", "missing"), "Shared message") == 0);
     }
 }
+
+#include "blueprint_scene_fixture.h"
+
+NX_TEST(blueprintDesignedSceneLoadsNativeObjects)
+{
+    Rig r;
+    NX_EXPECT(r.ok);
+    r.platform.files["showcase/main/screen.json"] = "{\"title\":\"Blueprint scene\"}";
+    r.platform.files["showcase/main/main.as"] = blueprint_scene::script;
+    r.platform.files["showcase/main/asset/levels/demo.json"] = blueprint_scene::level;
+    if (!r.screens.init(r.services, "showcase", "main")) { NX_EXPECT(false); return; }
+    r.step(3);
+    NX_EXPECT(!r.screens.failed());
+    if (!r.services.world) { NX_EXPECT(false); return; }
+    World& world = *r.services.world;
+    const u32 crate = world.findNamed("Crate"), lamp = world.findNamed("Lamp"), floor = world.findNamed("Floor");
+    NX_EXPECT(crate && lamp && floor);
+    if (!crate || !lamp || !floor) return;
+    const Spatial* spatial = world.space().getSpatial(crate);
+    NX_EXPECT(spatial && fabsf(spatial->place.x - 3) < 0.001f && fabsf(spatial->place.y - 2) < 0.001f && fabsf(spatial->place.z + 4) < 0.001f);
+    NX_EXPECT(spatial && fabsf(spatial->size.x - 2) < 0.001f && fabsf(spatial->size.z - 4) < 0.001f);
+    NX_EXPECT(spatial && fabsf(spatial->turn.rotate({1, 0, 0}).z + 1) < 0.001f);
+    const Appearance* appearance = world.space().getAppearance(crate);
+    NX_EXPECT(appearance && appearance->solid == Solid::Box);
+    const Collider3* collider = world.space().getCollider(crate);
+    NX_EXPECT(collider && collider->shape == Shape3::Box);
+    const Light3* light = world.space().light(lamp);
+    NX_EXPECT(light && fabsf(light->range - 12) < 0.001f);
+    const Appearance* ground = world.space().getAppearance(floor);
+    NX_EXPECT(ground && ground->solid == Solid::Plane);
+    NX_EXPECT(world.behaviourAt(crate, 0) != nullptr);
+    NX_EXPECT(strcmp(r.save.get("bp_started", "missing"), "yes") == 0);
+}

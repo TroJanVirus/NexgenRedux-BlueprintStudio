@@ -1,5 +1,12 @@
 # Changes
 
+## Scene editor
+
+- View and place native 3D shapes from orbit, top, front and side views. Move on the ground or change height, snap to a grid, pan and zoom.
+- Edit transforms, colours, lights and Behaviour assignments. Choose model, texture and sprite files from the project. The preview uses placeholders for imported models and sprites.
+- Undo and redo scene edits. Save native JSON and connect its load node to On Enter; graph undo restores the saved scene too.
+- Added tests for projection, object placement, scene editing, and native loading of shapes, a collider, a light and a Behaviour.
+
 ## Shared media
 
 - Keep textures, sounds, models and other files in one project library. Use Nexgen’s native `global:` paths in graphs and UI pages.

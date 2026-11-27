@@ -169,14 +169,25 @@ node test_playtest.js
 node test_ui_design.js
 node test_shared_behaviours.js
 node test_shared_media.js
+node test_scene_viewport.js
 ```
 
 No npm packages are needed. To run the optional browser tests, install Python Playwright and Chromium, then run `python test_browser.py` and `python test_layout_browser.py` and `python test_workspace_browser.py` and `python test_polish_browser.py` and `python test_organise_browser.py` and `python test_game_tools_browser.py` and `python test_playtest_browser.py`, `python test_ui_design_browser.py` , `python test_shared_behaviours_browser.py` and `python test_shared_media_browser.py`. Set `CHROMIUM_PATH` if Chromium is installed outside Playwright's usual location. The recovery test uses real browser storage by default; `BLUEPRINT_MOCK_STORAGE=1` checks its UI with a simulated storage backend on restricted test hosts. Actual storage across a browser restart has not been verified on this branch.
 
 The 720 engine API definitions are based on Nexgen's script reference. The compiler checks data types and graph structure; the native engine compiler checks the resulting AngelScript. Neither check guarantees that all assets are present or that a game performs well on real hardware.
 
+## Build a scene
+
+Open **Scenes** while editing a Screen. Choose 2D or 3D, add objects from the list, and select one in the preview or entity list. Set its position, rotation, size and colour in Details. Models, textures and sprites can use files from the screen or the shared asset library. Pick a Behaviour already attached to the Screen's Blueprint to give the object logic. Use Advanced native properties for fields such as collision, physics and movement that do not have their own controls yet.
+
+In 3D, choose Orbit, Top, Front or Side. Right-drag to orbit, middle-drag to pan, and scroll to zoom. Move drags an object along the ground; Front and Side move it along the visible axes. Height moves it up and down. Use Snap for precise placement, Fit scene to bring everything into view, or edit the numbers directly. The 2D view supports rectangle and disc placement, rotation and scale. Undo and redo work inside the scene editor.
+
+**Save to project** writes an ordinary Nexgen scene JSON file. **Save + connect On Enter** also adds the native load node to the start of the Screen's On Enter graph; saving the same connected scene again does not add another node. Undo in Studio restores the changed file and the graph together. Save the project to keep your work. Import existing native scene JSON to edit it without discarding unfamiliar properties. Switching between 2D and 3D starts a new scene, not a conversion of the old one.
+
+The preview draws native primitive shapes with simple shading. Models and sprites are shown as placeholder boxes; the actual meshes, textures, terrain, lighting, prefabs, animation and physics are not rendered here. Large scenes use simplified shapes. Run the game in Nexgen to see the actual result.
+
 ## Current limits
 
-The scene editor is a top-down layout tool, not a fully rendered 3D viewport. Timelines cannot yet be controlled from other graphs. Dispatchers work within one object, and there is no automatic network replication or remote procedure call system. Graph debugging uses Nexgen's existing debugger and currently highlights the active graph only. There is no skeletal blend-tree editor.
+The scene preview is not the Nexgen renderer; models, textures, terrain, lighting and physics still need testing in the game. Timelines cannot yet be controlled from other graphs. Dispatchers work within one object, and there is no automatic network replication or remote procedure call system. Graph debugging uses Nexgen's existing debugger and currently highlights the active graph only. There is no skeletal blend-tree editor.
 
 Linux headless tests and Chromium tests have been run. Windows, macOS, RXDK builds, graphical rendering and real Xbox gameplay are still unverified for this branch. No rebuilt XBE is included.
