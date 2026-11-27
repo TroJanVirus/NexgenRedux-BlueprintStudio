@@ -1,5 +1,9 @@
 # Changes
 
+## Node library
+
+- Search native functions by name, category, description or pin, with words in any order. Fold categories and use the keyboard to insert nodes. Open the original Nexgen reference from Details. Hide action nodes in value-only functions and prevent direct self-calls from the library.
+
 ## Use the engine first
 
 - Removed Studio’s duplicate 3D renderer and camera; open the original Nexgen editor for visual 3D work. Kept project scene links and simple 2D layout.

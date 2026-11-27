@@ -39,6 +39,8 @@ A good event graph should read like a short list of instructions. For a player, 
 
 ## Find and tidy your work
 
+- Search the node library using words in any order, such as `camera space` or `Scene::spawn`. Matching native functions appear first within the best matching categories. Click a category heading to fold its list. Use the arrow keys and Enter to insert a result, or Escape to close the right-click menu. Native API nodes have a link to the original Nexgen reference in Details. Value-only functions hide action nodes, and a function cannot insert a call to itself from the library.
+
 - **Find** (Ctrl+F) searches function names, folders, node names, comments and default values across the current Blueprint. Click a result to jump to it.
 - Open graphs appear as tabs. Switch between them without losing your zoom and position.
 - The minimap shows the whole graph. Click or drag it to move around. Hide it from **Tools** if you prefer.
