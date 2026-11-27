@@ -602,7 +602,7 @@ namespace nx
             for(size_t i=0;i<std::min<size_t>(6,m_traceValues.size());++i)c.text(*m_font,shorten(m_traceValues[i],42).c_str(),626,475+22*static_cast<float>(i),text);
             if(m_traceValues.empty())c.text(*m_font,"No scalar values sampled",626,475,muted);
             c.noClip();
-            for(float x:{270.f,462.f,682.f})c.roundRect(x,624,x==270.f?180:208,36,4,{0.19f,0.33f,0.50f,1});
+            for(float x:{270.f,462.f,682.f})c.roundRect(x,624,x==270.f?180.f:208.f,36,4,{0.19f,0.33f,0.50f,1});
             c.text(*m_font,"Continue",360,631,text,Align::Center);c.text(*m_font,"Step update",566,631,text,Align::Center);c.text(*m_font,"Stop preview",786,631,text,Align::Center);
             return;
         }

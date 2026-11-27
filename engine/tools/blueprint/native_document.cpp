@@ -422,7 +422,7 @@ namespace nx
                 if(!n.values.empty())
                 {
                     auto* values=j->put("values");if(!values)return fail();
-                    for(const auto& v:n.values)if(!text(*values,v.pin.c_str(),v.value))return fail();
+                    for(const auto& input:n.values)if(!text(*values,input.pin.c_str(),input.value))return fail();
                 }
             }
             auto* ls=v->put("links");if(!ls)return fail();ls->setArray();
@@ -625,10 +625,10 @@ namespace nx
         m_undo.push_back({static_cast<size_t>(-1),{},m_revision,graphs});
         m_redo.clear();m_revision=++m_nextRevision;
     }
-    const BlueprintDocument::Graph* BlueprintDocument::function(const std::string& owner,const std::string& name) const
+    const BlueprintDocument::Graph* BlueprintDocument::function(const std::string& owner,const std::string& functionName) const
     {
         const auto found=std::find_if(graphs.begin(),graphs.end(),[&](const Graph& g)
-        {return g.owner==owner&&g.name==name&&g.kind=="function";});
+        {return g.owner==owner&&g.name==functionName&&g.kind=="function";});
         return found==graphs.end()?nullptr:&*found;
     }
     bool BlueprintDocument::nodeSpec(const Graph& graph,const Node& node,BlueprintNodeSpec& spec) const
@@ -733,15 +733,15 @@ namespace nx
         std::vector<std::string> result;
         for(const auto& g:graphs)if(behaviourOwner(g.owner))
         {
-            const auto name=g.owner.substr(10);
-            if(std::find(result.begin(),result.end(),name)==result.end())result.push_back(name);
+            const auto behaviourName=g.owner.substr(10);
+            if(std::find(result.begin(),result.end(),behaviourName)==result.end())result.push_back(behaviourName);
         }
         return result;
     }
-    bool BlueprintDocument::addBehaviour(const std::string& name,std::string& error)
+    bool BlueprintDocument::addBehaviour(const std::string& behaviourName,std::string& error)
     {
-        const auto owner="behaviour:"+name;
-        if(!identifier(name)||graphs.size()+5>kMaxGraphs||
+        const auto owner="behaviour:"+behaviourName;
+        if(!identifier(behaviourName)||graphs.size()+5>kMaxGraphs||
             std::any_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==owner;}))
         {error="Choose a unique behaviour identifier.";return false;}
         recordGraphList();
@@ -752,13 +752,13 @@ namespace nx
         }
         error.clear();return true;
     }
-    bool BlueprintDocument::removeBehaviour(const std::string& name,std::string& error)
+    bool BlueprintDocument::removeBehaviour(const std::string& behaviourName,std::string& error)
     {
-        const auto owner="behaviour:"+name;
+        const auto owner="behaviour:"+behaviourName;
         if(std::none_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==owner;}))
         {error="Unknown behaviour.";return false;}
         for(const auto& g:graphs)for(const auto& n:g.nodes)
-            if((n.kind=="attach:behaviour"||n.kind=="level:attach")&&n.ref==name){error="Remove attachment nodes referencing "+name+" first.";return false;}
+            if((n.kind=="attach:behaviour"||n.kind=="level:attach")&&n.ref==behaviourName){error="Remove attachment nodes referencing "+behaviourName+" first.";return false;}
         recordGraphList();
         graphs.erase(std::remove_if(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==owner;}),graphs.end());
         error.clear();return true;
@@ -769,14 +769,14 @@ namespace nx
         if(std::find(owners.begin(),owners.end(),owner)==owners.end())
         {error="Select a screen graph.";return false;}
         std::vector<std::string> missing;
-        for(const char* name:{"onLevelTouch","onLevelAgent"})
-            if(std::none_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==owner&&g.name==name;}))missing.emplace_back(name);
+        for(const char* eventName:{"onLevelTouch","onLevelAgent"})
+            if(std::none_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==owner&&g.name==eventName;}))missing.emplace_back(eventName);
         if(missing.empty()){error="Level events already exist for this screen.";return false;}
         if(graphs.size()+missing.size()>kMaxGraphs){error="Graph limit reached.";return false;}
         recordGraphList();
-        for(const auto& name:missing)
+        for(const auto& eventName:missing)
         {
-            Graph g;g.owner=owner;g.name=name;g.kind="event";
+            Graph g;g.owner=owner;g.name=eventName;g.kind="event";
             g.nodes.push_back({"entry","entry","",24,60});graphs.push_back(std::move(g));
         }
         error.clear();return true;
