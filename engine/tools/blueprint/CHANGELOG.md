@@ -1,5 +1,12 @@
 # Changes
 
+## Project editing
+
+- Edit or create behaviours inside their screen. Save the whole project without leaving the behaviour graph.
+- Browse project assets, import folders, preview images/audio/text and choose an asset for a node input.
+- Save and reopen unfinished projects. Check all screens before packaging.
+- Reject conflicting file and folder paths.
+
 ## Organising graphs
 
 - Fold nested groups into blocks with working external pins. Expand them to edit their contents.
