@@ -656,3 +656,44 @@ NX_TEST(nativeImportedLayoutAndScopedBlocksAreDeterministic)
     NX_EXPECT(!importBlueprintScreen("class Bad : Screen { void onEnter(){ for(int i=0;i<=10000;++i) {} } }",doc,error));
     NX_EXPECT(doc.serialize(again,error)&&again==saved);
 }
+
+NX_TEST(nativeLargeProjectRoundTripHistoryAndMalformedInputStress)
+{
+    BlueprintDocument doc;doc.create();std::string error,saved,again,source,after;
+    // Over 2,000 editable nodes distributed over the native event graphs.
+    for(size_t graph=0;graph<4;++graph)
+    {
+        for(size_t i=0;i<512;++i)
+            if(!doc.addNode(graph,"literal:int",static_cast<float>(i%16)*252.f,
+                static_cast<float>(i/16)*120.f,error)){NX_EXPECT(false);return;}
+        NX_EXPECT(doc.setLiteral(graph,512,"42",error));
+    }
+    // Include real connected execution in the workload, not only disconnected data.
+    for(size_t i=0;i<32;++i)
+    {
+        const size_t n=doc.graphs[0].nodes.size();
+        if(!doc.addNode(0,"api:Save:Save::set:string,string",360.f,static_cast<float>(i)*120.f,error)||
+            !doc.setInputValue(0,n,"key","stress"+std::to_string(i),error)||
+            !doc.setInputValue(0,n,"value","ok",error)||
+            !doc.connect(0,i?n-1:0,"then",n,"in",error)){NX_EXPECT(false);return;}
+    }
+    NX_EXPECT(doc.serialize(saved,error)&&compileBlueprint(doc,source,error));
+    BlueprintDocument loaded;
+    NX_EXPECT(loaded.load(saved.data(),saved.size(),error)&&loaded.serialize(again,error)&&again==saved);
+    NX_EXPECT(compileBlueprint(loaded,after,error)&&after==source);
+    if(loaded.graphs.size()<4)return;
+    const auto original=loaded.graphs[3].nodes[512].x;
+    for(size_t i=0;i<16;++i)
+    {
+        NX_EXPECT(loaded.move(3,512,original+static_cast<float>(i+1),4000.f));
+        NX_EXPECT(loaded.undo()&&!loaded.dirty());
+        NX_EXPECT(loaded.redo()&&loaded.dirty());
+        NX_EXPECT(loaded.undo()&&!loaded.dirty());
+    }
+    NX_EXPECT(loaded.serialize(again,error)&&again==saved);
+    for(size_t cut:{size_t(1),saved.size()/2,saved.size()-1})
+    {
+        NX_EXPECT(!loaded.load(saved.data(),cut,error));
+        NX_EXPECT(loaded.serialize(again,error)&&again==saved);
+    }
+}

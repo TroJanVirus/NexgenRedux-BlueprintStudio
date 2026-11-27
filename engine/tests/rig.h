@@ -28,6 +28,7 @@ namespace nx::test
         std::string written;                       // the last file
         std::set<std::string> ownFolders;
         bool workspaceFiles=false;                 // opt-in writable virtual own/ filesystem
+        bool failOwnWrites=false;                  // inject failed writes without touching existing data
         double now = 0;
         std::string extraPath, extraText;
         std::map<std::string, std::string> files;   // more, by path
@@ -139,7 +140,11 @@ namespace nx::test
         bool writeFile(const char* path, const void* data, size_t size) override
         {
             written = path;
-            if(workspaceFiles&&strncmp(path,"own/",4)==0)files[path].assign(static_cast<const char*>(data),size);
+            if(workspaceFiles&&strncmp(path,"own/",4)==0)
+            {
+                if(failOwnWrites)return false;
+                files[path].assign(static_cast<const char*>(data),size);
+            }
             return true;
         }
 

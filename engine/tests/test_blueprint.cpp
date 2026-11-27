@@ -1502,3 +1502,73 @@ NX_TEST(nativeSourceCompanionAssetsCopyOriginalTree)
     NX_EXPECT(!blueprintImportSourceAssets(r.platform,"original.as",none,error)&&none.empty());
 }
 #endif
+
+#ifdef NX_DESKTOP_BLUEPRINT
+NX_TEST(nativeWorkspaceRepeatedRecoveryPreviewAndFailedCheckpointRetry)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    r.platform.workspaceFiles=true;
+    r.platform.files["showcase/main/screen.json"]="{\"title\":\"Home\"}";
+    r.platform.files["showcase/main/main.as"]="class Home : Screen {}";
+    if(!r.screens.init(r.services,"showcase","main")){NX_EXPECT(false);return;}
+    r.step(3);r.screens.setDevelopmentPaused(true);
+    const std::string original=R"(class Original : Screen {
+        void onEnter() { Save::set("recovery_cycle","ok"); }
+    })";
+    r.platform.files["own/original.as"]=original;
+    const std::string recovery="own/blueprint-recovery.bp.json";
+    auto& state=r.platform.state;state.hasMouse=true;
+    std::string saved;
+    for(int cycle=0;cycle<8;++cycle)
+    {
+        // Construct a fresh workspace each time so no in-memory document survives.
+        BlueprintWorkspace studio;studio.open(r.services);
+        NX_EXPECT(studio.active());if(!studio.active())return;
+        auto frame=[&]()
+        {
+            r.assets.finish();r.input.update(state,1.0f/60);r.platform.now+=1.0/60;
+            if(studio.previewing())studio.updatePreview(r.services,1.0f/60);
+            else studio.update(r.services);
+            studio.checkpoint(r.services);
+            r.device->beginFrame({});r.canvas.begin();
+            if(!studio.previewing()||studio.tracePaused())studio.draw(r.canvas);else r.screens.draw();
+            if(studio.previewing())studio.drawPreviewOverlay(r.canvas);
+            r.canvas.end();r.device->endFrame();
+        };
+        auto click=[&](float x,float y)
+        {
+            state.mouseX=x;state.mouseY=y;state.mouseButtons[0]=true;frame();
+            state.mouseButtons[0]=false;frame();
+        };
+        frame();
+        if(cycle==0)
+        {
+            r.platform.failOwnWrites=true;
+            r.platform.dropped="original.as";frame();
+            NX_EXPECT(!r.platform.files.count(recovery));
+            r.platform.failOwnWrites=false;
+            studio.checkpoint(r.services,true);
+            NX_EXPECT(r.platform.files.count(recovery));
+            if(!r.platform.files.count(recovery)){studio.close(r.services);return;}
+            saved=r.platform.files[recovery];
+        }
+        NX_EXPECT(r.platform.files[recovery]==saved);
+        click(553,53);
+        NX_EXPECT(studio.previewing());
+        if(studio.previewing())
+        {
+            for(int i=0;i<8;++i)frame();
+            NX_EXPECT(!r.screens.failed());
+            NX_EXPECT(strcmp(r.services.save->get("recovery_cycle","missing"),"ok")==0);
+            studio.stopPreview(r.services);
+        }
+        NX_EXPECT(r.services.save==&r.save&&strcmp(r.save.get("recovery_cycle","missing"),"missing")==0);
+        studio.close(r.services);
+        NX_EXPECT(!studio.active()&&!studio.previewing());
+        NX_EXPECT(r.platform.files[recovery]==saved&&r.platform.files["own/original.as"]==original);
+    }
+    BlueprintDocument draft;std::string error,source;
+    NX_EXPECT(draft.load(saved.data(),saved.size(),error)&&compileBlueprint(draft,source,error));
+    NX_EXPECT(source.find("recovery_cycle")!=std::string::npos);
+}
+#endif
