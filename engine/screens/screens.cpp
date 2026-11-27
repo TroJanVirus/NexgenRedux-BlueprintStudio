@@ -150,6 +150,27 @@ namespace nx
 
     bool Screens::startProjectPreview(const std::vector<PreviewScreen>& screens,const std::string& start,std::string& error,const std::string& assetRoot)
     {
+        return startPreviewSession(screens,start,error,assetRoot,false);
+    }
+
+    bool Screens::startSceneEditor(const std::string& assetRoot,const std::string& screen,std::string& error)
+    {
+        if(!m_services||assetRoot.empty()||screen.empty()||screen.size()>40||
+            (screen!="Screen"&&screen.find_first_not_of("abcdefghijklmnopqrstuvwxyz0123456789_-")!=std::string::npos))
+        {error="Select a valid project screen.";return false;}
+        // Use the exact original editor shipped with this engine's pinned media, not a forked script.
+        FileData source;
+        if(!m_services->platform->readFile("showcase/editor/main.as",source,MemTag::Script)||!source.size||source.size>1024*1024)
+        {error="The installed Redux scene editor is missing or invalid.";return false;}
+        PreviewScreen item;
+        snprintf(item.info.id,sizeof(item.info.id),"%s",screen.c_str());
+        snprintf(item.info.title,sizeof(item.info.title),"Scene editor");
+        item.source.assign(reinterpret_cast<const char*>(source.data),source.size);
+        return startPreviewSession({item},screen,error,assetRoot,true);
+    }
+
+    bool Screens::startPreviewSession(const std::vector<PreviewScreen>& screens,const std::string& start,std::string& error,const std::string& assetRoot,bool sceneEditor)
+    {
         const auto selected=std::find_if(screens.begin(),screens.end(),[&](const PreviewScreen& s){return start==s.info.id;});
         if (!m_services || m_depth != 1 || !m_menuOpen || previewing() || screens.empty() ||
             screens.size()>kMaxScreens || selected==screens.end())
@@ -181,10 +202,11 @@ namespace nx
         saveSettings(*m_services); // Snapshot settings without writing to the real save.
         m_previewRandom = m_services->random;
         m_previewDevelopment = m_services->development;
-        m_previewScreens=screens;m_previewNavigation=true;
+        m_previewScreens=screens;m_previewNavigation=!sceneEditor;
         m_previewRoot=assetRoot.empty()?"__blueprint_preview":"own/"+assetRoot;
         m_services->save = m_previewSave;
-        m_services->development = false;
+        m_services->development = sceneEditor;
+        m_services->sceneEditorAssets = sceneEditor;
         m_services->previewAssets = true;
         m_change = Change::None;
         // Home must already be paused by the workspace. Do not run its suspend/resume
@@ -216,6 +238,7 @@ namespace nx
         m_services->random = m_previewRandom;
         m_services->development = m_previewDevelopment;
         m_services->previewAssets = false;
+        m_services->sceneEditorAssets = false;
         destroy(m_previewSave);
         m_previewSave = nullptr;
         m_previewScreens.clear();m_previewRoot.clear();m_previewNavigation=false;
@@ -369,6 +392,10 @@ namespace nx
         if(previewing())root=m_previewRoot.c_str();
 #endif
         snprintf(folder, sizeof(folder), "%s/%s", root, entry.info.id);
+#ifdef NX_DESKTOP_BLUEPRINT
+        // The original editor UI theme belongs to the installed tool; scene and media paths belong to the project.
+        if(previewing()&&m_services->sceneEditorAssets)snprintf(folder,sizeof(folder),"showcase/editor");
+#endif
         entry.ui = create<Ui>(MemTag::UI, *m_services->canvas, *m_services->assets, *m_services->audio, *m_services->input, host, *m_services->platform, folder);
         enter(entry);
 #ifdef NX_DESKTOP_BLUEPRINT
@@ -380,6 +407,9 @@ namespace nx
         snprintf(path, sizeof(path), "%s/main.as", m_services->folder);
         FileData source;
         entry.scriptTime = m_services->platform->fileTime(path);
+#ifdef NX_DESKTOP_BLUEPRINT
+        if(previewing()&&m_services->sceneEditorAssets)snprintf(path,sizeof(path),"showcase/editor/main.as");
+#endif
 #ifdef NX_DESKTOP_BLUEPRINT
         if (previewing())
         {

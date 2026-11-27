@@ -1,5 +1,6 @@
 #include "tools/blueprint/native_assets.h"
 #include "platform/platform.h"
+#include "base/json_tree.h"
 #include <algorithm>
 #include <cstring>
 #include <ctime>
@@ -105,12 +106,80 @@ namespace nx
         }
         error.clear();return true;
     }
+    bool blueprintPrepareSceneEditor(Platform& p,const std::string& root,const std::string& screen,std::string& error)
+    {
+        if(!blueprintAssetRoot(root)||!blueprintEnsureAssetFolder(p,root,screen,error))return false;
+        const auto base="own/"+root+"/"+screen+"/asset/";
+        const auto manifest=base+"scenes.json";
+        const auto readScene=[&](const std::string& file)
+        {
+            FileData data;JsonTree tree;
+            if(!p.readFile((base+file).c_str(),data,MemTag::General)||data.size>1024*1024||
+                !tree.parse(reinterpret_cast<const char*>(data.data),data.size)||!tree.root().isObject())
+            {error="Scene JSON is missing, too large or invalid: "+file;return false;}
+            return true;
+        };
+        if(p.fileTime(manifest.c_str()))
+        {
+            FileData data;JsonTree tree;
+            if(!p.readFile(manifest.c_str(),data,MemTag::General)||data.size>1024*1024||
+                !tree.parse(reinterpret_cast<const char*>(data.data),data.size)||!tree.root().isObject())
+            {error="Invalid native scenes.json. Existing assets were not changed.";return false;}
+            auto scenes=tree.root()["scenes"];
+            if(!scenes.isArray()||!scenes.count()||scenes.count()>12){error="Invalid native scene list.";return false;}
+            std::vector<std::string> seen;
+            for(auto s=scenes.first();s.exists();s=s.next())
+            {
+                const std::string name=s["file"].text();
+                const bool valid=name=="scene"||(name.size()>5&&name.size()<=11&&name.rfind("scene",0)==0&&name.find_first_not_of("0123456789",5)==std::string::npos);
+                if(!valid||std::find(seen.begin(),seen.end(),name)!=seen.end()||!s["name"].isString())
+                {error="Invalid or duplicate native scene entry.";return false;}
+                seen.push_back(name);
+                if(!readScene(name+".json"))return false;
+            }
+            error.clear();return true;
+        }
+        // Preserve an imported scene.json. A new screen starts empty, not with the showcase village.
+        if(p.fileTime((base+"scene.json").c_str()))
+        {
+            if(!readScene("scene.json"))return false;
+        }
+        else
+        {
+            const std::string blank="{\"ground\":1,\"hour\":0,\"entities\":[]}";
+            if(!p.writeFile((base+"scene.json").c_str(),blank.data(),blank.size())||!readScene("scene.json"))
+            {error="Cannot create initial scene.";return false;}
+        }
+        const std::string list="{\"last\":0,\"scenes\":[{\"name\":\"Scene\",\"file\":\"scene\"}]}";
+        if(!p.writeFile(manifest.c_str(),list.data(),list.size()))
+        {error="Cannot create native scene list.";return false;}
+        FileData check;
+        if(!p.readFile(manifest.c_str(),check,MemTag::General)||check.size!=list.size()||std::memcmp(check.data,list.data(),list.size())!=0)
+        {error="Could not verify native scene list.";return false;}
+        error.clear();return true;
+    }
+    std::string blueprintAssetImportPath(const std::string& file)
+    {
+        if(!blueprintAssetName(file))return "";
+        const auto ext=file.substr(file.find_last_of('.')==std::string::npos?file.size():file.find_last_of('.'));
+        for(const char* type:{".obj",".glb",".gltf",".stl",".fbx",".dae"})
+            if(ext==type)return "model/"+file;
+        for(const char* type:{".png",".jpg",".jpeg",".tga",".bmp",".dds"})
+            if(ext==type)return "picture/"+file;
+        for(const char* type:{".wav",".ogg",".mp3"})
+            if(ext==type)return "sound/"+file;
+        return file;
+    }
     bool blueprintImportAsset(Platform& p,const std::string& root,const std::string& screen,const std::string& file,std::string& error)
     {
         if(!blueprintAssetName(file)){error="Use a lowercase portable asset filename (letters, digits, _, -, .).";return false;}
         if(!blueprintAssetRoot(root)){error="Invalid project asset root.";return false;}
         if(!blueprintEnsureAssetFolder(p,root,screen,error))return false;
+        const auto relative=blueprintAssetImportPath(file),dest=root+"/"+screen+"/asset/";
+        const auto slash=relative.find('/');
+        if(slash!=std::string::npos&&!ensure(p,dest+relative.substr(0,slash)))
+        {error="Cannot create native asset type folder.";return false;}
         size_t total=0;
-        return copy(p,"own/"+file,"own/"+root+"/"+screen+"/asset/"+file,total,error);
+        return copy(p,"own/"+file,"own/"+dest+relative,total,error);
     }
 }

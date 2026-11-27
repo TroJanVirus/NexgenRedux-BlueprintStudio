@@ -40,6 +40,7 @@ namespace nx
         float fps = 0;
         u32 draws = 0;
         u32 reloads = 0;
+        bool sceneEditorAssets = false; // trusted native scene tool may write only project scene JSON
         bool previewAssets = false; // ignore persisted JSON overlays during isolated authoring previews
         bool development = false;      // reloading what changes, and writing to the media: --dev, a dev folder, or a script
         ScriptDebugger* debugger = nullptr;

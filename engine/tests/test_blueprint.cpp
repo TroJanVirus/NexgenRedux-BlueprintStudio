@@ -911,3 +911,45 @@ NX_TEST(nativeProjectPreviewReadsItsOwnAssetsNotSavedHostOverlays)
     NX_EXPECT(!r.services.previewAssets&&r.services.save==&r.save);
 }
 #endif
+
+#ifdef NX_DESKTOP_BLUEPRINT
+NX_TEST(nativeSceneEditorSessionUsesInstalledScriptAndWritesOnlyProjectScenes)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    r.platform.workspaceFiles=true;
+    r.platform.files["showcase/main/screen.json"]="{\"title\":\"Home\"}";
+    r.platform.files["showcase/main/main.as"]="class Home : Screen {}";
+    // A small stand-in for the installed tool exercises the identical session and binding path.
+    r.platform.files["showcase/editor/main.as"]=R"(class Editor : Screen {
+        void onEnter() {
+            Save::set("scene_loaded", Assets::read("asset:scene.json"));
+            Save::set("allowed", Assets::write("asset:scene.json", "{\"ground\":2}")?"yes":"no");
+            Save::set("blocked", Assets::write("asset:other.json", "{}")?"no":"yes");
+            Save::set("loose", Assets::list("own:").length()==0?"hidden":"visible");
+            Assets::forget("asset:scene.json");
+        }
+    })";
+    if(!r.screens.init(r.services,"showcase","main")){NX_EXPECT(false);return;}
+    r.step(3);r.screens.setDevelopmentPaused(true);
+    std::string root,error;
+    NX_EXPECT(blueprintCreateAssetRoot(r.platform,root,error)&&blueprintPrepareSceneEditor(r.platform,root,"Screen",error));
+    const auto base="own/"+root+"/Screen/asset/";
+    r.platform.kept["Screen.scene"]="old-host";
+    NX_EXPECT(r.screens.startSceneEditor(root,"Screen",error));
+    if(!r.screens.previewing())return;
+    r.step(3);
+    NX_EXPECT(!r.screens.failed()&&r.services.sceneEditorAssets&&r.services.previewAssets);
+    NX_EXPECT(strcmp(r.services.save->get("allowed",""),"yes")==0&&strcmp(r.services.save->get("blocked",""),"yes")==0);
+    NX_EXPECT(strcmp(r.services.save->get("loose",""),"hidden")==0);
+    NX_EXPECT(strstr(r.services.save->get("scene_loaded",""),"entities")!=nullptr);
+    NX_EXPECT(r.platform.files[base+"scene.json"]=="{\"ground\":2}");
+    NX_EXPECT(r.platform.files.count(base+".scene.json.backup")&&r.platform.files.count(base+"other.json")==0);
+    NX_EXPECT(r.platform.kept["Screen.scene"]=="old-host");
+    r.screens.stopPreview();
+    NX_EXPECT(!r.services.sceneEditorAssets&&!r.services.previewAssets&&r.services.save==&r.save);
+    NX_EXPECT(blueprintPrepareSceneEditor(r.platform,root,"Screen",error));
+    r.platform.files[base+"scenes.json"]="{\"scenes\":[{\"name\":\"bad\",\"file\":\"../other\"}]}";
+    NX_EXPECT(!blueprintPrepareSceneEditor(r.platform,root,"Screen",error));
+    NX_EXPECT(r.platform.files[base+"scene.json"]=="{\"ground\":2}");
+}
+#endif
