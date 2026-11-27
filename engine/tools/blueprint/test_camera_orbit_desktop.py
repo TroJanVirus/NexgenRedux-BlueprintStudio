@@ -2,7 +2,9 @@
 Screenshots are native window captures, not reconstructed images.
 """
 import json
+import os
 import pathlib
+import signal
 import struct
 import subprocess
 import sys
@@ -17,6 +19,7 @@ own.mkdir(parents=True)
 fixture = pathlib.Path(__file__).parent / "examples" / (sys.argv[3] if len(sys.argv) > 3 else "camera-orbit.bp.json")
 project = json.loads(fixture.read_text(encoding="utf-8"))
 author = "--author" in sys.argv
+record = "--record" in sys.argv
 timed = fixture.name == "camera-orbit-timed.bp.json"
 operations = {"insert": 0, "wire": 0, "value": 0, "graph_switch": 0}
 if timed and author:
@@ -216,6 +219,8 @@ def capture(label):
             raise RuntimeError(f"{label}: cube color not visible in central third")
 
 with log.open("wb") as out:
+    recorder = None
+    recorder_log = None
     process = subprocess.Popen([str(binary), "--blueprint-studio", "--silent", "--size", "1280", "720", "--saves", str(root)], stdout=out, stderr=subprocess.STDOUT)
     try:
         window = None
@@ -238,6 +243,16 @@ with log.open("wb") as out:
             capture("02-update")
             click(100, 153)
             capture("03-draw")
+        if record:
+            recorder_log = (root / "recording.log").open("wb")
+            recorder = subprocess.Popen(["ffmpeg", "-hide_banner", "-loglevel", "warning", "-nostdin", "-y",
+                "-f", "x11grab", "-framerate", "15", "-window_id", str(window), "-i", os.environ["DISPLAY"],
+                "-an", "-t", "12", "-c:v", "libx264", "-threads", "2", "-preset", "ultrafast", "-crf", "23",
+                "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(root / "native-preview.mp4")],
+                stdout=recorder_log, stderr=subprocess.STDOUT)
+            time.sleep(0.4)
+            if recorder.poll() is not None:
+                raise RuntimeError("Native recording could not start")
         click(553, 53)
         wait_for(lambda: "preview started: Screen" in log.read_text(errors="replace"), "orbit preview", process)
         start = time.monotonic()
@@ -245,11 +260,24 @@ with log.open("wb") as out:
             time.sleep(max(0, start + seconds - time.monotonic()))
             assert process.poll() is None
             capture(label)
+        if recorder is not None:
+            assert recorder.wait(timeout=20) == 0, "Native recording failed"
+            assert (root / "native-preview.mp4").stat().st_size > 10000
+            print("Retained native preview recording.", flush=True)
         xdo("key", "Escape")
         wait_for(lambda: "preview stopped" in log.read_text(errors="replace"), "preview stop", process)
         assert "Preview error:" not in log.read_text(errors="replace")
         print("Native orbit Blueprint loaded, rendered and captured at six times.")
     finally:
+        if recorder is not None and recorder.poll() is None:
+            recorder.send_signal(signal.SIGINT)
+            try:
+                recorder.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                recorder.kill()
+                recorder.wait()
+        if recorder_log is not None:
+            recorder_log.close()
         process.terminate()
         process.wait(timeout=10)
         conn.close()

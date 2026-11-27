@@ -43,7 +43,7 @@ jobs:
           submodules: true
           persist-credentials: false
       - name: Install native desktop build dependencies
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libx11-dev libgl-dev xvfb libgl1-mesa-dri xauth xdotool python3-xlib
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libx11-dev libgl-dev xvfb libgl1-mesa-dri xauth xdotool python3-xlib ffmpeg
       - name: Configure
         run: cmake -S engine -B build -DCMAKE_BUILD_TYPE=Release
       - name: Build native editor and regression executables
@@ -72,10 +72,10 @@ jobs:
         run: xvfb-run -a -s "-screen 0 1280x720x24 -noreset" /usr/bin/python3 engine/tools/blueprint/test_camera_orbit_desktop.py build/showcase/nexgen "$RUNNER_TEMP/bp-camera-authored" camera-orbit-timeline.bp.json --author
       - name: Exercise timed camera action and capture native frames
         if: ${{ !cancelled() }}
-        run: xvfb-run -a -s "-screen 0 1280x720x24 -noreset" /usr/bin/python3 engine/tools/blueprint/test_camera_orbit_desktop.py build/showcase/nexgen "$RUNNER_TEMP/bp-camera-timed" camera-orbit-timed.bp.json
+        run: xvfb-run -a -s "-screen 0 1280x720x24 -noreset" /usr/bin/python3 engine/tools/blueprint/test_camera_orbit_desktop.py build/showcase/nexgen "$RUNNER_TEMP/bp-camera-timed" camera-orbit-timed.bp.json --record
       - name: Author the seven-node timed orbit from a blank workspace
         if: ${{ !cancelled() }}
-        run: xvfb-run -a -s "-screen 0 1280x720x24 -noreset" /usr/bin/python3 engine/tools/blueprint/test_camera_orbit_desktop.py build/showcase/nexgen "$RUNNER_TEMP/bp-camera-timed-authored" camera-orbit-timed.bp.json --author
+        run: xvfb-run -a -s "-screen 0 1280x720x24 -noreset" /usr/bin/python3 engine/tools/blueprint/test_camera_orbit_desktop.py build/showcase/nexgen "$RUNNER_TEMP/bp-camera-timed-authored" camera-orbit-timed.bp.json --author --record
       - name: Retain native camera orbit evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v5
