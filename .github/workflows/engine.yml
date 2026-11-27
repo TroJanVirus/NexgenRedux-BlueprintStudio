@@ -22,6 +22,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  withdraw-reported-cook:
+    if: github.repository == 'TroJanVirus/NexgenRedux-BlueprintStudio' && github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+    - name: Withdraw only the reported Windows x64 archive
+      env:
+        GH_TOKEN: ${{ github.token }}
+        GH_REPO: ${{ github.repository }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        digest=$(gh api "repos/$GH_REPO/releases/tags/latest" --jq '.assets[] | select(.name=="Nexgen-cook-windows-x64.zip") | .digest')
+        if [[ "$digest" == "sha256:908f544180ba49d3f70b0259fd3e5f2281ec09a967045ad99e054a7e40a81067" ]]; then
+          gh release delete-asset latest Nexgen-cook-windows-x64.zip --yes
+          echo 'Withdrew reported archive; replacement requires scan.'
+        fi
+
   desktop:
     strategy:
       fail-fast: false
@@ -138,6 +157,32 @@ jobs:
     - name: Build the window
       run: dotnet publish engine/tools/cook-ui -c Release -r ${{ matrix.rid }} -o build-ui
 
+    - name: Scan Windows Cook executables before packaging
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $files = @(Get-ChildItem -LiteralPath build -Recurse -File -Filter cook.exe)
+        $files += Get-Item -LiteralPath build-ui/nexgen-cook.exe
+        if ($files.Count -lt 2) { throw 'Cook executables missing' }
+        $status = Get-MpComputerStatus
+        if (!$status.AntivirusEnabled -or !$status.AMServiceEnabled) { throw 'Defender unavailable; Windows Cook release blocked.' }
+        Update-MpSignature
+        $status = Get-MpComputerStatus
+        $manifest = @("Source commit: $env:GITHUB_SHA", "Workflow run: $env:GITHUB_RUN_ID", "Defender definitions: $($status.AntivirusSignatureVersion)")
+        foreach ($file in $files) {
+          $full = $file.FullName
+          $hash = (Get-FileHash -LiteralPath $full -Algorithm SHA256).Hash
+          $sig = Get-AuthenticodeSignature -LiteralPath $full
+          Start-MpScan -ScanType CustomScan -ScanPath $full
+          if (!(Test-Path -LiteralPath $full) -or (Get-FileHash -LiteralPath $full -Algorithm SHA256).Hash -ne $hash) { throw "Defender removed or changed $full" }
+          $detections = @(Get-MpThreatDetection | Where-Object { @($_.Resources | Where-Object { $_ -like "*$full*" }).Count -gt 0 })
+          if ($detections.Count -gt 0) { throw "Defender reported a detection for $full" }
+          $manifest += "$hash  $($file.Name)  Authenticode=$($sig.Status)"
+        }
+        $manifest | Set-Content -LiteralPath cook-build-info.txt -Encoding utf8
+        $manifest | ForEach-Object { Write-Host $_ }
+
     - name: Try it
       run: |
         cook="$(find build -name cook.exe -o -name cook -type f -perm -u+x | head -1)"
@@ -164,6 +209,7 @@ jobs:
                    codesign --force --deep --sign - "$app" ;;
         esac
         cp engine/tools/cook-ui/README.md "dist/$package/README.md"
+        if [[ "$RUNNER_OS" == Windows ]]; then cp cook-build-info.txt "dist/$package/BUILDINFO.txt"; fi
         cd dist
         case "$RUNNER_OS" in
           Windows) 7z a -bso0 "$package.zip" "$package" ;;
