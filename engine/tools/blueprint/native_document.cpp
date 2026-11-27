@@ -379,6 +379,75 @@ namespace nx
         {error="screen.json requires a valid object and nonempty title: "+owner;return false;}
         manifests.push_back({owner,source});error.clear();return true;
     }
+    namespace
+    {
+        // Bounded authoring metadata, not a second game runtime or scene schema.
+        bool validVisualAssets(const std::vector<BlueprintDocument::VisualAsset>& assets,std::string& error)
+        {
+            if(assets.size()>128){error="Too many reusable visual assets.";return false;}
+            std::unordered_map<std::string,size_t> ids;
+            size_t bytes=0;
+            for(size_t i=0;i<assets.size();++i)
+            {
+                const auto& a=assets[i];
+                if(!blueprintAssetName(a.id,true)||!ids.emplace(a.id,i).second||
+                    (a.kind!="actor"&&a.kind!="widget")||a.title.empty()||a.title.size()>128||
+                    std::any_of(a.title.begin(),a.title.end(),[](unsigned char c){return c<32||c==127;})||
+                    a.source.empty()||a.source.size()>64*1024||a.source.find('\0')!=std::string::npos||
+                    a.dependencies.size()>32)
+                {error="Invalid or duplicate reusable visual asset: "+a.id;return false;}
+                bytes+=a.source.size();
+                if(bytes>512*1024){error="Reusable asset source budget exceeded.";return false;}
+                JsonTree tree;
+                if(!tree.parse(a.source.data(),a.source.size())||
+                    (a.kind=="actor"?!tree.root().isObject():!tree.root().isArray()))
+                {error="Invalid reusable visual asset JSON: "+a.id;return false;}
+            }
+            for(const auto& a:assets)
+            {
+                std::unordered_set<std::string> seen;
+                for(const auto& dependency:a.dependencies)
+                {
+                    const auto found=ids.find(dependency);
+                    if(found==ids.end()||!seen.insert(dependency).second)
+                    {error="Missing or duplicate visual asset dependency: "+a.id+" -> "+dependency;return false;}
+                    if(a.kind=="widget"&&assets[found->second].kind!="widget")
+                    {error="Widget cannot depend on a world actor: "+a.id;return false;}
+                }
+            }
+            // Each definition must have a finite dependency tree. Memoize longest
+            // path, not just visitation, so shared subgraphs cannot evade the limit.
+            std::vector<unsigned> state(assets.size()),height(assets.size());
+            const auto visit=[&](auto&& self,size_t i)->bool
+            {
+                if(state[i]==1){error="Cyclic visual asset dependency: "+assets[i].id;return false;}
+                if(state[i]==2)return true;
+                state[i]=1;height[i]=1;
+                for(const auto& dep:assets[i].dependencies)
+                {
+                    const size_t child=ids.at(dep);
+                    if(!self(self,child))return false;
+                    height[i]=std::max(height[i],height[child]+1);
+                    if(height[i]>16){error="Visual asset dependency nesting limit exceeded: "+assets[i].id;return false;}
+                }
+                state[i]=2;return true;
+            };
+            for(size_t i=0;i<assets.size();++i)if(!visit(visit,i))return false;
+            error.clear();return true;
+        }
+    }
+    const BlueprintDocument::VisualAsset* BlueprintDocument::visualAsset(const std::string& id)const
+    {
+        const auto it=std::find_if(m_visualAssets.begin(),m_visualAssets.end(),[&](const VisualAsset& a){return a.id==id;});
+        return it==m_visualAssets.end()?nullptr:&*it;
+    }
+    bool BlueprintDocument::replaceVisualAssets(const std::vector<VisualAsset>& assets,std::string& error)
+    {
+        if(!validVisualAssets(assets,error))return false;
+        // Copy before recording to permit replacing from a reference into this document.
+        auto next=assets;
+        recordGraphList();m_visualAssets=std::move(next);return true;
+    }
     void BlueprintDocument::create()
     {
         *this=BlueprintDocument{};
@@ -401,6 +470,26 @@ namespace nx
         BlueprintDocument candidate;candidate.name=root["name"].text();
         candidate.assetRoot=root["assetRoot"].text();
         if(!candidate.assetRoot.empty()&&!blueprintAssetRoot(candidate.assetRoot)){error="Invalid project asset directory.";return false;}
+        const auto visual=root["visualAssets"];
+        if(visual.exists())
+        {
+            if(!visual.isArray()||visual.count()>128){error="Invalid reusable visual asset list.";return false;}
+            for(auto a=visual.first();a.exists();a=a.next())
+            {
+                const auto deps=a["dependencies"];
+                if(!a.isObject()||!a["id"].isString()||!a["kind"].isString()||!a["title"].isString()||
+                    !a["source"].isString()||!deps.isArray()||deps.count()>32)
+                {error="Invalid reusable visual asset entry.";return false;}
+                VisualAsset entry{a["id"].text(),a["kind"].text(),a["title"].text(),a["source"].text(),{}};
+                for(auto d=deps.first();d.exists();d=d.next())
+                {
+                    if(!d.isString()){error="Invalid visual asset dependency.";return false;}
+                    entry.dependencies.emplace_back(d.text());
+                }
+                candidate.m_visualAssets.push_back(std::move(entry));
+            }
+            if(!validVisualAssets(candidate.m_visualAssets,error))return false;
+        }
         std::unordered_set<std::string> graphNames;
         // Load every graph header first so forward function references resolve consistently.
         for(auto value=gs.first();value.exists();value=value.next())
@@ -622,6 +711,22 @@ namespace nx
             {
                 if(m.source.find('\0')!=std::string::npos){error="Invalid screen manifest bytes.";return false;}
                 auto* entry=metadata->add();if(!entry||!text(*entry,"owner",m.owner)||!text(*entry,"source",m.source))return fail();
+            }
+        }
+        if(!m_visualAssets.empty())
+        {
+            if(!validVisualAssets(m_visualAssets,error))return false;
+            auto* list=root.put("visualAssets");if(!list)return fail();list->setArray();
+            for(const auto& a:m_visualAssets)
+            {
+                auto* item=list->add();
+                if(!item||!text(*item,"id",a.id)||!text(*item,"kind",a.kind)||
+                    !text(*item,"title",a.title)||!text(*item,"source",a.source))return fail();
+                auto* deps=item->put("dependencies");if(!deps)return fail();deps->setArray();
+                for(const auto& dependency:a.dependencies)
+                {
+                    auto* d=deps->add();if(!d)return fail();d->setText(dependency);
+                }
             }
         }
         auto* gs=root.put("graphs");if(!gs)return fail();gs->setArray();
@@ -1172,7 +1277,7 @@ namespace nx
     void BlueprintDocument::recordGraphList()
     {
         if(m_undo.size()>=kHistory)m_undo.erase(m_undo.begin());
-        m_undo.push_back({static_cast<size_t>(-1),{},m_revision,graphs,manifests});
+        m_undo.push_back({static_cast<size_t>(-1),{},m_revision,graphs,manifests,m_visualAssets});
         m_redo.clear();m_revision=++m_nextRevision;
     }
     const BlueprintDocument::Graph* BlueprintDocument::function(const std::string& owner,const std::string& functionName) const
@@ -1534,7 +1639,7 @@ namespace nx
         auto e=std::move(m_undo.back());m_undo.pop_back();
         if(e.graph==static_cast<size_t>(-1))
         {
-            m_redo.push_back({e.graph,{},m_revision,std::move(graphs),std::move(manifests)});graphs=std::move(e.all);manifests=std::move(e.manifests);
+            m_redo.push_back({e.graph,{},m_revision,std::move(graphs),std::move(manifests),std::move(m_visualAssets)});graphs=std::move(e.all);manifests=std::move(e.manifests);m_visualAssets=std::move(e.visualAssets);
         }
         else
         {
@@ -1548,7 +1653,7 @@ namespace nx
         auto e=std::move(m_redo.back());m_redo.pop_back();
         if(e.graph==static_cast<size_t>(-1))
         {
-            m_undo.push_back({e.graph,{},m_revision,std::move(graphs),std::move(manifests)});graphs=std::move(e.all);manifests=std::move(e.manifests);
+            m_undo.push_back({e.graph,{},m_revision,std::move(graphs),std::move(manifests),std::move(m_visualAssets)});graphs=std::move(e.all);manifests=std::move(e.manifests);m_visualAssets=std::move(e.visualAssets);
         }
         else
         {

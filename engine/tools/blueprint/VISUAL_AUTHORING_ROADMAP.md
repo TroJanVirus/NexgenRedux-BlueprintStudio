@@ -46,3 +46,7 @@ Build in coherent vertical slices, testing actual save, play and export behavior
 - `engine/scene/prefab.cpp`, `space_load.cpp`, `world.h`, `space.h`
 - `engine/tools/blueprint/native_document.*`, `native_compile.cpp`, `native_assets.*`
 - `engine/app/blueprint_workspace.*` and the original Redux scene editor
+
+## First implementation slice
+
+Native v2 project documents now persist bounded actor/widget library definitions with stable IDs, exact native JSON source strings, typed kinds and explicit dependency references. Loading and atomic replacement reject missing, duplicate, cyclic and over-deep dependencies; graph/document undo and redo retain the library. This is authoring metadata only: no actor placement, rendering, UI event integration or runtime export is claimed yet. The native document test suite exercises round trips, rollback and invalid references. The visual-authoring branch runs focused native verification without publishing a beta. GitHub artifact actions move to their Node 24 versions; legacy JS test removal is a separate migration, not a test skip.

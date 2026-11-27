@@ -126,7 +126,7 @@ jobs:
           macOS)   ditto -c -k --keepParent "$package" "$package.zip" ;;
         esac
 
-    - uses: actions/upload-artifact@v5
+    - uses: actions/upload-artifact@v6
       with:
         name: Nexgen-${{ matrix.name }}
         path: |
@@ -208,7 +208,7 @@ jobs:
           macOS)   ditto -c -k --keepParent "$package" "$package.zip" ;;
         esac
 
-    - uses: actions/upload-artifact@v5
+    - uses: actions/upload-artifact@v6
       with:
         name: Nexgen-cook-${{ matrix.name }}
         path: |
@@ -292,7 +292,7 @@ jobs:
         test "$(find "dist/$package" -path '*media/showcase/*/main.as' | wc -l)" -ge 20
         cd dist && 7z a -bso0 "$package.zip" "$package"
 
-    - uses: actions/upload-artifact@v5
+    - uses: actions/upload-artifact@v6
       with:
         name: Nexgen-xbox-og
         path: |
@@ -335,7 +335,7 @@ jobs:
         if ($demos -lt 20) { throw "only $demos demos in the package" }
         Compress-Archive "dist/$package" "dist/$package.zip"
 
-    - uses: actions/upload-artifact@v5
+    - uses: actions/upload-artifact@v6
       with:
         name: Nexgen-uwp-x64
         path: dist/*.zip
@@ -358,7 +358,7 @@ jobs:
         python3 engine/tools/vscode/package.py dist/Nexgen-vscode.vsix
         python3 -c "import zipfile; names = zipfile.ZipFile('dist/Nexgen-vscode.vsix').namelist(); assert 'extension/extension.js' in names and 'extension.vsixmanifest' in names, names"
 
-    - uses: actions/upload-artifact@v5
+    - uses: actions/upload-artifact@v6
       with:
         name: Nexgen-vscode
         path: dist/*.vsix
@@ -373,7 +373,7 @@ jobs:
       contents: write
 
     steps:
-    - uses: actions/download-artifact@v5
+    - uses: actions/download-artifact@v7
       with:
         path: dist
         pattern: Nexgen-*

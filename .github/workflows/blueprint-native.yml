@@ -1,5 +1,7 @@
 name: Native Blueprint
 on:
+  push:
+    branches: ["blueprint/visual-authoring"]
   pull_request:
     branches: ["blueprint/verification-base"]
   workflow_dispatch:
@@ -79,7 +81,7 @@ jobs:
         run: xvfb-run -a -s "-screen 0 1280x720x24 -noreset" /usr/bin/python3 engine/tools/blueprint/test_camera_orbit_desktop.py build/showcase/nexgen "$RUNNER_TEMP/bp-camera-timed-authored" camera-orbit-timed.bp.json --author --record
       - name: Retain native camera orbit evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: camera-orbit-native-evidence
           path: |
@@ -93,7 +95,7 @@ jobs:
         run: python3 engine/tools/blueprint/test_native_lease.py build/showcase/nexgen "$RUNNER_TEMP/bp-linux-lease"
       - name: Retain operational test logs
         if: ${{ always() }}
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: native-desktop-operational-logs
           path: |
@@ -130,7 +132,7 @@ jobs:
         run: python3 engine/tools/blueprint/test_native_lease.py "${{ matrix.binary }}" "$RUNNER_TEMP/bp-portable-lease"
       - name: Retain native process logs
         if: ${{ always() }}
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: native-lease-${{ matrix.name }}
           path: ${{ runner.temp }}/bp-portable-lease/*.log

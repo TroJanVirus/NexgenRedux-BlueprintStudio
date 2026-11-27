@@ -64,6 +64,17 @@ namespace nx
         std::vector<ScreenManifest> manifests;
         const std::string* screenManifest(const std::string& owner) const;
         bool importScreenManifest(const std::string& owner,const std::string& source,std::string& error);
+        // Project-level reusable definitions. Native JSON source remains lossless;
+        // the specific actor/widget editors will interpret it in later stages.
+        struct VisualAsset
+        {
+            std::string id,kind,title,source;
+            std::vector<std::string> dependencies;
+        };
+        const std::vector<VisualAsset>& visualAssets()const{return m_visualAssets;}
+        const VisualAsset* visualAsset(const std::string& id)const;
+        // Atomic replacement validates all references, including forward references.
+        bool replaceVisualAssets(const std::vector<VisualAsset>& assets,std::string& error);
         void create();
         bool load(const char* data,size_t size,std::string& error);
         bool serialize(std::string& result,std::string& error) const;
@@ -126,9 +137,10 @@ namespace nx
         size_t revision()const{return m_revision;}
         void markRecovered(){m_revision=++m_nextRevision;}
     private:
-        struct Edit { size_t graph; Graph state; size_t revision; std::vector<Graph> all; std::vector<ScreenManifest> manifests{}; };
+        struct Edit { size_t graph; Graph state; size_t revision; std::vector<Graph> all; std::vector<ScreenManifest> manifests{}; std::vector<VisualAsset> visualAssets{}; };
         void record(size_t graph);
         void recordGraphList();
+        std::vector<VisualAsset> m_visualAssets;
         std::vector<Edit> m_undo,m_redo;
         size_t m_revision=0,m_savedRevision=0,m_nextRevision=0;
         unsigned m_nextId=0;

@@ -1105,3 +1105,49 @@ NX_TEST(nativeVectorAndColorPinsStoreTypedComponentsWithoutExtraNodes)
     NX_EXPECT(doc.undo()&&doc.graphs[0].nodes[1].values.size()==2);
     NX_EXPECT(doc.redo()&&doc.serialize(bytes,error)&&bytes==before);
 }
+
+NX_TEST(nativeReusableVisualAssetsRoundTripAndUndo)
+{
+    BlueprintDocument doc;doc.create();std::string error,bytes;
+    using Asset=BlueprintDocument::VisualAsset;
+    const std::vector<Asset> assets{
+        {"player","actor","BP Player","{ \"entities\": [] }",{"hud"}},
+        {"hud","widget","Player HUD","[ { \"label\": \"Health\" } ]",{}}
+    };
+    NX_EXPECT(doc.replaceVisualAssets(assets,error)&&doc.dirty());
+    NX_EXPECT(doc.visualAsset("player")&&doc.visualAsset("hud"));
+    NX_EXPECT(doc.serialize(bytes,error));
+    BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error));
+    NX_EXPECT(copy.visualAssets().size()==2);
+    if(const auto* hud=copy.visualAsset("hud"))NX_EXPECT(hud->source==assets[1].source);
+    NX_EXPECT(doc.undo()&&doc.visualAssets().empty()&&!doc.dirty());
+    NX_EXPECT(doc.redo()&&doc.visualAssets().size()==2);
+    auto changed=assets;changed[0].title="Renamed Player";
+    NX_EXPECT(doc.replaceVisualAssets(changed,error));
+    NX_EXPECT(doc.undo());
+    if(const auto* player=doc.visualAsset("player"))NX_EXPECT(player->title=="BP Player");
+    const auto revision=doc.revision();
+    changed[0].dependencies={"missing"};
+    NX_EXPECT(!doc.replaceVisualAssets(changed,error)&&doc.revision()==revision);
+    changed=assets;changed[0].dependencies={"player"};
+    NX_EXPECT(!doc.replaceVisualAssets(changed,error));
+    changed=assets;changed[1].dependencies={"player"};
+    NX_EXPECT(!doc.replaceVisualAssets(changed,error));
+    changed=assets;changed[1].dependencies={"hud"};
+    NX_EXPECT(!doc.replaceVisualAssets(changed,error));
+    changed=assets;changed[1].source="{}";
+    NX_EXPECT(!doc.replaceVisualAssets(changed,error));
+    changed=assets;changed[1].id="player";
+    NX_EXPECT(!doc.replaceVisualAssets(changed,error));
+    changed=assets;changed[1].id="../hud";
+    NX_EXPECT(!doc.replaceVisualAssets(changed,error));
+    std::vector<Asset> chain;
+    for(unsigned i=0;i<17;++i)
+    {
+        Asset a{"a"+std::to_string(i),"actor","Actor","{}",{}};
+        if(i)a.dependencies.push_back("a"+std::to_string(i-1));
+        chain.push_back(a);
+    }
+    NX_EXPECT(!doc.replaceVisualAssets(chain,error));
+    NX_EXPECT(doc.visualAssets().size()==2);
+}
