@@ -65,6 +65,8 @@ jobs:
         run: xvfb-run -a -s "-screen 0 1280x720x24 -noreset" /usr/bin/python3 engine/tools/blueprint/test_camera_orbit_desktop.py build/showcase/nexgen "$RUNNER_TEMP/bp-camera-orbit"
       - name: Exercise simplified Timeline orbit and capture native frames
         run: xvfb-run -a -s "-screen 0 1280x720x24 -noreset" /usr/bin/python3 engine/tools/blueprint/test_camera_orbit_desktop.py build/showcase/nexgen "$RUNNER_TEMP/bp-camera-timeline" camera-orbit-timeline.bp.json
+      - name: Author the Timeline orbit from a blank native workspace
+        run: xvfb-run -a -s "-screen 0 1280x720x24 -noreset" /usr/bin/python3 engine/tools/blueprint/test_camera_orbit_desktop.py build/showcase/nexgen "$RUNNER_TEMP/bp-camera-authored" camera-orbit-timeline.bp.json --author
       - name: Retain native camera orbit evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v5
@@ -73,6 +75,7 @@ jobs:
           path: |
             ${{ runner.temp }}/bp-camera-orbit/
             ${{ runner.temp }}/bp-camera-timeline/
+            ${{ runner.temp }}/bp-camera-authored/
           if-no-files-found: ignore
       - name: Verify native process contention and crash release
         run: python3 engine/tools/blueprint/test_native_lease.py build/showcase/nexgen "$RUNNER_TEMP/bp-linux-lease"
