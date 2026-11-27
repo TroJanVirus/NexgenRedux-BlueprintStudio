@@ -163,6 +163,14 @@ def author_scene(process):
         wire(468, 138, 500, 138)
         assert_authored(process, 1, 2, 1)
         capture("02-update")
+        # Inspect the actual selected node, verify that opening and closing
+        # the inspector leaves the checkpoint unchanged, and retain evidence.
+        before = recovery.read_bytes()
+        click(580, 112)
+        click(1145, 610)
+        capture("02-input-inspector")
+        click(1070, 98)
+        assert recovery.read_bytes() == before
         operations["graph_switch"] += 1
         click(100, 153)
         right_add(500, 100, "render:space")

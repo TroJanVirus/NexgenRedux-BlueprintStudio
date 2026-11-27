@@ -38,6 +38,9 @@ namespace nx
         { return x >= left && x < right && y >= top && y < bottom; }
         std::string title(const BlueprintDocument::Node& node)
         {
+            if(node.kind=="camera:orbit-timed")return "Orbit camera (timed)";
+            if(node.kind=="spawn:plane")return "Spawn floor plane";
+            if(node.kind=="render:space")return "Render 3D scene";
             if(node.kind.rfind("capture:",0)==0)return "Capture "+node.ref;
             if(node.kind.rfind("global:",0)==0)return (node.kind.rfind("global:get:",0)==0?"Get global ":"Set global ")+node.ref;
             if(node.kind.rfind("var:",0)==0)return (node.kind.rfind("var:get:",0)==0?"Get ":"Set ")+node.ref;
@@ -1071,6 +1074,49 @@ namespace nx
         }
         std::sort(names.begin(),names.end());return names;
     }
+    std::vector<BlueprintWorkspace::InputDetail> BlueprintWorkspace::inputDetails(size_t node) const
+    {
+        std::vector<InputDetail> details;
+        if(m_graph>=m_document.graphs.size())return details;
+        const auto& g=m_document.graphs[m_graph];if(node>=g.nodes.size())return details;
+        const auto& n=g.nodes[node];BlueprintNodeSpec spec;if(!m_document.nodeSpec(g,n,spec))return details;
+        for(const auto& p:spec.inputs)
+        {
+            if(p.type=="exec")continue;
+            InputDetail row{p.name,p.type,"Not set","Required",false};
+            const auto wire=std::find_if(g.links.begin(),g.links.end(),[&](const BlueprintDocument::Link& l){return l.to==node&&l.input==p.name;});
+            if(wire!=g.links.end())
+            {row.value=title(g.nodes[wire->from])+" / "+wire->output;row.origin="Connected";}
+            else
+            {
+                row.editable=blueprintInputLiteralType(p.type);
+                const auto custom=std::find_if(n.values.begin(),n.values.end(),[&](const BlueprintDocument::InputValue& v){return v.pin==p.name;});
+                const auto fallback=std::find_if(spec.defaults.begin(),spec.defaults.end(),[&](const BlueprintPin& d){return d.name==p.name;});
+                if(custom!=n.values.end()){row.value=custom->value;row.origin="Custom";}
+                else if(fallback!=spec.defaults.end())
+                {
+                    row.value=fallback->type;row.origin="Default";
+                    const auto prefix=p.type+"(";
+                    if(row.value.rfind(prefix,0)==0&&row.value.ends_with(")"))row.value=row.value.substr(prefix.size(),row.value.size()-prefix.size()-1);
+                    if(row.value=="dt"&&p.type=="float")row.value="Event delta time";
+                }
+                else if(!row.editable)row.value="Connect a wire";
+            }
+            details.push_back(std::move(row));
+        }
+        return details;
+    }
+    bool BlueprintWorkspace::beginInputEdit(size_t node,const std::string& pin,Input& input)
+    {
+        const auto details=inputDetails(node);
+        const auto found=std::find_if(details.begin(),details.end(),[&](const InputDetail& d){return d.name==pin;});
+        if(found==details.end()||!found->editable)return false;
+        m_selection=node;m_editPin=pin;m_editType=found->type;m_edit.clear();
+        for(const auto& v:m_document.graphs[m_graph].nodes[node].values)if(v.pin==pin)m_edit=v.value;
+        prepareInputEditor(node);clearWire();m_focus=6;input.setTyping(true);
+        m_status=m_inputComponents.empty()?"Enter a typed value. Drag the pin to connect a node.":"Click a component or use Tab to move between fields.";
+        return true;
+    }
     void BlueprintWorkspace::prepareInputEditor(size_t node)
     {
         m_inputComponents.clear();m_inputChoices.clear();m_inputChoiceFirst=m_inputComponent=0;m_inputReplace=true;
@@ -1243,9 +1289,7 @@ namespace nx
                     const auto& row=m_rows[m_pending];const auto pin=std::find(row.inputs.begin(),row.inputs.end(),m_pendingPin);
                     if(pin!=row.inputs.end()&&blueprintInputLiteralType(row.inputTypes[static_cast<size_t>(pin-row.inputs.begin())]))
                     {
-                        m_editPin=m_pendingPin;m_editType=row.inputTypes[static_cast<size_t>(pin-row.inputs.begin())];m_edit.clear();
-                        for(const auto& v:m_document.graphs[m_graph].nodes[m_pending].values)if(v.pin==m_editPin)m_edit=v.value;
-                        prepareInputEditor(m_pending);clearWire();m_focus=6;input.setTyping(true);m_status=m_inputComponents.empty()?"Enter a typed value. Drag the pin to connect a node.":"Click a component or use Tab to move between fields.";
+                        const auto name=m_pendingPin;beginInputEdit(m_pending,name,input);
                     }
                 }
                 else if(!over&&moved)clearWire();
@@ -1371,6 +1415,19 @@ namespace nx
                 }
             }
             const auto count=variableRows().size();m_variableFirst=std::min(m_variableFirst,count>10?count-10:0);
+            m_left=left;return;
+        }
+        if(m_focus==15)
+        {
+            const auto details=inputDetails(m_selection);m_inspectorFirst=std::min(m_inspectorFirst,details.size()>10?details.size()-10:0);
+            if(input.wheel()<0&&m_inspectorFirst+10<details.size())++m_inspectorFirst;
+            if(input.wheel()>0&&m_inspectorFirst)--m_inspectorFirst;
+            if(click&&in(x,y,1020,82,1120,114)){m_focus=0;input.setTyping(false);}
+            else if(click&&in(x,y,180,156,1100,596))
+            {
+                const auto row=m_inspectorFirst+static_cast<size_t>((y-156)/44);
+                if(row<details.size()&&!beginInputEdit(m_selection,details[row].name,input))m_status="This input is connected or requires a wire.";
+            }
             m_left=left;return;
         }
         if(m_focus==6&&!m_inputComponents.empty())
@@ -1632,6 +1689,8 @@ namespace nx
                 const auto& n=m_document.graphs[m_graph].nodes[m_selection];
                 if(in(x,y,kRight+8,kTop+456,kWidth-8,kTop+486)&&(n.kind.rfind("literal:",0)==0||n.kind.rfind("var:",0)==0||n.kind.rfind("global:",0)==0||n.kind.rfind("capture:",0)==0||n.kind=="call:function"||n.kind=="attach:behaviour"||n.kind=="attach:direct"||n.kind=="level:attach"))
                 {m_edit=n.ref;m_focus=n.kind.rfind("literal:",0)==0?2:3;input.setTyping(true);}
+                else if(in(x,y,kRight+8,kTop+520,kWidth-8,kTop+552)&&!inputDetails(m_selection).empty())
+                {m_inspectorFirst=0;m_focus=15;input.setTyping(false);m_status="Inspect all input values, including defaults and wires.";}
                 else if(in(x,y,kRight+8,kBottom-40,kWidth-8,kBottom-8)&&m_document.deleteNode(m_graph,m_selection,m_status)){m_diagnostic={};clearWire();m_selection=static_cast<size_t>(-1);rebuildPins();m_selectedNodes.clear();m_status="Deleted node.";}
             }
             m_left=left;return;
@@ -1886,6 +1945,13 @@ namespace nx
                     if(m_pinDrag||m_pinMenu)c.line(px,py,m_pinX,m_pinY,2,pinColor((m_pendingOutput?rows[m_pending].outputTypes:rows[m_pending].inputTypes)[static_cast<size_t>(pin-pins.begin())]));
                 }
             }
+            std::vector<std::vector<bool>> wiredInputs(rows.size());
+            for(size_t i=0;i<rows.size();++i)wiredInputs[i].resize(rows[i].inputs.size(),false);
+            for(size_t i=0;i<graph.links.size()&&i<m_wirePins.size();++i)
+            {
+                const auto to=graph.links[i].to;const auto pin=m_wirePins[i].input;
+                if(to<wiredInputs.size()&&pin<wiredInputs[to].size())wiredInputs[to][pin]=true;
+            }
             for(size_t i=0;i<graph.nodes.size();++i)
             {
                 const auto& n=graph.nodes[i];
@@ -1909,16 +1975,28 @@ namespace nx
                     c.push();c.clip(x+2,y+1,w-4,24*m_zoom);
                     c.text(*m_font,shorten(n.kind=="call:function"&&m_document.function(graph.owner,n.ref)&&m_document.function(graph.owner,n.ref)->inlineMacro?"Macro "+n.ref:title(n),24).c_str(),x+8,y+3,text);c.pop();
                     // Clip each column separately to prevent long pin names overlapping.
-                    c.push();c.clip(x+6,y+24*m_zoom,w*0.5f-8,h-24*m_zoom);
                     for(size_t p=first;p<std::min(last,rows[i].inputs.size());++p)
                     {
                         const auto& pin=rows[i].inputs[p];
                         std::string label=pin;
                         const auto custom=std::find_if(n.values.begin(),n.values.end(),[&](const BlueprintDocument::InputValue& v){return v.pin==pin;});
-                        if(custom!=n.values.end())label+=" = "+custom->value;
-                        c.text(*m_font,shorten(label,15).c_str(),x+8,y+pinY(p)*m_zoom-8,muted);
+                        const bool wired=wiredInputs[i][p];
+                        if(!wired&&custom!=n.values.end())label+=" = "+custom->value;
+                        else if(!wired&&(n.kind=="camera:orbit-timed"||n.kind=="spawn:box"||n.kind=="spawn:plane"))
+                        {
+                            const auto* spec=blueprintSpec(n.kind);
+                            if(spec)
+                                for(const auto& d:spec->defaults)if(d.name==pin)
+                                {
+                                    std::string v=d.type;const auto prefix=rows[i].inputTypes[p]+"(";
+                                    if(v.rfind(prefix,0)==0&&v.ends_with(")"))v=v.substr(prefix.size(),v.size()-prefix.size()-1);
+                                    label+=" = "+v;break;
+                                }
+                        }
+                        const float column=p<rows[i].outputs.size()?w*0.5f:w;
+                        c.push();c.clip(x+6,y+pinY(p)*m_zoom-10,column-12,20*m_zoom);
+                        c.text(*m_font,shorten(label,p<rows[i].outputs.size()?12:25).c_str(),x+8,y+pinY(p)*m_zoom-8,muted);c.pop();
                     }
-                    c.pop();
                     c.push();c.clip(x+w*0.5f,y+24*m_zoom,w*0.5f-6,h-24*m_zoom);
                     for(size_t p=first;p<std::min(last,rows[i].outputs.size());++p)c.text(*m_font,shorten(rows[i].outputs[p],12).c_str(),x+w-8,y+pinY(p)*m_zoom-8,muted,Align::Right);
                     c.pop();
@@ -1983,6 +2061,8 @@ namespace nx
                 c.text(*m_font,((m_focus==2||m_focus==3)?m_edit:n.ref).c_str(),kRight+14,kTop+461,text);c.noClip();
                 c.text(*m_font,"Click to edit, Enter confirms",kRight+12,kTop+490,muted);
             }
+            if(!inputDetails(m_selection).empty())
+            {c.roundRect(kRight+8,kTop+520,kWidth-kRight-16,32,5,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Inspect inputs", (kWidth+kRight)*0.5f,kTop+526,text,Align::Center);}
             c.roundRect(kRight+8,kBottom-40,kWidth-kRight-16,32,5,{0.38f,0.19f,0.23f,1});
             c.text(*m_font,"Delete selected", (kWidth+kRight)*0.5f,kBottom-34,text,Align::Center);
         }
@@ -2035,7 +2115,7 @@ namespace nx
             c.rect(x+4,y+28,202,29,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Get variable",x+10,y+34,text);
             c.rect(x+4,y+58,202,29,{0.19f,0.33f,0.50f,1});c.text(*m_font,blueprintArrayElement(m_quickVariable.field.type).empty()?"Set variable":"Use array operations",x+10,y+64,blueprintArrayElement(m_quickVariable.field.type).empty()?text:muted);
         }
-        if(m_assetBrowser||m_browsing||m_focus==5||m_focus==6||m_focus==9||m_focus==10||m_focus==11||m_focus==12||m_focus==13||m_focus==14)
+        if(m_assetBrowser||m_browsing||m_focus==5||m_focus==6||m_focus==9||m_focus==10||m_focus==11||m_focus==12||m_focus==13||m_focus==14||m_focus==15)
         {
             c.rect(0,0,kWidth,kHeight,{0,0,0,0.70f});
             if(m_assetBrowser)
@@ -2105,6 +2185,25 @@ namespace nx
                 {const float yy=302+28*static_cast<float>(i%7),xx=650+225*static_cast<float>(i/7);c.rect(xx,yy,225,28,{0.24f,0.35f,0.48f,1});c.text(*m_font,variableTypes[i],xx+10,yy+3,text);}
                 c.clip(170,576,940,25);c.text(*m_font,m_status.c_str(),170,576,text);c.noClip();
                 c.text(*m_font,"Enter applies | Escape closes",640,601,muted,Align::Center);
+            }
+            else if(m_focus==15)
+            {
+                c.roundRect(160,68,980,584,8,{0.12f,0.16f,0.22f,1});
+                const auto& selected=m_document.graphs[m_graph].nodes[m_selection];
+                c.push();c.clip(180,82,820,34);c.text(*m_font,("INPUTS / "+title(selected)).c_str(),180,88,accent);c.pop();
+                c.roundRect(1020,82,100,32,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Close",1070,88,text,Align::Center);
+                c.text(*m_font,"Input / type",190,130,muted);c.text(*m_font,"Effective value or source",430,130,muted);c.text(*m_font,"State",920,130,muted);
+                const auto details=inputDetails(m_selection);
+                for(size_t i=m_inspectorFirst;i<std::min(m_inspectorFirst+10,details.size());++i)
+                {
+                    const auto& d=details[i];const float yy=156+44*static_cast<float>(i-m_inspectorFirst);
+                    c.rect(180,yy,920,40,d.editable?Color{0.19f,0.28f,0.40f,1}:Color{0.15f,0.20f,0.27f,1});
+                    c.push();c.clip(190,yy,225,40);c.text(*m_font,d.name.c_str(),190,yy+2,text);c.text(*m_font,d.type.c_str(),190,yy+20,muted);c.pop();
+                    c.push();c.clip(430,yy,474,40);c.text(*m_font,d.value.c_str(),430,yy+11,text);c.pop();
+                    c.text(*m_font,d.origin.c_str(),920,yy+3,muted);if(d.editable)c.text(*m_font,"Click to edit",920,yy+20,accent);
+                }
+                c.paragraph(*m_font,m_status.c_str(),180,607,920,muted);
+                c.text(*m_font,"Scroll for more | Escape closes",640,632,text,Align::Center);
             }
             else if(m_focus>=12&&m_focus<=14)
             {

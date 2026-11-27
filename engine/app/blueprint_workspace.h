@@ -8,6 +8,7 @@ namespace nx
 {
     struct Services;
     class Canvas;
+    class Input;
     struct Asset;
     class ScriptDebugger;
 
@@ -100,6 +101,10 @@ namespace nx
         size_t m_inputComponent=0,m_inputChoiceFirst=0;
         bool m_inputReplace=false;
         void prepareInputEditor(size_t node);
+        struct InputDetail { std::string name,type,value,origin; bool editable=false; };
+        std::vector<InputDetail> inputDetails(size_t node) const;
+        size_t m_inspectorFirst=0;
+        bool beginInputEdit(size_t node,const std::string& pin,Input& input);
         std::vector<std::string> namedSceneTargets() const;
         struct VariableRow { BlueprintDocument::Field field; bool global=false,explicitField=true; };
         std::vector<VariableRow> variableRows() const;
