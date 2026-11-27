@@ -531,6 +531,30 @@ namespace nx
                     available=outer;available[to]=true;source+=pad+"}\n";
                     return flow(to,"then",indent,depth+1);
                 }
+                if(n.kind=="async:wait"||n.kind=="async:next")
+                {
+                    if(graph.dataRole!="coroutine")return fail(to,"Wait nodes require a coroutine.");
+                    if(n.kind=="async:next")source+=pad+"nextUpdate();\n";
+                    else {std::string seconds;if(!value(to,"seconds",seconds,0))return false;source+=pad+"wait(max(float(0), "+seconds+"));\n";}
+                    mark(start,to);return flow(to,"then",indent,depth+1);
+                }
+                if(n.kind=="async:start")
+                {
+                    const auto* target=document.function(graph.owner,n.ref);
+                    if(!target||target->dataRole!="coroutine")return fail(to,"Select a coroutine graph.");
+                    source+=pad+"::start(Coroutine(this.bp_fn_"+n.ref+"));\n";
+                    mark(start,to);return flow(to,"then",indent,depth+1);
+                }
+                if(n.kind=="dispatch:bind-listener"||n.kind=="dispatch:unbind-listener")
+                {
+                    if(graph.inlineMacro||incoming(to,"handler"))return fail(to,"Select a constant listener name in a callable graph.");
+                    const auto it=std::find_if(n.values.begin(),n.values.end(),[](const BlueprintDocument::InputValue& v){return v.pin=="handler";});
+                    const auto listeners=document.dispatcherListeners(graph.owner,n.ref);
+                    if(it==n.values.end()||std::none_of(listeners.begin(),listeners.end(),[&](const Graph* g){return g->name==it->value;}))
+                        return fail(to,"Select a local void handler with the same parameter types as the dispatcher.");
+                    source+=pad+"bp_listener_"+std::to_string(n.ref.size())+"_"+n.ref+"_"+it->value+(n.kind=="dispatch:bind-listener"?" = true;\n":" = false;\n");
+                    mark(start,to);return flow(to,"then",indent,depth+1);
+                }
                 if(n.kind=="dispatch:bind"||n.kind=="dispatch:unbind")
                 {
                     if(graph.inlineMacro)return fail(to,"Dispatcher binding requires a callable graph.");
@@ -575,7 +599,8 @@ namespace nx
                     if(n.kind=="dispatch:broadcast")
                     {
                         if(graph.inlineMacro)return fail(to,"Dispatcher broadcast requires a callable graph.");
-                        source+=pad+"if (bp_bound_"+n.ref+") "+call+";\n";
+                        if(document.dispatcherListeners(target->owner,n.ref).empty())source+=pad+"if (bp_bound_"+n.ref+") "+call+";\n";
+                        else source+=pad+"bp_broadcast_"+n.ref+"("+args+");\n";
                     }
                     else if(target->returnType=="void")source+=pad+call+";\n";
                     else
@@ -811,8 +836,8 @@ namespace nx
         // the existing native array add-on. Only emit classes the project uses.
         for(const std::string collection:{"Map","Set"})for(const std::string element:{"Int","String"})
         {
-            const bool map=collection=="Map";
-            const std::string type="BP_"+collection+element,scalar=element=="Int"?"int":"string",key=map?"string":scalar;
+            const bool isMap=collection=="Map";
+            const std::string type="BP_"+collection+element,scalar=element=="Int"?"int":"string",key=isMap?"string":scalar;
             bool used=false;
             for(const auto& g:document.graphs)
             {
@@ -822,12 +847,12 @@ namespace nx
             }
             if(!used)continue;
             result+="class "+type+"\n{\n    private array<"+key+"> keys;\n";
-            if(map)result+="    private array<"+scalar+"> values;\n";
+            if(isMap)result+="    private array<"+scalar+"> values;\n";
             result+="    private int bp_find("+key+" key) { for (uint i = 0; i < keys.length(); ++i) if (keys[i] == key) return int(i); return -1; }\n";
             result+="    uint bp_length() { return keys.length(); }\n    bool bp_contains("+key+" key) { return bp_find(key) >= 0; }\n";
-            result+="    void bp_clear() { keys.resize(0);"+std::string(map?" values.resize(0);":"")+" }\n";
-            result+="    bool bp_remove("+key+" key) { int at = bp_find(key); if (at < 0) return false; keys.removeAt(uint(at));"+std::string(map?" values.removeAt(uint(at));":"")+" return true; }\n";
-            if(map)
+            result+="    void bp_clear() { keys.resize(0);"+std::string(isMap?" values.resize(0);":"")+" }\n";
+            result+="    bool bp_remove("+key+" key) { int at = bp_find(key); if (at < 0) return false; keys.removeAt(uint(at));"+std::string(isMap?" values.removeAt(uint(at));":"")+" return true; }\n";
+            if(isMap)
             {
                 result+="    "+scalar+" bp_get(string key, "+scalar+" fallback) { int at = bp_find(key); if (at < 0) return fallback; return values[uint(at)]; }\n";
                 result+="    bool bp_set(string key, "+scalar+" value) { int at = bp_find(key); if (at >= 0) { values[uint(at)] = value; return true; } if (keys.length() >= 4096) return false; keys.insertLast(key); values.insertLast(value); return true; }\n";
@@ -913,6 +938,20 @@ namespace nx
             if(g.owner==classOwner&&g.kind=="function"&&!g.sharedLibrary&&g.dataRole!="enum"&&g.dataRole!="struct"&&g.returnType=="void"&&!g.inlineMacro&&
                 !document.function(parent,g.name))
                 result+="    bool bp_bound_"+g.name+" = false;\n";
+        for(const auto& g:document.graphs)if(g.owner==classOwner&&g.kind=="function")
+        {
+            const auto listeners=document.dispatcherListeners(classOwner,g.name);if(listeners.empty()||document.function(classOwner,g.name)!=&g)continue;
+            const auto key="bp_listener_"+std::to_string(g.name.size())+"_"+g.name+"_";
+            for(const auto* handler:listeners)result+="    bool "+key+handler->name+" = false;\n";
+            std::string signature,args;
+            for(const auto& p:g.parameters){if(!args.empty()){args+=", ";signature+=", ";}args+="bp_arg_"+p.name;signature+=p.type+" bp_arg_"+p.name;}
+            result+="    void bp_broadcast_"+g.name+"("+signature+")\n    {\n";
+            result+="        bool bp_primary = bp_bound_"+g.name+";\n";
+            for(size_t i=0;i<listeners.size();++i)result+="        bool bp_snapshot_"+std::to_string(i)+" = "+key+listeners[i]->name+";\n";
+            result+="        if (bp_primary) bp_fn_"+g.name+"("+args+");\n";
+            for(size_t i=0;i<listeners.size();++i)result+="        if (bp_snapshot_"+std::to_string(i)+") bp_fn_"+listeners[i]->name+"("+args+");\n";
+            result+="    }\n";
+        }
         if(!document.variables(vars,error,classOwner))return false;
         std::vector<BlueprintPin> inherited;
         if(!parent.empty()&&!document.variables(inherited,error,parent))return false;

@@ -2896,3 +2896,31 @@ NX_TEST(nativeCustomEnumAndStructRuntime)
     if(!r.screens.init(r.services,"project","main")){NX_EXPECT(false);return;}
     r.step(3);NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("custom_types","missing"),"hero")==0);
 }
+
+NX_TEST(nativeCoroutineAndMultilistenerRuntime)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    BlueprintDocument doc;doc.create();std::string error,source;
+    bool ok=doc.addFunction("Later",error);const auto co=doc.graphs.size()-1;
+    ok=ok&&doc.editFunctionSignature(co,"coroutine()",error)&&doc.addNode(co,"async:wait",0,0,error)&&doc.connect(co,0,"then",1,"in",error)&&doc.setInputValue(co,1,"seconds","0.1",error)&&
+        doc.addNode(co,"api:Save:Save::set:string,string",0,0,error)&&doc.connect(co,1,"then",2,"in",error)&&doc.setInputValue(co,2,"key","coroutine",error)&&doc.setInputValue(co,2,"value","yes",error);
+    for(const char* label:{"Signal","Receiver"})
+    {
+        ok=ok&&doc.addFunction(label,error);const auto g=doc.graphs.size()-1;
+        ok=ok&&doc.editFunctionSignature(g,"event(message:string)",error)&&doc.addNode(g,"api:Save:Save::set:string,string",0,0,error)&&doc.connect(g,0,"then",1,"in",error)&&doc.connect(g,0,"arg_message",1,"value",error)&&doc.setInputValue(g,1,"key",label,error);
+    }
+    auto add=[&](const char* kind,const char* ref){const auto n=doc.graphs[0].nodes.size();ok=ok&&doc.addNode(0,kind,0,0,error,ref);return n;};
+    auto wire=[&](size_t from,size_t to){ok=ok&&doc.connect(0,from,"then",to,"in",error);};
+    const auto launch=add("async:start","Later");wire(0,launch);
+    const auto bind=add("dispatch:bind","Signal");wire(launch,bind);
+    const auto listener=add("dispatch:bind-listener","Signal");wire(bind,listener);ok=ok&&doc.setInputValue(0,listener,"handler","Receiver",error);
+    const auto broadcast=add("dispatch:broadcast","Signal");wire(listener,broadcast);ok=ok&&doc.setInputValue(0,broadcast,"arg_message","first",error);
+    const auto unbind=add("dispatch:unbind-listener","Signal");wire(broadcast,unbind);ok=ok&&doc.setInputValue(0,unbind,"handler","Receiver",error);
+    const auto again=add("dispatch:broadcast","Signal");wire(unbind,again);ok=ok&&doc.setInputValue(0,again,"arg_message","second",error);
+    if(!ok||!compileBlueprint(doc,source,error)){NX_ERROR("Coroutine/dispatcher: %s",error.c_str());NX_EXPECT(false);return;}
+    r.platform.files["project/main/screen.json"]="{\"title\":\"Coroutine and listeners\"}";r.platform.files["project/main/main.as"]=source;
+    if(!r.screens.init(r.services,"project","main")){NX_EXPECT(false);return;}
+    r.step(1);NX_EXPECT(strcmp(r.save.get("coroutine","missing"),"missing")==0);
+    r.step(20);NX_EXPECT(!r.screens.failed());
+    NX_EXPECT(strcmp(r.save.get("coroutine","missing"),"yes")==0&&strcmp(r.save.get("Signal","missing"),"second")==0&&strcmp(r.save.get("Receiver","missing"),"first")==0);
+}

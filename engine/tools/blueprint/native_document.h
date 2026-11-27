@@ -146,6 +146,7 @@ namespace nx
         const Graph* function(const std::string& owner,const std::string& name) const;
         const Graph* libraryFunction(const std::string& name) const;
         const Graph* dataType(const std::string& name) const;
+        std::vector<const Graph*> dispatcherListeners(const std::string& owner,const std::string& signal) const;
         bool setSharedLibrary(size_t graph,bool enabled,std::string& error);
         bool nodeSpec(const Graph& graph,const Node& node,BlueprintNodeSpec& spec) const;
         bool setFunctionSignature(size_t graph,const std::vector<BlueprintPin>& parameters,const std::string& returnType,std::string& error);

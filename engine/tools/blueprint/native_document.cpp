@@ -122,6 +122,11 @@ namespace nx
             {"data:break-struct","Break structure","Custom types","",""},
             {"call:library","Call shared library","Functions / Libraries","in:exec","then:exec"},
             {"call:event","Call custom event","Events","in:exec","then:exec"},
+            {"async:start","Start coroutine","Time / Async","in:exec","then:exec"},
+            {"async:wait","Wait in coroutine","Time / Async","in:exec|seconds:float","then:exec","","","","","void","","","seconds:float(1)"},
+            {"async:next","Next update (coroutine)","Time / Async","in:exec","then:exec"},
+            {"dispatch:bind-listener","Bind dispatcher listener","Events / Dispatchers","in:exec|handler:string","then:exec"},
+            {"dispatch:unbind-listener","Unbind dispatcher listener","Events / Dispatchers","in:exec|handler:string","then:exec"},
             {"dispatch:bind","Bind event dispatcher","Events / Dispatchers","in:exec","then:exec"},
             {"dispatch:unbind","Unbind event dispatcher","Events / Dispatchers","in:exec","then:exec"},
             {"dispatch:broadcast","Broadcast event dispatcher","Events / Dispatchers","in:exec","then:exec"},
@@ -303,9 +308,9 @@ namespace nx
     bool blueprintLosslessConversion(const std::string& from,const std::string& to)
     {return arrayBorrow(from,to)||(to=="double"&&(from=="int"||from=="uint"||from=="float"));}
     bool blueprintInvokesFunction(const std::string& kind)
-    {return kind=="call:function"||kind=="call:library"||kind=="call:event"||kind=="dispatch:broadcast";}
+    {return kind=="call:function"||kind=="call:library"||kind=="call:event"||kind=="dispatch:broadcast"||kind=="async:start";}
     bool blueprintNamedCall(const std::string& kind)
-    {return blueprintInvokesFunction(kind)||kind=="dispatch:bind"||kind=="dispatch:unbind";}
+    {return blueprintInvokesFunction(kind)||kind=="dispatch:bind"||kind=="dispatch:unbind"||kind=="dispatch:bind-listener"||kind=="dispatch:unbind-listener";}
     bool blueprintBehaviourReference(const std::string& kind)
     {return kind=="attach:behaviour"||kind=="attach:direct"||kind=="level:attach"||kind=="actor:is-class"||kind=="actor:cast-class";}
     bool blueprintFileName(const std::string& file)
@@ -1401,6 +1406,7 @@ namespace nx
                     const auto* target=node.kind=="call:library"?libraryFunction(node.ref):node.kind=="call:parent"?function(parentBehaviour(g->owner),g->name):function(owner,node.ref);
                     if(!target){error="Missing inherited function in "+g->name;return false;}
                     if(!self(self,target))return false;
+                    if(node.kind=="dispatch:broadcast")for(const auto* handler:dispatcherListeners(g->owner,node.ref))if(!self(self,function(owner,handler->name)))return false;
                 }
                 state[index]=2;return true;
             };
@@ -1415,7 +1421,9 @@ namespace nx
                 for(const auto& node:g->nodes)
                 {
                     if(node.kind=="actor:spawn-asset"||node.kind=="time:delay"||node.kind=="time:retrigger-delay"||node.kind=="time:timer"){error="Construction graphs cannot spawn linked actors or schedule deferred work; use Start instead.";return false;}
+                    if(node.kind=="async:start"){error="Construction graphs cannot launch coroutines.";return false;}
                     if(blueprintInvokesFunction(node.kind)&&!self(self,node.kind=="call:library"?libraryFunction(node.ref):function(owner,node.ref)))return false;
+                    if(node.kind=="dispatch:broadcast")for(const auto* handler:dispatcherListeners(g->owner,node.ref))if(!self(self,function(owner,handler->name)))return false;
                     if(node.kind=="call:parent"&&!self(self,function(parentBehaviour(g->owner),g->name)))return false;
                 }
                 return true;
@@ -2032,7 +2040,7 @@ namespace nx
             if(shared.exists()&&(shared.type()!=JsonTree::Type::Bool||g.kind!="function"||behaviourOwner(owner))){error="Invalid shared library graph.";return false;}
             g.sharedLibrary=shared.flag();
             const auto role=value["dataRole"];
-            if(role.exists()&&(!role.isString()||g.kind!="function"||(role.text()!="enum"&&role.text()!="struct"&&role.text()!="event"))){error="Invalid graph role.";return false;}
+            if(role.exists()&&(!role.isString()||g.kind!="function"||(role.text()!="enum"&&role.text()!="struct"&&role.text()!="event"&&role.text()!="coroutine"))){error="Invalid graph role.";return false;}
             g.dataRole=role.text();
             if(!validSignature(g.parameters,g.returnType)||(g.kind!="function"&&(!g.parameters.empty()||g.returnType!="void")))
             {error="Invalid function signature in "+g.name;return false;}
@@ -2452,6 +2460,8 @@ namespace nx
         if(kind=="call:parent"&&(g.kind!="function"||!function(parentBehaviour(g.owner),g.name)))
         {error="Call parent belongs in an overridden function.";return false;}
         if(!context(g.name,kind,g.owner)){error="This event value belongs to a different event graph.";return false;}
+        if((kind=="async:wait"||kind=="async:next")&&g.dataRole!="coroutine"){error="Wait nodes require a Coroutine graph.";return false;}
+        if(g.dataRole=="enum"||g.dataRole=="struct"){error="Edit the declaration signature, not its graph.";return false;}
         std::string id;
         do{id="n"+std::to_string(++m_nextId);}while(std::any_of(g.nodes.begin(),g.nodes.end(),[&](const Node& n){return n.id==id;}));
         std::string value=kind=="literal:string"?"":kind=="literal:bool"?"false":kind.rfind("literal:",0)==0?"0":"";
@@ -2489,7 +2499,7 @@ namespace nx
             for(const auto& fn:graphs)
             {
                 if(fn.kind!="function"||(kind=="call:library"?libraryFunction(fn.name):function(g.owner,fn.name))!=&fn||&fn==&g||(!functionTarget.empty()&&fn.name!=functionTarget)||
-                    (kind!="call:function"&&kind!="call:library"&&(fn.sharedLibrary||fn.inlineMacro||fn.returnType!="void")))continue;
+                    (kind!="call:function"&&kind!="call:library"&&(fn.sharedLibrary||fn.inlineMacro||fn.returnType!="void"))||((kind=="async:start")!=(fn.dataRole=="coroutine")))continue;
                 value=fn.name;g.nodes.push_back({id,kind,value,x,y});
                 valid=functions(error);g.nodes.pop_back();if(valid)break;
             }
@@ -2851,6 +2861,7 @@ namespace nx
         std::unordered_set<std::string> dataNames;
         for(const auto& g:graphs)
         {
+            if(g.dataRole=="coroutine"&&(behaviourOwner(g.owner)||g.returnType!="void"||!g.parameters.empty()||g.inlineMacro||g.sharedLibrary||g.name=="Construction")){error="Coroutines must be local screen void() graphs.";return false;}
             if(g.dataRole=="event"&&(g.returnType!="void"||g.inlineMacro||g.sharedLibrary||g.name=="Construction")){error="Custom events must be local callable void graphs.";return false;}
             if(g.dataRole=="enum"||g.dataRole=="struct")
             {
@@ -2860,6 +2871,7 @@ namespace nx
         }
         for(const auto& g:graphs)
         {
+            for(const auto& n:g.nodes)if((n.kind=="async:wait"||n.kind=="async:next")&&g.dataRole!="coroutine"){error="Wait nodes require a Coroutine graph.";return false;}
             if(customTypeName(g.returnType)&&!dataType(g.returnType.substr(8))){error="Unknown custom return type.";return false;}
             for(const auto& p:g.parameters)if(customTypeName(p.type)&&!dataType(p.type.substr(8))){error="Unknown custom parameter type.";return false;}
         }
@@ -2882,6 +2894,7 @@ namespace nx
             const auto* target=node.kind=="call:library"?libraryFunction(node.ref):node.kind=="call:parent"?function(parentBehaviour(graphs[i].owner),graphs[i].name):function(graphs[i].owner,node.ref);
             if(!target){error="Missing function: "+node.ref;return false;}
             calls[i].push_back(static_cast<size_t>(target-graphs.data()));
+            if(node.kind=="dispatch:broadcast")for(const auto* handler:dispatcherListeners(graphs[i].owner,node.ref))calls[i].push_back(static_cast<size_t>(handler-graphs.data()));
         }
         // Topological elimination avoids recursion and catches indirect cycles.
         std::vector<size_t> indegree(graphs.size(),0),ready;
@@ -2914,15 +2927,29 @@ namespace nx
         }
         return nullptr;
     }
-    const BlueprintDocument::Graph* BlueprintDocument::libraryFunction(const std::string& name) const
+    const BlueprintDocument::Graph* BlueprintDocument::libraryFunction(const std::string& functionName) const
     {
-        const auto at=std::find_if(graphs.begin(),graphs.end(),[&](const Graph& g){return g.sharedLibrary&&g.name==name;});
+        const auto at=std::find_if(graphs.begin(),graphs.end(),[&](const Graph& g){return g.sharedLibrary&&g.name==functionName;});
         return at==graphs.end()?nullptr:&*at;
     }
-    const BlueprintDocument::Graph* BlueprintDocument::dataType(const std::string& name) const
+    const BlueprintDocument::Graph* BlueprintDocument::dataType(const std::string& typeName) const
     {
-        const auto at=std::find_if(graphs.begin(),graphs.end(),[&](const Graph& g){return g.name==name&&(g.dataRole=="enum"||g.dataRole=="struct");});
+        const auto at=std::find_if(graphs.begin(),graphs.end(),[&](const Graph& g){return g.name==typeName&&(g.dataRole=="enum"||g.dataRole=="struct");});
         return at==graphs.end()?nullptr:&*at;
+    }
+    std::vector<const BlueprintDocument::Graph*> BlueprintDocument::dispatcherListeners(const std::string& owner,const std::string& signal) const
+    {
+        std::vector<const Graph*> result;
+        const auto* source=function(owner,signal);if(!source)return result;
+        for(const auto& g:graphs)if(g.owner==source->owner)for(const auto& n:g.nodes)
+            if(n.ref==signal&&(n.kind=="dispatch:bind-listener"||n.kind=="dispatch:unbind-listener"))
+                for(const auto& v:n.values)if(v.pin=="handler")
+                {
+                    const auto* handler=function(source->owner,v.value);
+                    if(handler&&handler!=source&&handler->owner==source->owner&&handler->returnType=="void"&&!handler->inlineMacro&&!handler->sharedLibrary&&handler->dataRole!="coroutine"&&handler->parameters.size()==source->parameters.size()&&
+                        std::equal(handler->parameters.begin(),handler->parameters.end(),source->parameters.begin(),[](const BlueprintPin& a,const BlueprintPin& b){return a.type==b.type;})&&std::find(result.begin(),result.end(),handler)==result.end())result.push_back(handler);
+                }
+        return result;
     }
     bool BlueprintDocument::setSharedLibrary(size_t graph,bool enabled,std::string& error)
     {
@@ -2965,8 +2992,10 @@ namespace nx
             if(node.kind=="call:parent"&&graph.kind!="function")return false;
             const auto* target=node.kind=="call:library"?libraryFunction(node.ref):node.kind=="call:parent"?function(parentBehaviour(graph.owner),graph.name):function(graph.owner,node.ref);
             if(!target||(node.kind=="call:parent"&&target->inlineMacro))return false;
+            if((node.kind=="async:start")!=(target->dataRole=="coroutine"))return false;
             if(node.kind!="call:function"&&node.kind!="call:library"&&node.kind!="call:parent"&&(target->sharedLibrary||target->inlineMacro||target->returnType!="void"))return false;
-            if(node.kind!="dispatch:bind"&&node.kind!="dispatch:unbind")
+            if((node.kind=="dispatch:bind-listener"||node.kind=="dispatch:unbind-listener")&&target->owner!=graph.owner)return false;
+            if(node.kind!="dispatch:bind"&&node.kind!="dispatch:unbind"&&node.kind!="dispatch:bind-listener"&&node.kind!="dispatch:unbind-listener")
                 for(const auto& p:target->parameters)spec.inputs.push_back({"arg_"+p.name,p.type});
             if(target->inlineMacro)spec.title="Macro "+target->name;
             spec.result=target->returnType;
@@ -3026,10 +3055,10 @@ namespace nx
                 at=comma+1;
             }
         }
-        if(result=="enum"||result=="struct"||result=="event"||(graph<graphs.size()&&!graphs[graph].dataRole.empty()))
+        if(result=="enum"||result=="struct"||result=="event"||result=="coroutine"||(graph<graphs.size()&&!graphs[graph].dataRole.empty()))
         {
             if(graph>=graphs.size()||graphs[graph].kind!="function"){error="Select a function graph.";return false;}
-            auto& g=graphs[graph];const auto old=g;const bool role=result=="enum"||result=="struct"||result=="event";
+            auto& g=graphs[graph];const auto old=g;const bool role=result=="enum"||result=="struct"||result=="event"||result=="coroutine";
             if((result=="enum"||result=="struct")&&(g.nodes.size()!=1||visualWidgetUsesFunction(g.owner,g.name))){error="Use an empty function graph for a type declaration.";return false;}
             g.dataRole=role?result:"";g.parameters=parameters;g.returnType=role?"void":result;
             std::string checked;const bool ok=serialize(checked,error);const auto next=g;g=old;if(!ok)return false;

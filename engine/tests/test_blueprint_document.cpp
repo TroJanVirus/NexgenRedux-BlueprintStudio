@@ -9,7 +9,7 @@
 using namespace nx;
 NX_TEST(nativeCatalogueContainsReferenceAPI)
 {
-    NX_EXPECT(blueprintCatalogue().size()==1239);
+    NX_EXPECT(blueprintCatalogue().size()==1244);
     const auto* save=blueprintSpec("api:Save:Save::set:string,string");
     NX_EXPECT(save&&save->inputs.size()==3&&save->outputs.size()==1);
     if(save&&save->inputs.size()==3)NX_EXPECT(save->inputs[0].type=="exec"&&save->inputs[2].type=="string");
@@ -1838,4 +1838,20 @@ NX_TEST(nativeCustomTypeDeclarationsAndEvents)
     NX_EXPECT(doc.addNode(ev,"data:break-struct",0,0,error,"Stats")&&doc.connect(ev,0,"arg_stats",1,"value",error));
     NX_EXPECT(doc.serialize(bytes,error));BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error));
     NX_EXPECT(compileBlueprint(copy,source,error)&&source.find("enum BP_Data_State")!=std::string::npos&&source.find("class BP_Data_Stats")!=std::string::npos);
+}
+
+NX_TEST(nativeCoroutineGraphAndListenerCompilation)
+{
+    BlueprintDocument doc;doc.create();std::string error,source,bytes;
+    NX_EXPECT(doc.addFunction("Later",error));const auto co=doc.graphs.size()-1;
+    NX_EXPECT(doc.editFunctionSignature(co,"coroutine()",error));
+    NX_EXPECT(doc.addNode(co,"async:wait",0,0,error)&&doc.connect(co,0,"then",1,"in",error));
+    NX_EXPECT(doc.addConnectedNode(co,1,"then","async:next",0,0,error));
+    NX_EXPECT(!doc.addNode(0,"async:wait",0,0,error));
+    NX_EXPECT(doc.addNode(0,"async:start",0,0,error,"Later")&&doc.connect(0,0,"then",1,"in",error));
+    NX_EXPECT(doc.addFunction("Signal",error)&&doc.addFunction("Receiver",error));
+    NX_EXPECT(doc.addNode(0,"dispatch:bind-listener",0,0,error,"Signal")&&doc.connect(0,1,"then",2,"in",error)&&doc.setInputValue(0,2,"handler","Receiver",error));
+    NX_EXPECT(doc.addNode(0,"dispatch:broadcast",0,0,error,"Signal")&&doc.connect(0,2,"then",3,"in",error));
+    NX_EXPECT(doc.serialize(bytes,error));BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error));
+    NX_EXPECT(compileBlueprint(copy,source,error)&&source.find("Coroutine(this.bp_fn_Later)")!=std::string::npos&&source.find("bp_snapshot_0")!=std::string::npos);
 }
