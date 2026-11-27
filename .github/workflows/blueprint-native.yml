@@ -6,6 +6,12 @@ on:
     branches: ["blueprint/verification-base"]
   workflow_dispatch:
   workflow_call:
+    inputs:
+      source_ref:
+        description: Exact commit to verify (defaults to triggering SHA)
+        type: string
+        required: false
+        default: ''
 permissions:
   contents: read
 concurrency:
@@ -19,8 +25,13 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.source_ref || github.sha }}
+          persist-credentials: false
       - name: Check generated catalogue
-        run: python3 engine/tools/blueprint/generate_native_catalog.py --check
+        run: |
+          python3 engine/tools/blueprint/generate_catalog.py --check
+          python3 engine/tools/blueprint/generate_native_catalog.py --check
       - name: Verify editable orbit fixture matches native test fixture
         run: python3 -c 'from pathlib import Path; a=Path("engine/tools/blueprint/examples/camera-orbit.bp.json").read_text(); b=Path("engine/tests/blueprint_orbit_fixture.h").read_text(); assert "R\"BP_ORBIT("+a+")BP_ORBIT\"" in b; t=Path("engine/tools/blueprint/examples/camera-orbit-timeline.bp.json").read_text(); assert "R\"BP_TIME("+t+")BP_TIME\"" in b; u=Path("engine/tools/blueprint/examples/camera-orbit-timed.bp.json").read_text(); assert "R\"BP_TIMED("+u+")BP_TIMED\"" in b'
       - name: Compile native document tests with sanitizers
@@ -43,6 +54,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
+          ref: ${{ inputs.source_ref || github.sha }}
           submodules: true
           persist-credentials: false
       - name: Install native desktop build dependencies
@@ -120,6 +132,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
+          ref: ${{ inputs.source_ref || github.sha }}
           submodules: true
           persist-credentials: false
       - name: Configure

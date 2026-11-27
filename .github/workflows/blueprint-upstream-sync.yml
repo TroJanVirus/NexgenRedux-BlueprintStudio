@@ -1,0 +1,65 @@
+name: Verify upstream integration
+on:
+  push:
+    branches: ["blueprint/upstream-ceeb83b"]
+    paths: [".github/workflows/blueprint-upstream-sync.yml"]
+permissions:
+  contents: read
+concurrency:
+  group: blueprint-upstream-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  refresh:
+    if: github.repository == 'TroJanVirus/NexgenRedux-BlueprintStudio' && github.ref == 'refs/heads/blueprint/upstream-ceeb83b'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      contents: write
+    outputs:
+      revision: ${{ steps.generate.outputs.revision }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+      - name: Regenerate reference-derived files and validate original fixtures
+        id: generate
+        shell: bash
+        run: |
+          set -euo pipefail
+          old_count=$(node -p "require('./engine/tools/blueprint/catalog.js').nodes.length")
+          python3 engine/tools/blueprint/generate_catalog.py
+          python3 engine/tools/blueprint/generate_native_catalog.py
+          new_count=$(node -p "require('./engine/tools/blueprint/catalog.js').nodes.length")
+          python3 - "$old_count" "$new_count" <<'PY'
+          from pathlib import Path
+          import re, sys
+          p = Path('engine/tests/test_blueprint_document.cpp')
+          text = p.read_text()
+          matches = re.findall(r'blueprintCatalogue\(\)\.size\(\)==(\d+)', text)
+          assert len(matches) == 1, matches
+          before = int(matches[0])
+          after = before + int(sys.argv[2]) - int(sys.argv[1])
+          p.write_text(text.replace(f'blueprintCatalogue().size()=={before}', f'blueprintCatalogue().size()=={after}'))
+          print(f'Native catalogue expected {before} -> {after}')
+          PY
+          node engine/tools/blueprint/make_examples.js
+          python3 engine/tools/blueprint/generate_catalog.py --check
+          python3 engine/tools/blueprint/generate_native_catalog.py --check
+          node engine/tools/blueprint/make_examples.js --check
+          node engine/tools/blueprint/test_compiler.js
+          git diff --check
+          git add engine/tools/blueprint/catalog.js engine/tools/blueprint/native_catalog.inc engine/tools/blueprint/examples engine/tests/blueprint_fixtures.h engine/tests/test_blueprint_document.cpp
+          git diff --cached --stat
+          git diff --quiet
+          if ! git diff --cached --quiet; then
+            git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m "Regenerate Blueprint catalogues and fixtures after upstream integration"
+            git push origin HEAD:refs/heads/blueprint/upstream-ceeb83b
+          fi
+          echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+  verify:
+    needs: refresh
+    uses: ./.github/workflows/blueprint-native.yml
+    with:
+      source_ref: ${{ needs.refresh.outputs.revision }}
+    permissions:
+      contents: read

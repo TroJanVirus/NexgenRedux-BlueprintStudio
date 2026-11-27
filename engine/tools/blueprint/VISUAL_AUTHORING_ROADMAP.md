@@ -58,3 +58,7 @@ The native Assets window now has a Content tab. Create a project-wide actor star
 ## Linked UI page slice
 
 The Content Browser Link to screen command adds a visible Load linked widget page node and a standard native UI draw call with Canvas connected. On Enter and Draw must be complete simple execution chains; existing branches or conflicting page loads are refused without editing. The current page JSON is compiled into an inline native Ui::loadPage call using the existing widget parser/builder, so preview/export no longer requires copying a snapshot. The old Copy JSON operation remains explicit. The runtime rolls back widgets added by an invalid page. One linked standalone page per screen is supported by the convenience command; event authoring, nested library dependencies and free-position layout remain future work. IDs allocated by the project advance a persisted high-water mark, including across deletion and save/reopen. Added native document/compiler/runtime and X11 authoring regressions.
+
+## Upstream integration
+
+Merged upstream through `ceeb83b4873806308f17fdd0c5ac5e8edc8bf786` with both histories and upstream submodule pins. The integration branch regenerates the script-reference catalogue and existing fixtures with their original generators, adds the new Playlist and WebSocket handle types, then verifies the exact generated revision. The working visual-authoring branch and Beta 1 tag are unchanged until verification. Do not confuse a source merge with a verified platform release.
