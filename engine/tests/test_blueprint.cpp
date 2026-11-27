@@ -720,13 +720,23 @@ NX_TEST(nativeBlueprintProjectPreviewNavigatesWithoutTouchingHostStack)
         doc.addNode(0,"api:Screens:Screens::push:string",0,0,error)&&doc.setInputValue(0,1,"id","level",error)&&doc.connect(0,0,"then",1,"in",error)&&
         doc.addNode(6,"api:Save:Save::set:string,string",0,0,error)&&doc.setInputValue(6,1,"key","level",error)&&doc.setInputValue(6,1,"value","entered",error)&&doc.connect(6,0,"then",1,"in",error);
     std::vector<BlueprintScreenOutput> output;
+    NX_EXPECT(doc.importScreenManifest("Screen","{\"title\":\"Start menu\",\"description\":\"Preview description\",\"category\":\"Game\",\"demo\":\"Press A\",\"seconds\":12.5,\"order\":20}",error));
+    NX_EXPECT(doc.importScreenManifest("level","{\"title\":\"Level one\",\"order\":1}",error));
     NX_EXPECT(authored&&compileBlueprintProject(doc,output,error));if(output.size()!=2)return;
     std::vector<Screens::PreviewScreen> preview;
     for(const auto& o:output)
     {
-        Screens::PreviewScreen p;snprintf(p.info.id,sizeof(p.info.id),"%s",o.id.c_str());p.source=o.source;preview.push_back(p);
+        Screens::PreviewScreen p;snprintf(p.info.id,sizeof(p.info.id),"%s",o.id.c_str());p.source=o.source;p.manifest=o.manifest;preview.push_back(p);
     }
+    auto broken=preview;broken[0].manifest="{\"title\":false}";
+    NX_EXPECT(!r.screens.startProjectPreview(broken,"Screen",error));
+    NX_EXPECT(!r.screens.previewing()&&r.screens.depth()==1&&r.services.save==&r.save);
     NX_EXPECT(r.screens.startProjectPreview(preview,"Screen",error));if(!r.screens.previewing())return;
+    NX_EXPECT(r.screens.info(0)&&strcmp(r.screens.info(0)->id,"level")==0);
+    const auto* meta=r.screens.info(1);
+    NX_EXPECT(meta&&strcmp(meta->id,"Screen")==0&&strcmp(meta->title,"Start menu")==0&&
+        strcmp(meta->description,"Preview description")==0&&strcmp(meta->category,"Game")==0&&
+        strcmp(meta->demo,"Press A")==0&&meta->seconds==12.5f&&meta->order==20);
     r.step(5);
     NX_EXPECT(r.screens.depth()==3&&strcmp(r.screens.current(),"level")==0&&r.screens.count()==2);
     NX_EXPECT(strcmp(r.services.save->get("level","missing"),"entered")==0);
@@ -1850,7 +1860,7 @@ NX_TEST(nativeWorkspaceImportsNativeExportScreensAndTheirAssets)
             std::vector<Screens::PreviewScreen> preview;
             for(const auto& o:output)
             {
-                Screens::PreviewScreen p;snprintf(p.info.id,sizeof(p.info.id),"%s",o.id.c_str());p.source=o.source;preview.push_back(p);
+                Screens::PreviewScreen p;snprintf(p.info.id,sizeof(p.info.id),"%s",o.id.c_str());p.source=o.source;p.manifest=o.manifest;preview.push_back(p);
             }
             NX_EXPECT(r.screens.startProjectPreview(preview,"main",error,project.assetRoot));
             if(r.screens.previewing())

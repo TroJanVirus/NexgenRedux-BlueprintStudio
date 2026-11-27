@@ -68,7 +68,7 @@ namespace nx
 
 #ifdef NX_DESKTOP_BLUEPRINT
         // Desktop authoring only: transient screen, no files staged or replaced.
-        struct PreviewScreen { ScreenInfo info; std::string source; };
+        struct PreviewScreen { ScreenInfo info; std::string source; std::string manifest{}; };
         bool startPreview(const std::string& source, std::string& error);
         bool startProjectPreview(const std::vector<PreviewScreen>& screens,const std::string& start,std::string& error,const std::string& assetRoot="");
         bool startSceneEditor(const std::string& assetRoot,const std::string& screen,std::string& error);

@@ -6,6 +6,12 @@
 #include "video/video.h"
 #include "save/save.h"
 #include <algorithm>
+#ifdef NX_DESKTOP_BLUEPRINT
+#include "base/json_tree.h"
+#include <cmath>
+#include <limits>
+#include <utility>
+#endif
 
 #include <stdio.h>
 #include <string.h>
@@ -188,6 +194,39 @@ namespace nx
         return startPreviewSession({item},screen,error,assetRoot,true);
     }
 
+    namespace
+    {
+        // Match the installed screen menu field limits, without rewriting the original JSON.
+        bool previewManifest(Screens::PreviewScreen& screen,std::string& error)
+        {
+            if(screen.manifest.empty())return true; // Existing standalone/scene-editor callers.
+            JsonTree tree;
+            const auto& source=screen.manifest;
+            if(source.size()>64*1024||source.find('\0')!=std::string::npos||
+                !tree.parse(source.data(),source.size())||!tree.root().isObject()||
+                !tree.root()["title"].isString()||!tree.root()["title"].text()[0])
+            {error=std::string(screen.info.id)+": invalid preview screen.json.";return false;}
+            const auto root=tree.root();
+            auto copy=[](char* dest,size_t capacity,const char* value)
+            {
+                size_t n=std::min(strlen(value),capacity-1);
+                // Do not leave the first bytes of a truncated UTF-8 codepoint.
+                while(n&&(static_cast<unsigned char>(value[n])&0xc0)==0x80)--n;
+                memcpy(dest,value,n);dest[n]=0;
+            };
+            auto& info=screen.info;
+            copy(info.title,sizeof(info.title),root["title"].text());
+            copy(info.description,sizeof(info.description),root["description"].text());
+            copy(info.category,sizeof(info.category),root["category"].text());
+            copy(info.demo,sizeof(info.demo),root["demo"].text());
+            const auto seconds=root["seconds"],order=root["order"];
+            const double duration=seconds.isNumber()?seconds.exact():0.0;
+            const double priority=order.isNumber()?order.exact():1000.0;
+            info.seconds=std::isfinite(duration)&&duration>=0&&duration<=std::numeric_limits<float>::max()?static_cast<float>(duration):0.f;
+            info.order=std::isfinite(priority)&&priority>=std::numeric_limits<int>::min()&&priority<=std::numeric_limits<int>::max()?static_cast<int>(priority):1000;
+            return true;
+        }
+    }
     bool Screens::startPreviewSession(const std::vector<PreviewScreen>& screens,const std::string& start,std::string& error,const std::string& assetRoot,bool sceneEditor)
     {
         const auto selected=std::find_if(screens.begin(),screens.end(),[&](const PreviewScreen& s){return start==s.info.id;});
@@ -208,6 +247,17 @@ namespace nx
             for(size_t j=0;j<i;++j)if(strcmp(p.info.id,screens[j].info.id)==0)
             {error="Duplicate preview screen ID.";return false;}
         }
+        auto prepared=screens;
+        bool hasManifest=false;
+        for(auto& p:prepared)
+        {
+            hasManifest=hasManifest||!p.manifest.empty();
+            if(!previewManifest(p,error))return false;
+        }
+        if(hasManifest)std::stable_sort(prepared.begin(),prepared.end(),[](const PreviewScreen& a,const PreviewScreen& b)
+        {
+            return a.info.order!=b.info.order?a.info.order<b.info.order:strcmp(a.info.title,b.info.title)<0;
+        });
         m_previewSave = create<Save>(MemTag::General);
         m_previewSettings = create<Save>(MemTag::General);
         if (!m_previewSave || !m_previewSettings)
@@ -221,7 +271,7 @@ namespace nx
         saveSettings(*m_services); // Snapshot settings without writing to the real save.
         m_previewRandom = m_services->random;
         m_previewDevelopment = m_services->development;
-        m_previewScreens=screens;m_previewNavigation=!sceneEditor;
+        m_previewScreens=std::move(prepared);m_previewNavigation=!sceneEditor;
         m_previewRoot=assetRoot.empty()?"__blueprint_preview":"own/"+assetRoot;
         m_services->save = m_previewSave;
         m_services->development = sceneEditor;
@@ -232,7 +282,8 @@ namespace nx
         // callbacks against the temporary save or generated module.
         m_services->audio->pauseGroup(m_stack[0].group, true);
         m_menuOpen = false;
-        if (!open(selected->info))
+        const auto* startInfo=findInfo(start.c_str());
+        if (!startInfo || !open(*startInfo))
         {
             error = this->error();
             stopPreview();

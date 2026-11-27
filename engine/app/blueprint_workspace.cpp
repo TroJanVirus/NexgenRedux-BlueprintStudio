@@ -996,7 +996,7 @@ namespace nx
                         Screens::PreviewScreen item;
                         snprintf(item.info.id,sizeof(item.info.id),"%s",output.id.c_str());
                         snprintf(item.info.title,sizeof(item.info.title),"%s",output.id.c_str());
-                        item.source=output.source;screens.push_back(std::move(item));
+                        item.source=output.source;item.manifest=output.manifest;screens.push_back(std::move(item));
                     }
                     const auto selected=m_document.graphs[m_graph].owner;
                     const auto owner=selected.rfind("behaviour:",0)==0?m_document.screens().front():selected;
