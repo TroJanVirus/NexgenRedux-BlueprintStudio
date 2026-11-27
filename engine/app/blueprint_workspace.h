@@ -10,6 +10,7 @@ namespace nx
     class Canvas;
     class Input;
     class Ui;
+    class World;
     struct Asset;
     class ScriptDebugger;
 
@@ -63,7 +64,16 @@ namespace nx
         std::string m_placementAsset;
         size_t m_placementGraph=static_cast<size_t>(-1),m_placementNode=static_cast<size_t>(-1);
         float m_placementX=0,m_placementY=0;
-        bool m_placementDragging=false;
+        bool m_placementDragging=false,m_placement3D=false,m_placementReady=false;
+        World* m_placementWorld=nullptr;
+        size_t m_placementRevision=static_cast<size_t>(-1);
+        std::string m_placementScreen;
+        float m_placementYaw=0.65f,m_placementDistance=25,m_placementHeight=0;
+        unsigned m_placementOmitted=0;
+        void releasePlacementPreview();
+        void refreshPlacementPreview(Services& s);
+        bool placementPoint(float x,float y,float height,float& wx,float& wz) const;
+        bool placementProject(float wx,float wy,float wz,float& x,float& y) const;
         void updateVisualPlacement(float x,float y,bool left,bool click);
         void drawVisualPlacement(Canvas& canvas);
         void cancelVisualPlacement(){m_placementDragging=false;m_placementAsset.clear();m_placementGraph=m_placementNode=static_cast<size_t>(-1);}

@@ -2515,3 +2515,19 @@ NX_TEST(nativeWidgetTimelineInterpolatesOnRenderer)
     r.device->beginFrame({});r.canvas.begin();r.services.ui->drawDesign(r.canvas,0,0,1280,720,nullptr,-1,0.5f);r.canvas.end();r.device->endFrame();
     NX_EXPECT(fabsf(widget->animationValues[0]-50)<0.001f&&fabsf(widget->animationValues[3]-0.5f)<0.001f);
 }
+
+NX_TEST(nativePlacementViewportProjectsRayToWorldPlane)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    BlueprintDocument doc;doc.create();std::string id,error,source;
+    NX_EXPECT(doc.createVisualAsset("actor",id,error)&&doc.visualActorSource(id,source,error));
+    JsonTree tree;NX_EXPECT(tree.parse(source.data(),source.size()));
+    World world(r.assets,r.host,"blueprint",64,0);auto& space=world.space();space.init(&r.solids);
+    NX_EXPECT(space.makeActor(tree.root(),"showcase/main",{3,2,5}));
+    space.setCamera({15,18,22},{0,0,0},55);
+    r.device->beginFrame({});r.canvas.begin();space.draw(r.canvas,100,80,800,500);r.canvas.end();r.device->endFrame();
+    Vec2 point;NX_EXPECT(space.toScreen({3,2,5},point));
+    const auto ray=space.rayThrough(point),eye=space.cameraPlace();const float t=(2-eye.y)/ray.y;
+    NX_EXPECT(t>0&&fabsf(eye.x+ray.x*t-3)<0.01f&&fabsf(eye.z+ray.z*t-5)<0.01f);
+    NX_EXPECT(doc.placeVisualActor("Screen",id,"3,2,5",error));
+}

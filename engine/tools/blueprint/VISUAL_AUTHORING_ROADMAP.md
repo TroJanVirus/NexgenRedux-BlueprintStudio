@@ -130,3 +130,6 @@ Create an invisible camera child with a local position, rotation and vertical FO
 
 ### Widget keyframe timelines
 Native widget pages support duration, loop and linear keyframe tracks for translation X/Y, scale, opacity and rotation. The designer has a track selector, scrubber, play/pause, set/delete key and rewind. Runtime starts tracks automatically; selection uses translated layout bounds, not transformed polygon hit testing. Named clips, easing curves and graph-triggered playback are follow-up work.
+
+### Native 3D actor placement viewport
+The content library placement plan can switch to a native Space renderer, with an isolated render-only World of constant linked actors and component hierarchies. Orbit and zoom the editor camera, adjust the placement plane height, drag from the library or projected instance handles, and snap XYZ placements via native camera rays. Game scripts, audio, and actor cameras are not run in the preview. Procedural or wired placements are not enumerated; collision-surface snapping and transform gizmos remain future enhancements.

@@ -10,6 +10,8 @@
 #include "assets/assets.h"
 #include "base/log.h"
 #include "base/json_tree.h"
+#include "base/json_value.h"
+#include "scene/world.h"
 #include "ui/ui.h"
 #include "canvas/canvas.h"
 #include "input/input.h"
@@ -150,7 +152,7 @@ namespace nx
     {
         if (!active()) return;
         stopPreview(s);
-        releaseWidgetPreview();m_widgetDesigner=false;
+        releaseWidgetPreview();releasePlacementPreview();m_widgetDesigner=m_visualPlacement=false;
         checkpoint(s,true);
         cancelDrag();clearWire();m_quickDrag=m_quickMenu=m_pinMenu=m_rightDown=false;m_layoutMenu=m_layoutDragging=false;m_graphBack.clear();m_focus=0;m_browsing=false;m_assetBrowser=false;s.input->setTyping(m_previousTyping);
         s.assets->release(m_font);
@@ -586,11 +588,65 @@ namespace nx
             }
             return result;
         }
-        std::string planPosition(float x,float y,float height)
+    }
+    void BlueprintWorkspace::releasePlacementPreview()
+    {
+        if(m_placementWorld){destroy(m_placementWorld);m_placementWorld=nullptr;}
+        m_placementReady=false;m_placementRevision=static_cast<size_t>(-1);m_placementScreen.clear();
+    }
+    void BlueprintWorkspace::refreshPlacementPreview(Services& s)
+    {
+        if(!m_assetBrowser||!m_assetLibrary||!m_visualPlacement||!m_placement3D)
+        {if(m_placementWorld)releasePlacementPreview();return;}
+        const auto owner=assetScreen();
+        if(m_placementWorld&&m_placementRevision==m_document.revision()&&m_placementScreen==owner)return;
+        releasePlacementPreview();
+        if(!s.assets||!s.host||!s.solids||owner.empty())return;
+        m_placementWorld=create<World>(MemTag::Scene,*s.assets,*s.host,"blueprint-placement",4096,0);
+        if(!m_placementWorld){m_status="Could not allocate native viewport.";return;}
+        m_placementRevision=m_document.revision();m_placementScreen=owner;
+        auto& space=m_placementWorld->space();space.init(s.solids);
+        const auto folder="own/"+m_document.assetRoot+"/"+owner;
+        unsigned shown=0,failed=0;
+        for(const auto& marker:actorMarkers(m_document,owner))
         {
-            return std::to_string(std::round((x-planCenterX)/planScale))+","+std::to_string(height)+","+
-                std::to_string(std::round((y-planCenterY)/planScale));
+            if(shown>=120){++failed;continue;}
+            std::string json,error;
+            if(!m_document.visualActorInstance(marker.asset,owner,m_document.graphs[marker.graph].nodes[marker.node].values,json,error)){++failed;continue;}
+            JsonValue root;if(!root.parse(json.data(),json.size(),error)){++failed;continue;}
+            auto* entities=root.find("entities");if(!entities){++failed;continue;}
+            for(u32 i=0;i<entities->count();++i)
+            {
+                auto* entity=entities->at(i);
+                // Native render-only copy: never run a project's callbacks,
+                // activate its camera or play sounds in the editor.
+                for(const char* field:{"behaviour","sound","camera","group","hits","onLand","collider","mass","friction","bounce","gravity","drag"})
+                    entity->remove(field);
+            }
+            json=root.write(true);JsonTree tree;
+            if(!tree.parse(json.data(),json.size())||!space.makeActor(tree.root(),folder.c_str(),{marker.x,marker.y,marker.z})){++failed;continue;}
+            ++shown;
         }
+        m_placementOmitted=failed;
+    }
+    bool BlueprintWorkspace::placementPoint(float x,float y,float height,float& wx,float& wz) const
+    {
+        if(!m_placement3D){wx=std::round((x-planCenterX)/planScale);wz=std::round((y-planCenterY)/planScale);return true;}
+        if(!m_placementWorld||!m_placementReady)return false;
+        const auto& space=m_placementWorld->space();
+        const auto ray=space.rayThrough({x,y}),eye=space.cameraPlace();
+        if(std::abs(ray.y)<0.00001f)return false;
+        const float t=(height-eye.y)/ray.y;
+        if(!(t>0&&t<10000))return false;
+        wx=std::round(eye.x+ray.x*t);wz=std::round(eye.z+ray.z*t);
+        return std::isfinite(wx)&&std::isfinite(wz)&&std::abs(wx)<=100000&&std::abs(wz)<=100000;
+    }
+    bool BlueprintWorkspace::placementProject(float wx,float wy,float wz,float& x,float& y) const
+    {
+        if(!m_placement3D){x=planCenterX+wx*planScale;y=planCenterY+wz*planScale;return true;}
+        if(!m_placementReady||!m_placementWorld)return false;
+        Vec2 p;if(!m_placementWorld->space().toScreen({wx,wy,wz},p))return false;
+        x=p.x;y=p.y;return std::isfinite(x)&&std::isfinite(y);
     }
     void BlueprintWorkspace::updateVisualPlacement(float x,float y,bool left,bool click)
     {
@@ -606,18 +662,42 @@ namespace nx
                     const auto markers=actorMarkers(m_document,assetScreen());
                     for(const auto& marker:markers)if(marker.graph==m_placementGraph&&marker.node==m_placementNode)
                     {
-                        const auto position=planPosition(x,y,marker.y);
-                        ok=m_document.setInputValue(marker.graph,marker.node,"place",position,m_status);break;
+                        const float height=m_placement3D?m_placementHeight:marker.y;
+                        float wx=0,wz=0;
+                        if(placementPoint(x,y,height,wx,wz))ok=m_document.setInputValue(marker.graph,marker.node,"place",std::to_string(wx)+","+std::to_string(height)+","+std::to_string(wz),m_status);
+                        else m_status="No forward intersection with placement plane.";
+                        break;
                     }
                 }
-                else ok=m_document.placeVisualActor(assetScreen(),m_placementAsset,planPosition(x,y,0),m_status);
+                else
+                {
+                    const float height=m_placement3D?m_placementHeight:0;float wx=0,wz=0;
+                    if(placementPoint(x,y,height,wx,wz))ok=m_document.placeVisualActor(assetScreen(),m_placementAsset,std::to_string(wx)+","+std::to_string(height)+","+std::to_string(wz),m_status);
+                    else m_status="No forward intersection with placement plane.";
+                }
                 if(ok){rebuildPins();filterCatalogue();m_diagnostic={};m_status="Linked placement updated. Ctrl+Z undoes it.";}
             }
             else m_status="Placement cancelled.";
             cancelVisualPlacement();return;
         }
         if(!click)return;
-        if(in(x,y,630,208,1000,241)){m_visualPlacement=false;return;}
+        if(in(x,y,825,208,1000,241)){m_placement3D=!m_placement3D;releasePlacementPreview();return;}
+        if(in(x,y,630,208,825,241)){m_visualPlacement=false;releasePlacementPreview();return;}
+        if(m_placement3D&&in(x,y,630,551,1000,573))
+        {
+            const unsigned button=static_cast<unsigned>((x-630)/74);
+            if(button==0)m_placementYaw-=0.35f;else if(button==1)m_placementYaw+=0.35f;
+            else if(button==2)m_placementDistance=std::max(4.f,m_placementDistance-3);
+            else if(button==3)m_placementDistance=std::min(100.f,m_placementDistance+3);
+            else {m_placementYaw=0.65f;m_placementDistance=25;m_placementHeight=0;}
+            m_placementReady=false;return;
+        }
+        if(m_placement3D&&in(x,y,630,575,1000,591))
+        {
+            if(x<740)m_placementHeight=std::max(-100.f,m_placementHeight-1);
+            else if(x>890)m_placementHeight=std::min(100.f,m_placementHeight+1);
+            return;
+        }
         const auto& assets=m_document.visualAssets();
         if(in(x,y,280,198,610,522))
         {
@@ -625,7 +705,7 @@ namespace nx
             if(row<assets.size()&&assets[row].kind=="actor")
             {
                 m_visualSelection=assets[row].id;m_placementAsset=assets[row].id;
-                m_placementDragging=true;m_status="Drag actor to the plan; release to place.";
+                m_placementDragging=true;m_status="Drag actor to the viewport; release to place.";
             }
             return;
         }
@@ -633,21 +713,43 @@ namespace nx
         auto markers=actorMarkers(m_document,assetScreen());
         for(auto it=markers.rbegin();it!=markers.rend();++it)
         {
-            const float mx=planCenterX+it->x*planScale,my=planCenterY+it->z*planScale;
+            float mx=0,my=0;if(!placementProject(it->x,it->y,it->z,mx,my))continue;
             if(std::abs(x-mx)<=10&&std::abs(y-my)<=10)
             {
                 m_placementGraph=it->graph;m_placementNode=it->node;m_placementAsset=it->asset;
+                if(m_placement3D)m_placementHeight=it->y;
                 m_placementDragging=true;m_status="Move instance; release to save position.";return;
             }
         }
     }
     void BlueprintWorkspace::drawVisualPlacement(Canvas& c)
     {
-        c.roundRect(630,208,370,33,4,{0.19f,0.33f,0.50f,1});
-        c.text(*m_font,"Back to asset properties",815,215,text,Align::Center);
+        c.roundRect(630,208,190,33,4,{0.19f,0.33f,0.50f,1});
+        c.text(*m_font,"Back",725,215,text,Align::Center);
+        c.roundRect(825,208,175,33,4,{0.19f,0.33f,0.50f,1});
+        c.text(*m_font,m_placement3D?"Plan view":"3D viewport",912,215,text,Align::Center);
         c.rect(planLeft,planTop,planRight-planLeft,planBottom-planTop,{0.07f,0.10f,0.15f,1});
+        if(m_placement3D&&m_placementWorld)
+        {
+            auto& space=m_placementWorld->space();
+            const float d=m_placementDistance;
+            space.setCamera({std::sin(m_placementYaw)*d,d*0.65f+m_placementHeight,std::cos(m_placementYaw)*d},{0,m_placementHeight,0},55);
+            space.draw(c,planLeft,planTop,planRight-planLeft,planBottom-planTop);
+            m_placementReady=true;
+        }
         c.clip(planLeft,planTop,planRight-planLeft,planBottom-planTop);
-        for(int i=-13;i<=13;++i)
+        if(m_placement3D)
+        {
+            // Project the reference plane through the native view matrix.
+            for(int i=-20;i<=20;++i)
+            {
+                const float p=static_cast<float>(i);float x1=0,y1=0,x2=0,y2=0;
+                const Color ink=i?Color{0.35f,0.43f,0.52f,0.35f}:Color{0.55f,0.7f,0.8f,0.7f};
+                if(placementProject(-20,m_placementHeight,p,x1,y1)&&placementProject(20,m_placementHeight,p,x2,y2))c.line(x1,y1,x2,y2,1,ink);
+                if(placementProject(p,m_placementHeight,-20,x1,y1)&&placementProject(p,m_placementHeight,20,x2,y2))c.line(x1,y1,x2,y2,1,ink);
+            }
+        }
+        else for(int i=-13;i<=13;++i)
         {
             const float offset=static_cast<float>(i)*planScale;
             c.rect(planCenterX+offset,planTop,i?1.f:2.f,planBottom-planTop,i?Color{0.16f,0.21f,0.28f,1}:Color{0.37f,0.49f,0.60f,1});
@@ -656,21 +758,31 @@ namespace nx
         for(const auto& marker:actorMarkers(m_document,assetScreen()))
         {
             if(m_placementDragging&&marker.graph==m_placementGraph&&marker.node==m_placementNode)continue;
-            const float x=planCenterX+marker.x*planScale,y=planCenterY+marker.z*planScale;
-            if(!in(x,y,planLeft,planTop,planRight,planBottom))continue;
+            float x=0,y=0;if(!placementProject(marker.x,marker.y,marker.z,x,y)||!in(x,y,planLeft,planTop,planRight,planBottom))continue;
             c.roundRect(x-8,y-8,16,16,3,{0.26f,0.56f,0.85f,1});
             const auto* actor=m_document.visualAsset(marker.asset);
             if(actor)c.text(*m_font,actor->title.c_str(),x+11,y-8,text);
         }
         if(m_placementDragging&&in(m_placementX,m_placementY,planLeft,planTop,planRight,planBottom))
         {
-            const float x=planCenterX+std::round((m_placementX-planCenterX)/planScale)*planScale;
-            const float y=planCenterY+std::round((m_placementY-planCenterY)/planScale)*planScale;
-            c.roundRect(x-9,y-9,18,18,3,{0.35f,0.80f,0.56f,1});
+            const float height=m_placement3D?m_placementHeight:0;
+            float wx=0,wz=0,x=0,y=0;
+            if(placementPoint(m_placementX,m_placementY,height,wx,wz)&&placementProject(wx,height,wz,x,y))
+                c.roundRect(x-9,y-9,18,18,3,{0.35f,0.80f,0.56f,1});
         }
         c.noClip();
-        c.text(*m_font,"X/Z plan | 1 m snap | Drag actor from library",630,555,muted);
-        c.text(*m_font,"Only constant linked placements are shown.",630,575,muted);
+        if(m_placement3D)
+        {
+            const char* labels[]={"Orbit L","Orbit R","Zoom +","Zoom -","Reset"};
+            for(unsigned i=0;i<5;++i){const float x=630+74*static_cast<float>(i);c.rect(x,551,71,22,{0.19f,0.33f,0.50f,1});c.text(*m_font,labels[i],x+35,552,text,Align::Center);}
+            c.text(*m_font,"Height -",635,575,text);c.text(*m_font,"Height +",925,575,text);
+            char label[80];snprintf(label,sizeof(label),"Y %.1f m | %u omitted",m_placementHeight,m_placementOmitted);c.text(*m_font,label,815,575,muted,Align::Center);
+        }
+        else
+        {
+            c.text(*m_font,"X/Z plan | 1 m snap | Drag actor from library",630,555,muted);
+            c.text(*m_font,"Only constant linked placements are shown.",630,575,muted);
+        }
     }
     namespace
     {
@@ -2102,7 +2214,7 @@ namespace nx
     void BlueprintWorkspace::update(Services& s)
     {
         auto& input = *s.input;
-        refreshWidgetPreview(s);
+        refreshWidgetPreview(s);refreshPlacementPreview(s);
         if (input.pressed(Action::Menu))
         {
             if(m_assetBrowser){if(m_visualInput){m_visualInput=0;m_visualText.clear();input.setTyping(false);m_status="Input cancelled.";return;}if(m_placementDragging){cancelVisualPlacement();m_status="Placement cancelled.";return;}if(m_visualPlacement){m_visualPlacement=false;return;}if(m_widgetDesigner){if(m_widgetPreviewDrag){m_widgetPreviewDrag=false;m_status="Widget drag cancelled.";return;}if(m_widgetDragging){m_widgetDragging=false;m_widgetDragId.clear();return;}m_widgetDesigner=false;releaseWidgetPreview();return;}m_assetBrowser=false;m_status="Asset browser closed.";return;}
