@@ -259,6 +259,12 @@ namespace nx
                     source+=pad+(n.kind.ends_with("@")?"@":"")+"bp_var_"+n.ref+" = "+v+";\n";mark(start,to);
                     return flow(to,"then",indent,depth+1);
                 }
+                if(n.kind=="attach:direct")
+                {
+                    std::string entity;if(!value(to,"target",entity,0))return false;
+                    source+=pad+"("+entity+").add(BP_Behaviour_"+n.ref+"());\n";
+                    mark(start,to);return flow(to,"then",indent,depth+1);
+                }
                 if(n.kind=="level:attach"||n.kind=="attach:behaviour")
                 {
                     std::string entity;

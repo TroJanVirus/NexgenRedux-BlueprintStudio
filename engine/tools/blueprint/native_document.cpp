@@ -36,6 +36,7 @@ namespace nx
             {"event:levelWhat","Agent event","Events","","value:string"},
             {"level:attach","Attach behaviour to named level entity","Level","in:exec|name:string","then:exec|result:bool"},
             {"attach:behaviour","Attach behaviour","Behaviours","in:exec|target:Entity@","then:exec|result:bool"},
+            {"attach:direct","Attach behaviour (direct)","Behaviours","in:exec|target:Entity@","then:exec"},
             {"var:get:bool","Get bool variable","Variables","","value:bool"},
             {"var:set:bool","Set bool variable","Variables","in:exec|value:bool","then:exec"},
             {"var:get:int","Get int variable","Variables","","value:int"},
@@ -355,7 +356,7 @@ namespace nx
                 if(!validText(n["id"])||!blueprintSpec(kind)||!context(g.name,kind,g.owner)||!n["x"].isNumber()||!n["y"].isNumber()||
                     !coordinate(x)||!coordinate(y)||!ids.emplace(n["id"].text(),g.nodes.size()).second||
                     (kind.rfind("literal:",0)==0&&(!n["value"].isString()||!literal(kind,ref)))||
-                    ((variableKind(kind)||kind.rfind("capture:",0)==0||kind=="call:function"||(kind=="attach:behaviour"||kind=="level:attach"))&&(!n["value"].isString()||!identifier(ref))))
+                    ((variableKind(kind)||kind.rfind("capture:",0)==0||kind=="call:function"||(kind=="attach:behaviour"||kind=="attach:direct"||kind=="level:attach"))&&(!n["value"].isString()||!identifier(ref))))
                 {error="Invalid node in "+g.name;return false;}
                 if(kind=="entry")++entries;
                 Node node{n["id"].text(),kind,ref,x,y};
@@ -418,7 +419,7 @@ namespace nx
             std::vector<BlueprintPin> vars;if(!candidate.variables(vars,error,owner))return false;
         }
         for(const auto& g:candidate.graphs)for(const auto& n:g.nodes)
-            if((n.kind=="attach:behaviour"||n.kind=="level:attach")&&std::find(behaviours.begin(),behaviours.end(),n.ref)==behaviours.end())
+            if((n.kind=="attach:behaviour"||n.kind=="attach:direct"||n.kind=="level:attach")&&std::find(behaviours.begin(),behaviours.end(),n.ref)==behaviours.end())
             {error="Missing behaviour "+n.ref;return false;}
         if(!candidate.functions(error))return false;
         *this=std::move(candidate);error.clear();return true;
@@ -455,7 +456,7 @@ namespace nx
             for(const auto& n:g.nodes)
             {
                 auto* j=ns->add();if(!j||!text(*j,"id",n.id)||!text(*j,"kind",n.kind)||!number(*j,"x",n.x)||!number(*j,"y",n.y))return fail();
-                if((n.kind.rfind("literal:",0)==0||variableKind(n.kind)||n.kind.rfind("capture:",0)==0||n.kind=="call:function"||(n.kind=="attach:behaviour"||n.kind=="level:attach"))&&!text(*j,"value",n.ref))return fail();
+                if((n.kind.rfind("literal:",0)==0||variableKind(n.kind)||n.kind.rfind("capture:",0)==0||n.kind=="call:function"||(n.kind=="attach:behaviour"||n.kind=="attach:direct"||n.kind=="level:attach"))&&!text(*j,"value",n.ref))return fail();
                 if(n.watch){auto* watch=j->put("watch");if(!watch)return fail();watch->setFlag(true);}
                 if(!n.values.empty())
                 {
@@ -506,7 +507,7 @@ namespace nx
             if(!variables(vars,error,g.owner))return false;
             for(unsigned i=1;std::any_of(vars.begin(),vars.end(),[&](const BlueprintPin& p){return p.name==value&&p.type!=type;});++i)value="variable_"+std::to_string(i);
         }
-        if((kind=="attach:behaviour"||kind=="level:attach"))
+        if((kind=="attach:behaviour"||kind=="attach:direct"||kind=="level:attach"))
         {
             const auto names=behaviours();if(names.empty()){error="Create a behaviour first.";return false;}value=names.front();
         }
@@ -607,12 +608,12 @@ namespace nx
     bool BlueprintDocument::setReference(size_t graph,size_t node,const std::string& value,std::string& error)
     {
         if(graph>=graphs.size()||node>=graphs[graph].nodes.size()||
-            (!variableKind(graphs[graph].nodes[node].kind)&&graphs[graph].nodes[node].kind.rfind("capture:",0)!=0&&graphs[graph].nodes[node].kind!="call:function"&&graphs[graph].nodes[node].kind!="attach:behaviour"&&graphs[graph].nodes[node].kind!="level:attach")||!identifier(value))
+            (!variableKind(graphs[graph].nodes[node].kind)&&graphs[graph].nodes[node].kind.rfind("capture:",0)!=0&&graphs[graph].nodes[node].kind!="call:function"&&graphs[graph].nodes[node].kind!="attach:behaviour"&&graphs[graph].nodes[node].kind!="attach:direct"&&graphs[graph].nodes[node].kind!="level:attach")||!identifier(value))
         {error="Use a variable name containing letters, digits and underscores.";return false;}
         auto& n=graphs[graph].nodes[node];
         if(n.ref==value){error.clear();return true;}
         if(n.kind.rfind("capture:",0)==0){record(graph);n.ref=value;error.clear();return true;}
-        if((n.kind=="attach:behaviour"||n.kind=="level:attach"))
+        if((n.kind=="attach:behaviour"||n.kind=="attach:direct"||n.kind=="level:attach"))
         {
             const auto names=behaviours();if(std::find(names.begin(),names.end(),value)==names.end()){error="Unknown behaviour "+value;return false;}
             record(graph);n.ref=value;error.clear();return true;
@@ -796,7 +797,7 @@ namespace nx
         if(std::none_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==owner;}))
         {error="Unknown behaviour.";return false;}
         for(const auto& g:graphs)for(const auto& n:g.nodes)
-            if((n.kind=="attach:behaviour"||n.kind=="level:attach")&&n.ref==behaviourName){error="Remove attachment nodes referencing "+behaviourName+" first.";return false;}
+            if((n.kind=="attach:behaviour"||n.kind=="attach:direct"||n.kind=="level:attach")&&n.ref==behaviourName){error="Remove attachment nodes referencing "+behaviourName+" first.";return false;}
         recordGraphList();
         graphs.erase(std::remove_if(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==owner;}),graphs.end());
         error.clear();return true;

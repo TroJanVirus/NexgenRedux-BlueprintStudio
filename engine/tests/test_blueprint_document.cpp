@@ -8,7 +8,7 @@
 using namespace nx;
 NX_TEST(nativeCatalogueContainsReferenceAPI)
 {
-    NX_EXPECT(blueprintCatalogue().size()==948);
+    NX_EXPECT(blueprintCatalogue().size()==949);
     const auto* save=blueprintSpec("api:Save:Save::set:string,string");
     NX_EXPECT(save&&save->inputs.size()==3&&save->outputs.size()==1);
     if(save&&save->inputs.size()==3)NX_EXPECT(save->inputs[0].type=="exec"&&save->inputs[2].type=="string");
@@ -807,6 +807,22 @@ NX_TEST(nativeImportBehaviourClassesKeepIndependentOwnerScopes)
     for(const char* invalid:{"class A : Behaviour {} class B : Screen {} class A : Behaviour {}", "class A : Behaviour {int entity;} class B : Screen {}", "class A : Behaviour {void start(){Record();}} class B : Screen {void Record(){}}", "class A : Behaviour {void onHit(int other){}} class B : Screen {}"})
     {
         NX_EXPECT(!importBlueprintScreen(invalid,doc,error));
+        std::string after;NX_EXPECT(doc.serialize(after,error)&&after==saved);
+    }
+}
+
+NX_TEST(nativeImportDirectBehaviourAttachmentPreservesCallSemantics)
+{
+    BlueprintDocument doc;std::string error,source,saved;
+    const char* code=R"(class Actor : Behaviour {void start(){Save::set("actor","started");}}
+        class Example : Screen {void onEnter(){Entity@ a=Scene::spawn(Vec2(0.0f,0.0f));a.add(Actor());}})";
+    NX_EXPECT(importBlueprintScreen(code,doc,error)&&compileBlueprint(doc,source,error));
+    NX_EXPECT(std::any_of(doc.graphs[0].nodes.begin(),doc.graphs[0].nodes.end(),[](const BlueprintDocument::Node& n){return n.kind=="attach:direct"&&n.ref=="Actor";}));
+    NX_EXPECT(source.find(".add(BP_Behaviour_Actor());")!=std::string::npos&&source.find("!is null")==std::string::npos);
+    NX_EXPECT(!doc.removeBehaviour("Actor",error)&&doc.serialize(saved,error));
+    for(const char* bad:{"class Actor : Behaviour {} class Example : Screen {void onEnter(){Entity@ a=Scene::spawn(Vec2(0.0f,0.0f));a.add(Actor(1));}}", "class Example : Screen {void onEnter(){Entity@ a=Scene::spawn(Vec2(0.0f,0.0f));a.add(Missing());}}"})
+    {
+        NX_EXPECT(!importBlueprintScreen(bad,doc,error));
         std::string after;NX_EXPECT(doc.serialize(after,error)&&after==saved);
     }
 }

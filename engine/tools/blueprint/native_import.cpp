@@ -531,6 +531,16 @@ namespace nx
                     return true;
                 }
                 if(handleAssignment)return fail("Expected explicit handle reassignment.");
+                if(member&&member->type=="Entity@"&&id=="add")
+                {
+                    std::string behaviour;
+                    if(!expect("(")||!name(behaviour))return false;
+                    const auto names=doc.behaviours();
+                    if(std::find(names.begin(),names.end(),behaviour)==names.end())return fail("Expected a declared Behaviour constructor.");
+                    if(!expect("(")||!expect(")")||!expect(")")||!expect(";"))return false;
+                    size_t n;if(!add("attach:direct",n,behaviour)||!bind(n,"target",*member))return false;
+                    chain(flow,n);return true;
+                }
                 std::vector<Value> args;Value unused;
                 if(!arguments(args)||!expect(";"))return false;
                 if(!member&&doc.function(doc.graphs[graph].owner,id))
