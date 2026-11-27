@@ -738,3 +738,26 @@ NX_TEST(nativeScreenManifestsSurviveSaveExportAndScreenHistory)
     NX_EXPECT(restored.addScreen("level",error)&&!restored.screenManifest("level"));
     NX_EXPECT(restored.serialize(bytes,error));
 }
+
+NX_TEST(nativeImportResolvesBoundedIncludeTreesTransactionally)
+{
+    const std::string script="class Included : Screen { void onEnter(){ Save::set(\"key\",\"value\"); } }";
+    std::string expanded,error;
+    const auto read=[&](const std::string& name,std::string& text)
+    {
+        if(name=="global:shared/entry.as")text="#include \"asset:screen.as\"\n";
+        else if(name=="asset:screen.as")text=script;
+        else if(name=="asset:cycle.as")text="#include \"asset:cycle.as\"\n";
+        else return false;
+        return true;
+    };
+    NX_EXPECT(resolveBlueprintIncludes("#include \"global:shared/entry.as\"\n#include \"asset:screen.as\"\n","main.as",read,expanded,error));
+    BlueprintDocument doc;NX_EXPECT(importBlueprintScreen(expanded,doc,error));
+    const auto before=expanded;
+    for(const char* invalid:{"#include \"asset:cycle.as\"\n","#include \"asset:missing.as\"\n","#include \"global:../bad.as\"\n","#include \"own:bad.as\"\n","#include \"asset:screen.as\" trailing\n","#define X 1\n"})
+    {
+        NX_EXPECT(!resolveBlueprintIncludes(invalid,"main.as",read,expanded,error));
+        NX_EXPECT(expanded==before&&(error.find("main.as:1:")!=std::string::npos||error.find("asset:cycle.as:1:")!=std::string::npos));
+    }
+    NX_EXPECT(!resolveBlueprintIncludes(std::string(512*1024+1,'x'),"main.as",read,expanded,error)&&expanded==before);
+}

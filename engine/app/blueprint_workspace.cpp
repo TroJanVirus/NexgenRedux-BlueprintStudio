@@ -256,6 +256,23 @@ namespace nx
                 file.find_first_of("/\\:")==std::string::npos&&file.find("..")==std::string::npos&&
                 std::none_of(file.begin(),file.end(),[](unsigned char c){return c<32||c==127;});
         }
+        bool expandImportSource(Platform& platform,const std::string& source,const std::string& label,const std::string& localAssets,const std::string& sharedAssets,std::string& expanded,std::string& error)
+        {
+            return resolveBlueprintIncludes(source,label,[&](const std::string& name,std::string& bytes)
+            {
+                std::string path;
+                if(name.rfind("asset:",0)==0)path=localAssets+"/"+name.substr(6);
+                else
+                {
+                    const auto relative=name.substr(7);
+                    path=sharedAssets.empty()?"global/"+relative:sharedAssets+"/"+relative;
+                    if(!sharedAssets.empty()&&!platform.fileTime(path.c_str()))path="global/"+relative;
+                }
+                FileData file;
+                if(!platform.readFile(path.c_str(),file,MemTag::General)||!file.size||file.size>512*1024)return false;
+                bytes.assign(reinterpret_cast<const char*>(file.data),file.size);return true;
+            },expanded,error);
+        }
     }
 
     bool BlueprintWorkspace::importSource(Services& s,const std::string& file)
@@ -267,10 +284,13 @@ namespace nx
         if(!s.platform->readFile(("own/"+file).c_str(),data,MemTag::General)||data.size>512*1024)
         {m_status="Cannot read source or file exceeds import limit.";return false;}
         const std::string source(reinterpret_cast<const char*>(data.data),data.size);
+        std::string expanded;
+        const auto stem=file.substr(0,file.size()-3);
+        if(!expandImportSource(*s.platform,source,file,"own/"+stem+"/asset","",expanded,m_status))return false;
         BlueprintDocument candidate;
-        if(!importBlueprintScreen(source,candidate,m_status))return false;
-        // Validate the original as well as the conversion using the installed engine.
-        if(!s.screens->validateBlueprintSource(source,m_status)){m_status="Original source: "+m_status;return false;}
+        if(!importBlueprintScreen(expanded,candidate,m_status))return false;
+        // Validate the expanded original as well as the conversion using the installed engine.
+        if(!s.screens->validateBlueprintSource(expanded,m_status)){m_status="Original source: "+m_status;return false;}
         std::vector<BlueprintScreenOutput> output;
         if(!compileBlueprintProject(candidate,output,m_status))return false;
         for(const auto& screen:output)
@@ -318,8 +338,10 @@ namespace nx
                 data.size>512*1024)
             {m_status=owner+": missing or oversized main.as.";return false;}
             const std::string source(reinterpret_cast<const char*>(data.data),data.size);
+            std::string expanded;
             BlueprintDocument screen;
-            if(!importBlueprintScreen(source,screen,error)||!s.screens->validateBlueprintSource(source,error))
+            if(!expandImportSource(*s.platform,source,owner+"/main.as",base+"/"+owner+"/asset",base+"/_global",expanded,error)||
+                !importBlueprintScreen(expanded,screen,error)||!s.screens->validateBlueprintSource(expanded,error))
             {m_status=owner+": "+error;return false;}
             if(candidate.graphs.size()+screen.graphs.size()>64)
             {m_status="Project exceeds 64 graph limit.";return false;}

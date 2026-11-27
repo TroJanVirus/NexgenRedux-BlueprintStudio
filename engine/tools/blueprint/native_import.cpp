@@ -656,6 +656,72 @@ namespace nx
             }
         }
     }
+    bool resolveBlueprintIncludes(const std::string& source,const std::string& label,const BlueprintIncludeReader& read,std::string& expanded,std::string& error)
+    {
+        constexpr size_t limit=512*1024;
+        std::unordered_set<std::string> active,done;
+        std::string result;
+        size_t total=0;
+        auto portable=[](const std::string& name)
+        {
+            size_t start=name.rfind("asset:",0)==0?6:name.rfind("global:",0)==0?7:0;
+            if(!start||name.size()>100||!name.ends_with(".as"))return false;
+            while(start<name.size())
+            {
+                const auto slash=name.find('/',start);
+                const auto part=name.substr(start,slash==std::string::npos?slash:slash-start);
+                if(!blueprintAssetName(part,slash!=std::string::npos))return false;
+                if(slash==std::string::npos)return true;
+                start=slash+1;
+            }
+            return false;
+        };
+        std::function<bool(const std::string&,const std::string&,unsigned)> visit;
+        visit=[&](const std::string& code,const std::string& file,unsigned depth)
+        {
+            if(depth>5||code.empty()||code.size()>limit-total||code.find('\0')!=std::string::npos)
+            {error=file+": empty, binary, oversized or too-deep include tree.";return false;}
+            total+=code.size();
+            std::string body=code;
+            if(body.rfind("\xef\xbb\xbf",0)==0)body.replace(0,3,"   ");
+            size_t line=1;
+            for(size_t at=0;at<body.size();++line)
+            {
+                const auto next=body.find('\n',at);
+                const auto end=next==std::string::npos?body.size():next;
+                size_t i=at;while(i<end&&(body[i]==' '||body[i]=='\t'))++i;
+                if(i<end&&body[i]=='#')
+                {
+                    auto fail=[&](const std::string& why){error=file+":"+std::to_string(line)+": "+why;return false;};
+                    if(body.compare(i,8,"#include")!=0||i+8>=end||(body[i+8]!=' '&&body[i+8]!='\t'))return fail("Unsupported preprocessor directive.");
+                    i+=8;while(i<end&&(body[i]==' '||body[i]=='\t'))++i;
+                    if(i>=end||body[i]!='"')return fail("Expected quoted include path.");
+                    const auto close=body.find('"',++i);
+                    if(close==std::string::npos||close>=end)return fail("Unclosed include path.");
+                    const auto name=body.substr(i,close-i);
+                    i=close+1;while(i<end&&(body[i]==' '||body[i]=='\t'||body[i]=='\r'))++i;
+                    if(i<end&&body.compare(i,2,"//")!=0)return fail("Unexpected text after include.");
+                    if(!portable(name))return fail("Include must be a portable asset: or global: .as path: "+name);
+                    if(active.count(name))return fail("Cyclic include: "+name);
+                    if(!done.count(name))
+                    {
+                        if(done.size()+active.size()>=32)return fail("Include file count limit exceeded.");
+                        std::string dependency;
+                        if(!read||!read(name,dependency))return fail("Missing include: "+name);
+                        active.insert(name);
+                        if(!visit(dependency,name,depth+1))return false;
+                        active.erase(name);done.insert(name);
+                    }
+                    std::fill(body.begin()+static_cast<std::ptrdiff_t>(at),body.begin()+static_cast<std::ptrdiff_t>(end),' ');
+                }
+                at=next==std::string::npos?body.size():next+1;
+            }
+            if(body.size()+1>limit-result.size()){error=file+": expanded source exceeds import limit.";return false;}
+            result+=body;result+='\n';return true;
+        };
+        if(!visit(source,label,0))return false;
+        expanded.swap(result);error.clear();return true;
+    }
     bool importBlueprintScreen(const std::string& source,BlueprintDocument& document,std::string& error)
     {
         error.clear();std::vector<Token> tokens;

@@ -1818,7 +1818,10 @@ NX_TEST(nativeWorkspaceImportsNativeExportScreensAndTheirAssets)
         r.platform.files[folder+"/"+firstId+"/screen.json"]=originalManifest;
         r.platform.ownFolders.insert(folder+"/_global");
         r.platform.files[folder+"/_global/shared/data.bin"]=std::string("shared\0bytes",12);
-        r.platform.files[folder+"/"+firstId+"/main.as"]=first;
+        const std::string entry=scenario==3?"#include \"global:shared/entry.as\"\n":first;
+        if(scenario==3)r.platform.files[folder+"/_global/shared/entry.as"]="#include \"asset:entry.as\"\n";
+        if(scenario==3)r.platform.files[folder+"/"+firstId+"/asset/entry.as"]=first;
+        r.platform.files[folder+"/"+firstId+"/main.as"]=entry;
         if(multiple)r.platform.files[folder+"/level/main.as"]=second;
         for(const auto& screen:expected)
         {
@@ -1858,7 +1861,7 @@ NX_TEST(nativeWorkspaceImportsNativeExportScreensAndTheirAssets)
         NX_EXPECT(r.platform.files["own/"+cloned+"/_global/shared/data.bin"]==r.platform.files[shared]);
         for(const auto& screen:expected)
             NX_EXPECT(r.platform.files["own/"+project.assetRoot+"/"+screen+"/asset/data.bin"]==r.platform.files[folder+"/"+screen+"/asset/data.bin"]);
-        NX_EXPECT(r.platform.files[folder+"/"+firstId+"/main.as"]==first);
+        NX_EXPECT(r.platform.files[folder+"/"+firstId+"/main.as"]==entry);
         if(multiple)NX_EXPECT(r.platform.files[folder+"/level/main.as"]==second);
         if(scenario==3&&output.size()==2)
         {
