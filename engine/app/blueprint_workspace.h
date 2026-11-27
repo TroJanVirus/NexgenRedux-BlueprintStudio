@@ -43,7 +43,7 @@ namespace nx
         size_t m_pending=static_cast<size_t>(-1),m_paletteFirst=0;
         std::string m_pendingPin,m_query,m_edit;
         std::vector<const BlueprintNodeSpec*> m_palette;
-        int m_focus=0; // 1 catalogue search, 2 literal value
+        int m_focus=0; // 1 catalogue search, 2 literal, 3 reference, 4 new function
         bool m_previousTyping=false;
     };
 }

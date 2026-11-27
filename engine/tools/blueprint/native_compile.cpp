@@ -165,6 +165,11 @@ namespace nx
                     source+=pad+(n.kind.ends_with("@")?"@":"")+"bp_var_"+n.ref+" = "+v+";\n";
                     return flow(to,"then",indent,depth+1);
                 }
+                if(n.kind=="call:function")
+                {
+                    source+=pad+"bp_fn_"+n.ref+"();\n";
+                    return flow(to,"then",indent,depth+1);
+                }
                 if(n.kind=="sequence")
                 {
                     // First and second execute in order, in separate scopes.
@@ -223,7 +228,7 @@ namespace nx
             if(entry==graph.nodes.end()){error="Missing event entry.";return false;}
             const auto index=static_cast<size_t>(entry-graph.nodes.begin());
             const auto signature=graph.name=="update"?"float dt":graph.name=="draw"?"Canvas@ canvas":"";
-            result+="    void "+graph.name+"("+signature+")\n    {\n";
+            result+="    void "+(graph.kind=="function"?"bp_fn_"+graph.name:graph.name)+"("+signature+")\n    {\n";
             Emitter e{graph,result,error,std::vector<bool>(graph.nodes.size(),false),std::vector<bool>(graph.nodes.size(),false)};
             if(!e.flow(index,"then",2,0))return false;
             result+="    }\n";

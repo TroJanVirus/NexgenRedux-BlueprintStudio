@@ -6,7 +6,7 @@
 using namespace nx;
 NX_TEST(nativeCatalogueContainsReferenceAPI)
 {
-    NX_EXPECT(blueprintCatalogue().size()==841);
+    NX_EXPECT(blueprintCatalogue().size()==842);
     const auto* save=blueprintSpec("api:Save:Save::set:string,string");
     NX_EXPECT(save&&save->inputs.size()==3&&save->outputs.size()==1);
     if(save&&save->inputs.size()==3)NX_EXPECT(save->inputs[0].type=="exec"&&save->inputs[2].type=="string");
@@ -127,4 +127,20 @@ NX_TEST(nativeReferenceArgumentsRespectOriginalOrder)
     NX_EXPECT(doc.addNode(0,"var:set:int",0,0,error));
     NX_EXPECT(doc.connect(0,0,"then",1,"in",error)&&doc.connect(0,1,"then",2,"in",error)&&doc.connect(0,1,"x",2,"value",error));
     NX_EXPECT(compileBlueprint(doc,source,error)&&source.find("Space::nextRegion(bp_out_1_x, bp_out_1_z, bp_out_1_arrived)")!=std::string::npos);
+}
+
+NX_TEST(nativeFunctionGraphsAreReusableAndHistorySafe)
+{
+    BlueprintDocument doc;doc.create();std::string error,source,saved;
+    NX_EXPECT(doc.addFunction("Setup",error)&&doc.addFunction("Reset",error));
+    NX_EXPECT(!doc.addFunction("Setup",error)&&!doc.addFunction("update",error));
+    NX_EXPECT(doc.addNode(0,"call:function",0,0,error)&&doc.connect(0,0,"then",1,"in",error));
+    NX_EXPECT(doc.addNode(3,"call:function",0,0,error)&&doc.connect(3,0,"then",1,"in",error));
+    NX_EXPECT(!doc.addNode(4,"call:function",0,0,error)); // Reset -> Setup -> Reset
+    NX_EXPECT(!doc.removeFunction(3,error));
+    NX_EXPECT(compileBlueprint(doc,source,error)&&source.find("void bp_fn_Setup()")!=std::string::npos&&source.find("bp_fn_Reset();")!=std::string::npos);
+    NX_EXPECT(doc.serialize(saved,error));BlueprintDocument copy;NX_EXPECT(copy.load(saved.data(),saved.size(),error));
+    NX_EXPECT(doc.addFunction("Unused",error)&&doc.removeFunction(5,error));
+    NX_EXPECT(doc.undo()&&doc.graphs.size()==6&&doc.undo()&&doc.graphs.size()==5);
+    NX_EXPECT(doc.redo()&&doc.graphs.size()==6&&doc.redo()&&doc.graphs.size()==5);
 }

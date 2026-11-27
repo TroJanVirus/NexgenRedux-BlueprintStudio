@@ -52,6 +52,7 @@ namespace nx
             {"var:get:Entity@","Get Entity@ variable","Variables","","value:Entity@"},
             {"var:set:Entity@","Set Entity@ variable","Variables","in:exec|value:Entity@","then:exec"},
             {"sequence","Sequence","Flow","in:exec","first:exec|second:exec|then:exec"},
+            {"call:function","Call function","Functions","in:exec","then:exec"},
             {"repeat","Repeat (bounded)","Flow","in:exec|count:int","body:exec|then:exec|index:int"},
 #include "tools/blueprint/native_catalog.inc"
         };
@@ -175,7 +176,11 @@ namespace nx
                 !ns.isArray()||!ls.isArray()||ns.count()>kMaxNodes||ls.count()>kMaxLinks)
             {error="Invalid or duplicate graph.";return false;}
             Graph g;g.name=value["name"].text();g.owner="Screen";g.kind="event";
-            if(g.name!="onEnter"&&g.name!="update"&&g.name!="draw"){error="Unsupported event graph.";return false;}
+            const auto kind=value["kind"].text("event");
+            g.kind=kind;
+            if((g.kind=="event"&&g.name!="onEnter"&&g.name!="update"&&g.name!="draw")||
+                (g.kind=="function"&&!identifier(g.name))||(g.kind!="event"&&g.kind!="function"))
+            {error="Invalid event or function graph.";return false;}
             std::unordered_map<std::string,size_t> ids;unsigned entries=0;
             for(auto n=ns.first();n.exists();n=n.next())
             {
@@ -184,7 +189,7 @@ namespace nx
                 if(!validText(n["id"])||!blueprintSpec(kind)||!context(g.name,kind)||!n["x"].isNumber()||!n["y"].isNumber()||
                     !coordinate(x)||!coordinate(y)||!ids.emplace(n["id"].text(),g.nodes.size()).second||
                     (kind.rfind("literal:",0)==0&&(!n["value"].isString()||!literal(kind,ref)))||
-                    (variableKind(kind)&&(!n["value"].isString()||!identifier(ref))))
+                    ((variableKind(kind)||kind=="call:function")&&(!n["value"].isString()||!identifier(ref))))
                 {error="Invalid node in "+g.name;return false;}
                 if(kind=="entry")++entries;
                 g.nodes.push_back({n["id"].text(),kind,ref,x,y});
@@ -200,7 +205,7 @@ namespace nx
             candidate.graphs.push_back(std::move(g));
         }
         std::vector<BlueprintPin> vars;
-        if(!candidate.variables(vars,error))return false;
+        if(!candidate.variables(vars,error)||!candidate.functions(error))return false;
         *this=std::move(candidate);error.clear();return true;
     }
     bool BlueprintDocument::serialize(std::string& result,std::string& error)const
@@ -210,12 +215,12 @@ namespace nx
         auto* gs=root.put("graphs");gs->setArray();
         for(const auto& g:graphs)
         {
-            auto* v=gs->add();text(*v,"name",g.name);auto* ns=v->put("nodes");ns->setArray();
+            auto* v=gs->add();text(*v,"name",g.name);text(*v,"kind",g.kind);auto* ns=v->put("nodes");ns->setArray();
             for(const auto& n:g.nodes)
             {
                 auto* j=ns->add();text(*j,"id",n.id);text(*j,"kind",n.kind);
                 number(*j,"x",n.x);number(*j,"y",n.y);
-                if(n.kind.rfind("literal:",0)==0||variableKind(n.kind))text(*j,"value",n.ref);
+                if(n.kind.rfind("literal:",0)==0||variableKind(n.kind)||n.kind=="call:function")text(*j,"value",n.ref);
             }
             auto* ls=v->put("links");ls->setArray();
             for(const auto& l:g.links)
@@ -232,7 +237,7 @@ namespace nx
     void BlueprintDocument::record(size_t graph)
     {
         if(m_undo.size()>=kHistory)m_undo.erase(m_undo.begin());
-        m_undo.push_back({graph,graphs[graph],m_revision});m_redo.clear();m_revision=++m_nextRevision;
+        m_undo.push_back({graph,graphs[graph],m_revision,{}});m_redo.clear();m_revision=++m_nextRevision;
     }
     bool BlueprintDocument::move(size_t graph,size_t node,float x,float y)
     {
@@ -256,6 +261,15 @@ namespace nx
             std::vector<BlueprintPin> vars;
             if(!variables(vars,error))return false;
             for(unsigned i=1;std::any_of(vars.begin(),vars.end(),[&](const BlueprintPin& p){return p.name==value&&p.type!=type;});++i)value="variable_"+std::to_string(i);
+        }
+        if(kind=="call:function")
+        {
+            const auto found=std::find_if(graphs.begin(),graphs.end(),[&](const Graph& fn){return fn.kind=="function"&&fn.name!=g.name;});
+            if(found==graphs.end()){error="Create another function graph first.";return false;}
+            value=found->name;
+            // Adding an unconnected call must also maintain the acyclic call graph.
+            g.nodes.push_back({id,kind,value,x,y});
+            const bool valid=functions(error);g.nodes.pop_back();if(!valid)return false;
         }
         record(graph);g.nodes.push_back({id,kind,value,x,y});error.clear();return true;
     }
@@ -309,26 +323,102 @@ namespace nx
     }
     bool BlueprintDocument::setReference(size_t graph,size_t node,const std::string& value,std::string& error)
     {
-        if(graph>=graphs.size()||node>=graphs[graph].nodes.size()||!variableKind(graphs[graph].nodes[node].kind)||!identifier(value))
+        if(graph>=graphs.size()||node>=graphs[graph].nodes.size()||
+            (!variableKind(graphs[graph].nodes[node].kind)&&graphs[graph].nodes[node].kind!="call:function")||!identifier(value))
         {error="Use a variable name containing letters, digits and underscores.";return false;}
         auto& n=graphs[graph].nodes[node];
         if(n.ref==value){error.clear();return true;}
+        if(n.kind=="call:function")
+        {
+            const std::string previous=n.ref;n.ref=value;
+            const bool valid=functions(error);n.ref=previous;if(!valid)return false;
+            record(graph);n.ref=value;error.clear();return true;
+        }
         const auto type=n.kind.substr(8);
         for(const auto& g:graphs)for(const auto& other:g.nodes)
             if(&other!=&n&&variableKind(other.kind)&&other.ref==value&&other.kind.substr(8)!=type)
             {error="Variable name already has a different type.";return false;}
         record(graph);n.ref=value;error.clear();return true;
     }
+    bool BlueprintDocument::functions(std::string& error) const
+    {
+        std::unordered_map<std::string,size_t> index;
+        for(size_t i=0;i<graphs.size();++i)
+            if(graphs[i].kind=="function")index.emplace(graphs[i].name,i);
+        std::vector<std::vector<size_t>> calls(graphs.size());
+        for(size_t i=0;i<graphs.size();++i)for(const auto& node:graphs[i].nodes)
+        {
+            if(node.kind!="call:function")continue;
+            const auto it=index.find(node.ref);
+            if(it==index.end()){error="Missing function: "+node.ref;return false;}
+            calls[i].push_back(it->second);
+        }
+        // Topological elimination avoids recursion and catches indirect cycles.
+        std::vector<size_t> indegree(graphs.size(),0),ready;
+        for(const auto& edges:calls)for(size_t to:edges)++indegree[to];
+        for(size_t i=0;i<graphs.size();++i)if(!indegree[i])ready.push_back(i);
+        size_t visited=0;
+        while(!ready.empty())
+        {
+            const size_t i=ready.back();ready.pop_back();++visited;
+            for(size_t to:calls[i])if(--indegree[to]==0)ready.push_back(to);
+        }
+        if(visited!=graphs.size()){error="Recursive function calls are not supported.";return false;}
+        error.clear();return true;
+    }
+
+    void BlueprintDocument::recordGraphList()
+    {
+        if(m_undo.size()>=kHistory)m_undo.erase(m_undo.begin());
+        m_undo.push_back({static_cast<size_t>(-1),{},m_revision,graphs});
+        m_redo.clear();m_revision=++m_nextRevision;
+    }
+    bool BlueprintDocument::addFunction(const std::string& functionName,std::string& error)
+    {
+        if(!identifier(functionName)||graphs.size()>=kMaxGraphs||
+            std::any_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.name==functionName;})||
+            functionName=="onEnter"||functionName=="update"||functionName=="draw")
+        {error="Choose a unique function name (letters, digits and underscores).";return false;}
+        recordGraphList();
+        Graph g;g.owner="Screen";g.name=functionName;g.kind="function";
+        g.nodes.push_back({"entry","entry","",24,60});graphs.push_back(std::move(g));
+        error.clear();return true;
+    }
+    bool BlueprintDocument::removeFunction(size_t graph,std::string& error)
+    {
+        if(graph>=graphs.size()||graphs[graph].kind!="function")
+        {error="Only function graphs can be deleted.";return false;}
+        for(const auto& g:graphs)for(const auto& n:g.nodes)
+            if(n.kind=="call:function"&&n.ref==graphs[graph].name)
+            {error="Remove calls to this function before deleting it.";return false;}
+        recordGraphList();graphs.erase(graphs.begin()+static_cast<std::ptrdiff_t>(graph));error.clear();return true;
+    }
     bool BlueprintDocument::undo()
     {
         if(m_undo.empty())return false;
         auto e=std::move(m_undo.back());m_undo.pop_back();
-        m_redo.push_back({e.graph,std::move(graphs[e.graph]),m_revision});graphs[e.graph]=std::move(e.state);m_revision=e.revision;return true;
+        if(e.graph==static_cast<size_t>(-1))
+        {
+            m_redo.push_back({e.graph,{},m_revision,std::move(graphs)});graphs=std::move(e.all);
+        }
+        else
+        {
+            m_redo.push_back({e.graph,std::move(graphs[e.graph]),m_revision,{}});graphs[e.graph]=std::move(e.state);
+        }
+        m_revision=e.revision;return true;
     }
     bool BlueprintDocument::redo()
     {
         if(m_redo.empty())return false;
         auto e=std::move(m_redo.back());m_redo.pop_back();
-        m_undo.push_back({e.graph,std::move(graphs[e.graph]),m_revision});graphs[e.graph]=std::move(e.state);m_revision=e.revision;return true;
+        if(e.graph==static_cast<size_t>(-1))
+        {
+            m_undo.push_back({e.graph,{},m_revision,std::move(graphs)});graphs=std::move(e.all);
+        }
+        else
+        {
+            m_undo.push_back({e.graph,std::move(graphs[e.graph]),m_revision,{}});graphs[e.graph]=std::move(e.state);
+        }
+        m_revision=e.revision;return true;
     }
 }

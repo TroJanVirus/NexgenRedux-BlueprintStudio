@@ -22,7 +22,7 @@ namespace nx
         constexpr float kNodeWidth = 196, kNodeHeight = 72;
         // Each native pin is provided by the generated catalogue.
         constexpr float kPinStart=38, kPinStep=22;
-        constexpr size_t kRows = 19;
+        constexpr size_t kRows = 15;
         constexpr Color text = {0.88f, 0.91f, 0.96f, 1};
         constexpr Color muted = {0.57f, 0.65f, 0.76f, 1};
         constexpr Color accent = {0.27f, 0.65f, 0.98f, 1};
@@ -30,6 +30,8 @@ namespace nx
         { return x >= left && x < right && y >= top && y < bottom; }
         std::string title(const BlueprintDocument::Node& node)
         {
+            if(node.kind.rfind("var:",0)==0)return (node.kind.rfind("var:get:",0)==0?"Get ":"Set ")+node.ref;
+            if(node.kind=="call:function")return "Call "+node.ref;
             if(const auto* spec=blueprintSpec(node.kind))return spec->title;
             if (node.kind.rfind("api:", 0) == 0)
             {
@@ -266,20 +268,27 @@ namespace nx
         const bool click=left&&!m_left;
         if(m_focus)
         {
-            auto& value=m_focus==1?m_query:m_edit;
+            const int focus=m_focus;
+            auto& value=focus==1?m_query:m_edit;
             bool changed=false;
             for(u32 i=0;i<input.typedCount();++i)
             {
                 const u32 ch=input.typed(i);
                 if(ch==8&&!value.empty()){value.pop_back();changed=true;}
-                else if(ch>=32&&ch<127&&value.size()< (m_focus==1?80u:4096u)){value+=static_cast<char>(ch);changed=true;}
+                else if(ch>=32&&ch<127&&value.size()< (focus==1?80u:focus==2?4096u:64u)){value+=static_cast<char>(ch);changed=true;}
                 else if(ch==13)
                 {
-                    if(m_focus==2&&!m_document.setLiteral(m_graph,m_selection,m_edit,m_status))break;
+                    if(focus==2&&!m_document.setLiteral(m_graph,m_selection,m_edit,m_status))break;
+                    if(focus==3&&!m_document.setReference(m_graph,m_selection,m_edit,m_status))break;
+                    if(focus==4)
+                    {
+                        if(!m_document.addFunction(m_edit,m_status))break;
+                        selectGraph(m_document.graphs.size()-1);
+                    }
                     m_focus=0;input.setTyping(false);m_status="Ready.";break;
                 }
             }
-            if(changed&&m_focus!=2)filterCatalogue();
+            if(changed&&focus==1)filterCatalogue();
             if(click&&m_focus==1&&!in(x,y,kRight+8,kTop+38,kWidth-8,kTop+68)){m_focus=0;input.setTyping(false);}
             else {m_left=left;return;}
         }
@@ -289,9 +298,18 @@ namespace nx
             if(m_document.graphs.empty()){m_left=left;return;}
             if(click&&in(x,y,610,39,742,69))compileAndExport(s);
             if((pressed&1u)||(click&&in(x,y,748,39,858,69)))saveCopy(s);
-            if(((pressed&2u)||(click&&in(x,y,864,39,948,69)))&&m_document.undo()){clearWire();m_selection=static_cast<size_t>(-1);rebuildPins();m_status="Undid graph change.";}
-            if(((pressed&4u)||(click&&in(x,y,954,39,1038,69)))&&m_document.redo()){clearWire();m_selection=static_cast<size_t>(-1);rebuildPins();m_status="Redid graph change.";}
+            if(((pressed&2u)||(click&&in(x,y,864,39,948,69)))&&m_document.undo()){selectGraph(std::min(m_graph,m_document.graphs.size()-1));m_status="Undid graph change.";}
+            if(((pressed&4u)||(click&&in(x,y,954,39,1038,69)))&&m_document.redo()){selectGraph(std::min(m_graph,m_document.graphs.size()-1));m_status="Redid graph change.";}
             if(click&&in(x,y,1044,39,1128,69))fitGraph();
+        }
+        if(click&&in(x,y,8,kBottom-114,kLeft-8,kBottom-82))
+        {
+            m_edit="function_"+std::to_string(m_document.graphs.size()-2);m_focus=4;input.setTyping(true);m_left=left;return;
+        }
+        if(click&&in(x,y,8,kBottom-77,kLeft-8,kBottom-45))
+        {
+            if(m_document.removeFunction(m_graph,m_status)){m_first=0;selectGraph(0);m_status="Removed function.";}
+            m_left=left;return;
         }
         if(click&&in(x,y,8,kBottom-40,kLeft-8,kBottom-8))
         {
@@ -314,7 +332,8 @@ namespace nx
             if(click&&m_selection<m_document.graphs[m_graph].nodes.size())
             {
                 const auto& n=m_document.graphs[m_graph].nodes[m_selection];
-                if(in(x,y,kRight+8,kTop+456,kWidth-8,kTop+486)&&n.kind.rfind("literal:",0)==0){m_edit=n.ref;m_focus=2;input.setTyping(true);}
+                if(in(x,y,kRight+8,kTop+456,kWidth-8,kTop+486)&&(n.kind.rfind("literal:",0)==0||n.kind.rfind("var:",0)==0||n.kind=="call:function"))
+                {m_edit=n.ref;m_focus=n.kind.rfind("literal:",0)==0?2:3;input.setTyping(true);}
                 else if(in(x,y,kRight+8,kBottom-40,kWidth-8,kBottom-8)&&m_document.deleteNode(m_graph,m_selection,m_status)){clearWire();m_selection=static_cast<size_t>(-1);rebuildPins();m_status="Deleted node.";}
             }
             m_left=left;return;
@@ -497,6 +516,11 @@ namespace nx
             c.clip(5,y,kLeft-10,31);
             c.text(*m_font,shorten(g.owner+" / "+g.name,32).c_str(),12,y+6,text);c.noClip();
         }
+        c.roundRect(8,kBottom-114,kLeft-16,32,5,{0.19f,0.33f,0.50f,1});
+        c.clip(8,kBottom-114,kLeft-16,32);
+        c.text(*m_font,m_focus==4?m_edit.c_str():"New function",kLeft*0.5f,kBottom-108,text,Align::Center);c.noClip();
+        c.roundRect(8,kBottom-77,kLeft-16,32,5,{0.32f,0.19f,0.23f,1});
+        c.text(*m_font,"Delete function",kLeft*0.5f,kBottom-71,text,Align::Center);
         c.roundRect(8,kBottom-40,kLeft-16,32,5,{0.19f,0.33f,0.50f,1});
         c.text(*m_font,"New Blueprint",kLeft*0.5f,kBottom-34,text,Align::Center);
         c.text(*m_font,"NODE LIBRARY",kRight+12,kTop+10,accent);
@@ -518,12 +542,12 @@ namespace nx
             const auto* spec=blueprintSpec(n.kind);
             c.clip(kRight+8,kTop+404,kWidth-kRight-16,44);
             c.paragraph(*m_font,spec?spec->title.c_str():n.kind.c_str(),kRight+12,kTop+408,244,text);c.noClip();
-            if(n.kind.rfind("literal:",0)==0)
+            if(n.kind.rfind("literal:",0)==0||n.kind.rfind("var:",0)==0||n.kind=="call:function")
             {
-                c.roundRect(kRight+8,kTop+456,kWidth-kRight-16,30,4,m_focus==2?Color{0.24f,0.35f,0.48f,1}:Color{0.16f,0.21f,0.28f,1});
+                c.roundRect(kRight+8,kTop+456,kWidth-kRight-16,30,4,(m_focus==2||m_focus==3)?Color{0.24f,0.35f,0.48f,1}:Color{0.16f,0.21f,0.28f,1});
                 c.clip(kRight+12,kTop+456,kWidth-kRight-24,30);
-                c.text(*m_font,(m_focus==2?m_edit:n.ref).c_str(),kRight+14,kTop+461,text);c.noClip();
-                c.text(*m_font,"Click value, type, Enter",kRight+12,kTop+490,muted);
+                c.text(*m_font,((m_focus==2||m_focus==3)?m_edit:n.ref).c_str(),kRight+14,kTop+461,text);c.noClip();
+                c.text(*m_font,"Click to edit, Enter confirms",kRight+12,kTop+490,muted);
             }
             c.roundRect(kRight+8,kBottom-40,kWidth-kRight-16,32,5,{0.38f,0.19f,0.23f,1});
             c.text(*m_font,"Delete selected", (kWidth+kRight)*0.5f,kBottom-34,text,Align::Center);

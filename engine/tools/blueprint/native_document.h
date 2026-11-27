@@ -42,6 +42,9 @@ namespace nx
         bool disconnect(size_t graph,size_t node,const std::string& pin,bool output);
         bool setLiteral(size_t graph,size_t node,const std::string& value,std::string& error);
         bool setReference(size_t graph,size_t node,const std::string& value,std::string& error);
+        bool addFunction(const std::string& name,std::string& error);
+        bool removeFunction(size_t graph,std::string& error);
+        bool functions(std::string& error) const;
         // Collect named, per-instance variables. A name must have exactly one type across all graphs.
         bool variables(std::vector<BlueprintPin>& values,std::string& error) const;
         bool undo();
@@ -52,8 +55,9 @@ namespace nx
         bool isProject()const{return false;}
         void markSaved(){m_savedRevision=m_revision;}
     private:
-        struct Edit { size_t graph; Graph state; size_t revision; };
+        struct Edit { size_t graph; Graph state; size_t revision; std::vector<Graph> all; };
         void record(size_t graph);
+        void recordGraphList();
         std::vector<Edit> m_undo,m_redo;
         size_t m_revision=0,m_savedRevision=0,m_nextRevision=0;
         unsigned m_nextId=0;
