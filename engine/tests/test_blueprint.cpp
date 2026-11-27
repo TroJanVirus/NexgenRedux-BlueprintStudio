@@ -505,6 +505,7 @@ NX_TEST(nativeBlueprintPreviewUsesOriginalScreenStackAndIsolatedSave)
     if(!r.screens.init(r.services,"showcase","main")){NX_EXPECT(false);return;}
     r.step(3);
     r.save.set("preview_key","original");
+    r.audio.setMasterVolume(0.65f);
     r.screens.setDevelopmentPaused(true);
     const std::string code="class Preview : Screen { void onEnter() { Save::set(\"preview_key\", \"temporary\"); } void update(float dt) { Save::set(\"updated\", \"yes\"); } }";
     std::string error;
@@ -514,12 +515,14 @@ NX_TEST(nativeBlueprintPreviewUsesOriginalScreenStackAndIsolatedSave)
     NX_EXPECT(r.screens.depth()==2 && r.services.save!=&r.save);
     NX_EXPECT(strcmp(r.services.save->get("preview_key","missing"),"temporary")==0);
     NX_EXPECT(strcmp(r.services.save->get("updated","missing"),"yes")==0);
+    r.audio.setMasterVolume(0.15f);
     r.screens.home();r.step(1);
     NX_EXPECT(r.screens.depth()==2);
     r.screens.stopPreview();
     NX_EXPECT(r.screens.depth()==1 && r.services.save==&r.save && r.screens.menuOpen());
     NX_EXPECT(strcmp(r.save.get("preview_key","missing"),"original")==0);
     NX_EXPECT(strcmp(r.save.get("updated","missing"),"missing")==0);
+    NX_EXPECT(fabsf(r.audio.masterVolume()-0.65f)<0.001f);
     NX_EXPECT(!r.screens.startPreview("not valid AngelScript",error));
     NX_EXPECT(!r.screens.previewing() && r.services.save==&r.save && r.screens.depth()==1);
 }

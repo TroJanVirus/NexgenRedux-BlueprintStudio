@@ -117,7 +117,7 @@ namespace nx
 #ifdef NX_DESKTOP_BLUEPRINT
     bool Screens::startPreview(const std::string& source, std::string& error)
     {
-        if (!m_services || m_depth != 1 || previewing() || source.empty() || source.size() > 1024*1024 ||
+        if (!m_services || m_depth != 1 || !m_menuOpen || previewing() || source.empty() || source.size() > 1024*1024 ||
             findInfo("__blueprint_preview"))
         {
             error = "Preview requires the home screen and a valid generated script.";
@@ -140,7 +140,7 @@ namespace nx
         m_services->save = m_previewSave;
         m_services->development = false;
         m_change = Change::None;
-        // Home was already paused by the workspace. Do not run its suspend/resume
+        // Home must already be paused by the workspace. Do not run its suspend/resume
         // callbacks against the temporary save or generated module.
         m_services->audio->pauseGroup(m_stack[0].group, true);
         m_menuOpen = false;

@@ -327,6 +327,7 @@ namespace nx
                     m_status = "Could not read the dropped file.";
                 else if (m_document.load(reinterpret_cast<const char*>(file.data), file.size, m_status))
                 {
+                    m_checkpointRevision=static_cast<size_t>(-1);
                     m_first = 0; selectGraph(0);
                     m_status = "Opened " + dropped;
                 }
@@ -408,7 +409,7 @@ namespace nx
         if(click&&in(x,y,8,kBottom-40,kLeft-8,kBottom-8))
         {
             if(m_document.dirty())m_status="Save changes before creating a new Blueprint.";
-            else{m_document.create();selectGraph(0);m_status="New Blueprint.";}
+            else{m_document.create();m_checkpointRevision=static_cast<size_t>(-1);m_first=0;selectGraph(0);m_status="New Blueprint.";}
             m_left=left;return;
         }
         if(!m_drag&&in(x,y,kRight,kTop,kWidth,kBottom))
