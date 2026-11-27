@@ -220,6 +220,12 @@ namespace nx
         {
             return false;
         }
+        if (strncmp(path, "own/", 4) == 0)
+        {
+            char folder[kMaxPath];
+            if (!mediaPath("own", folder)) return false;
+            makeFolders(folder);
+        }
         snprintf(fresh, sizeof(fresh), "%s.new", full);
         return swapIn(full, fresh, path, data, size);
     }

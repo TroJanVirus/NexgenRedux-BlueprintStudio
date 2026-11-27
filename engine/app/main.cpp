@@ -771,6 +771,7 @@ namespace
                 }
             }
 #ifdef NX_DESKTOP_BLUEPRINT
+            studio.recover(services);
             studio.close(services);
 #endif
             screens.shutdown();

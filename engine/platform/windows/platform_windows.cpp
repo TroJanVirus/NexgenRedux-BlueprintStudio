@@ -159,6 +159,13 @@ namespace nx
     {
         wchar_t full[kMaxPath];
         wchar_t fresh[kMaxPath];
+        if (strncmp(path, "own/", 4) == 0)
+        {
+            wchar_t folder[kMaxPath];
+            if (!mediaPath("own", L"", folder)) return false;
+            CreateDirectoryW(m_saves, nullptr);
+            if (!CreateDirectoryW(folder, nullptr) && GetLastError() != ERROR_ALREADY_EXISTS) return false;
+        }
         return mediaPath(path, L"", full) && mediaPath(path, L".new", fresh) && swapIn(full, fresh, path, data, size);
     }
 

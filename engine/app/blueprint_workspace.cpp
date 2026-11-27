@@ -7,6 +7,8 @@
 #include "platform/platform.h"
 #include <algorithm>
 #include <cmath>
+#include <ctime>
+#include <cstring>
 
 namespace nx
 {
@@ -58,7 +60,8 @@ namespace nx
         s.input->setWantsPointer(true);
         s.platform->lockMouse(false);
         s.input->consume();
-        m_left = m_pan = false;
+        m_left = m_pan = m_drag = false;
+        m_shortcuts = 0;
         if (m_document.graphs.empty())
         {
             FileData example;
@@ -66,7 +69,7 @@ namespace nx
                 m_document.load(reinterpret_cast<const char*>(example.data), example.size, m_status))
             {
                 selectGraph(0);
-                m_status = "Example graph (read-only). Drop your own Blueprint JSON to open it.";
+                m_status = "Example graph. Drag nodes or drop your own Blueprint JSON." ;
             }
             else
                 m_status = "Drop a .bp.json or .bp.project.json file here.";
@@ -76,6 +79,7 @@ namespace nx
     void BlueprintWorkspace::close(Services& s)
     {
         if (!active()) return;
+        cancelDrag();
         s.assets->release(m_font);
         m_font = nullptr;
         s.input->setWantsPointer(m_wantedPointer);
@@ -85,27 +89,74 @@ namespace nx
     void BlueprintWorkspace::selectGraph(size_t index)
     {
         if (index >= m_document.graphs.size()) return;
+        cancelDrag();
         m_graph = index; m_selection = static_cast<size_t>(-1);
-        m_zoom = 1; m_x = 0; m_y = 0;
-        const auto& nodes = m_document.graphs[index].nodes;
-        if (!nodes.empty())
-        {
-            float left = nodes.front().x, top = nodes.front().y;
-            for (const auto& n : nodes) { left = std::min(left, n.x); top = std::min(top, n.y); }
-            m_x = 24 - left; m_y = 24 - top;
-        }
+        fitGraph();
         if (index < m_first) m_first = index;
         if (index >= m_first + kRows) m_first = index - kRows + 1;
+    }
+
+    void BlueprintWorkspace::fitGraph()
+    {
+        m_zoom=1; m_x=m_y=0;
+        if(m_graph>=m_document.graphs.size())return;
+        const auto& nodes=m_document.graphs[m_graph].nodes;
+        if(nodes.empty())return;
+        float left=nodes.front().x,top=nodes.front().y,right=left+kNodeWidth,bottom=top+kNodeHeight;
+        for(const auto& n:nodes)
+        {
+            left=std::min(left,n.x);top=std::min(top,n.y);
+            right=std::max(right,n.x+kNodeWidth);bottom=std::max(bottom,n.y+kNodeHeight);
+        }
+        m_zoom=std::clamp(std::min((kRight-kLeft-48)/(right-left),(kBottom-kTop-48)/(bottom-top)),0.25f,1.0f);
+        m_x=24-left*m_zoom;m_y=24-top*m_zoom;
+    }
+
+    bool BlueprintWorkspace::saveCopy(Services& s)
+    {
+        std::string output;
+        if(!m_document.serialize(output,m_status))return false;
+        static unsigned sequence=0;
+        std::string name,path;
+        // A new copy every time: never use the source name or replace an earlier snapshot.
+        for(unsigned attempt=0;attempt<100;++attempt)
+        {
+            name="blueprint-layout-"+std::to_string(static_cast<long long>(std::time(nullptr)))+"-"+std::to_string(++sequence)+(m_document.isProject()?".bp.project.json":".bp.json");
+            path="own/"+name;
+            if(!s.platform->fileTime(path.c_str()))break;
+            path.clear();
+        }
+        if(path.empty() || !s.platform->writeFile(path.c_str(),output.data(),output.size()))
+        {m_status="Save copy failed. Changes remain in memory.";return false;}
+        FileData saved;
+        if(!s.platform->readFile(path.c_str(),saved,MemTag::General)||saved.size!=output.size()||
+            std::memcmp(saved.data,output.data(),output.size())!=0)
+        {m_status="Could not verify saved copy. Changes remain in memory.";return false;}
+        m_document.markSaved();
+        m_status="Saved copy: "+path;
+        NX_INFO("Blueprint Studio: %s",m_status.c_str());
+        return true;
+    }
+
+    void BlueprintWorkspace::recover(Services& s)
+    {
+        // Called on normal Redux shutdown, even if the workspace is no longer visible.
+        if(m_document.dirty()&&!saveCopy(s))NX_ERROR("Blueprint Studio: unsaved layout could not be recovered.");
     }
 
     void BlueprintWorkspace::update(Services& s)
     {
         auto& input = *s.input;
-        if (input.pressed(Action::Menu)) { close(s); return; }
-        std::string dropped;
-        if (s.platform->takeDropped(dropped))
+        if (input.pressed(Action::Menu))
         {
-            if (dropped.size() < 8 || dropped.find_first_of("/\\:") != std::string::npos ||
+            if(m_drag){cancelDrag();m_status="Drag cancelled.";return;}
+            close(s);return;
+        }
+        std::string dropped;
+        if (!m_drag && s.platform->takeDropped(dropped))
+        {
+            if (m_document.dirty()) m_status="Save your changes first (Ctrl+S), then drop the file again.";
+            else if (dropped.size() < 8 || dropped.find_first_of("/\\:") != std::string::npos ||
                 dropped.find("..") != std::string::npos || dropped.substr(dropped.size()-5) != ".json")
                 m_status = "Drop a Blueprint JSON file.";
             else
@@ -116,7 +167,7 @@ namespace nx
                 else if (m_document.load(reinterpret_cast<const char*>(file.data), file.size, m_status))
                 {
                     m_first = 0; selectGraph(0);
-                    m_status = "Opened " + dropped + " (read-only)";
+                    m_status = "Opened " + dropped + " | Layout editing";
                 }
             }
         }
@@ -130,6 +181,20 @@ namespace nx
         const float y = (raw.mouseY - (canvas.pixelHeight()-kHeight*scale)*0.5f)/scale;
         const bool over = in(x,y,kLeft,kTop,kRight,kBottom);
         const bool left = raw.mouseButtons[0], pan = raw.mouseButtons[1] || raw.mouseButtons[2];
+        const auto held=[&](Key key){return raw.keys[static_cast<size_t>(key)];};
+        const bool control=held(Key::Control);
+        const unsigned keys=(control&&held(Key::S)?1u:0u)|(control&&held(Key::Z)&&!held(Key::Shift)?2u:0u)|
+            (control&&(held(Key::Y)||(held(Key::Z)&&held(Key::Shift)))?4u:0u);
+        const unsigned pressed=keys&~m_shortcuts;m_shortcuts=keys;
+        const bool click=left&&!m_left;
+        if(!m_drag)
+        {
+            if((pressed&1u)||(click&&in(x,y,748,39,858,69)))saveCopy(s);
+            if(((pressed&2u)||(click&&in(x,y,864,39,948,69)))&&m_document.undo())m_status="Undid layout change.";
+            if(((pressed&4u)||(click&&in(x,y,954,39,1038,69)))&&m_document.redo())m_status="Redid layout change.";
+            if(click&&in(x,y,1044,39,1128,69))fitGraph();
+            if(click&&in(x,y,1134,39,1266,69)){close(s);return;}
+        }
         if (left && !m_left && in(x,y,0,kTop,kLeft,kBottom))
         {
             const size_t row = static_cast<size_t>((y-kTop)/31);
@@ -144,8 +209,28 @@ namespace nx
                 const auto& n = nodes[i-1];
                 const float nx = kLeft+m_x+n.x*m_zoom, ny = kTop+m_y+n.y*m_zoom;
                 if (in(x,y,nx,ny,nx+kNodeWidth*m_zoom,ny+kNodeHeight*m_zoom))
-                { m_selection=i-1; break; }
+                {
+                    m_selection=i-1;
+                    m_drag=true;m_dragX=n.x;m_dragY=n.y;
+                    m_grabX=(x-nx)/m_zoom;m_grabY=(y-ny)/m_zoom;
+                    break;
+                }
             }
+        }
+        if(m_drag)
+        {
+            if(left)
+            {
+                m_dragX=std::clamp((x-kLeft-m_x)/m_zoom-m_grabX,-1000000.0f,1000000.0f);
+                m_dragY=std::clamp((y-kTop-m_y)/m_zoom-m_grabY,-1000000.0f,1000000.0f);
+            }
+            else
+            {
+                if(m_document.move(m_graph,m_selection,m_dragX,m_dragY))m_status="Layout changed. Ctrl+S saves a new copy.";
+                cancelDrag();
+            }
+            m_pan=false;m_left=left;m_lastX=x;m_lastY=y;
+            return;
         }
         if (pan && m_pan) { m_x += x-m_lastX; m_y += y-m_lastY; }
         m_pan = pan && (over || m_pan);
@@ -167,7 +252,7 @@ namespace nx
         if (input.repeated(Action::Right)) m_x -= 24;
         if (input.repeated(Action::Up)) m_y += 24;
         if (input.repeated(Action::Down)) m_y -= 24;
-        if (input.pressed(Action::Alternate)) selectGraph((m_graph+1)%m_document.graphs.size());
+        if (!control && input.pressed(Action::Alternate)) selectGraph((m_graph+1)%m_document.graphs.size());
     }
 
     void BlueprintWorkspace::draw(Canvas& c)
@@ -177,8 +262,15 @@ namespace nx
         c.rect(0,0,kWidth,kHeight,{0.06f,0.08f,0.12f,1});
         c.rect(0,0,kWidth,kTop,{0.12f,0.16f,0.22f,1});
         c.text(*m_font,"NEXGEN  /  BLUEPRINT STUDIO",18,13,text);
-        c.text(*m_font,"Native preview  |  Read-only  |  Esc: return",1260,13,muted,Align::Right);
-        c.text(*m_font,shorten(m_document.name.empty()?"No document open":m_document.name,80).c_str(),18,43,accent);
+        c.text(*m_font,"Native layout editor",1260,13,muted,Align::Right);
+        const std::string titleText=(m_document.name.empty()?"No document open":m_document.name)+(m_document.dirty()?" *":"");
+        c.clip(12,38,726,34);c.text(*m_font,shorten(titleText,65).c_str(),18,43,accent);c.noClip();
+        const auto button=[&](float x,float width,const char* label,bool enabled){
+            c.roundRect(x,39,width,30,5,enabled?Color{0.19f,0.33f,0.50f,1}:Color{0.14f,0.18f,0.24f,1});
+            c.text(*m_font,label,x+width*0.5f,44,enabled?text:muted,Align::Center);
+        };
+        button(748,110,"Save copy",!m_document.graphs.empty());button(864,84,"Undo",m_document.canUndo());
+        button(954,84,"Redo",m_document.canRedo());button(1044,84,"Fit",!m_document.graphs.empty());button(1134,132,"Return",true);
         c.rect(0,kTop,kLeft,kBottom-kTop,{0.10f,0.13f,0.18f,1});
         c.rect(kRight,kTop,kWidth-kRight,kBottom-kTop,{0.10f,0.13f,0.18f,1});
         c.clip(kLeft,kTop,kRight-kLeft,kBottom-kTop);
@@ -195,11 +287,13 @@ namespace nx
         else
         {
             const auto& graph=m_document.graphs[m_graph];
+            const auto nodeX=[&](size_t i){return m_drag&&i==m_selection?m_dragX:graph.nodes[i].x;};
+            const auto nodeY=[&](size_t i){return m_drag&&i==m_selection?m_dragY:graph.nodes[i].y;};
             for(const auto& l:graph.links)
             {
-                const auto& a=graph.nodes[l.from]; const auto& b=graph.nodes[l.to];
-                const float x1=kLeft+m_x+(a.x+kNodeWidth)*m_zoom,y1=kTop+m_y+(a.y+38)*m_zoom;
-                const float x2=kLeft+m_x+b.x*m_zoom,y2=kTop+m_y+(b.y+38)*m_zoom;
+                const float x1=kLeft+m_x+(nodeX(l.from)+kNodeWidth)*m_zoom,y1=kTop+m_y+(nodeY(l.from)+38)*m_zoom;
+                const float x2=kLeft+m_x+nodeX(l.to)*m_zoom,y2=kTop+m_y+(nodeY(l.to)+38)*m_zoom;
+                if(std::max(x1,x2)<kLeft||std::min(x1,x2)>kRight||std::max(y1,y2)<kTop||std::min(y1,y2)>kBottom)continue;
                 const float mid=(x1+x2)*0.5f;
                 const Color color=l.output=="then"||l.input=="in"?text:accent;
                 c.line(x1,y1,mid,y1,2,color);c.line(mid,y1,mid,y2,2,color);c.line(mid,y2,x2,y2,2,color);
@@ -207,7 +301,7 @@ namespace nx
             for(size_t i=0;i<graph.nodes.size();++i)
             {
                 const auto& n=graph.nodes[i];
-                const float x=kLeft+m_x+n.x*m_zoom,y=kTop+m_y+n.y*m_zoom,w=kNodeWidth*m_zoom,h=kNodeHeight*m_zoom;
+                const float x=kLeft+m_x+nodeX(i)*m_zoom,y=kTop+m_y+nodeY(i)*m_zoom,w=kNodeWidth*m_zoom,h=kNodeHeight*m_zoom;
                 if(x+w<kLeft||x>kRight||y+h<kTop||y>kBottom) continue;
                 c.roundRect(x,y,w,h,5,{0.15f,0.20f,0.27f,1});
                 c.rect(x,y,w,24*m_zoom,n.kind=="entry"?Color{0.54f,0.20f,0.25f,1}:Color{0.19f,0.35f,0.53f,1});
@@ -255,6 +349,6 @@ namespace nx
         }
         c.rect(0,kBottom,kWidth,kHeight-kBottom,{0.12f,0.16f,0.22f,1});
         c.text(*m_font,shorten(m_status,110).c_str(),12,kBottom+6,text);
-        c.text(*m_font,"Wheel: zoom / list scroll   Right or middle drag: pan   Arrows: pan   Shift/X: next graph",12,kBottom+26,muted);
+        c.text(*m_font,"Drag: move node   Wheel: zoom   Right/middle drag: pan   Ctrl+Z/Y: undo/redo   Ctrl+S: save copy",12,kBottom+26,muted);
     }
 }
