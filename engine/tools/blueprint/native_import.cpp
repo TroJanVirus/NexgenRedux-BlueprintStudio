@@ -128,16 +128,19 @@ namespace nx
             }
             void chain(Flow& flow,size_t node)
             {doc.graphs[graph].links.push_back({flow.node,node,flow.pin,"in"});flow={node,"then"};}
-            bool field(const std::string& id,Value& v)
+            bool field(const std::string& id,Value& v,bool instanceOnly=false)
             {
-                if(id==eventArg&&!eventArg.empty())
+                if(!instanceOnly)
                 {
-                    size_t n;if(!add(eventType=="float"?"event:delta":"event:canvas",n))return false;
-                    v={eventType,"","value",n};return true;
+                    if(id==eventArg&&!eventArg.empty())
+                    {
+                        size_t n;if(!add(eventType=="float"?"event:delta":"event:canvas",n))return false;
+                        v={eventType,"","value",n};return true;
+                    }
+                    const auto local=locals.find(id);if(local!=locals.end()){v=local->second;return true;}
+                    const auto& g=doc.graphs[graph];
+                    for(const auto& p:g.parameters)if(p.name==id){v={p.type,"","arg_"+p.name,0};return true;}
                 }
-                const auto local=locals.find(id);if(local!=locals.end()){v=local->second;return true;}
-                const auto& g=doc.graphs[graph];
-                for(const auto& p:g.parameters)if(p.name==id){v={p.type,"","arg_"+p.name,0};return true;}
                 const auto found=fields.find(id);
                 if(found==fields.end())return fail("Unknown field or unsupported expression: "+id+".");
                 size_t n;if(!add("var:get:"+found->second,n,id))return false;
@@ -225,15 +228,18 @@ namespace nx
                 if(peek().kind==Kind::Number)return numeric(v);
                 if(is("true")||is("false")){v={"bool",peek().text,"",static_cast<size_t>(-1)};++at;return true;}
                 std::string id;if(!name(id)||!qualified(id))return false;
+                const bool instanceOnly=id=="this";
+                if(instanceOnly&&(!expect(".")||!name(id)))return false;
                 if(take("."))
                 {
-                    Value target;if(!field(id,target)||!name(id))return false;
+                    Value target;if(!field(id,target,instanceOnly)||!name(id))return false;
                     std::vector<Value> args;
                     if(is("("))return arguments(args)&&api(id,args,&target,true,"",v,nullptr);
                     return api(id,args,&target,true,"get",v,nullptr);
                 }
                 if(is("("))
                 {
+                    if(instanceOnly)return fail("Instance method calls must supply a complete execution value.");
                     std::vector<Value> args;if(!arguments(args))return false;
                     if(id=="int"||id=="uint"||id=="float"||id=="double")
                     {
@@ -253,7 +259,7 @@ namespace nx
                     return api(id,args,nullptr,true,"",v,nullptr);
                 }
                 if(id.find("::")!=std::string::npos)return api(id,{},nullptr,true,"get",v,nullptr);
-                return field(id,v);
+                return field(id,v,instanceOnly);
             }
             struct Depth {unsigned& n;explicit Depth(unsigned& d):n(d){++n;}~Depth(){--n;}};
             bool unary(Value& v)
@@ -304,9 +310,11 @@ namespace nx
             }
             bool directValue(Value& result,Flow& flow)
             {
-                if(peek().kind==Kind::Name&&at+1<tokens.size()&&tokens[at+1].text=="("&&doc.function("Screen",peek().text))
+                size_t methodAt=at;
+                if(is("this")&&at+3<tokens.size()&&tokens[at+1].text==".")methodAt=at+2;
+                if(tokens[methodAt].kind==Kind::Name&&methodAt+1<tokens.size()&&tokens[methodAt+1].text=="("&&doc.function("Screen",tokens[methodAt].text))
                 {
-                    const auto id=peek().text;++at;
+                    const auto id=tokens[methodAt].text;at=methodAt+1;
                     std::vector<Value> args;
                     return arguments(args)&&functionCall(id,args,flow,result);
                 }
@@ -428,11 +436,13 @@ namespace nx
                 if(is("++")||is("--")){prefix=peek().text;++at;}
                 const bool handleAssignment=take("@");
                 std::string id;if(!name(id)||!qualified(id))return false;
+                const bool instanceOnly=id=="this";
+                if(instanceOnly&&(!expect(".")||!name(id)))return false;
                 if(!prefix.empty()&&(handleAssignment||id.find("::")!=std::string::npos||!is(";")))
                     return fail("Prefix increment requires a standalone plain local or field.");
                 // A local declaration creates an execution-ordered capture, not an instance field.
-                if(id=="Entity"&&take("@"))id+="@";
-                if(!handleAssignment&&blueprintSpec("capture:"+id)&&peek().kind==Kind::Name)
+                if(!instanceOnly&&id=="Entity"&&take("@"))id+="@";
+                if(!instanceOnly&&!handleAssignment&&blueprintSpec("capture:"+id)&&peek().kind==Kind::Name)
                 {
                     const auto type=id;std::string local;
                     if(!name(local))return false;
@@ -445,7 +455,7 @@ namespace nx
                     chain(flow,n);locals.emplace(local,Value{type,"","result",n});return true;
                 }
                 Value target;const Value* member=nullptr;
-                if(take(".")){if(!field(id,target)||!name(id))return false;member=&target;}
+                if(take(".")){if(!field(id,target,instanceOnly)||!name(id))return false;member=&target;}
                 const bool increment=!prefix.empty()||is("++")||is("--");
                 const bool compound=is("+=")||is("-=")||is("*=")||is("/=")||is("%=");
                 if(is("=")||increment||compound)
@@ -459,7 +469,7 @@ namespace nx
                         // move an effectful getter or receiver across a native action call.
                         if(member||id.find("::")!=std::string::npos||handleAssignment)
                             return fail("Compound property or handle assignment is not supported.");
-                        Value before;if(!field(id,before))return false;
+                        Value before;if(!field(id,before,instanceOnly))return false;
                         if(increment)
                         {
                             if(before.type!="int"&&before.type!="uint"&&before.type!="float"&&before.type!="double")
@@ -479,7 +489,7 @@ namespace nx
                     if(!member&&id.find("::")==std::string::npos)
                     {
                         const auto local=locals.find(id);
-                        if(local!=locals.end())
+                        if(!instanceOnly&&local!=locals.end())
                         {
                             const auto& ref=local->second;
                             if(ref.pin=="index")return fail("The imported loop index cannot be reassigned.");
@@ -490,7 +500,7 @@ namespace nx
                         if(handleAssignment)return fail("Handle assignment requires a declared entity local.");
                         const auto found=fields.find(id);
                         const auto& params=doc.graphs[graph].parameters;
-                        if(found==fields.end()||id==eventArg||std::any_of(params.begin(),params.end(),[&](const BlueprintPin& p){return p.name==id;}))
+                        if(found==fields.end()||(!instanceOnly&&(id==eventArg||std::any_of(params.begin(),params.end(),[&](const BlueprintPin& p){return p.name==id;}))))
                             return fail("Assignment requires a declared instance field, not a method parameter.");
                         size_t n;if(!add("var:set:"+found->second,n,id)||!bind(n,"value",v))return false;
                         chain(flow,n);
@@ -507,7 +517,11 @@ namespace nx
                 if(!arguments(args)||!expect(";"))return false;
                 if(!member&&doc.function("Screen",id))
                 {if(!functionCall(id,args,flow,unused))return false;}
-                else if(!api(id,args,member,false,"",unused,&flow))return false;
+                else
+                {
+                    if(instanceOnly&&!member)return fail("Unknown instance method: "+id+".");
+                    if(!api(id,args,member,false,"",unused,&flow))return false;
+                }
                 return true;
             }
             bool parse()

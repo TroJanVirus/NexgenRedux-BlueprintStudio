@@ -604,3 +604,22 @@ NX_TEST(nativeImportSingleStatementBodiesRejectUnsafeChanges)
         NX_EXPECT(doc.serialize(after,error)&&after==saved);
     }
 }
+
+NX_TEST(nativeImportExplicitInstanceReferencesDoNotResolveToParameters)
+{
+    BlueprintDocument doc;std::string error,code,saved,after;
+    const char* valid="class Example : Screen { int x; void Set(int x){this.x=x;} int Get(int x){return this.x+x;} void onEnter(){this.Set(2);int n=this.Get(3);} }";
+    NX_EXPECT(importBlueprintScreen(valid,doc,error)&&compileBlueprint(doc,code,error));
+    NX_EXPECT(code.find("bp_var_x = bp_arg_x")!=std::string::npos);
+    NX_EXPECT(code.find("bp_fn_Set(int(2))")!=std::string::npos);
+    NX_EXPECT(doc.serialize(saved,error));
+    for(const char* invalid:{
+        "class Bad : Screen { int F(int x){return this.x;} }",
+        "class Bad : Screen { void F(int x){this.x=x;} }",
+        "class Bad : Screen { void onEnter(){this.Missing();} }",
+        "class Bad : Screen { int x; void onEnter(){this.x=1; int n=this.F()+1;} int F(){return 1;} }"})
+    {
+        NX_EXPECT(!importBlueprintScreen(invalid,doc,error)&&!error.empty());
+        NX_EXPECT(doc.serialize(after,error)&&after==saved);
+    }
+}

@@ -1427,3 +1427,33 @@ NX_TEST(nativeImportedSingleStatementControlFlowMatchesOriginal)
         NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("single_statement",""),"correct")==0);
     }
 }
+
+NX_TEST(nativeImportedExplicitInstanceReferencesMatchOriginal)
+{
+    const std::string original=R"(class Example : Screen {
+        int score;
+        void Set(int score) { this.score = score; }
+        int Read(int score) { return this.score + score; }
+        void onEnter() {
+            this.Set(4);
+            ++this.score;
+            this.score += 2;
+            int result = this.Read(3);
+            if(this.score == 7 && result == 10)
+                Save::set("instance", "correct");
+        }
+    })";
+    BlueprintDocument doc;std::string error,generated;
+    const bool imported=importBlueprintScreen(original,doc,error);
+    if(!imported)NX_ERROR("Import diagnostic: %s",error.c_str());
+    NX_EXPECT(imported&&compileBlueprint(doc,generated,error));if(generated.empty())return;
+    for(const std::string* source:std::vector<const std::string*>{&original,&generated})
+    {
+        Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+        r.platform.files["showcase/imported/screen.json"]="{\"title\":\"Import\"}";
+        r.platform.files["showcase/imported/main.as"]=*source;
+        if(!r.screens.init(r.services,"showcase","imported")){NX_EXPECT(false);return;}
+        r.step(3);
+        NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("instance",""),"correct")==0);
+    }
+}
