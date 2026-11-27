@@ -124,9 +124,16 @@ namespace nx
             return false;
         }
         m_previewSave = create<Save>(MemTag::General);
-        if (!m_previewSave) { error = "Not enough memory for preview."; return false; }
+        m_previewSettings = create<Save>(MemTag::General);
+        if (!m_previewSave || !m_previewSettings)
+        {
+            destroy(m_previewSave);destroy(m_previewSettings);m_previewSave=m_previewSettings=nullptr;
+            error = "Not enough memory for preview."; return false;
+        }
         m_previewSave->setReadOnly(); // No platform or filename: entirely transient.
         m_originalSave = m_services->save;
+        m_services->save = m_previewSettings;
+        saveSettings(*m_services); // Snapshot settings without writing to the real save.
         m_previewRandom = m_services->random;
         m_previewDevelopment = m_services->development;
         m_previewSource = source;
@@ -157,6 +164,9 @@ namespace nx
         // Screen navigation is blocked during preview, so this is always its own entry.
         if (m_depth > 1) close(true);
         m_change = Change::None;
+        m_services->save = m_previewSettings;
+        loadSettings(*m_services);
+        destroy(m_previewSettings);m_previewSettings=nullptr;
         m_services->save = m_originalSave;
         m_originalSave = nullptr;
         m_services->random = m_previewRandom;
@@ -299,6 +309,10 @@ namespace nx
         snprintf(folder, sizeof(folder), "%s/%s", m_folder, entry.info.id);
         entry.ui = create<Ui>(MemTag::UI, *m_services->canvas, *m_services->assets, *m_services->audio, *m_services->input, host, *m_services->platform, folder);
         enter(entry);
+#ifdef NX_DESKTOP_BLUEPRINT
+        if (previewing() && (!entry.world || !entry.ui))
+        {entry.failed=true;snprintf(entry.error,sizeof(entry.error),"Cannot allocate preview world or UI");return false;}
+#endif
 
         char path[192];
         snprintf(path, sizeof(path), "%s/main.as", m_services->folder);

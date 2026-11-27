@@ -76,6 +76,8 @@ namespace nx
         }
         constexpr size_t kMaxNodes=1024,kMaxLinks=4096,kMaxGraphs=64,kHistory=48;
         bool coordinate(float v){return std::isfinite(v)&&std::abs(v)<=1000000;}
+        bool lifecycle(const std::string& name)
+        {return name=="onEnter"||name=="update"||name=="draw"||name=="onSuspend"||name=="onResume"||name=="onExit";}
         bool variableKind(const std::string& kind){return kind.rfind("var:get:",0)==0||kind.rfind("var:set:",0)==0;}
         bool identifier(const std::string& s)
         {
@@ -152,7 +154,7 @@ namespace nx
     {
         *this=BlueprintDocument{};
         name="Untitled";
-        for(const char* event:{"onEnter","update","draw"})
+        for(const char* event:{"onEnter","update","draw","onSuspend","onResume","onExit"})
         {
             Graph g;g.owner="Screen";g.name=event;g.kind="event";
             g.nodes.push_back({"entry","entry","",24,60});graphs.push_back(std::move(g));
@@ -178,8 +180,8 @@ namespace nx
             Graph g;g.name=value["name"].text();g.owner="Screen";g.kind="event";
             const auto kind=value["kind"].text("event");
             g.kind=kind;
-            if((g.kind=="event"&&g.name!="onEnter"&&g.name!="update"&&g.name!="draw")||
-                (g.kind=="function"&&(!identifier(g.name)||g.name=="onEnter"||g.name=="update"||g.name=="draw"))||(g.kind!="event"&&g.kind!="function"))
+            if((g.kind=="event"&&!lifecycle(g.name))||
+                (g.kind=="function"&&(!identifier(g.name)||lifecycle(g.name)))||(g.kind!="event"&&g.kind!="function"))
             {error="Invalid event or function graph.";return false;}
             std::unordered_map<std::string,size_t> ids;unsigned entries=0;
             for(auto n=ns.first();n.exists();n=n.next())
@@ -385,7 +387,7 @@ namespace nx
     {
         if(!identifier(functionName)||graphs.size()>=kMaxGraphs||
             std::any_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.name==functionName;})||
-            functionName=="onEnter"||functionName=="update"||functionName=="draw")
+            lifecycle(functionName))
         {error="Choose a unique function name (letters, digits and underscores).";return false;}
         recordGraphList();
         Graph g;g.owner="Screen";g.name=functionName;g.kind="function";

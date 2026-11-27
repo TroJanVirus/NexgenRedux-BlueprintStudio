@@ -14,7 +14,7 @@ NX_TEST(nativeCatalogueContainsReferenceAPI)
 NX_TEST(nativeBlueprintCreatesConnectsAndRoundTrips)
 {
     BlueprintDocument doc;doc.create();std::string error,result;
-    NX_EXPECT(doc.graphs.size()==3&&!doc.dirty());
+    NX_EXPECT(doc.graphs.size()==6&&!doc.dirty());
     NX_EXPECT(doc.addNode(0,"api:Save:Save::set:string,string",300,50,error));
     NX_EXPECT(doc.addNode(0,"literal:string",20,200,error));
     NX_EXPECT(doc.setLiteral(0,2,"Hello",error));
@@ -25,7 +25,7 @@ NX_TEST(nativeBlueprintCreatesConnectsAndRoundTrips)
     NX_EXPECT(!doc.deleteNode(0,0,error));
     NX_EXPECT(doc.serialize(result,error));
     BlueprintDocument copy;NX_EXPECT(copy.load(result.data(),result.size(),error));
-    if(copy.graphs.size()==3&&copy.graphs[0].nodes.size()==3)
+    if(copy.graphs.size()==6&&copy.graphs[0].nodes.size()==3)
     {
         NX_EXPECT(copy.graphs[0].nodes[2].ref=="Hello");
         NX_EXPECT(copy.graphs[0].links.size()==2&&!copy.dirty());
@@ -135,14 +135,14 @@ NX_TEST(nativeFunctionGraphsAreReusableAndHistorySafe)
     NX_EXPECT(doc.addFunction("Setup",error)&&doc.addFunction("Reset",error));
     NX_EXPECT(!doc.addFunction("Setup",error)&&!doc.addFunction("update",error));
     NX_EXPECT(doc.addNode(0,"call:function",0,0,error)&&doc.connect(0,0,"then",1,"in",error));
-    NX_EXPECT(doc.addNode(3,"call:function",0,0,error)&&doc.connect(3,0,"then",1,"in",error));
-    NX_EXPECT(!doc.addNode(4,"call:function",0,0,error)); // Reset -> Setup -> Reset
-    NX_EXPECT(!doc.removeFunction(3,error));
+    NX_EXPECT(doc.addNode(6,"call:function",0,0,error)&&doc.connect(6,0,"then",1,"in",error));
+    NX_EXPECT(!doc.addNode(7,"call:function",0,0,error)); // Reset -> Setup -> Reset
+    NX_EXPECT(!doc.removeFunction(6,error));
     NX_EXPECT(compileBlueprint(doc,source,error)&&source.find("void bp_fn_Setup()")!=std::string::npos&&source.find("bp_fn_Reset();")!=std::string::npos);
     NX_EXPECT(doc.serialize(saved,error));BlueprintDocument copy;NX_EXPECT(copy.load(saved.data(),saved.size(),error));
-    NX_EXPECT(doc.addFunction("Unused",error)&&doc.removeFunction(5,error));
-    NX_EXPECT(doc.undo()&&doc.graphs.size()==6&&doc.undo()&&doc.graphs.size()==5);
-    NX_EXPECT(doc.redo()&&doc.graphs.size()==6&&doc.redo()&&doc.graphs.size()==5);
+    NX_EXPECT(doc.addFunction("Unused",error)&&doc.removeFunction(8,error));
+    NX_EXPECT(doc.undo()&&doc.graphs.size()==9&&doc.undo()&&doc.graphs.size()==8);
+    NX_EXPECT(doc.redo()&&doc.graphs.size()==9&&doc.redo()&&doc.graphs.size()==8);
 }
 
 NX_TEST(nativeCompilerUsesReferenceDefaultsAndOutputOrdering)
@@ -154,4 +154,17 @@ NX_TEST(nativeCompilerUsesReferenceDefaultsAndOutputOrdering)
     NX_EXPECT(doc.connect(0,3,"value",2,"x",error)&&doc.connect(0,3,"value",2,"y",error));
     NX_EXPECT(compileBlueprint(doc,source,error));
     NX_EXPECT(source.find("bp_out_1_hit, uint(65535)")!=std::string::npos);
+}
+
+NX_TEST(nativeBlueprintRecoveryMarksLoadedDraftUnsaved)
+{
+    BlueprintDocument doc;doc.create();std::string error,source,saved;
+    NX_EXPECT(doc.graphs.size()==6);
+    NX_EXPECT(doc.addNode(5,"var:set:string",0,0,error)&&doc.addNode(5,"literal:string",0,0,error));
+    NX_EXPECT(doc.connect(5,0,"then",1,"in",error)&&doc.connect(5,2,"value",1,"value",error));
+    NX_EXPECT(doc.serialize(saved,error));BlueprintDocument recovered;
+    NX_EXPECT(recovered.load(saved.data(),saved.size(),error)&&!recovered.dirty());
+    recovered.markRecovered();NX_EXPECT(recovered.dirty());
+    NX_EXPECT(compileBlueprint(recovered,source,error)&&source.find("void onExit()")!=std::string::npos);
+    recovered.markSaved();NX_EXPECT(!recovered.dirty());
 }

@@ -143,6 +143,7 @@ namespace nx
 #ifdef NX_DESKTOP_BLUEPRINT
         std::string m_previewSource;
         Save* m_previewSave = nullptr;
+        Save* m_previewSettings = nullptr;
         Save* m_originalSave = nullptr;
         u32 m_previewRandom = 0;
         bool m_previewDevelopment = false;

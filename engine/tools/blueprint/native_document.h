@@ -54,6 +54,8 @@ namespace nx
         bool canRedo()const{return !m_redo.empty();}
         bool isProject()const{return false;}
         void markSaved(){m_savedRevision=m_revision;}
+        size_t revision()const{return m_revision;}
+        void markRecovered(){m_revision=++m_nextRevision;}
     private:
         struct Edit { size_t graph; Graph state; size_t revision; std::vector<Graph> all; };
         void record(size_t graph);

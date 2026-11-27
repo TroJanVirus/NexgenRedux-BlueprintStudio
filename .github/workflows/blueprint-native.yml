@@ -11,6 +11,8 @@ on:
       - "engine/app/main.cpp"
       - "engine/CMakeLists.txt"
       - "engine/base/**"
+      - "engine/screens/**"
+      - "engine/save/**"
       - ".github/workflows/blueprint-native.yml"
   workflow_dispatch:
 permissions:

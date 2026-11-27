@@ -20,6 +20,7 @@ namespace nx
         void stopPreview(Services& services);
         void draw(Canvas& canvas);
         void recover(Services& services);
+        void checkpoint(Services& services,bool force=false);
     private:
         void selectGraph(size_t index);
         void fitGraph();
@@ -49,5 +50,8 @@ namespace nx
         int m_focus=0; // 1 catalogue search, 2 literal, 3 reference, 4 new function
         bool m_previousTyping=false;
         bool m_playing=false;
+        bool m_checkpointPresent=false;
+        size_t m_checkpointRevision=static_cast<size_t>(-1);
+        double m_nextCheckpoint=0;
     };
 }

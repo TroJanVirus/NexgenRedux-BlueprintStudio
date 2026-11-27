@@ -97,8 +97,18 @@ namespace nx
         m_previousTyping=s.input->typing();m_focus=0;s.input->setTyping(false);
         if(m_document.graphs.empty())
         {
-            m_document.create();selectGraph(0);
-            m_status="New Blueprint. Search the node library to start.";
+            FileData recovery;
+            const bool found=s.platform->readFile("own/blueprint-recovery.bp.json",recovery,MemTag::General)&&recovery.size>0;
+            if(found&&m_document.load(reinterpret_cast<const char*>(recovery.data),recovery.size,m_status))
+            {
+                m_document.markRecovered();m_checkpointPresent=true;m_checkpointRevision=m_document.revision();
+                selectGraph(0);m_status="Recovered unsaved Blueprint. Save copy to keep it.";
+            }
+            else
+            {
+                m_document.create();selectGraph(0);
+                m_status=found?"Recovery file could not be read. Original recovery file retained.":"New Blueprint. Search the node library to start.";
+            }
         }
         filterCatalogue();
     }
@@ -107,6 +117,7 @@ namespace nx
     {
         if (!active()) return;
         stopPreview(s);
+        checkpoint(s,true);
         cancelDrag();clearWire();m_focus=0;s.input->setTyping(m_previousTyping);
         s.assets->release(m_font);
         m_font = nullptr;
@@ -203,6 +214,7 @@ namespace nx
             std::memcmp(saved.data,output.data(),output.size())!=0)
         {m_status="Could not verify saved copy. Changes remain in memory.";return false;}
         m_document.markSaved();
+        checkpoint(s,true);
         m_status="Saved copy: "+path;
         NX_INFO("Blueprint Studio: %s",m_status.c_str());
         return true;
@@ -245,7 +257,7 @@ namespace nx
     void BlueprintWorkspace::updatePreview(Services& s,float dt)
     {
         if(!m_playing)return;
-        if(s.input->pressed(Action::Menu)){stopPreview(s);return;}
+        if(s.input->pressed(Action::Menu)||s.input->raw().keys[static_cast<size_t>(Key::Escape)]){stopPreview(s);return;}
         s.screens->update(dt);
         if(s.screens->failed())
         {
@@ -256,10 +268,39 @@ namespace nx
         }
     }
 
+    void BlueprintWorkspace::checkpoint(Services& s,bool force)
+    {
+        if(m_document.graphs.empty())return;
+        const double now=s.platform->seconds();
+        if(!force&&now<m_nextCheckpoint)return;
+        m_nextCheckpoint=now+2.0;
+        const char* path="own/blueprint-recovery.bp.json";
+        if(!m_document.dirty())
+        {
+            if(m_checkpointPresent)
+            {
+                // Empty tombstone only after a verified manual save or undo to saved state.
+                if(s.platform->writeFile(path,"",0))
+                {m_checkpointPresent=false;m_checkpointRevision=static_cast<size_t>(-1);}
+                else NX_WARN("Blueprint Studio: could not clear recovery file");
+            }
+            return;
+        }
+        if(m_checkpointPresent&&m_checkpointRevision==m_document.revision())return;
+        std::string output,error;
+        if(!m_document.serialize(output,error)||!s.platform->writeFile(path,output.data(),output.size()))
+        {NX_WARN("Blueprint Studio: recovery checkpoint failed: %s",error.c_str());return;}
+        FileData check;
+        if(!s.platform->readFile(path,check,MemTag::General)||check.size!=output.size()||
+            std::memcmp(check.data,output.data(),output.size())!=0)
+        {NX_WARN("Blueprint Studio: recovery checkpoint verification failed");return;}
+        m_checkpointPresent=true;m_checkpointRevision=m_document.revision();
+    }
+
     void BlueprintWorkspace::recover(Services& s)
     {
-        // Called on normal Redux shutdown, even if the workspace is no longer visible.
-        if(m_document.dirty()&&!saveCopy(s))NX_ERROR("Blueprint Studio: unsaved layout could not be recovered.");
+        // Normal shutdown preserves unsaved work as a draft, not a misleading manual save.
+        checkpoint(s,true);
     }
 
     void BlueprintWorkspace::update(Services& s)
@@ -343,6 +384,7 @@ namespace nx
             if(click&&in(x,y,504,39,604,69))
             {
                 std::string source;
+                checkpoint(s,true);
                 if(compileBlueprint(m_document,source,m_status)&&s.screens->startPreview(source,m_status))
                 {m_playing=true;clearWire();m_status="Playing. Escape returns to Studio.";}
                 else {s.input->setWantsPointer(true);s.input->setTyping(false);}

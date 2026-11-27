@@ -677,6 +677,7 @@ namespace
                         {
                             if (studio.previewing()) studio.updatePreview(services, kStep);
                             else studio.update(services);
+                            studio.checkpoint(services);
                             if (!studio.active()) screens.setDevelopmentPaused(false);
                         }
                         else
