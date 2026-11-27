@@ -702,3 +702,17 @@ NX_TEST(nativeLargeProjectRoundTripHistoryAndMalformedInputStress)
         NX_EXPECT(loaded.serialize(again,error)&&again==saved);
     }
 }
+
+NX_TEST(nativeDocumentAcceptsReduxMainScreenId)
+{
+    BlueprintDocument doc;doc.name="Imported";std::string error,bytes;
+    NX_EXPECT(doc.addScreen("main",error)&&doc.addScreen("level",error));
+    NX_EXPECT(!doc.addScreen("main",error)&&!doc.addScreen("screen",error));
+    NX_EXPECT(doc.serialize(bytes,error));
+    BlueprintDocument restored;
+    NX_EXPECT(restored.load(bytes.data(),bytes.size(),error));
+    NX_EXPECT(restored.screens()==std::vector<std::string>({"main","level"}));
+    std::vector<BlueprintScreenOutput> output;
+    NX_EXPECT(compileBlueprintProject(restored,output,error)&&output.size()==2);
+    if(output.size()==2)NX_EXPECT(output[0].id=="main"&&output[1].id=="level");
+}

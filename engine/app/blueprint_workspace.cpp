@@ -302,6 +302,9 @@ namespace nx
         std::sort(owners.begin(),owners.end());
         if(std::adjacent_find(owners.begin(),owners.end())!=owners.end())
         {m_status="Duplicate screen folder.";return false;}
+        // Redux projects conventionally boot main. Keep it first, independent of listing order.
+        const auto home=std::find(owners.begin(),owners.end(),"main");
+        if(home!=owners.end())std::rotate(owners.begin(),home,home+1);
         BlueprintDocument candidate;candidate.name=folder.rfind("project-",0)==0?folder.substr(8):folder;
         for(const auto& owner:owners)
         {
@@ -537,7 +540,7 @@ namespace nx
         for(const auto& screen:screens)
             if(!writeVerified(s,"own/"+root+"/"+screen.id+"/screen.json",screen.manifest))
             {m_status="Incomplete project export. Do not install own/"+root;return false;}
-        m_status="Exported own/"+root+" | Copy screen folders to media/showcase.";
+        m_status="Exported own/"+root+" | Install into a separate project folder.";
         NX_INFO("Blueprint Studio: %s",m_status.c_str());return true;
     }
 

@@ -1783,8 +1783,8 @@ NX_TEST(nativeWorkspaceBrowserRecoversArchivesAndImportsSource)
 #ifdef NX_DESKTOP_BLUEPRINT
 NX_TEST(nativeWorkspaceImportsNativeExportScreensAndTheirAssets)
 {
-    // Ordinary IDs, the default Screen with navigation, and a single default Screen.
-    for(int scenario=0;scenario<3;++scenario)
+    // Ordinary IDs, the default Screen, a single default Screen, and native main.
+    for(int scenario=0;scenario<4;++scenario)
     {
         Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
         r.platform.workspaceFiles=true;
@@ -1799,7 +1799,7 @@ NX_TEST(nativeWorkspaceImportsNativeExportScreensAndTheirAssets)
         NX_EXPECT(!blueprintImportProjectFolderName("project-"));
         NX_EXPECT(!blueprintImportProjectFolderName("bpa-1790000000-1"));
         const std::string folder="own/bp-1790000000-1";
-        const std::string firstId=scenario==0?"intro":"Screen";
+        const std::string firstId=scenario==0?"intro":scenario==3?"main":"Screen";
         const bool multiple=scenario!=2;
         const std::vector<std::string> expected=multiple?std::vector<std::string>{firstId,"level"}:std::vector<std::string>{firstId};
         const std::string first=multiple?"class Start : Screen { void onEnter(){ Screens::push(\"level\"); } }":"class Start : Screen { void onEnter(){ Save::set(\"start\",\"ok\"); } }";
@@ -1839,6 +1839,25 @@ NX_TEST(nativeWorkspaceImportsNativeExportScreensAndTheirAssets)
             NX_EXPECT(r.platform.files["own/"+project.assetRoot+"/"+screen+"/asset/data.bin"]==r.platform.files[folder+"/"+screen+"/asset/data.bin"]);
         NX_EXPECT(r.platform.files[folder+"/"+firstId+"/main.as"]==first);
         if(multiple)NX_EXPECT(r.platform.files[folder+"/level/main.as"]==second);
+        if(scenario==3&&output.size()==2)
+        {
+            // Play an imported main while the real Redux main is still on the host stack.
+            std::vector<Screens::PreviewScreen> preview;
+            for(const auto& o:output)
+            {
+                Screens::PreviewScreen p;snprintf(p.info.id,sizeof(p.info.id),"%s",o.id.c_str());p.source=o.source;preview.push_back(p);
+            }
+            NX_EXPECT(r.screens.startProjectPreview(preview,"main",error,project.assetRoot));
+            if(r.screens.previewing())
+            {
+                r.step(5);NX_EXPECT(r.screens.depth()==3&&strcmp(r.screens.current(),"level")==0);
+                NX_EXPECT(strcmp(r.services.save->get("level","missing"),"ok")==0);
+                r.screens.home();r.step(1);NX_EXPECT(r.screens.depth()==2&&strcmp(r.screens.current(),"main")==0);
+                r.screens.stopPreview();
+                NX_EXPECT(r.screens.depth()==1&&r.services.save==&r.save&&strcmp(r.screens.current(),"main")==0);
+                NX_EXPECT(strcmp(r.save.get("level","missing"),"missing")==0);
+            }
+        }
         studio.close(r.services);
     }
 }

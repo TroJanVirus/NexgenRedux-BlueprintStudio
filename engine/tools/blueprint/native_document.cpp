@@ -110,7 +110,7 @@ namespace nx
         bool screenId(const std::string& s)
         {
             if(s=="Screen")return true; // Initial screen, retained for native v2 drafts.
-            if(s.empty()||s.size()>40||s=="main"||s=="screen"||s.front()<'a'||s.front()>'z')return false;
+            if(s.empty()||s.size()>40||s=="screen"||s.front()<'a'||s.front()>'z')return false;
             return blueprintAssetName(s,true);
         }
         std::string scoped(const std::string& owner,const std::string& name){return owner+"/"+name;}
@@ -785,7 +785,7 @@ namespace nx
     {
         if(!screenId(id)||graphs.size()+6>kMaxGraphs||
             std::any_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==id;}))
-        {error="Choose a unique lowercase screen ID (letters, digits, hyphens or underscores; not main).";return false;}
+        {error="Choose a unique lowercase screen ID (letters, digits, hyphens or underscores; not screen).";return false;}
         recordGraphList();
         for(const char* event:{"onEnter","update","draw","onSuspend","onResume","onExit"})
         {
