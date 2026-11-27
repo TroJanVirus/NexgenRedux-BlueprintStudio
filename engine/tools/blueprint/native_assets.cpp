@@ -27,9 +27,9 @@ namespace nx
             std::sort(names.begin(),names.end());names.erase(std::unique(names.begin(),names.end()),names.end());
             return !ctx.overflow;
         }
-        bool collect(Platform& p,const std::string& base,const std::string& rel,unsigned depth,std::vector<std::string>& result,std::string& error)
+        bool collect(Platform& p,const std::string& base,const std::string& rel,unsigned depth,size_t& directories,std::vector<std::string>& result,std::string& error)
         {
-            if(depth>4||rel.size()>80){error="Asset folder nesting or path limit exceeded.";return false;}
+            if(depth>4||rel.size()>80||++directories>1024){error="Asset folder count, nesting or path limit exceeded.";return false;}
             std::vector<std::string> files,folders;
             const auto path=base+(rel.empty()?"":"/"+rel);
             if(!children(p,path,false,files)||!children(p,path,true,folders)){error="Too many assets.";return false;}
@@ -43,7 +43,7 @@ namespace nx
             for(const auto& folder:folders)
             {
                 if(!blueprintAssetName(folder,true)){error="Invalid asset folder: "+folder;return false;}
-                if(!collect(p,base,rel.empty()?folder:rel+"/"+folder,depth+1,result,error))return false;
+                if(!collect(p,base,rel.empty()?folder:rel+"/"+folder,depth+1,directories,result,error))return false;
             }
             return true;
         }
@@ -84,8 +84,8 @@ namespace nx
         if(root.empty()){files.clear();error.clear();return true;}
         if(!blueprintAssetRoot(root)||!folderId(screen)||!p.fileTime(("own/"+root).c_str()))
         {error="Missing or invalid project asset root.";return false;}
-        std::vector<std::string> result;
-        if(!collect(p,"own/"+root+"/"+screen+"/asset","",0,result,error))return false;
+        std::vector<std::string> result;size_t directories=0;
+        if(!collect(p,"own/"+root+"/"+screen+"/asset","",0,directories,result,error))return false;
         std::sort(result.begin(),result.end());files.swap(result);error.clear();return true;
     }
     bool blueprintCopyAssets(Platform& p,const std::string& source,const std::string& destination,const std::string& screen,std::string& error)
@@ -93,7 +93,8 @@ namespace nx
         std::vector<std::string> files;
         if(!blueprintListAssets(p,source,screen,files,error))return false;
         if(files.empty())return true;
-        if(source==destination||!blueprintEnsureAssetFolder(p,destination,screen,error))return false;
+        if(source==destination){error="Source and destination asset folders must differ.";return false;}
+        if(!blueprintEnsureAssetFolder(p,destination,screen,error))return false;
         const auto dest=destination+"/"+screen+"/asset",base="own/"+source+"/"+screen+"/asset/";
         size_t total=0;
         for(const auto& file:files)
@@ -107,7 +108,8 @@ namespace nx
     bool blueprintImportAsset(Platform& p,const std::string& root,const std::string& screen,const std::string& file,std::string& error)
     {
         if(!blueprintAssetName(file)){error="Use a lowercase portable asset filename (letters, digits, _, -, .).";return false;}
-        if(!blueprintAssetRoot(root)||!blueprintEnsureAssetFolder(p,root,screen,error))return false;
+        if(!blueprintAssetRoot(root)){error="Invalid project asset root.";return false;}
+        if(!blueprintEnsureAssetFolder(p,root,screen,error))return false;
         size_t total=0;
         return copy(p,"own/"+file,"own/"+root+"/"+screen+"/asset/"+file,total,error);
     }

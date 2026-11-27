@@ -347,6 +347,7 @@ NX_TEST(nativeAssetRootsAndNamesAreConfined)
     BlueprintDocument doc;doc.create();std::string error,saved;
     NX_EXPECT(blueprintAssetRoot("bpa-12345-1")&&!blueprintAssetRoot("bpa-../bad")&&!blueprintAssetRoot("own/bpa-1"));
     NX_EXPECT(blueprintAssetName("level.json")&&blueprintAssetName("textures",true));
+    NX_EXPECT(!doc.addScreen("con",error)&&!doc.addScreen("lpt1",error));
     for(const char* name:{"../level.json","a/b.png","a\\b.png","con.json","file.new","bad.","A.png"})
         NX_EXPECT(!blueprintAssetName(name));
     doc.assetRoot="bpa-12345-1";NX_EXPECT(doc.serialize(saved,error));

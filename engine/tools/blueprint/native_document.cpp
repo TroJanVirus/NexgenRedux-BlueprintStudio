@@ -91,7 +91,7 @@ namespace nx
         {
             if(s=="Screen")return true; // Initial screen, retained for native v2 drafts.
             if(s.empty()||s.size()>40||s=="main"||s=="screen"||s.front()<'a'||s.front()>'z')return false;
-            return std::all_of(s.begin(),s.end(),[](char c){return (c>='a'&&c<='z')||(c>='0'&&c<='9')||c=='_'||c=='-';});
+            return blueprintAssetName(s,true);
         }
         std::string scoped(const std::string& owner,const std::string& name){return owner+"/"+name;}
         bool behaviourOwner(const std::string& owner){return owner.rfind("behaviour:",0)==0&&identifier(owner.substr(10));}

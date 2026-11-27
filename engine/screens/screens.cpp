@@ -157,7 +157,8 @@ namespace nx
             error = "Preview requires the home screen and a valid generated script.";
             return false;
         }
-        if(!assetRoot.empty()&&(assetRoot.size()>32||assetRoot.rfind("bpa-",0)!=0||assetRoot.find_first_not_of("0123456789-",4)!=std::string::npos))
+        if(!assetRoot.empty()&&(assetRoot.size()<=4||assetRoot.size()>32||assetRoot.rfind("bpa-",0)!=0||
+            assetRoot[4]<'0'||assetRoot[4]>'9'||assetRoot.back()<'0'||assetRoot.back()>'9'||assetRoot.find_first_not_of("0123456789-",4)!=std::string::npos))
         {error="Invalid preview asset root.";return false;}
         for(size_t i=0;i<screens.size();++i)
         {

@@ -610,6 +610,21 @@ NX_TEST(nativeBlueprintWorkspaceAuthorsSavesAndRunsThroughMouseAndKeyboard)
     BlueprintDocument doc;std::string source,error;
     NX_EXPECT(doc.load(found->second.data(),found->second.size(),error));
     NX_EXPECT(compileBlueprint(doc,source,error)&&source.find("Save::set(\"workspace_key\", \"first\")")!=std::string::npos);
+    // Import an ordinary native asset through the real workspace and export it with the project.
+    NX_EXPECT(!doc.assetRoot.empty());
+    r.platform.files["own/test_scene.json"]="{\"objects\":[]}";
+    click(1027,18);r.platform.dropped="test_scene.json";frame();
+    const auto assetPath="own/"+doc.assetRoot+"/Screen/asset/test_scene.json";
+    NX_EXPECT(r.platform.files.count(assetPath)&&r.platform.files[assetPath]=="{\"objects\":[]}");
+    click(930,133);click(675,53);
+    bool exported=false;
+    for(const auto& item:r.platform.files)
+        if(item.first.rfind("own/bp-",0)==0&&item.first.ends_with("/Screen/asset/test_scene.json")&&item.second=="{\"objects\":[]}")
+        {
+            const auto prefix=item.first.substr(0,item.first.size()-strlen("asset/test_scene.json"));
+            exported=r.platform.files.count(prefix+"main.as")&&r.platform.files.count(prefix+"screen.json");
+        }
+    NX_EXPECT(exported);
     // Run what the user actually authored, through the workspace Play button.
     click(553,53);
     NX_EXPECT(studio.previewing());
