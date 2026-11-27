@@ -5,9 +5,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 HERE = Path(__file__).resolve().parent
 text = (ROOT / 'docs/ScriptReference.md').read_text(encoding='utf-8')
-handles = {'Texture','Model','Effect','Mesh','Font','Sound','Video','Look','Canvas','Entity','Widget','Room','Message','Request','Connection','Datagrams','Json','Path','Playlist','WebSocket'}
+handles = {'Texture','Model','Effect','Mesh','Font','Sound','Video','Look','Canvas','Entity','Widget','Room','Message','Request','Connection','Datagrams','Json','Path','Playlist','WebSocket','Pixels','Random'}
 values = {'bool','int','uint','float','double','string','Vec2','Vec3','Color','Blend','Filter','Align','Ease','Bus','FieldShape','FieldJoin','Solid','Place','RoomState','Voice','Tween','Tray','XboxText'}
-sections = handles | {'Assets','Input','Audio','Save','Scene','Space','Screens','App','Maths','Ui','Net','Paths and noise','Vec2','Vec3','Color','Coroutines','Voice','Tween','Xbox','Xbox360','XboxOne','Windows','Mac','Linux'}
+sections = handles | {'Assets','Input','Audio','Save','Scene','Space','Screens','App','Maths','Ui','Net','Paths and noise','Vec2','Vec3','Color','Coroutines','Voice','Tween','Xbox','Xbox360','XboxOne','Windows','Mac','Linux','Data'}
 
 def split(s):
     parts=[]; start=0; depth=0; quote=False; escape=False
@@ -65,12 +65,14 @@ for line in text.splitlines():
     if not target and '::' not in name and section not in ('Maths','Color','Paths and noise'): continue
     if section=='Tween' and name=='ease': target=None
     if section=='Path' and name in ('noise','fractalNoise','noiseSeed'): target=None
+    if section=='Random' and name=='randomNormal': target=None
     pins=[]; outputs=[]; arguments=[]; valid=True
     if target: pins.append({'name':'target','type':target})
     for i,arg in enumerate(split(args)):
         a,eq,d=arg.partition('='); a=a.strip(); d=d.strip() if eq else None
         isout='&out' in a
         if '&inout' in a: valid=False; break
+        a=re.sub(r'(array<[\w@]+>)\s*&in\b',r'\1@',a)
         a=re.sub(r'\bconst\s+|\s*&(?:in|out)\b|@\+',lambda m:'@' if m.group()=='@+' else '',a).strip()
         pm=re.fullmatch(r'([\w@<>]+)(?:\s+(\w+))?',a)
         if not pm or not parse_type(pm[1]): valid=False; break

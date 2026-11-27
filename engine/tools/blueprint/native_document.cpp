@@ -80,6 +80,8 @@ namespace nx
             {"var:set:Vec3","Set Vec3 variable","Variables","in:exec|value:Vec3","then:exec"},
             {"var:get:Color","Get Color variable","Variables","","value:Color"},
             {"var:set:Color","Set Color variable","Variables","in:exec|value:Color","then:exec"},
+            {"create:pixels","Create pixels","Pixels","in:exec|width:uint|height:uint","then:exec|result:Pixels@","Pixels","","","","Pixels@","","in:width|in:height"},
+            {"create:random","Create seeded random","Random","in:exec|seed:uint","then:exec|result:Random@","Random","","","","Random@","","in:seed"},
             {"create:playlist","Create music playlist","Playlist","in:exec","then:exec|result:Playlist@","Playlist","","","","Playlist@"},
             {"create:websocket","Connect WebSocket","WebSocket","in:exec|url:string","then:exec|result:WebSocket@","WebSocket","","","","WebSocket@","","in:url"},
             {"null:entity","No entity (null)","Values","","value:Entity@"},
@@ -2510,6 +2512,19 @@ namespace nx
         const auto* input=nodeSpec(graphs[graph],n,spec)?findPin(spec.inputs,pin):nullptr;
         if(!input||!inputLiteral(input->type,value))
         {error="Invalid value for input "+pin+".";return false;}
+        if(n.kind=="actor:spawn-asset"&&pin=="id")
+        {
+            Node proposed=n;auto prior=std::find_if(proposed.values.begin(),proposed.values.end(),[](const InputValue& v){return v.pin=="id";});
+            if(prior==proposed.values.end())proposed.values.push_back({"id",value});else prior->value=value;
+            BlueprintNodeSpec changed;if(!nodeSpec(graphs[graph],proposed,changed))return false;
+            for(const auto& v:n.values)if(v.pin.rfind("spawn_",0)==0)
+            {const auto* p=findPin(changed.inputs,v.pin);if(!p||!inputLiteral(p->type,v.value)){error="Clear incompatible exposed spawn values before changing actor.";return false;}}
+            for(const auto& link:graphs[graph].links)if(link.to==node&&link.input.rfind("spawn_",0)==0)
+            {
+                const auto* before=findPin(spec.inputs,link.input);const auto* after=findPin(changed.inputs,link.input);
+                if(!before||!after||before->type!=after->type){error="Disconnect incompatible spawn pins before changing actor.";return false;}
+            }
+        }
         if(n.kind=="actor:spawn-asset"&&!value.empty()&&(pin=="instanceName"||pin=="rotationOverride"||pin=="sizeOverride"))
         {
             JsonValue checked;
@@ -2556,7 +2571,13 @@ namespace nx
     {
         std::vector<BlueprintPin> result;
         const auto parent=parentBehaviour(owner);
-        if(!parent.empty()&&!variables(result,error,parent))return false;
+        if(!parent.empty())
+        {
+            std::unordered_set<std::string> seen;
+            for(auto at=owner;!at.empty();at=parentBehaviour(at))
+                if(!seen.insert(at).second||seen.size()>16){error="Invalid Behaviour inheritance.";return false;}
+            if(!variables(result,error,parent))return false;
+        }
         for(const auto& graph:graphs)if(graph.owner==owner)for(const auto& field:graph.fields)
         {
             const auto inherited=std::find_if(result.begin(),result.end(),[&](const BlueprintPin& p){return p.name==field.name;});
@@ -2684,9 +2705,6 @@ namespace nx
     }
     bool BlueprintDocument::functions(std::string& error) const
     {
-        std::unordered_map<std::string,size_t> index;
-        for(size_t i=0;i<graphs.size();++i)
-            if(graphs[i].kind=="function")index.emplace(scoped(graphs[i].owner,graphs[i].name),i);
         std::vector<std::vector<size_t>> calls(graphs.size());
         for(size_t i=0;i<graphs.size();++i)for(const auto& node:graphs[i].nodes)
         {

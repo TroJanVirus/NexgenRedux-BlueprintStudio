@@ -2694,3 +2694,35 @@ NX_TEST(nativeFlowResetAndGateIsolationAcrossBehaviourInstances)
     r.step(15);NX_EXPECT(!r.screens.failed());
     NX_EXPECT(strcmp(r.save.get("FlowFirst","missing"),"ok")==0&&strcmp(r.save.get("FlowSecond","missing"),"ok")==0);
 }
+
+NX_TEST(nativeActorClassOverridesAndConstructionExecuteBeforeStart)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    BlueprintDocument doc;doc.create();std::string base,child,parent,derived,error,source,bytes;
+    bool ok=doc.createVisualAsset("actor",base,error)&&doc.createVisualActorChild(base,child,error)&&
+        doc.ensureActorBehaviour(child,derived,error)&&doc.ensureActorBehaviour(base,parent,error)&&
+        doc.editVariableDeclaration(parent,"field health:int=100",error)&&doc.setActorFieldExposed(parent,"health",true,error)&&
+        doc.editVariableDeclaration(derived,"field health:int=75",error)&&
+        doc.addFunction("Construction",error,parent)&&doc.addFunction("Record",error,parent)&&doc.addFunction("Record",error,derived);
+    if(!ok){NX_ERROR("Actor inheritance: %s",error.c_str());NX_EXPECT(false);return;}
+    auto graph=[&](const std::string& owner,const char* label)
+    {for(size_t i=0;i<doc.graphs.size();++i)if(doc.graphs[i].owner==owner&&doc.graphs[i].name==label)return i;return doc.graphs.size();};
+    const auto setup=graph(parent,"Construction");
+    ok=ok&&doc.addNode(setup,"call:function",0,0,error,"Record")&&doc.connect(setup,0,"then",1,"in",error);
+    for(const auto& owner:std::vector<std::string>{parent,derived})
+    {
+        const auto g=graph(owner,"Record");
+        ok=ok&&doc.addNode(g,"var:get:int",0,0,error)&&doc.setReference(g,1,"health",error)&&
+            doc.addNode(g,"equal:int",0,0,error)&&doc.connect(g,1,"value",2,"a",error)&&doc.setInputValue(g,2,"b",owner==parent?"100":"42",error)&&
+            doc.addNode(g,"branch",0,0,error)&&doc.connect(g,0,"then",3,"in",error)&&doc.connect(g,2,"result",3,"condition",error)&&
+            doc.addNode(g,"api:Save:Save::set:string,string",0,0,error)&&doc.connect(g,3,"true",4,"in",error)&&
+            doc.setInputValue(g,4,"key",owner==parent?"base_construction":"child_construction",error)&&doc.setInputValue(g,4,"value","ok",error);
+    }
+    ok=ok&&doc.placeVisualActor("Screen",base,"0,0,0",error)&&doc.placeVisualActor("Screen",child,"10,0,0",error)&&
+        doc.setInputValue(0,2,"spawn_health","42",error)&&doc.serialize(bytes,error);
+    BlueprintDocument copy;
+    if(!ok||!copy.load(bytes.data(),bytes.size(),error)||!compileBlueprint(copy,source,error)){NX_ERROR("Actor class compile: %s",error.c_str());NX_EXPECT(false);return;}
+    r.platform.files["project/main/screen.json"]="{\"title\":\"Actor class construction\"}";r.platform.files["project/main/main.as"]=source;
+    if(!r.screens.init(r.services,"project","main")){NX_EXPECT(false);return;}
+    r.step(5);NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("base_construction","missing"),"ok")==0&&strcmp(r.save.get("child_construction","missing"),"ok")==0);
+}
