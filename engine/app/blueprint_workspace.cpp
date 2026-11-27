@@ -232,8 +232,9 @@ namespace nx
                 (node.id!="event:levelName"||(!behaviour&&(graph.name=="onLevelTouch"||graph.name=="onLevelAgent")))&&
                 (node.id!="event:levelWho"||(!behaviour&&graph.name=="onLevelTouch"))&&
                 (node.id!="event:levelWhat"||(!behaviour&&graph.name=="onLevelAgent"))&&
-                ((node.id!="attach:behaviour"&&node.id!="level:attach")||(!behaviour&&hasBehaviours))&&(node.id!="attach:direct"||hasBehaviours)&&(!behaviour||node.id.rfind("level:",0)!=0)&&((node.id!="event:delta"&&node.id!="time:timeline")||m_document.graphs[m_graph].name=="update")&&
+                ((node.id!="attach:behaviour"&&node.id!="level:attach")||(!behaviour&&hasBehaviours))&&(node.id!="attach:direct"||hasBehaviours)&&(!behaviour||node.id.rfind("level:",0)!=0)&&(node.id!="event:delta"||m_document.graphs[m_graph].name=="update")&&
                 (node.id!="event:canvas"||m_document.graphs[m_graph].name=="draw")&&
+                ((node.id!="time:timeline"&&node.id!="camera:orbit-timed")||graph.name=="update")&&(node.id!="render:space"||(!behaviour&&graph.name=="draw"))&&
                 (m_pinMenu||lower(node.category+" "+node.title+" "+node.id).find(query)!=std::string::npos))m_palette.push_back(&node);
         if(!m_pinMenu)return;
         const auto namedVariables=variableRows();

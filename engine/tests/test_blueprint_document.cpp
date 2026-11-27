@@ -1081,3 +1081,13 @@ NX_TEST(nativeTimelineSimplifiesOrbitWithoutManualState)
     NX_EXPECT(source.find("bp_timeline_state_1_1")!=std::string::npos&&source.find("Space::camera")!=std::string::npos);
     NX_EXPECT(!doc.addNode(0,"time:timeline",200,200,error));
 }
+
+NX_TEST(nativeTimedCameraOrbitReducesSceneToSevenActiveNodes)
+{
+    BlueprintDocument doc;std::string error,source;
+    if(!blueprint_orbit::author(doc,error,2)){NX_ERROR("Timed orbit author: %s",error.c_str());NX_EXPECT(false);return;}
+    NX_EXPECT(doc.graphs[0].nodes.size()+doc.graphs[1].nodes.size()+doc.graphs[2].nodes.size()==7);
+    NX_EXPECT(doc.graphs[0].links.size()+doc.graphs[1].links.size()+doc.graphs[2].links.size()==4);
+    NX_EXPECT(compileBlueprint(doc,source,error)&&source.find("Scene::find")!=std::string::npos&&source.find("Space::camera")!=std::string::npos&&source.find("Space::draw(canvas)")!=std::string::npos);
+    NX_EXPECT(!doc.addNode(0,"camera:orbit-timed",100,100,error)&&!doc.addNode(1,"render:space",100,100,error));
+}

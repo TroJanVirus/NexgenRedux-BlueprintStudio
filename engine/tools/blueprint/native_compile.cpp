@@ -143,9 +143,10 @@ namespace nx
                 {
                     return literalValue(node,n.kind.substr(8),n.ref,result);
                 }
-                if(n.kind=="time:timeline")
+                if(n.kind=="time:timeline"||n.kind=="camera:orbit-timed")
                 {
                     if(!available[node])return fail(node,"Timeline output must be used after its execution in Update.");
+                    if(pin=="found"&&n.kind=="camera:orbit-timed"){result="bp_orbit_found_"+std::to_string(node);return true;}
                     if(pin!="progress"&&pin!="elapsed"&&pin!="finished")return fail(node,"Unknown Timeline output.");
                     result="bp_timeline_"+pin+"_"+std::to_string(node);return true;
                 }
@@ -241,7 +242,7 @@ namespace nx
                 const auto& n=graph.nodes[to];const auto* spec=blueprintSpec(n.kind);
                 const std::string pad(indent*4,' ');
                 const size_t start=source.size();
-                if(n.kind=="time:timeline")
+                if(n.kind=="time:timeline"||n.kind=="camera:orbit-timed")
                 {
                     std::string delta,duration,loop,reset;
                     if(!value(to,"dt",delta,0)||!value(to,"duration",duration,0)||!value(to,"loop",loop,0)||!value(to,"reset",reset,0))return false;
@@ -255,8 +256,21 @@ namespace nx
                     source+=pad+"bool "+finished+" = "+period+" <= 0 || (!"+cycle+" && "+elapsed+" >= "+period+");\n";
                     source+=pad+state+" = "+elapsed+" + max(float(0), "+delta+");\n";
                     source+=pad+"if (!"+cycle+" || "+period+" <= 0) "+state+" = min("+state+", "+period+");\n";
+                    if(n.kind=="camera:orbit-timed")
+                    {
+                        std::string entityName,radius,height,turns,angle;
+                        if(!value(to,"name",entityName,0)||!value(to,"radius",radius,0)||!value(to,"height",height,0)||!value(to,"turns",turns,0)||!value(to,"angle",angle,0))return false;
+                        const auto target="bp_orbit_target_"+suffix,foundTarget="bp_orbit_found_"+suffix,center="bp_orbit_center_"+suffix,phase="bp_orbit_phase_"+suffix,distance="bp_orbit_radius_"+suffix,rotation="bp_orbit_turns_"+suffix;
+                        source+=pad+"Entity@ "+target+" = Scene::find("+entityName+");\n"+pad+"bool "+foundTarget+" = "+target+" !is null && "+target+".alive;\n";
+                        source+=pad+"if ("+foundTarget+")\n"+pad+"{\n"+pad+"    Vec3 "+center+" = "+target+".place;\n";
+                        source+=pad+"    float "+rotation+" = "+progress+" * ("+turns+");\n"+pad+"    float "+phase+" = ("+rotation+" - floor("+rotation+")) * float(6.283185307179586);\n";
+                        source+=pad+"    float "+distance+" = max(float(0.001), abs("+radius+"));\n";
+                        source+=pad+"    Space::camera("+center+" + Vec3(sin("+phase+") * "+distance+", "+height+", cos("+phase+") * "+distance+"), "+center+", "+angle+");\n"+pad+"}\n";
+                    }
                     available[to]=true;mark(start,to);return flow(to,"then",indent,depth+1);
                 }
+                if(n.kind=="render:space")
+                {source+=pad+"Space::draw(canvas);\n";mark(start,to);return flow(to,"then",indent,depth+1);}
                 if(n.kind=="spawn:box"||n.kind=="spawn:plane")
                 {
                     std::string place,size,color,entityName;
@@ -560,7 +574,7 @@ namespace nx
         for(size_t gi=0;gi<document.graphs.size();++gi)
         {
             const auto& g=document.graphs[gi];if(g.owner!=classOwner)continue;
-            for(size_t ni=0;ni<g.nodes.size();++ni)if(g.nodes[ni].kind=="time:timeline")
+            for(size_t ni=0;ni<g.nodes.size();++ni)if(g.nodes[ni].kind=="time:timeline"||g.nodes[ni].kind=="camera:orbit-timed")
                 result+="    float bp_timeline_state_"+std::to_string(gi)+"_"+std::to_string(ni)+" = 0;\n";
         }
         for(size_t graphIndex=0;graphIndex<document.graphs.size();++graphIndex)

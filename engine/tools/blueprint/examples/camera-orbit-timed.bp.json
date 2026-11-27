@@ -1,0 +1,152 @@
+{
+  "version": 2,
+  "kind": "NativeBlueprint",
+  "name": "Camera Orbit - Timed Action",
+  "graphs": [
+    {
+      "owner": "Screen",
+      "name": "onEnter",
+      "kind": "event",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 24,
+          "y": 60
+        },
+        {
+          "id": "floor",
+          "kind": "spawn:plane",
+          "x": 285,
+          "y": 60,
+          "values": {
+            "name": "Floor"
+          }
+        },
+        {
+          "id": "cube",
+          "kind": "spawn:box",
+          "x": 565,
+          "y": 60,
+          "values": {
+            "name": "Cube"
+          }
+        }
+      ],
+      "links": [
+        {
+          "from": "entry",
+          "to": "floor",
+          "output": "then",
+          "input": "in"
+        },
+        {
+          "from": "floor",
+          "to": "cube",
+          "output": "then",
+          "input": "in"
+        }
+      ]
+    },
+    {
+      "owner": "Screen",
+      "name": "update",
+      "kind": "event",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 24,
+          "y": 60
+        },
+        {
+          "id": "orbit",
+          "kind": "camera:orbit-timed",
+          "x": 300,
+          "y": 60,
+          "values": {
+            "name": "Cube",
+            "duration": "8"
+          }
+        }
+      ],
+      "links": [
+        {
+          "from": "entry",
+          "to": "orbit",
+          "output": "then",
+          "input": "in"
+        }
+      ]
+    },
+    {
+      "owner": "Screen",
+      "name": "draw",
+      "kind": "event",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 24,
+          "y": 60
+        },
+        {
+          "id": "render",
+          "kind": "render:space",
+          "x": 300,
+          "y": 60
+        }
+      ],
+      "links": [
+        {
+          "from": "entry",
+          "to": "render",
+          "output": "then",
+          "input": "in"
+        }
+      ]
+    },
+    {
+      "owner": "Screen",
+      "name": "onSuspend",
+      "kind": "event",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 24,
+          "y": 60
+        }
+      ],
+      "links": []
+    },
+    {
+      "owner": "Screen",
+      "name": "onResume",
+      "kind": "event",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 24,
+          "y": 60
+        }
+      ],
+      "links": []
+    },
+    {
+      "owner": "Screen",
+      "name": "onExit",
+      "kind": "event",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 24,
+          "y": 60
+        }
+      ],
+      "links": []
+    }
+  ]
+}

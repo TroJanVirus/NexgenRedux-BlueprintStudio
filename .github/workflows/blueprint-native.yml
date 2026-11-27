@@ -19,7 +19,7 @@ jobs:
       - name: Check generated catalogue
         run: python3 engine/tools/blueprint/generate_native_catalog.py --check
       - name: Verify editable orbit fixture matches native test fixture
-        run: python3 -c 'from pathlib import Path; a=Path("engine/tools/blueprint/examples/camera-orbit.bp.json").read_text(); b=Path("engine/tests/blueprint_orbit_fixture.h").read_text(); assert "R\"BP_ORBIT("+a+")BP_ORBIT\"" in b; t=Path("engine/tools/blueprint/examples/camera-orbit-timeline.bp.json").read_text(); assert "R\"BP_TIME("+t+")BP_TIME\"" in b'
+        run: python3 -c 'from pathlib import Path; a=Path("engine/tools/blueprint/examples/camera-orbit.bp.json").read_text(); b=Path("engine/tests/blueprint_orbit_fixture.h").read_text(); assert "R\"BP_ORBIT("+a+")BP_ORBIT\"" in b; t=Path("engine/tools/blueprint/examples/camera-orbit-timeline.bp.json").read_text(); assert "R\"BP_TIME("+t+")BP_TIME\"" in b; u=Path("engine/tools/blueprint/examples/camera-orbit-timed.bp.json").read_text(); assert "R\"BP_TIMED("+u+")BP_TIMED\"" in b'
       - name: Compile native document tests with sanitizers
         run: |
           g++ -std=c++20 -Wall -Wextra -Werror -fno-exceptions -fno-rtti -g -O1 \
@@ -62,11 +62,17 @@ jobs:
       - name: Exercise real X11 input, crash recovery, save, play, export and large graph
         run: xvfb-run -a -s "-screen 0 1280x720x24 -noreset" /usr/bin/python3 engine/tools/blueprint/test_native_desktop.py build/showcase/nexgen "$RUNNER_TEMP/bp-desktop-operational"
       - name: Exercise editable 3D camera orbit and capture native frames
+        if: ${{ !cancelled() }}
         run: xvfb-run -a -s "-screen 0 1280x720x24 -noreset" /usr/bin/python3 engine/tools/blueprint/test_camera_orbit_desktop.py build/showcase/nexgen "$RUNNER_TEMP/bp-camera-orbit"
       - name: Exercise simplified Timeline orbit and capture native frames
+        if: ${{ !cancelled() }}
         run: xvfb-run -a -s "-screen 0 1280x720x24 -noreset" /usr/bin/python3 engine/tools/blueprint/test_camera_orbit_desktop.py build/showcase/nexgen "$RUNNER_TEMP/bp-camera-timeline" camera-orbit-timeline.bp.json
       - name: Author the Timeline orbit from a blank native workspace
+        if: ${{ !cancelled() }}
         run: xvfb-run -a -s "-screen 0 1280x720x24 -noreset" /usr/bin/python3 engine/tools/blueprint/test_camera_orbit_desktop.py build/showcase/nexgen "$RUNNER_TEMP/bp-camera-authored" camera-orbit-timeline.bp.json --author
+      - name: Exercise timed camera action and capture native frames
+        if: ${{ !cancelled() }}
+        run: xvfb-run -a -s "-screen 0 1280x720x24 -noreset" /usr/bin/python3 engine/tools/blueprint/test_camera_orbit_desktop.py build/showcase/nexgen "$RUNNER_TEMP/bp-camera-timed" camera-orbit-timed.bp.json
       - name: Retain native camera orbit evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v5
@@ -75,6 +81,7 @@ jobs:
           path: |
             ${{ runner.temp }}/bp-camera-orbit/
             ${{ runner.temp }}/bp-camera-timeline/
+            ${{ runner.temp }}/bp-camera-timed/
             ${{ runner.temp }}/bp-camera-authored/
           if-no-files-found: ignore
       - name: Verify native process contention and crash release

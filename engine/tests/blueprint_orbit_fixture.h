@@ -532,14 +532,167 @@ namespace nx::blueprint_orbit
   ]
 }
 )BP_TIME";
+    inline constexpr char timedProject[]=R"BP_TIMED({
+  "version": 2,
+  "kind": "NativeBlueprint",
+  "name": "Camera Orbit - Timed Action",
+  "graphs": [
+    {
+      "owner": "Screen",
+      "name": "onEnter",
+      "kind": "event",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 24,
+          "y": 60
+        },
+        {
+          "id": "floor",
+          "kind": "spawn:plane",
+          "x": 285,
+          "y": 60,
+          "values": {
+            "name": "Floor"
+          }
+        },
+        {
+          "id": "cube",
+          "kind": "spawn:box",
+          "x": 565,
+          "y": 60,
+          "values": {
+            "name": "Cube"
+          }
+        }
+      ],
+      "links": [
+        {
+          "from": "entry",
+          "to": "floor",
+          "output": "then",
+          "input": "in"
+        },
+        {
+          "from": "floor",
+          "to": "cube",
+          "output": "then",
+          "input": "in"
+        }
+      ]
+    },
+    {
+      "owner": "Screen",
+      "name": "update",
+      "kind": "event",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 24,
+          "y": 60
+        },
+        {
+          "id": "orbit",
+          "kind": "camera:orbit-timed",
+          "x": 300,
+          "y": 60,
+          "values": {
+            "name": "Cube",
+            "duration": "8"
+          }
+        }
+      ],
+      "links": [
+        {
+          "from": "entry",
+          "to": "orbit",
+          "output": "then",
+          "input": "in"
+        }
+      ]
+    },
+    {
+      "owner": "Screen",
+      "name": "draw",
+      "kind": "event",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 24,
+          "y": 60
+        },
+        {
+          "id": "render",
+          "kind": "render:space",
+          "x": 300,
+          "y": 60
+        }
+      ],
+      "links": [
+        {
+          "from": "entry",
+          "to": "render",
+          "output": "then",
+          "input": "in"
+        }
+      ]
+    },
+    {
+      "owner": "Screen",
+      "name": "onSuspend",
+      "kind": "event",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 24,
+          "y": 60
+        }
+      ],
+      "links": []
+    },
+    {
+      "owner": "Screen",
+      "name": "onResume",
+      "kind": "event",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 24,
+          "y": 60
+        }
+      ],
+      "links": []
+    },
+    {
+      "owner": "Screen",
+      "name": "onExit",
+      "kind": "event",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 24,
+          "y": 60
+        }
+      ],
+      "links": []
+    }
+  ]
+}
+)BP_TIMED";
     // Rebuild through the same document operations used by native Studio. This
     // intentionally does not reverse-import handwritten AngelScript.
-    inline bool author(BlueprintDocument& result,std::string& error,bool timeline=false)
+    inline bool author(BlueprintDocument& result,std::string& error,int variant=0)
     {
         BlueprintDocument expected;
-        if(!expected.load(timeline?timelineProject:project,timeline?sizeof(timelineProject)-1:sizeof(project)-1,error))return false;
+        if(!expected.load(variant==2?timedProject:variant==1?timelineProject:project,variant==2?sizeof(timedProject)-1:variant==1?sizeof(timelineProject)-1:sizeof(project)-1,error))return false;
         BlueprintDocument doc;doc.create();doc.name=expected.name;
-        if(!timeline&&!doc.editVariableDeclaration("Screen","field elapsed:float=0",error))return false;
+        if(!variant&&!doc.editVariableDeclaration("Screen","field elapsed:float=0",error))return false;
         for(size_t g=0;g<expected.graphs.size();++g)
         {
             const auto& graph=expected.graphs[g];

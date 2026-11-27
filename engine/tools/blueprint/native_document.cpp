@@ -30,6 +30,8 @@ namespace nx
             {"math:sin","Sine (radians)","Math","a:float","result:float","sin","","","pure","float","","in:a"},
             {"math:cos","Cosine (radians)","Math","a:float","result:float","cos","","","pure","float","","in:a"},
             {"time:timeline","Timeline (0 to 1)","Time / Animation","in:exec|dt:float|duration:float|loop:bool|reset:bool","then:exec|progress:float|elapsed:float|finished:bool","","","","","void","","","dt:dt|duration:float(1)|loop:false|reset:false"},
+            {"camera:orbit-timed","Orbit camera around entity (timed)","Space / Camera","in:exec|name:string|radius:float|height:float|duration:float|turns:float|angle:float|loop:bool|reset:bool|dt:float","then:exec|progress:float|elapsed:float|finished:bool|found:bool","","","","","void","","","name:\"Target\"|radius:float(6)|height:float(2)|duration:float(8)|turns:float(1)|angle:float(60)|loop:false|reset:false|dt:dt"},
+            {"render:space","Render 3D scene","Space / Rendering","in:exec","then:exec"},
             {"math:orbit-position","Orbit position (turns)","Math / Camera","center:Vec3|radius:float|height:float|turns:float","result:Vec3","","","","pure","Vec3","","","center:Vec3(0, 0, 0)|radius:float(6)|height:float(2)|turns:float(0)"},
             {"spawn:box","Spawn 3D box","Space / Primitives","in:exec|name:string|place:Vec3|size:Vec3|color:Color","then:exec|result:Entity@","","","","","Entity@","","","name:\"Box\"|place:Vec3(0, 0.5, 0)|size:Vec3(1, 1, 1)|color:Color(0.92, 0.35, 0.12, 1)"},
             {"spawn:plane","Spawn 3D floor plane","Space / Primitives","in:exec|name:string|place:Vec3|size:Vec3|color:Color","then:exec|result:Entity@","","","","","Entity@","","","name:\"Floor\"|place:Vec3(0, 0, 0)|size:Vec3(20, 1, 20)|color:Color(0.4, 0.46, 0.52, 1)"},
@@ -142,7 +144,7 @@ namespace nx
         bool context(const std::string& event,const std::string& kind,const std::string& owner)
         {
             const bool behaviour=behaviourOwner(owner);
-            return (kind!="time:timeline"||event=="update")&&(kind!="event:delta"||event=="update")&&(kind!="event:canvas"||(!behaviour&&event=="draw"))&&
+            return ((kind!="time:timeline"&&kind!="camera:orbit-timed")||event=="update")&&(kind!="render:space"||(!behaviour&&event=="draw"))&&(kind!="event:delta"||event=="update")&&(kind!="event:canvas"||(!behaviour&&event=="draw"))&&
                 (kind!="event:entity"||behaviour)&&(kind!="event:other"||(behaviour&&(event=="onHit"||event=="onLeave")))&&
                 (kind!="event:levelName"||(!behaviour&&(event=="onLevelTouch"||event=="onLevelAgent")))&&
                 (kind!="event:levelWho"||(!behaviour&&event=="onLevelTouch"))&&

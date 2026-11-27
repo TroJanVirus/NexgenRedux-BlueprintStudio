@@ -158,6 +158,16 @@ def capture(label):
     png = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", geo.width, geo.height, 8, 2, 0, 0, 0))
     png += chunk(b"IDAT", zlib.compress(b"".join(scanlines))) + chunk(b"IEND", b"")
     (root / (label + ".png")).write_bytes(png)
+    if label[0] == "0" and label[1] in "456789":
+        orange = 0
+        for yy in range(geo.height // 3, geo.height * 2 // 3):
+            for xx in range(geo.width // 3, geo.width * 2 // 3):
+                b, g, r = data[(yy * geo.width + xx) * 4:(yy * geo.width + xx) * 4 + 3]
+                if r > 70 and r > g * 1.3 and g > b * 1.25:
+                    orange += 1
+        print(f"{label}: central orange pixels={orange}", flush=True)
+        if label != "04-start" and orange < 100:
+            raise RuntimeError(f"{label}: cube color not visible in central third")
 
 with log.open("wb") as out:
     process = subprocess.Popen([str(binary), "--blueprint-studio", "--silent", "--size", "1280", "720", "--saves", str(root)], stdout=out, stderr=subprocess.STDOUT)

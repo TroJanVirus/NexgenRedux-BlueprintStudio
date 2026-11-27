@@ -2131,14 +2131,15 @@ NX_TEST(nativeImportedArraysExecuteLikeOriginalScript)
 #include "blueprint_orbit_fixture.h"
 NX_TEST(nativeBlueprintCameraOrbitKeepsCubeCenteredAndReturnsToStart)
 {
-    for(const bool timeline:{false,true})
+    for(const int variant:{0,1,2})
     {
     BlueprintDocument doc;std::string error,source,manifest;
-    if(!blueprint_orbit::author(doc,error,timeline)||!compileBlueprintScreen(doc,source,manifest,error)){NX_ERROR("Orbit compile: %s",error.c_str());NX_EXPECT(false);return;}
+    if(!blueprint_orbit::author(doc,error,variant)||!compileBlueprintScreen(doc,source,manifest,error)){NX_ERROR("Orbit compile: %s",error.c_str());NX_EXPECT(false);return;}
     Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
     r.platform.files["project/main/screen.json"]=manifest;r.platform.files["project/main/main.as"]=source;
     if(!r.screens.init(r.services,"project","main")){NX_EXPECT(false);return;}
-    r.step();if(r.screens.failed()||!r.services.world){NX_EXPECT(false);return;}
+    // Screens::draw deliberately skips the loading frame until the first update.
+    r.step(2);if(r.screens.failed()||!r.services.world){NX_EXPECT(false);return;}
     auto& world=*r.services.world;auto& space=world.space();
     const auto cube=world.findNamed("Cube"),floor=world.findNamed("Floor");NX_EXPECT(cube&&floor);if(!cube||!floor)return;
     const auto* box=space.getAppearance(cube);const auto* plane=space.getAppearance(floor);
@@ -2147,15 +2148,17 @@ NX_TEST(nativeBlueprintCameraOrbitKeepsCubeCenteredAndReturnsToStart)
     NX_EXPECT(cubeSpatial&&fabsf(cubeSpatial->place.y-0.5f)<0.001f&&floorSpatial&&fabsf(floorSpatial->place.y)<0.001f&&fabsf(floorSpatial->size.x-20)<0.001f);
     auto check=[&](float x,float z,float tolerance)
     {
-        const Vec3 eye=space.cameraPlace();Vec2 projected;
+        const Vec3 eye=space.cameraPlace();Vec2 projected{};
+        const bool visible=space.toScreen({0,0.5f,0},projected);
+        NX_INFO("Orbit variant %d: expected (%.3f, %.3f), actual (%.3f, %.3f, %.3f), projected (%.2f, %.2f), drawn %u",variant,x,z,eye.x,eye.y,eye.z,projected.x,projected.y,static_cast<unsigned>(space.stats().drawn));
         NX_EXPECT(fabsf(eye.x-x)<tolerance&&fabsf(eye.y-2.5f)<0.001f&&fabsf(eye.z-z)<tolerance);
         NX_EXPECT(fabsf(sqrtf(eye.x*eye.x+eye.z*eye.z)-6)<0.001f);
-        NX_EXPECT(space.toScreen({0,0.5f,0},projected)&&fabsf(projected.x-640)<1&&fabsf(projected.y-360)<1);
+        NX_EXPECT(visible&&fabsf(projected.x-640)<1&&fabsf(projected.y-360)<1);
         NX_EXPECT(space.stats().drawn>=2&&r.device->stats().rejected==0);
     };
-    check(0,6,timeline?0.001f:0.20f);r.step(120);check(6,0,0.20f);r.step(120);check(0,-6,0.20f);r.step(120);check(-6,0,0.20f);r.step(122);check(0,6,0.001f);
+    check(0,6,0.20f);r.step(120);check(6,0,0.20f);r.step(120);check(0,-6,0.20f);r.step(120);check(-6,0,0.20f);r.step(122);check(0,6,0.001f);
     const auto stopped=space.cameraPlace();r.step(120);const auto later=space.cameraPlace();
     NX_EXPECT(fabsf(stopped.x-later.x)<0.00001f&&fabsf(stopped.z-later.z)<0.00001f&&!r.screens.failed());
-    NX_INFO("Blueprint orbit (%s): floor and cube created, four quadrants verified, centered projection and stationary return verified.",timeline?"Timeline":"explicit time");
+    NX_INFO("Blueprint orbit variant %d: completed position, projection and endpoint assertions.",variant);
     }
 }
