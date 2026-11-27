@@ -47,6 +47,7 @@ namespace nx
             if(node.kind=="spawn:plane")return "Spawn floor plane";
             if(node.kind=="render:space")return "Render 3D scene";
             if(node.kind.rfind("capture:",0)==0)return "Capture "+node.ref;
+            if(node.kind.rfind("typed:",0)==0)return std::string(node.kind.ends_with(":get")?"Get ":"Set ")+node.ref;
             if(node.kind.rfind("global:",0)==0)return (node.kind.rfind("global:get:",0)==0?"Get global ":"Set global ")+node.ref;
             if(node.kind.rfind("var:",0)==0)return (node.kind.rfind("var:get:",0)==0?"Get ":"Set ")+node.ref;
             if(blueprintNamedCall(node.kind)||node.kind.rfind("data:",0)==0||node.kind=="actor:is-class"||node.kind=="actor:cast-class")
@@ -244,6 +245,7 @@ namespace nx
                 (node.id!="event:levelWhat"||(!behaviour&&graph.name=="onLevelAgent"))&&
                 ((node.id!="attach:behaviour"&&node.id!="level:attach")||(!behaviour&&hasBehaviours))&&(node.id!="attach:direct"||hasBehaviours)&&(!behaviour||node.id.rfind("level:",0)!=0)&&(node.id!="event:delta"||m_document.graphs[m_graph].name=="update")&&
                 (node.id!="event:canvas"||m_document.graphs[m_graph].name=="draw")&&
+                ((node.id!="async:wait"&&node.id!="async:next")||graph.dataRole=="coroutine")&&
                 ((node.id!="time:timeline"&&node.id!="camera:orbit-timed")||graph.name=="update")&&(node.id!="render:space"||(!behaviour&&graph.name=="draw"))&&
                 (m_pinMenu||lower(node.category+" "+node.title+" "+node.id).find(query)!=std::string::npos))m_palette.push_back(&node);
         if(!m_pinMenu)return;
@@ -2833,7 +2835,7 @@ namespace nx
             if(click&&in(x,y,300,5,404,33)){m_layoutMenu=true;clearWire();m_left=left;return;}
             if(click&&in(x,y,1134,39,1266,69)){returnToRedux(s);m_left=left;return;}
             if(click&&in(x,y,410,5,560,33)&&m_graph<m_document.graphs.size()&&m_document.graphs[m_graph].kind=="function")
-            {m_edit=m_document.functionSignature(m_graph);m_focus=9;input.setTyping(true);m_status="Edit the typed signature.";m_left=left;return;}
+            {m_edit=m_document.functionSignature(m_graph);m_focus=9;input.setTyping(true);m_status="Signature: void(value:int), event(value:int), coroutine(), enum(Idle,Run), struct(x:int).";m_left=left;return;}
             if(click&&in(x,y,410,5,560,33)&&m_graph<m_document.graphs.size()&&m_document.graphs[m_graph].owner.rfind("behaviour:",0)!=0)
             {
                 const auto owner=m_document.graphs[m_graph].owner;
@@ -2973,7 +2975,7 @@ namespace nx
             if(click&&m_selection<m_document.graphs[m_graph].nodes.size())
             {
                 const auto& n=m_document.graphs[m_graph].nodes[m_selection];
-                if(in(x,y,kRight+8,kTop+456,kWidth-8,kTop+486)&&(n.kind.rfind("literal:",0)==0||n.kind.rfind("var:",0)==0||n.kind.rfind("global:",0)==0||n.kind.rfind("capture:",0)==0||blueprintNamedCall(n.kind)||blueprintBehaviourReference(n.kind)))
+                if(in(x,y,kRight+8,kTop+456,kWidth-8,kTop+486)&&(n.kind.rfind("literal:",0)==0||n.kind.rfind("var:",0)==0||n.kind.rfind("global:",0)==0||n.kind.rfind("capture:",0)==0||blueprintNamedCall(n.kind)||blueprintBehaviourReference(n.kind)||n.kind.rfind("data:",0)==0||n.kind.rfind("typed:",0)==0))
                 {m_edit=n.ref;m_focus=n.kind.rfind("literal:",0)==0?2:3;input.setTyping(true);}
                 else if(in(x,y,kRight+8,kTop+520,kWidth-8,kTop+552)&&!inputDetails(m_selection).empty())
                 {m_inspectorFirst=0;m_focus=15;input.setTyping(false);m_status="Inspect all input values, including defaults and wires.";}
@@ -3340,7 +3342,7 @@ namespace nx
             const auto* spec=blueprintSpec(n.kind);
             c.clip(kRight+8,kTop+404,kWidth-kRight-16,44);
             c.paragraph(*m_font,spec?spec->title.c_str():n.kind.c_str(),kRight+12,kTop+408,244,text);c.noClip();
-            if(n.kind.rfind("literal:",0)==0||n.kind.rfind("var:",0)==0||n.kind.rfind("global:",0)==0||n.kind.rfind("capture:",0)==0||blueprintNamedCall(n.kind)||blueprintBehaviourReference(n.kind))
+            if(n.kind.rfind("literal:",0)==0||n.kind.rfind("var:",0)==0||n.kind.rfind("global:",0)==0||n.kind.rfind("capture:",0)==0||blueprintNamedCall(n.kind)||blueprintBehaviourReference(n.kind)||n.kind.rfind("data:",0)==0||n.kind.rfind("typed:",0)==0)
             {
                 c.roundRect(kRight+8,kTop+456,kWidth-kRight-16,30,4,(m_focus==2||m_focus==3)?Color{0.24f,0.35f,0.48f,1}:Color{0.16f,0.21f,0.28f,1});
                 c.clip(kRight+12,kTop+456,kWidth-kRight-24,30);

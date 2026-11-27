@@ -187,9 +187,10 @@ namespace nx
                     {
                         if(incoming(node,"member"))return fail(node,"Enum member must be a constant name.");
                         const auto at=std::find_if(n.values.begin(),n.values.end(),[](const BlueprintDocument::InputValue& v){return v.pin=="member";});
-                        if(at==n.values.end()||std::none_of(decl->parameters.begin(),decl->parameters.end(),[&](const BlueprintPin& p){return p.name==at->value;}))
-                            return fail(node,"Enter a declared enum member name.");
-                        result=type+"::bp_"+at->value;return true;
+                        if(decl->parameters.empty())return fail(node,"Empty enum declaration.");
+                        const auto member=at==n.values.end()?decl->parameters.front().name:at->value;
+                        if(std::none_of(decl->parameters.begin(),decl->parameters.end(),[&](const BlueprintPin& p){return p.name==member;}))return fail(node,"Enter a declared enum member name.");
+                        result=type+"::bp_"+member;return true;
                     }
                     if(n.kind=="data:enum-equal")
                     {
@@ -649,6 +650,23 @@ namespace nx
                     if(!flow(to,"body",indent+1,depth+1))return false;
                     available=outer;source+=pad+"}\n";return true;
                 }
+                if(n.kind=="data:enum-switch")
+                {
+                    const auto* decl=document.dataType(n.ref);std::string v;if(!decl||!value(to,"value",v,0))return false;
+                    const auto type="BP_Data_"+decl->name,choice="bp_enum_choice_"+std::to_string(to);
+                    source+=pad+type+" "+choice+" = "+v+";\n";
+                    const auto outer=available;
+                    for(size_t i=0;i<decl->parameters.size();++i)
+                    {
+                        const auto& member=decl->parameters[i].name;
+                        source+=pad+(i?"else if (":"if (")+choice+" == "+type+"::bp_"+member+")\n"+pad+"{\n";
+                        if(i==0)mark(start,to);
+                        if(!flow(to,"case_"+member,indent+1,depth+1))return false;
+                        available=outer;source+=pad+"}\n";
+                    }
+                    source+=pad+"else\n"+pad+"{\n";if(!flow(to,"default",indent+1,depth+1))return false;
+                    available=outer;source+=pad+"}\n";return flow(to,"then",indent,depth+1);
+                }
                 if(n.kind=="flow:flip-flop"||n.kind=="flow:multi-gate"||n.kind=="flow:switch-int")
                 {
                     const bool flip=n.kind=="flow:flip-flop",multi=n.kind=="flow:multi-gate";
@@ -957,7 +975,7 @@ namespace nx
                 result+="    bool bp_bound_"+g.name+" = false;\n";
         for(const auto& g:document.graphs)if(g.owner==classOwner&&g.kind=="function")
         {
-            const auto listeners=document.dispatcherListeners(classOwner,g.name);if(listeners.empty()||document.function(classOwner,g.name)!=&g)continue;
+            const auto listeners=document.dispatcherListeners(classOwner,g.name);if(listeners.empty()||document.function(classOwner,g.name)!=&g||document.function(parent,g.name))continue;
             const auto key="bp_listener_"+std::to_string(g.name.size())+"_"+g.name+"_";
             for(const auto* handler:listeners)result+="    bool "+key+handler->name+" = false;\n";
             std::string signature,args;

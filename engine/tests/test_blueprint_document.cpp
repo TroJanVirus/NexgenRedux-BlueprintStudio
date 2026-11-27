@@ -9,7 +9,7 @@
 using namespace nx;
 NX_TEST(nativeCatalogueContainsReferenceAPI)
 {
-    NX_EXPECT(blueprintCatalogue().size()==1249);
+    NX_EXPECT(blueprintCatalogue().size()==1250);
     const auto* save=blueprintSpec("api:Save:Save::set:string,string");
     NX_EXPECT(save&&save->inputs.size()==3&&save->outputs.size()==1);
     if(save&&save->inputs.size()==3)NX_EXPECT(save->inputs[0].type=="exec"&&save->inputs[2].type=="string");
@@ -1871,4 +1871,20 @@ NX_TEST(nativeSharedLibraryTransferAndTypedVariables)
     NX_EXPECT(other.addNode(0,"data:enum-value",0,0,error,"State")&&other.setInputValue(0,1,"member","Running",error));
     NX_EXPECT(other.addVariableNode(0,"state",false,true,0,0,error)&&other.connect(0,0,"then",2,"in",error)&&other.connect(0,1,"result",2,"value",error));
     NX_EXPECT(compileBlueprint(other,source,error)&&source.find("BP_Data_State bp_var_state")!=std::string::npos);
+}
+
+NX_TEST(nativeNestedStructureAndEnumSwitchValidation)
+{
+    BlueprintDocument doc;doc.create();std::string error,source;
+    NX_EXPECT(doc.addFunction("State",error));const auto en=doc.graphs.size()-1;
+    NX_EXPECT(doc.editFunctionSignature(en,"enum(Idle, Running)",error));
+    NX_EXPECT(doc.addFunction("Stats",error));const auto st=doc.graphs.size()-1;
+    NX_EXPECT(doc.editFunctionSignature(st,"struct(state:BP_Data_State, health:int)",error));
+    NX_EXPECT(!doc.editFunctionSignature(st,"struct(self:BP_Data_Stats)",error));
+    NX_EXPECT(doc.addNode(0,"data:enum-value",0,0,error,"State")&&!doc.setInputValue(0,1,"member","Invalid",error));
+    NX_EXPECT(doc.setInputValue(0,1,"member","Running",error));
+    NX_EXPECT(doc.addNode(0,"data:enum-switch",0,0,error,"State")&&doc.connect(0,0,"then",2,"in",error)&&doc.connect(0,1,"result",2,"value",error));
+    NX_EXPECT(doc.addNode(0,"api:Save:Save::set:string,string",0,0,error)&&doc.connect(0,2,"case_Running",3,"in",error)&&doc.setInputValue(0,3,"key","state",error)&&doc.setInputValue(0,3,"value","run",error));
+    NX_EXPECT(!doc.editFunctionSignature(en,"enum(Idle, Jumping)",error));
+    NX_EXPECT(compileBlueprint(doc,source,error)&&source.find("BP_Data_State::bp_Running")!=std::string::npos);
 }

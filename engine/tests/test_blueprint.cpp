@@ -2942,3 +2942,22 @@ NX_TEST(nativeTypedActorHandleRuntime)
     if(!r.screens.init(r.services,"project","main")){NX_EXPECT(false);return;}
     r.step(3);NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("typed_actor","missing"),"yes")==0);
 }
+
+NX_TEST(nativeEnumSwitchAndNestedValueRuntime)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    BlueprintDocument doc;doc.create();std::string error,source;
+    bool ok=doc.addFunction("State",error);const auto en=doc.graphs.size()-1;
+    ok=ok&&doc.editFunctionSignature(en,"enum(Idle, Running)",error)&&doc.addFunction("Stats",error);const auto st=doc.graphs.size()-1;
+    ok=ok&&doc.editFunctionSignature(st,"struct(state:BP_Data_State, health:int)",error)&&doc.editVariableDeclaration("Screen","field stats:BP_Data_Stats",error);
+    ok=ok&&doc.addNode(0,"data:enum-value",0,0,error,"State")&&doc.setInputValue(0,1,"member","Running",error)&&
+        doc.addNode(0,"data:make-struct",0,0,error,"Stats")&&doc.connect(0,1,"result",2,"state",error)&&doc.setInputValue(0,2,"health","42",error)&&
+        doc.addVariableNode(0,"stats",false,true,0,0,error)&&doc.connect(0,0,"then",3,"in",error)&&doc.connect(0,2,"result",3,"value",error)&&
+        doc.addVariableNode(0,"stats",false,false,0,0,error)&&doc.addNode(0,"data:break-struct",0,0,error,"Stats")&&doc.connect(0,4,"value",5,"value",error)&&
+        doc.addNode(0,"data:enum-switch",0,0,error,"State")&&doc.connect(0,3,"then",6,"in",error)&&doc.connect(0,5,"state",6,"value",error)&&
+        doc.addNode(0,"api:Save:Save::set:string,string",0,0,error)&&doc.connect(0,6,"case_Running",7,"in",error)&&doc.setInputValue(0,7,"key","nested_enum",error)&&doc.setInputValue(0,7,"value","yes",error);
+    if(!ok||!compileBlueprint(doc,source,error)){NX_ERROR("Enum switch: %s",error.c_str());NX_EXPECT(false);return;}
+    r.platform.files["project/main/screen.json"]="{\"title\":\"Enum switch\"}";r.platform.files["project/main/main.as"]=source;
+    if(!r.screens.init(r.services,"project","main")){NX_EXPECT(false);return;}
+    r.step(3);NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("nested_enum","missing"),"yes")==0);
+}

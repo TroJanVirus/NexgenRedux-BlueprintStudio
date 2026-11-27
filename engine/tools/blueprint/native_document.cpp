@@ -117,6 +117,7 @@ namespace nx
             {"call:function","Call function","Functions","in:exec","then:exec"},
             {"data:enum-value","Enum value","Custom types","","result:int"},
             {"data:enum-equal","Enum equal","Custom types","","result:bool"},
+            {"data:enum-switch","Switch on enum","Custom types","in:exec","then:exec"},
             {"data:enum-index","Enum to int","Custom types","","result:int"},
             {"data:make-struct","Make structure","Custom types","",""},
             {"data:break-struct","Break structure","Custom types","",""},
@@ -216,6 +217,7 @@ namespace nx
         bool typedVariable(const std::string& kind){return kind.rfind("typed:",0)==0;}
         bool typedGlobal(const std::string& kind){return kind.rfind("typed:global:",0)==0;}
         bool typeNode(const std::string& kind){return kind.rfind("data:",0)==0;}
+        bool listenerNode(const std::string& kind){return kind=="dispatch:bind-listener"||kind=="dispatch:unbind-listener";}
         bool signatureType(const std::string& type)
         {return blueprintLiteralType(type)||type=="Vec2"||type=="Vec3"||type=="Color"||type=="Entity@"||type=="Playlist@"||type=="WebSocket@"||type=="Widget@"||type=="Canvas@"||customTypeName(type)||classTypeName(type);}
         bool validSignature(const std::vector<BlueprintPin>& parameters,const std::string& result)
@@ -256,6 +258,7 @@ namespace nx
             if(!doc.nodeSpec(g,g.nodes[from],a)||!doc.nodeSpec(g,g.nodes[to],b)){error="Unknown node or function.";return false;}
             const auto* out=findPin(a.outputs,output);const auto* in=findPin(b.inputs,input);
             if(!out||!in||(out->type!=in->type&&!arrayBorrow(out->type,in->type)&&!doc.classAssignable(out->type,in->type))){error="Pins must have matching types and opposite directions.";return false;}
+            if((g.nodes[to].kind=="data:enum-value"&&input=="member")||(listenerNode(g.nodes[to].kind)&&input=="handler")){error="Select a declaration name in the input inspector; this pin is not a runtime expression.";return false;}
             for(const auto& l:g.links)
             {
                 if(l.to==to&&l.input==input){error="Input already connected. Disconnect it first.";return false;}
@@ -2676,6 +2679,13 @@ namespace nx
             JsonValue checked;
             if(pin=="instanceName"?!actorName(checked,value,error):!actorTransform(checked,pin=="rotationOverride"?"angles":"size",value,error))return false;
         }
+        if((n.kind=="data:enum-value"&&pin=="member")||(listenerNode(n.kind)&&pin=="handler"))
+        {
+            const auto old=n.values;
+            auto proposed=std::find_if(n.values.begin(),n.values.end(),[&](const InputValue& v){return v.pin==pin;});
+            if(proposed==n.values.end())n.values.push_back({pin,value});else proposed->value=value;
+            const bool ok=functions(error);n.values=old;if(!ok)return false;
+        }
         const auto it=std::find_if(n.values.begin(),n.values.end(),[&](const InputValue& v){return v.pin==pin;});
         if(it!=n.values.end()&&it->value==value){error.clear();return true;}
         record(graph);
@@ -2840,7 +2850,7 @@ namespace nx
     bool BlueprintDocument::setReference(size_t graph,size_t node,const std::string& value,std::string& error)
     {
         if(graph>=graphs.size()||node>=graphs[graph].nodes.size()||
-            (!variableKind(graphs[graph].nodes[node].kind)&&!globalKind(graphs[graph].nodes[node].kind)&&graphs[graph].nodes[node].kind.rfind("capture:",0)!=0&&!blueprintNamedCall(graphs[graph].nodes[node].kind)&&!blueprintBehaviourReference(graphs[graph].nodes[node].kind))||!identifier(value))
+            (!variableKind(graphs[graph].nodes[node].kind)&&!globalKind(graphs[graph].nodes[node].kind)&&graphs[graph].nodes[node].kind.rfind("capture:",0)!=0&&!blueprintNamedCall(graphs[graph].nodes[node].kind)&&!blueprintBehaviourReference(graphs[graph].nodes[node].kind)&&!typeNode(graphs[graph].nodes[node].kind)&&!typedVariable(graphs[graph].nodes[node].kind))||!identifier(value))
         {error="Use a variable name containing letters, digits and underscores.";return false;}
         auto& n=graphs[graph].nodes[node];
         if(n.ref==value){error.clear();return true;}
@@ -2857,7 +2867,7 @@ namespace nx
             if(!canAttach(graphs[graph].owner,value)){error="Unknown or out-of-scope Behaviour "+value;return false;}
             record(graph);n.ref=value;error.clear();return true;
         }
-        if(blueprintNamedCall(n.kind))
+        if(blueprintNamedCall(n.kind)||typeNode(n.kind)||typedVariable(n.kind))
         {
             const std::string previous=n.ref;n.ref=value;
             std::string checked;
@@ -2882,7 +2892,7 @@ namespace nx
             if(g.dataRole=="enum"||g.dataRole=="struct")
             {
                 if(behaviourOwner(g.owner)||g.sharedLibrary||g.inlineMacro||g.returnType!="void"||g.parameters.empty()||g.nodes.size()!=1||!dataNames.insert(g.name).second){error="Custom types must be unique nonempty declarations in a screen.";return false;}
-                for(const auto& p:g.parameters)if((g.dataRole=="enum"&&p.type!="int")||(g.dataRole=="struct"&&(!blueprintLiteralType(p.type)&&p.type!="Vec2"&&p.type!="Vec3"&&p.type!="Color"))){error="Invalid custom type member.";return false;}
+                for(const auto& p:g.parameters)if((g.dataRole=="enum"&&p.type!="int")||(g.dataRole=="struct"&&(!blueprintLiteralType(p.type)&&p.type!="Vec2"&&p.type!="Vec3"&&p.type!="Color"&&!customTypeName(p.type)))){error="Invalid custom type member.";return false;}
             }
         }
         for(const auto& g:graphs)
@@ -2893,6 +2903,25 @@ namespace nx
             for(const auto& p:g.parameters)if(!validType(p.type)){error="Unknown or out-of-scope parameter type.";return false;}
             for(const auto& f:g.fields)if(!validType(f.type)){error="Unknown or out-of-scope field type.";return false;}
             for(const auto& f:g.globals)if(!validType(f.type)){error="Unknown or out-of-scope global type.";return false;}
+        }
+        std::vector<unsigned> typeState(graphs.size(),0);
+        const auto visitType=[&](auto&& self,const Graph& g)->bool
+        {
+            const auto index=static_cast<size_t>(&g-graphs.data());
+            if(typeState[index]==1){error="Recursive structure declarations are not supported.";return false;}
+            if(typeState[index]==2)return true;
+            typeState[index]=1;
+            if(g.dataRole=="struct")for(const auto& p:g.parameters)if(customTypeName(p.type))
+            {const auto* dep=dataType(p.type.substr(8));if(!dep||!self(self,*dep))return false;}
+            typeState[index]=2;return true;
+        };
+        for(const auto& g:graphs)if((g.dataRole=="struct"||g.dataRole=="enum")&&!visitType(visitType,g))return false;
+        for(const auto& g:graphs)for(const auto& n:g.nodes)
+        {
+            if(n.kind=="data:enum-value")for(const auto& v:n.values)if(v.pin=="member")
+            {const auto* decl=dataType(n.ref);if(!decl||std::none_of(decl->parameters.begin(),decl->parameters.end(),[&](const BlueprintPin& p){return p.name==v.value;})){error="Unknown enum member: "+v.value;return false;}}
+            if(listenerNode(n.kind))for(const auto& v:n.values)if(v.pin=="handler")
+            {const auto handlers=dispatcherListeners(g.owner,n.ref);if(std::none_of(handlers.begin(),handlers.end(),[&](const Graph* handler){return handler->name==v.value;})){error="Invalid dispatcher listener: "+v.value;return false;}}
         }
         std::unordered_set<std::string> libraryNames;
         for(const auto& g:graphs)if(g.sharedLibrary)
@@ -2960,6 +2989,8 @@ namespace nx
     {
         std::vector<const Graph*> result;
         const auto* source=function(owner,signal);if(!source)return result;
+        for(unsigned depth=0;depth<16;++depth)
+        {const auto* parent=function(parentBehaviour(source->owner),signal);if(!parent)break;source=parent;}
         for(const auto& g:graphs)if(g.owner==source->owner)for(const auto& n:g.nodes)
             if(n.ref==signal&&(n.kind=="dispatch:bind-listener"||n.kind=="dispatch:unbind-listener"))
                 for(const auto& v:n.values)if(v.pin=="handler")
@@ -3043,7 +3074,9 @@ namespace nx
         {
             const auto* decl=dataType(node.ref);if(!decl||((node.kind.rfind("data:enum-",0)==0)!=(decl->dataRole=="enum")))return false;
             const auto type="BP_Data_"+decl->name;spec.pure=true;
-            if(node.kind=="data:enum-value"){spec.inputs={{"member","string"}};spec.outputs={{"result",type}};}
+            if(node.kind=="data:enum-value"){spec.inputs={{"member","string"}};spec.outputs={{"result",type}};if(!decl->parameters.empty())spec.defaults={{"member","\""+decl->parameters.front().name+"\""}};}
+            else if(node.kind=="data:enum-switch")
+            {spec.pure=false;spec.inputs={{"in","exec"},{"value",type}};spec.outputs.clear();for(const auto& p:decl->parameters)spec.outputs.push_back({"case_"+p.name,"exec"});spec.outputs.push_back({"default","exec"});spec.outputs.push_back({"then","exec"});}
             else if(node.kind=="data:enum-equal"){spec.inputs={{"a",type},{"b",type}};}
             else if(node.kind=="data:enum-index"){spec.inputs={{"value",type}};}
             else if(node.kind=="data:make-struct"){spec.inputs=decl->parameters;spec.outputs={{"result",type}};}
@@ -3069,7 +3102,7 @@ namespace nx
             if(!target||(node.kind=="call:parent"&&target->inlineMacro))return false;
             if((node.kind=="async:start")!=(target->dataRole=="coroutine"))return false;
             if(node.kind!="call:function"&&node.kind!="call:library"&&node.kind!="call:parent"&&(target->sharedLibrary||target->inlineMacro||target->returnType!="void"))return false;
-            if((node.kind=="dispatch:bind-listener"||node.kind=="dispatch:unbind-listener")&&target->owner!=graph.owner)return false;
+            if(listenerNode(node.kind)&&(target->owner!=graph.owner||function(parentBehaviour(target->owner),target->name)))return false;
             if(node.kind!="dispatch:bind"&&node.kind!="dispatch:unbind"&&node.kind!="dispatch:bind-listener"&&node.kind!="dispatch:unbind-listener")
                 for(const auto& p:target->parameters)spec.inputs.push_back({"arg_"+p.name,p.type});
             if(target->inlineMacro)spec.title="Macro "+target->name;
@@ -3162,7 +3195,7 @@ namespace nx
     {
         if(graph>=graphs.size()||graphs[graph].kind!="function"){error="Select a reusable graph.";return false;}
         auto& g=graphs[graph];
-        if(enabled&&visualWidgetUsesFunction(g.owner,g.name)){error="Widget callbacks must remain callable functions.";return false;}
+        if(enabled&&(visualWidgetUsesFunction(g.owner,g.name)||!g.dataRole.empty())){error="Widget callbacks and explicit graph roles cannot become inline macros.";return false;}
         if(enabled&&(g.returnType!="void"||std::any_of(g.nodes.begin(),g.nodes.end(),[](const Node& n){return n.kind=="return:function";})))
         {error="Inline macros require a void signature and no return nodes.";return false;}
         if(g.inlineMacro!=enabled){record(graph);g.inlineMacro=enabled;}error.clear();return true;
@@ -3185,7 +3218,11 @@ namespace nx
         if(std::any_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==owner&&g.name==functionName;}))
         {error="A graph already uses that name.";return false;}
         recordGraphList();graphs[graph].name=functionName;
-        for(auto& g:graphs)if(g.owner==owner)for(auto& n:g.nodes)if(blueprintNamedCall(n.kind)&&n.ref==old)n.ref=functionName;
+        for(auto& g:graphs)if(g.owner==owner)for(auto& n:g.nodes)
+        {
+            if(blueprintNamedCall(n.kind)&&n.ref==old)n.ref=functionName;
+            if(listenerNode(n.kind))for(auto& v:n.values)if(v.pin=="handler"&&v.value==old)v.value=functionName;
+        }
         error.clear();return true;
     }
     bool BlueprintDocument::duplicateFunction(size_t graph,const std::string& functionName,std::string& error)
