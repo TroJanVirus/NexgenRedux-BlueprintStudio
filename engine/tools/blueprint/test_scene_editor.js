@@ -14,4 +14,5 @@ for(const mode of ['2D','3D']){
  const result=B.compile(d);assert.ok(result.ok,JSON.stringify(result.diagnostics));assert.ok(result.source.includes(mode==='3D'?'Space::load':'Scene::load'));assert.ok(result.source.includes('asset:levels/forest.json'));
  const packed=P.pack({version:1,kind:'BlueprintProject',name:'SceneTest',screens:[{id:'level',title:'Level',blueprint:d,assets:[{path:'levels/forest.json',data:S.encode(scene)}]}]});assert.ok(packed.entries.some(e=>e.path==='media/showcase/level/asset/levels/forest.json'));
 }
+const prefabFiles=[{path:'prefabs.json',data:Buffer.from(JSON.stringify({prefabs:{crate:{rect:[32,32]},player:{children:[{name:'arm'}]},invalid:null}})).toString('base64')},{path:'not-a-scene.json',data:'e30='}];assert.deepEqual(S.prefabNames(prefabFiles,P.decode),[{name:'crate',path:'asset:prefabs.json'},{name:'player',path:'asset:prefabs.json'}]);assert.equal(B.catalog.nodes.some(n=>n.id==='api:Scene:Scene::spawn:string,Vec2'),true);
 console.log('PASS native scene model, round trip, load-node compilation and project packaging');

@@ -1,5 +1,14 @@
 # Changes
 
+## Use the engine first
+
+- Removed Studio’s duplicate 3D renderer and camera; open the original Nexgen editor for visual 3D work. Kept project scene links and simple 2D layout.
+- Bring supported dropped media back with a native scene. Keep recovery files if collection fails.
+- Replace simple Space load nodes with the native Level loader after confirmation, retaining execution wires. Check scene asset references.
+- Pick native 2D prefabs directly from project files.
+- Use Nexgen’s existing script profiler from the Debug panel, including a mode without Blueprint trace logging.
+- Added development rules to avoid rebuilding systems Nexgen already provides.
+
 ## Fly camera and native level editing
 
 - Added a perspective view with right-mouse WASD movement, Q/E height, speed controls and near-plane clipping.

@@ -1,15 +1,9 @@
 'use strict';
 const assert=require('node:assert/strict'),V=require('./scene_viewport'),S=require('./scene_editor');
-const near=(a,b)=>a.every((v,i)=>Math.abs(v-b[i])<1e-8);
-const view={target:[4,3,-2],yaw:40,pitch:35,scale:68,width:800,height:520};
-for(const yaw of [-180,-90,0,40,90,170])for(const pitch of [5,35,70,90]){const v={...view,yaw,pitch};for(const p of [[0,0,0],[3,9,-5],[-9,-4,3]]){const q=V.project(p,v);assert.ok(near(V.ground(q[0],q[1],p[1],v),p));}}
-assert.equal(V.ground(400,260,0,{...view,pitch:0}),null);
-assert.ok(near(V.rotate([1,0,0],[0,90,0]),[0,0,-1]));assert.ok(near(V.world({place:[1,2,3],size:[2,3,4],angles:90},[.5,0,0]),[1,2,2]));
-const entity={place:[1,7,2],size:[2,3,4],angles:90,shape:'box',behaviour:'BP_Spin',color:'#88aaff',cube:2};const next=V.move(entity,[0,7,0],[1.7,7,-.8],.5);assert.deepEqual(next.place,[2.5,7,1]);assert.equal(next.cube,2);assert.equal(entity.place[0],1);
-for(const shape of V.shapes.filter(s=>s!=='none')){const faces=V.faces({...entity,shape},view,4);assert.ok(faces.length>0);assert.ok(faces.every(f=>f.pts.every(p=>p.every(Number.isFinite))));}
-const f=V.faces({shape:'box',place:[4,3,-2]},view,1);assert.equal(V.pick(400,260,f,[]),1);assert.equal(V.pick(5,5,f,[]),-1);assert.equal(V.pick(400,260,f,[{x:400,y:260,index:2}]),2);
-assert.equal(V.color([1,.5,0,1]),'#ff8000');assert.equal(V.color('#12345688'),'#123456');assert.ok(V.faces({model:'asset:a.glb'},view,0).every(f=>f.placeholder));assert.deepEqual(S.decode(S.encode({entities:[entity,next]})),{entities:[entity,next]});
-console.log('PASS projection, ground-plane inverse, native angle order, shape previews, picking, snap and JSON preservation');
+// Studio keeps a simple 2D layout, not a second 3D renderer.
+assert.deepEqual(V.vec(3,2),[3,3]);assert.deepEqual(V.vec([1,2],2),[1,2]);assert.equal(V.snap(13,8),16);assert.equal(V.color([1,.5,0,1]),'#ff8000');assert.equal(V.color('#12345688'),'#123456');
+const face={pts:[[1,1],[10,1],[10,10],[1,10]],index:2};assert.equal(V.pick(5,5,[face],[]),2);assert.equal(V.pick(20,20,[face],[]),-1);assert.equal(V.pick(20,20,[face],[{x:20,y:20,index:3}]),3);assert.equal(V.fly,undefined);assert.equal(V.faces,undefined);
+console.log('PASS 2D layout and picking; 3D renderer removed');
 // Keep a real native test fixture in step with the JSON and graph the editor exports.
 const B=require('./blueprint'),P=require('./project'),fs=require('node:fs'),path=require('node:path');
 const level={entities:[{name:'Crate',shape:'box',place:[3,2,-4],angles:[0,90,0],size:[2,3,4],color:'#8eb4e6',cube:[2,3,4],behaviour:'BP_Spinner'},{name:'Lamp',place:[-2,4,0],light:'#fff2c0',range:12},{name:'Floor',shape:'plane',place:[0,0,0],size:[12,1,12]}]};

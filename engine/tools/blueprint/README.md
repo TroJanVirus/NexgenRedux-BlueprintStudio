@@ -2,7 +2,7 @@
 
 Make games for Nexgen Redux using connected nodes instead of writing every line of AngelScript by hand. Keep each job in a small function, reuse behaviours between entities, and organise graphs the way you like.
 
-The editor runs in a desktop browser. The game runs in Nexgen as usual; it does not need the editor, Node.js or a new scripting engine.
+The editor runs in a desktop browser. The game runs in Nexgen as usual; it does not need the editor, Node.js or a new scripting engine. Studio is a supplement to Nexgen, not a replacement. See [Development rules](DEVELOPMENT.md) for what belongs in the editor and what stays in Nexgen.
 
 ## Getting started
 
@@ -131,6 +131,10 @@ While it is running, edit your graphs and choose **Update scripts** to send the 
 
 The launcher and script updates have been tested with a real local child process. A full Nexgen window, live game reload and platform-specific launches still need testing. The standalone HTML editor can be used without the bridge, but cannot start a game process by itself.
 
+### Profile scripts
+
+The Debug panel uses Nexgen's built-in script profiler. Install the normal exported `.as` (without node tracing), start Nexgen with its debugger enabled, then use **Attach for profiling**. Click **Start profile**, play the game, then **Stop profile**. The report shows the native sample counts for functions and script lines. Where the reported function belongs to the open Blueprint, click it to open its graph. Save the native report as JSON. These counts are script samples, not GPU timing or total CPU usage. Profiling is also available while graph debugging, but trace logging adds overhead.
+
 ## Other tools
 
 | Tool | Use it for |
@@ -141,10 +145,10 @@ The launcher and script updates have been tested with a real local child process
 | Parent Blueprints | Sharing common functions and variables between classes |
 | Interfaces | Sending a named message to an entity with a matching behaviour |
 | Event dispatchers | Notifying several handlers on the same object |
-| Timelines | Moving, fading or changing values over time |
+| Tween / Timeline | Native Tween for simple changes; Timeline for multiple tracks and graph events |
 | State machines | Idle, walking, attacking and other gameplay or animation states |
 | Entity hierarchies | Spawning a player, weapon or other group of related entities |
-| Scenes | Placing entities in a native 2D/3D scene file |
+| Scenes | Open the original Nexgen 3D editor, link Behaviours and manage scene files; simple 2D layout |
 | Debugger | Pausing at a node and inspecting values while the game runs |
 
 See [Advanced use](ADVANCED.md) for the detailed instructions and limits of these tools.
@@ -173,36 +177,34 @@ node test_scene_viewport.js
 node test_native_scene.js
 ```
 
-No npm packages are needed. To run the optional browser tests, install Python Playwright and Chromium, then run `python test_browser.py` and `python test_layout_browser.py` and `python test_workspace_browser.py` and `python test_polish_browser.py` and `python test_organise_browser.py` and `python test_game_tools_browser.py` and `python test_playtest_browser.py`, `python test_ui_design_browser.py` , `python test_shared_behaviours_browser.py` and `python test_shared_media_browser.py`, `python test_scene_viewport_browser.py` and `python test_native_scene_browser.py`. Set `CHROMIUM_PATH` if Chromium is installed outside Playwright's usual location. The recovery test uses real browser storage by default; `BLUEPRINT_MOCK_STORAGE=1` checks its UI with a simulated storage backend on restricted test hosts. Actual storage across a browser restart has not been verified on this branch.
+No npm packages are needed. To run the optional browser tests, install Python Playwright and Chromium, then run `python test_browser.py` and `python test_layout_browser.py` and `python test_workspace_browser.py` and `python test_polish_browser.py` and `python test_organise_browser.py` and `python test_game_tools_browser.py` and `python test_playtest_browser.py`, `python test_ui_design_browser.py` , `python test_shared_behaviours_browser.py` and `python test_shared_media_browser.py`, `python test_scene_viewport_browser.py` and `python test_native_scene_browser.py` and `python test_profile_browser.py`. Set `CHROMIUM_PATH` if Chromium is installed outside Playwright's usual location. The recovery test uses real browser storage by default; `BLUEPRINT_MOCK_STORAGE=1` checks its UI with a simulated storage backend on restricted test hosts. Actual storage across a browser restart has not been verified on this branch.
 
 The 720 engine API definitions are based on Nexgen's script reference. The compiler checks data types and graph structure; the native engine compiler checks the resulting AngelScript. Neither check guarantees that all assets are present or that a game performs well on real hardware.
 
 ## Build a scene
 
-Open **Scenes** while editing a Screen. Choose 2D or 3D, add objects from the list, and select one in the preview or entity list. Set its position, rotation, size and colour in Details. Models, textures and sprites can use files from the screen or the shared asset library. Pick a Behaviour already attached to the Screen's Blueprint to give the object logic. Use Advanced native properties for fields such as collision, physics and movement that do not have their own controls yet.
+Open **Scenes** while editing a Screen. For 3D, choose **Open in Nexgen** to use Team Resurgent's [original scene editor](https://github.com/Team-Resurgent/NexgenRedux-Media/tree/main/media/showcase/editor). Studio does not have a second 3D renderer. Nexgen already handles models, terrain, lights, sky, water, roads, triggers and play modes, with a right-mouse fly camera.
 
-3D starts in Perspective. Hold the right mouse button and use W/A/S/D to fly in the direction you are looking. Move the mouse to look around, Q/E to go down/up, and Shift to move faster. Scroll while flying to change speed, or set it in the toolbar. Release the right button to return to object editing. The editor uses pointer lock when the browser allows it; otherwise it captures the pointer while dragging. Orbit, Top, Front and Side are also available. In those views right-drag orbits, middle-drag pans and the wheel zooms. Move drags an object along the ground; Front and Side move it along the visible axes. Height moves it up and down. Use Snap for precise placement, Fit scene to bring everything into view, or edit the numbers directly. The 2D view supports rectangle and disc placement, rotation and scale. Undo and redo work inside the scene editor.
+Start the local bridge with `--preview-engine` pointing to a dedicated desktop Nexgen release that includes the media and original editor (see Play test above). Studio opens a temporary copy of the original showcase with your project files and isolated saves. The original editor is never overwritten. Conflicting file names are refused.
 
-**Save to project** writes an ordinary Nexgen scene JSON file. **Save + connect On Enter** also adds the native load node to the start of the Screen's On Enter graph; saving the same connected scene again does not add another node. Undo in Studio restores the changed file and the graph together. Save the project to keep your work. Import existing native scene JSON to edit it without discarding unfamiliar properties. Switching between 2D and 3D starts a new scene, not a conversion of the old one.
+In Nexgen, hold the right mouse button and use the movement keys (W/A/S/D with the default bindings) to fly. Move the mouse to look, use the wheel to move in and out and middle-drag to pan. Save the level there, then choose **Import saved scene** in Studio. Select a named object in the list to connect its Behaviour or pick a project asset. Advanced native JSON remains available when needed.
 
-The browser preview draws primitive shapes with simple shading. Models and sprites are placeholders. For the actual view, use the original Nexgen scene editor rather than trying to reproduce the engine in a browser.
+Dropped files referenced with `own:` are brought back from the isolated saves folder and given project-local `asset:` paths. Self-contained models and common image/audio files are supported; use [Nexgen Cook](../cook-ui/README.md) for models with external dependencies. Other scenes created during the native editing session are not imported. If collection fails when Nexgen closes, the bridge keeps its scene and saves folders and reports their paths in the play-test log instead of deleting them. Keep a saved project as a backup; the original editor may normalise scene properties.
 
-### Use Nexgen's scene editor
+**Save to project** stores the native JSON and imported files. **Save + connect On Enter** also adds the native load node. Undo in Studio restores the changed files and graph together. The scene dialog also has local undo and redo. For manual editing, import/export JSON; the editor lists only scene JSON assets, not unrelated widget or theme files.
 
-Team Resurgent's [original editor](https://github.com/Team-Resurgent/NexgenRedux-Media/tree/main/media/showcase/editor) already has model rendering, terrain brushes, roads, sky, water, lighting, triggers and play modes. Start the local bridge with `--preview-engine` pointing to a dedicated desktop Nexgen release that includes the media and original editor (see Play test above). Open a 3D scene in Studio and choose **Open in Nexgen**, then **Launch native editor**. Studio copies the existing editor showcase to a temporary screen, with the project's local and shared assets and separate saves. It does not change the original editor. File collisions are refused rather than overwritten.
-
-Edit the scene in Nexgen. Hold right mouse and move with the movement keys to fly. Click Save there, then **Import saved scene** in Studio. Import can be undone; save the scene and project to keep it. Stop the native editor when finished. The bridge retains the last saved scene until another native editing session starts or the bridge closes; only the original staged scene is returned, not other scenes or new assets created in Nexgen. If the bridge is unavailable, export the JSON and work in a separate Nexgen installation. The native editor may normalise scene properties when it saves; keep a backup of your original project.
+For 2D, Studio retains a simple layout for placing rectangles, discs and image bounds in native scene files. It is not a game renderer. Use native `prefabs` and `children` in scene JSON for reusable 2D objects. The existing `Scene::spawn(prefab, position)` node offers a picker for prefab names in project scene files; load the file with `Scene::load` first. Blueprint hierarchy templates remain available for graphs that need separate output pins for named children, and existing templates still work.
 
 ### Use a full level in a graph
 
 A file made by the native editor can contain terrain, roads, sky, triggers and a HUD. `Space::load` creates entities only; it cannot run those extra features. **Save + connect On Enter** chooses **Load level** for a full native level. This uses the existing `Level` class from `global:scene.as`; it does not add a new level runtime. Existing plain 3D scene files still use `Space::load`.
 
-The Native level nodes include Update level, Draw level HUD, Find level entity, Is level object on, Set HUD number/text, Show/Hide level entity and Clear level. Wire Update level to Update's dt and an optional player reference; it returns the next scene and arrival when the player enters a way out. Draw the space, then Draw level HUD using the Draw event's canvas. Studio creates these calls for empty Update/Draw graphs; it leaves existing graphs alone. If a basic load node was already connected to this file, remove it before switching to the full Level helper. Check project warns about rich levels connected to `Space::load`.
+The Native level nodes include Update level, Draw level HUD, Find level entity, Is level object on, Set HUD number/text, Show/Hide level entity and Clear level. Wire Update level to Update's dt and an optional player reference; it returns the next scene and arrival when the player enters a way out. Draw the space, then Draw level HUD using the Draw event's canvas. Studio creates these calls for empty Update/Draw graphs; it leaves existing graphs alone. If a basic Space load node already uses this file with default position/streaming and no data connections, Studio can replace it in place after confirmation. More complicated connections must be updated manually. Check project warns about rich levels connected to `Space::load`.
 
 Generated scripts include the original `global:scene.as` and need the Nexgen media containing that script and `global:ai.as`. The local native compiler can read both from the configured desktop test copy. The test suite checks the emitted calls against the helper's method signatures, not the full helper's runtime. The original editor and actual graphical level rendering still need to be tested in a complete desktop release.
 
 ## Current limits
 
-The scene preview is not the Nexgen renderer. Use the original editor for full visual editing; the native launch/import workflow has been tested with a substitute desktop process, not a full rendered Nexgen release. Timelines cannot yet be controlled from other graphs. Dispatchers work within one object, and there is no automatic network replication or remote procedure call system. Graph debugging uses Nexgen's existing debugger and currently highlights the active graph only. There is no skeletal blend-tree editor.
+Studio uses the original editor for visual 3D editing; the native launch/import workflow has been tested with a substitute desktop process, not a full rendered Nexgen release. Timelines cannot yet be controlled from other graphs. Dispatchers work within one object, and there is no automatic network replication or remote procedure call system. Graph debugging uses Nexgen's existing debugger and currently highlights the active graph only. There is no skeletal blend-tree editor.
 
 Linux headless tests and Chromium tests have been run. Windows, macOS, RXDK builds, graphical rendering and real Xbox gameplay are still unverified for this branch. No rebuilt XBE is included.

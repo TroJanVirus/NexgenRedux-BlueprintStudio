@@ -19,6 +19,13 @@ int main(int argc, char** argv)
     asIScriptObject* object = type ? r.host.create(type) : nullptr;
     if (!object) return 5;
     nx::ScriptDebugger debugger;
+    // Use the test platform clock to make native profiling samples repeatable.
+    double sampleTime = 0;
+    debugger.setClock([](void* user) -> double {
+        double& now = *static_cast<double*>(user);
+        now += 0.002;
+        return now;
+    }, &sampleTime);
     if (!debugger.start(r.host, static_cast<nx::u16>(port), true)) { r.host.release(object); return 6; }
     debugger.waitForReady();
     const bool entered = r.host.callMethod(object, type->GetMethodByDecl("void onEnter()"));

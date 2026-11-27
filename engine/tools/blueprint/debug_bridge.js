@@ -20,12 +20,13 @@ function createBridge({host='127.0.0.1',port=4711,webPort=8765,validator=null,pr
         s.on('close',()=>{if(socket===s){disconnect();enqueue({event:'disconnected'});}reject(Error('Connection closed'));});
         s.on('data',data=>{if(socket!==s)return;buffer+=data;if(buffer.length>2*1024*1024){disconnect();return;}let at;while((at=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,at);buffer=buffer.slice(at+1);try{const msg=JSON.parse(line);const p=waiting.get(msg.id);if(p){clearTimeout(p.timer);waiting.delete(msg.id);p.resolve(msg);}else enqueue(msg);}catch{enqueue({event:'bridgeError',text:'Invalid debugger message'});}}});
     });}
-    const ack=new Set(['hello','breakpoints','ready','stack','variables','evaluate']);
+    const ack=new Set(['hello','breakpoints','ready','stack','variables','evaluate','profile']);
     const allowed=new Set([...ack,'pause','continue','next','stepIn','stepOut']);
     function command(cmd,args={}){if(!connected||!socket)throw Error('Connect first');if(!allowed.has(cmd))throw Error('Unsupported debugger command');if(waiting.size>=32)throw Error('Too many pending requests');
         const id=++seq, msg={cmd,id};
         if(cmd==='breakpoints'){if(typeof args.file!=='string'||args.file.length>512||!Array.isArray(args.lines)||args.lines.length>2048||args.lines.some(n=>!Number.isSafeInteger(n)||n<1||n>100000))throw Error('Invalid breakpoints');msg.file=args.file;msg.lines=args.lines;}
         if(cmd==='variables'){if(Number.isSafeInteger(args.ref)&&args.ref>0)msg.ref=args.ref;else{msg.frame=Number.isSafeInteger(args.frame)&&args.frame>=0?args.frame:0;msg.scope=args.scope==='globals'?'globals':'locals';}}
+        if(cmd==='profile'){if(typeof args.on!=='boolean')throw Error('Choose whether to start or stop profiling');msg.on=args.on;}
         if(cmd==='evaluate'){if(typeof args.expr!=='string'||args.expr.length>512)throw Error('Invalid watch');msg.expr=args.expr;msg.frame=Number.isSafeInteger(args.frame)&&args.frame>=0?args.frame:0;}
         if(!ack.has(cmd)){socket.write(JSON.stringify(msg)+'\n');return Promise.resolve({sent:true});}
         return new Promise((resolve,reject)=>{const timer=setTimeout(()=>{waiting.delete(id);reject(Error('Debugger request timed out'));},5000);waiting.set(id,{resolve,reject,timer});socket.write(JSON.stringify(msg)+'\n');});
