@@ -27,7 +27,11 @@ namespace nx
         void rebuildPins();
         void filterCatalogue();
         void clearWire(){m_pending=static_cast<size_t>(-1);m_pendingPin.clear();}
-        bool saveCopy(Services& services);
+        bool saveNamed(Services& services,const std::string& name);
+        bool openFile(Services& services,const std::string& file,bool managed);
+        void browseFiles(Services& services);
+        bool saveCurrent(Services& services);
+        bool writeVerified(Services& services,const std::string& path,const std::string& bytes);
         bool compileAndExport(Services& services);
         void cancelDrag() { m_drag = false; }
         struct NodePins { std::vector<std::string> inputs, outputs, inputTypes, outputTypes; float height = 72; };
@@ -47,7 +51,11 @@ namespace nx
         size_t m_pending=static_cast<size_t>(-1),m_paletteFirst=0;
         std::string m_pendingPin,m_query,m_edit;
         std::vector<const BlueprintNodeSpec*> m_palette;
-        int m_focus=0; // 1 catalogue search, 2 literal, 3 reference, 4 new function
+        int m_focus=0; // 1 catalogue search, 2 literal, 3 reference, 4 new function, 5 save as
+        std::string m_filePath,m_fileBaseline;
+        std::vector<std::string> m_files;
+        size_t m_fileFirst=0;
+        bool m_browsing=false;
         bool m_previousTyping=false;
         bool m_playing=false;
         bool m_checkpointPresent=false;

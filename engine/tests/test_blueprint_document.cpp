@@ -168,3 +168,14 @@ NX_TEST(nativeBlueprintRecoveryMarksLoadedDraftUnsaved)
     NX_EXPECT(compileBlueprint(recovered,source,error)&&source.find("void onExit()")!=std::string::npos);
     recovered.markSaved();NX_EXPECT(!recovered.dirty());
 }
+
+NX_TEST(nativeBlueprintManagedFileNamesArePortableAndConfined)
+{
+    std::string file;
+    NX_EXPECT(blueprintManagedName("My Game_2",file)&&file=="blueprint-project-My Game_2.bp.json");
+    NX_EXPECT(blueprintFileName(file));
+    for(const char* bad:{"","../escape","C:\\file","a/b","a.b"," name","name ","a\nb"})
+        NX_EXPECT(!blueprintManagedName(bad,file));
+    for(const char* bad:{"../a.bp.json","a/b.bp.json","a\\b.bp.json","blueprint-recovery.bp.json","a.json",".hidden.bp.json"})
+        NX_EXPECT(!blueprintFileName(bad));
+}

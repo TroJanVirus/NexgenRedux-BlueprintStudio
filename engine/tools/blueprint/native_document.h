@@ -17,6 +17,9 @@ namespace nx
     };
     const std::vector<BlueprintNodeSpec>& blueprintCatalogue();
     const BlueprintNodeSpec* blueprintSpec(const std::string& kind);
+    // Managed authoring files are direct children of Redux's own folder.
+    bool blueprintFileName(const std::string& file);
+    bool blueprintManagedName(const std::string& name,std::string& file);
 
     // Native version 2: one canonical model. Node indices are internal; persisted links use stable IDs.
     // The pre-release browser format is deliberately not supported.

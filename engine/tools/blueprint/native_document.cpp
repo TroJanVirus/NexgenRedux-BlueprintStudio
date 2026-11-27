@@ -130,6 +130,18 @@ namespace nx
         bool text(JsonValue& j,const char* key,const std::string& value){auto* v=j.put(key);if(!v)return false;v->setText(value);return true;}
         bool number(JsonValue& j,const char* key,double value){auto* v=j.put(key);if(!v)return false;v->setNumber(value);return true;}
     }
+    bool blueprintFileName(const std::string& file)
+    {
+        return file.size()>8&&file.size()<=240&&file.ends_with(".bp.json")&&file!="blueprint-recovery.bp.json"&&
+            file.front()!='.'&&file.find("..") == std::string::npos&&file.find_first_of("/\\:") == std::string::npos&&
+            std::none_of(file.begin(),file.end(),[](unsigned char c){return c<32||c==127;});
+    }
+    bool blueprintManagedName(const std::string& name,std::string& file)
+    {
+        if(name.empty()||name.size()>64||name.front()==' '||name.back()==' ')return false;
+        for(unsigned char c:name)if(!((c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9')||c=='_'||c=='-'||c==' '))return false;
+        file="blueprint-project-"+name+".bp.json";return true;
+    }
     const std::vector<BlueprintNodeSpec>& blueprintCatalogue()
     {
         static const auto catalogue=[]{

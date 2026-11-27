@@ -94,7 +94,7 @@ namespace nx
         s.input->consume();
         m_left = m_pan = m_drag = false;
         m_shortcuts = 0;
-        m_previousTyping=s.input->typing();m_focus=0;s.input->setTyping(false);
+        m_previousTyping=s.input->typing();m_focus=0;m_browsing=false;s.input->setTyping(false);
         if(m_document.graphs.empty())
         {
             FileData recovery;
@@ -102,7 +102,7 @@ namespace nx
             if(found&&m_document.load(reinterpret_cast<const char*>(recovery.data),recovery.size,m_status))
             {
                 m_document.markRecovered();m_checkpointPresent=true;m_checkpointRevision=m_document.revision();
-                selectGraph(0);m_status="Recovered unsaved Blueprint. Save copy to keep it.";
+                selectGraph(0);m_status="Recovered unsaved Blueprint. Save as to keep it.";
             }
             else
             {
@@ -118,7 +118,7 @@ namespace nx
         if (!active()) return;
         stopPreview(s);
         checkpoint(s,true);
-        cancelDrag();clearWire();m_focus=0;s.input->setTyping(m_previousTyping);
+        cancelDrag();clearWire();m_focus=0;m_browsing=false;s.input->setTyping(m_previousTyping);
         s.assets->release(m_font);
         m_font = nullptr;
         s.input->setWantsPointer(m_wantedPointer);
@@ -193,31 +193,85 @@ namespace nx
         m_x=24-left*m_zoom;m_y=24-top*m_zoom;
     }
 
-    bool BlueprintWorkspace::saveCopy(Services& s)
+    bool BlueprintWorkspace::writeVerified(Services& s,const std::string& path,const std::string& bytes)
     {
-        std::string output;
-        if(!m_document.serialize(output,m_status))return false;
-        static unsigned sequence=0;
-        std::string name,path;
-        // A new copy every time: never use the source name or replace an earlier snapshot.
-        for(unsigned attempt=0;attempt<100;++attempt)
-        {
-            name="blueprint-native-"+std::to_string(static_cast<long long>(std::time(nullptr)))+"-"+std::to_string(++sequence)+(m_document.isProject()?".bp.project.json":".bp.json");
-            path="own/"+name;
-            if(!s.platform->fileTime(path.c_str()))break;
-            path.clear();
-        }
-        if(path.empty() || !s.platform->writeFile(path.c_str(),output.data(),output.size()))
-        {m_status="Save copy failed. Changes remain in memory.";return false;}
-        FileData saved;
-        if(!s.platform->readFile(path.c_str(),saved,MemTag::General)||saved.size!=output.size()||
-            std::memcmp(saved.data,output.data(),output.size())!=0)
-        {m_status="Could not verify saved copy. Changes remain in memory.";return false;}
-        m_document.markSaved();
-        checkpoint(s,true);
-        m_status="Saved copy: "+path;
-        NX_INFO("Blueprint Studio: %s",m_status.c_str());
+        if(!s.platform->writeFile(path.c_str(),bytes.data(),bytes.size()))
+        {m_status="Save failed. Changes remain in memory.";return false;}
+        FileData check;
+        if(!s.platform->readFile(path.c_str(),check,MemTag::General)||check.size!=bytes.size()||
+            std::memcmp(check.data,bytes.data(),bytes.size())!=0)
+        {m_status="Could not verify written file. Changes remain in memory.";return false;}
         return true;
+    }
+    bool BlueprintWorkspace::openFile(Services& s,const std::string& file,bool managed)
+    {
+        if(m_document.dirty()){m_status="Save changes before opening another Blueprint.";return false;}
+        if(!blueprintFileName(file)){m_status="Choose a Blueprint .bp.json file.";return false;}
+        const std::string path="own/"+file;
+        FileData data;
+        if(!s.platform->readFile(path.c_str(),data,MemTag::General))
+        {m_status="Could not read Blueprint.";return false;}
+        if(!m_document.load(reinterpret_cast<const char*>(data.data),data.size,m_status))return false;
+        m_filePath.clear();m_fileBaseline.clear();
+        std::string expected;
+        if(managed&&blueprintManagedName(m_document.name,expected)&&file==expected)
+        {
+            m_filePath=path;
+            m_fileBaseline.assign(reinterpret_cast<const char*>(data.data),data.size);
+        }
+        m_checkpointRevision=static_cast<size_t>(-1);
+        m_first=0;selectGraph(0);m_browsing=false;
+        m_status="Opened "+file;
+        return true;
+    }
+    void BlueprintWorkspace::browseFiles(Services& s)
+    {
+        if(m_document.dirty()){m_status="Save changes before opening another Blueprint.";return;}
+        m_files.clear();m_fileFirst=0;
+        s.platform->list("own",false,[](const char* name,void* user)
+        {
+            auto& files=*static_cast<std::vector<std::string>*>(user);
+            if(files.size()<4096&&blueprintFileName(name))files.emplace_back(name);
+        },&m_files);
+        std::sort(m_files.begin(),m_files.end());
+        m_files.erase(std::unique(m_files.begin(),m_files.end()),m_files.end());
+        m_browsing=true;clearWire();cancelDrag();
+    }
+    bool BlueprintWorkspace::saveNamed(Services& s,const std::string& name)
+    {
+        std::string file;
+        if(!blueprintManagedName(name,file))
+        {m_status="Use 1-64 letters, numbers, spaces, underscores or hyphens.";return false;}
+        const std::string path="own/"+file;
+        if(s.platform->fileTime(path.c_str()))
+        {m_status="Name already exists. Choose a different name.";return false;}
+        // Title is file metadata, not a graph edit. Restore it if writing fails.
+        const std::string old=m_document.name;
+        m_document.name=name;
+        std::string bytes;
+        if(!m_document.serialize(bytes,m_status)||!writeVerified(s,path,bytes))
+        {m_document.name=old;return false;}
+        m_filePath=path;m_fileBaseline=std::move(bytes);
+        m_document.markSaved();checkpoint(s,true);
+        m_status="Saved "+file;return true;
+    }
+    bool BlueprintWorkspace::saveCurrent(Services& s)
+    {
+        if(m_filePath.empty())
+        {
+            m_edit=m_document.name=="Untitled"?"":m_document.name;
+            m_focus=5;s.input->setTyping(true);
+            m_status="Type a new Blueprint name and press Enter.";return false;
+        }
+        FileData current;
+        if(!s.platform->readFile(m_filePath.c_str(),current,MemTag::General)||
+            current.size!=m_fileBaseline.size()||std::memcmp(current.data,m_fileBaseline.data(),current.size)!=0)
+        {m_status="File changed outside Studio. Use Save as to preserve both versions.";return false;}
+        if(!m_document.dirty()){m_status="Already saved.";return true;}
+        std::string bytes;
+        if(!m_document.serialize(bytes,m_status)||!writeVerified(s,m_filePath,bytes))return false;
+        m_fileBaseline=std::move(bytes);m_document.markSaved();checkpoint(s,true);
+        m_status="Saved "+m_document.name;return true;
     }
 
     bool BlueprintWorkspace::compileAndExport(Services& s)
@@ -308,31 +362,15 @@ namespace nx
         auto& input = *s.input;
         if (input.pressed(Action::Menu))
         {
+            if(m_browsing){m_browsing=false;m_status="Open cancelled.";return;}
             if(m_focus){m_focus=0;input.setTyping(false);m_status="Input cancelled.";return;}
             if(m_pending!=static_cast<size_t>(-1)){clearWire();m_status="Connection cancelled.";return;}
             if(m_drag){cancelDrag();m_left=input.raw().mouseButtons[0];m_status="Drag cancelled.";return;}
             close(s);return;
         }
         std::string dropped;
-        if (!m_drag && !m_focus && s.platform->takeDropped(dropped))
-        {
-            if (m_document.dirty()) m_status="Save your changes first (Ctrl+S), then drop the file again.";
-            else if (dropped.size() < 8 || dropped.find_first_of("/\\:") != std::string::npos ||
-                dropped.find("..") != std::string::npos || dropped.substr(dropped.size()-5) != ".json")
-                m_status = "Drop a Blueprint JSON file.";
-            else
-            {
-                FileData file;
-                if (!s.platform->readFile(("own/" + dropped).c_str(), file, MemTag::General))
-                    m_status = "Could not read the dropped file.";
-                else if (m_document.load(reinterpret_cast<const char*>(file.data), file.size, m_status))
-                {
-                    m_checkpointRevision=static_cast<size_t>(-1);
-                    m_first = 0; selectGraph(0);
-                    m_status = "Opened " + dropped;
-                }
-            }
-        }
+        if (!m_drag && !m_focus && !m_browsing && s.platform->takeDropped(dropped))
+            openFile(s,dropped,false); // Never overwrite a dropped source file.
         auto& canvas = *s.canvas;
         const auto& raw = input.raw();
         // Canvas design is the same fixed 1280x720 fit used by draw().
@@ -348,6 +386,18 @@ namespace nx
             (control&&(held(Key::Y)||(held(Key::Z)&&held(Key::Shift)))?4u:0u);
         const unsigned pressed=keys&~m_shortcuts;m_shortcuts=keys;
         const bool click=left&&!m_left;
+        if(m_browsing)
+        {
+            if(input.wheel()<0&&m_fileFirst+12<m_files.size())++m_fileFirst;
+            if(input.wheel()>0&&m_fileFirst)--m_fileFirst;
+            if(click&&in(x,y,860,116,1000,150))m_browsing=false;
+            else if(click&&in(x,y,280,166,1000,166+12*36))
+            {
+                const size_t row=m_fileFirst+static_cast<size_t>((y-166)/36);
+                if(row<m_files.size())openFile(s,m_files[row],true);
+            }
+            m_left=left;return;
+        }
         if(m_focus)
         {
             const int focus=m_focus;
@@ -366,12 +416,13 @@ namespace nx
                 {
                     if(focus==2&&!m_document.setLiteral(m_graph,m_selection,m_edit,m_status))break;
                     if(focus==3&&!m_document.setReference(m_graph,m_selection,m_edit,m_status))break;
+                    if(focus==5&&!saveNamed(s,m_edit))break;
                     if(focus==4)
                     {
                         if(!m_document.addFunction(m_edit,m_status))break;
                         selectGraph(m_document.graphs.size()-1);
                     }
-                    m_focus=0;input.setTyping(false);m_status="Ready.";break;
+                    m_focus=0;input.setTyping(false);if(focus!=5)m_status="Ready.";break;
                 }
             }
             if(changed&&focus==1)filterCatalogue();
@@ -381,6 +432,8 @@ namespace nx
         if(!m_drag)
         {
             if(click&&in(x,y,1134,39,1266,69)){close(s);return;}
+            if(click&&in(x,y,740,5,850,33)){browseFiles(s);m_left=left;return;}
+            if(click&&in(x,y,856,5,966,33)){m_edit.clear();m_focus=5;input.setTyping(true);m_status="Type a new Blueprint name and press Enter.";m_left=left;return;}
             if(m_document.graphs.empty()){m_left=left;return;}
             if(click&&in(x,y,504,39,604,69))
             {
@@ -392,7 +445,7 @@ namespace nx
                 m_left=left;return;
             }
             if(click&&in(x,y,610,39,742,69))compileAndExport(s);
-            if((pressed&1u)||(click&&in(x,y,748,39,858,69)))saveCopy(s);
+            if((pressed&1u)||(click&&in(x,y,748,39,858,69))){saveCurrent(s);m_left=left;return;}
             if(((pressed&2u)||(click&&in(x,y,864,39,948,69)))&&m_document.undo()){selectGraph(std::min(m_graph,m_document.graphs.size()-1));m_status="Undid graph change.";}
             if(((pressed&4u)||(click&&in(x,y,954,39,1038,69)))&&m_document.redo()){selectGraph(std::min(m_graph,m_document.graphs.size()-1));m_status="Redid graph change.";}
             if(click&&in(x,y,1044,39,1128,69))fitGraph();
@@ -409,7 +462,7 @@ namespace nx
         if(click&&in(x,y,8,kBottom-40,kLeft-8,kBottom-8))
         {
             if(m_document.dirty())m_status="Save changes before creating a new Blueprint.";
-            else{m_document.create();m_checkpointRevision=static_cast<size_t>(-1);m_first=0;selectGraph(0);m_status="New Blueprint.";}
+            else{m_document.create();m_filePath.clear();m_fileBaseline.clear();m_checkpointRevision=static_cast<size_t>(-1);m_first=0;selectGraph(0);m_status="New Blueprint.";}
             m_left=left;return;
         }
         if(!m_drag&&in(x,y,kRight,kTop,kWidth,kBottom))
@@ -494,7 +547,7 @@ namespace nx
             }
             else
             {
-                if(m_dragMoved&&m_document.move(m_graph,m_selection,m_dragX,m_dragY))m_status="Layout changed. Ctrl+S saves a new copy.";
+                if(m_dragMoved&&m_document.move(m_graph,m_selection,m_dragX,m_dragY))m_status="Layout changed. Ctrl+S saves your Blueprint.";
                 cancelDrag();
             }
             m_pan=false;m_left=left;m_lastX=x;m_lastY=y;
@@ -530,7 +583,9 @@ namespace nx
         c.rect(0,0,kWidth,kHeight,{0.06f,0.08f,0.12f,1});
         c.rect(0,0,kWidth,kTop,{0.12f,0.16f,0.22f,1});
         c.text(*m_font,"NEXGEN  /  BLUEPRINT STUDIO",18,13,text);
-        c.text(*m_font,"Native Blueprint editor",1260,13,muted,Align::Right);
+        c.text(*m_font,"Native editor",1260,13,muted,Align::Right);
+        c.roundRect(740,5,110,28,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Open",795,9,text,Align::Center);
+        c.roundRect(856,5,110,28,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Save as",911,9,text,Align::Center);
         const std::string titleText=(m_document.name.empty()?"No document open":m_document.name)+(m_document.dirty()?" *":"");
         c.clip(12,38,480,34);c.text(*m_font,shorten(titleText,65).c_str(),18,43,accent);c.noClip();
         const auto button=[&](float x,float width,const char* label,bool enabled){
@@ -538,7 +593,7 @@ namespace nx
             c.text(*m_font,label,x+width*0.5f,44,enabled?text:muted,Align::Center);
         };
         button(504,100,"Play test",!m_document.graphs.empty());
-        button(610,132,"Compile / export",!m_document.graphs.empty());button(748,110,"Save copy",!m_document.graphs.empty());button(864,84,"Undo",m_document.canUndo());
+        button(610,132,"Compile / export",!m_document.graphs.empty());button(748,110,"Save",!m_document.graphs.empty());button(864,84,"Undo",m_document.canUndo());
         button(954,84,"Redo",m_document.canRedo());button(1044,84,"Fit",!m_document.graphs.empty());button(1134,132,"Return",true);
         c.rect(0,kTop,kLeft,kBottom-kTop,{0.10f,0.13f,0.18f,1});
         c.rect(kRight,kTop,kWidth-kRight,kBottom-kTop,{0.10f,0.13f,0.18f,1});
@@ -650,6 +705,33 @@ namespace nx
         }
         c.rect(0,kBottom,kWidth,kHeight-kBottom,{0.12f,0.16f,0.22f,1});
         c.text(*m_font,shorten(m_status,110).c_str(),12,kBottom+6,text);
-        c.text(*m_font,"Click output then input: connect | Ctrl+click pin: disconnect | Drag: move | Ctrl+S: save copy",12,kBottom+26,muted);
+        c.text(*m_font,"Click output then input: connect | Ctrl+click pin: disconnect | Drag: move | Ctrl+S: save",12,kBottom+26,muted);
+        if(m_browsing||m_focus==5)
+        {
+            c.rect(0,0,kWidth,kHeight,{0,0,0,0.70f});
+            if(m_browsing)
+            {
+                c.roundRect(260,100,760,525,9,{0.12f,0.16f,0.22f,1});
+                c.text(*m_font,"OPEN BLUEPRINT",280,122,accent);
+                c.roundRect(860,116,140,34,4,{0.22f,0.31f,0.43f,1});c.text(*m_font,"Cancel",930,123,text,Align::Center);
+                for(size_t i=0;i<12&&m_fileFirst+i<m_files.size();++i)
+                {
+                    const float y=166+36*static_cast<float>(i);
+                    c.rect(280,y,720,33,{0.17f,0.22f,0.30f,1});
+                    c.clip(286,y,708,33);c.text(*m_font,m_files[m_fileFirst+i].c_str(),290,y+8,text);c.noClip();
+                }
+                if(m_files.empty())c.text(*m_font,"No saved Blueprints. Save as or drop a .bp.json file.",640,330,muted,Align::Center);
+                c.text(*m_font,"Scroll for more | Escape cancels",640,603,muted,Align::Center);
+            }
+            else
+            {
+                c.roundRect(340,240,600,205,9,{0.12f,0.16f,0.22f,1});
+                c.text(*m_font,"SAVE BLUEPRINT AS",360,260,accent);
+                c.roundRect(360,300,560,36,4,{0.24f,0.35f,0.48f,1});
+                c.clip(364,300,552,36);c.text(*m_font,m_edit.empty()?"Type a new name...":m_edit.c_str(),370,308,text);c.noClip();
+                c.paragraph(*m_font,m_status.c_str(),360,351,560,muted);
+                c.text(*m_font,"Enter saves | Escape cancels",640,412,text,Align::Center);
+            }
+        }
     }
 }
