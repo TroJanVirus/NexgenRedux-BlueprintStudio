@@ -15,6 +15,7 @@ own = root / "own"
 own.mkdir(parents=True, exist_ok=False)
 recovery = own / "blueprint-recovery.bp.json"
 project = own / "blueprint-project-Desktop Smoke.bp.json"
+recovered_project = own / "blueprint-project-Desktop Recovered.bp.json"
 asset_root = "bpa-12345-1"
 asset = own / asset_root / "Screen" / "asset" / "data.bin"
 asset.parent.mkdir(parents=True)
@@ -105,8 +106,10 @@ def run_session(index):
 
             wait_for(find_window, "visible native window", process)
             xdo("windowfocus", "--sync", window)
-            # Wait for native font and engine initialization before dispatching input.
-            time.sleep(2)
+            # Synchronize on the actual workspace, rather than assuming initialization time.
+            wait_for(lambda: "workspace ready" in log.read_text(errors="replace"),
+                     "native workspace ready", process)
+            time.sleep(0.5)
             if index == 1:
                 click(900, 18)
                 xdo("type", "--delay", 100, "Desktop Smoke")
@@ -117,9 +120,21 @@ def run_session(index):
                 assert saved["graphs"] == graphs
                 assert saved["assetRoot"] != asset_root
                 assert (own / saved["assetRoot"] / "Screen" / "asset" / "data.bin").read_bytes() == payload
-            else:
+            elif index == 2:
                 click(794, 18)
                 click(500, 180)
+                wait_for(lambda: "Opened " + project.name in log.read_text(errors="replace"),
+                         "open saved project", process)
+            else:
+                assert "Recovered unsaved Blueprint" in log.read_text(errors="replace")
+                click(900, 18)
+                xdo("type", "--delay", 100, "Desktop Recovered")
+                key("Return")
+                wait_for(recovered_project.is_file, "save crash-recovered project", process)
+                saved = json.loads(recovered_project.read_text(encoding="utf-8"))
+                assert saved["name"] == "Desktop Recovered"
+                assert saved["graphs"] == crashed_graphs
+                assert (own / saved["assetRoot"] / "Screen" / "asset" / "data.bin").read_bytes() == payload
             before = len(exports())
             click(675, 53)
             wait_for(lambda: len(exports()) > before, "native project export", process)
@@ -133,6 +148,28 @@ def run_session(index):
             wait_for(lambda: "preview stopped" in log.read_text(errors="replace"),
                      "preview stop", process)
             assert "Preview error:" not in log.read_text(errors="replace")
+            if index == 2:
+                # Make a real edit and wait for the atomic on-disk checkpoint, then
+                # kill the process without invoking any normal shutdown hooks.
+                click(1100, 130)
+                xdo("type", "--delay", 100, "literal:int")
+                key("Return")
+                click(1100, 167)
+
+                def checkpoint_has_edit():
+                    try:
+                        draft = json.loads(recovery.read_text(encoding="utf-8"))
+                        nodes = draft["graphs"][0]["nodes"]
+                        return len(nodes) == 3 and nodes[-1]["kind"] == "literal:int"
+                    except (OSError, ValueError, KeyError, IndexError):
+                        return False
+
+                wait_for(checkpoint_has_edit, "on-disk checkpoint for actual graph edit", process)
+                draft = json.loads(recovery.read_text(encoding="utf-8"))
+                assert draft["graphs"][0]["links"] == graphs[0]["links"]
+                process.kill()
+                assert process.wait(timeout=20) < 0
+                return draft["graphs"]
             request_close(window)
             assert process.wait(timeout=20) == 0
         finally:
@@ -148,8 +185,35 @@ def run_session(index):
 
 run_session(1)
 baseline = project.read_bytes()
-run_session(2)
+crashed_graphs = run_session(2)
+assert project.read_bytes() == baseline
+run_session(3)
 assert project.read_bytes() == baseline
 assert asset.read_bytes() == payload
-assert len(exports()) == 2
-print("Real native desktop recovery/save/export/preview/reopen passed.", flush=True)
+assert len(exports()) == 3
+print("Real native desktop recovery/save/export/preview/reopen/forced-crash recovery passed.", flush=True)
+
+# Benchmark the actual editor and GPU with a near-limit graph. Record timings
+# rather than claiming a hardware-independent FPS target on shared CI runners.
+bench = root / "large-graph"
+bench_own = bench / "own"
+bench_own.mkdir(parents=True)
+large = json.loads(project.read_text(encoding="utf-8"))
+large["assetRoot"] = ""
+for i in range(1000):
+    large["graphs"][0]["nodes"].append(dict(id=f"stress{i}", kind="literal:int",
+                                           x=252 * (i % 32), y=120 * (1 + i // 32),
+                                           value="42"))
+large_path = bench_own / recovery.name
+large_path.write_text(json.dumps(large), encoding="utf-8")
+bench_log = root / "large-graph.log"
+with bench_log.open("wb") as out:
+    subprocess.run([str(binary), "--blueprint-studio", "--hidden", "--bench",
+                    "--frames", "180", "--size", "1280", "720", "--saves", str(bench)],
+                   stdout=out, stderr=subprocess.STDOUT, timeout=90, check=True)
+timings = bench_log.read_text(errors="replace")
+print(timings, flush=True)
+assert "workspace ready (Recovered unsaved Blueprint" in timings
+assert "ms a frame:" in timings
+assert json.loads(large_path.read_text(encoding="utf-8")) == large
+print("Actual desktop renderer benchmark: 1,002 nodes in active graph.", flush=True)

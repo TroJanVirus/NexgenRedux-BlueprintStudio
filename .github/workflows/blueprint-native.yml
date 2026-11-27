@@ -57,5 +57,12 @@ jobs:
       - name: Reopen native editor with existing save directory
         if: ${{ !cancelled() }}
         run: xvfb-run -a -s "-screen 0 1280x720x24" build/showcase/nexgen --blueprint-studio --hidden --frames 120 --saves "$RUNNER_TEMP/bp-desktop-saves"
-      - name: Exercise real X11 input, recovery, save, play and export
+      - name: Exercise real X11 input, crash recovery, save, play, export and large graph
         run: xvfb-run -a -s "-screen 0 1280x720x24" /usr/bin/python3 engine/tools/blueprint/test_native_desktop.py build/showcase/nexgen "$RUNNER_TEMP/bp-desktop-operational"
+      - name: Retain operational test logs
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-desktop-operational-logs
+          path: ${{ runner.temp }}/bp-desktop-operational/*.log
+          if-no-files-found: ignore

@@ -120,6 +120,7 @@ namespace nx
             }
         }
         filterCatalogue();
+        NX_INFO("Blueprint Studio: workspace ready (%s)",m_status.c_str());
     }
 
     void BlueprintWorkspace::close(Services& s)
@@ -265,6 +266,7 @@ namespace nx
         m_checkpointRevision=static_cast<size_t>(-1);
         m_first=0;selectGraph(0);m_browsing=false;
         m_status="Opened "+file;
+        NX_INFO("Blueprint Studio: %s",m_status.c_str());
         return true;
     }
     void BlueprintWorkspace::browseFiles(Services& s)
