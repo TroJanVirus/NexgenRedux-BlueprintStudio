@@ -735,9 +735,9 @@ namespace nx
         {
             const auto ref=item["behaviour"];
             if(!ref.exists())continue;
-            const std::string name=ref.text();
-            if(!ref.isString()||name.rfind("BP_Behaviour_",0)!=0||!canAttach(owner,name.substr(13)))
-            {error="Actor references missing or out-of-scope Blueprint Behaviour: "+name;return false;}
+            const std::string behaviourName=ref.text();
+            if(!ref.isString()||behaviourName.rfind("BP_Behaviour_",0)!=0||!canAttach(owner,behaviourName.substr(13)))
+            {error="Actor references missing or out-of-scope Blueprint Behaviour: "+behaviourName;return false;}
         }
         json.swap(source);error.clear();return true;
     }

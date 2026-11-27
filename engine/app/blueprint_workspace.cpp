@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include "app/blueprint_workspace.h"
 #include "tools/blueprint/native_compile.h"
 #include "tools/blueprint/native_assets.h"
@@ -531,7 +532,7 @@ namespace nx
         {m_status="Save as a named project before importing assets.";return;}
         if(!blueprintEnsureAssetFolder(*s.platform,m_document.assetRoot,screen,m_status)||
             !blueprintListAssets(*s.platform,m_document.assetRoot,screen,m_assetFiles,m_status))return;
-        m_assetBrowser=true;m_assetLibrary=false;m_assetFirst=0;m_visualInput=0;clearWire();cancelDrag();
+        m_assetBrowser=true;m_assetLibrary=false;m_visualPlacement=false;cancelVisualPlacement();m_assetFirst=0;m_visualInput=0;clearWire();cancelDrag();
         m_status="Drop a native asset or scene JSON into this window.";
     }
     bool BlueprintWorkspace::publishVisualWidget(Services& s)
@@ -555,7 +556,120 @@ namespace nx
         m_status="Copied asset:"+filename+". Use Ui::load and Ui::draw in your graph.";
         return true;
     }
-    void BlueprintWorkspace::updateVisualLibrary(Services& s,float x,float y,bool click,unsigned pressed)
+    namespace
+    {
+        // This is a plan view of authored linked placements, not a second
+        // scene renderer. Runtime-generated and wired coordinates are omitted.
+        constexpr float planLeft=630,planTop=252,planRight=1000,planBottom=548;
+        constexpr float planCenterX=815,planCenterY=400,planScale=14;
+        struct ActorMarker {size_t graph,node;std::string asset;float x,y,z;};
+        std::vector<ActorMarker> actorMarkers(const BlueprintDocument& doc,const std::string& owner)
+        {
+            std::vector<ActorMarker> result;
+            for(size_t g=0;g<doc.graphs.size();++g)
+            {
+                const auto& graph=doc.graphs[g];if(graph.owner!=owner||graph.name!="onEnter")continue;
+                for(size_t n=0;n<graph.nodes.size();++n)
+                {
+                    const auto& node=graph.nodes[n];if(node.kind!="actor:spawn-asset")continue;
+                    if(std::any_of(graph.links.begin(),graph.links.end(),[&](const BlueprintDocument::Link& link)
+                        {return link.to==n&&(link.input=="place"||link.input=="id");}))continue;
+                    std::string asset,position="0,0,0";
+                    for(const auto& value:node.values){if(value.pin=="id")asset=value.value;else if(value.pin=="place")position=value.value;}
+                    std::vector<std::string> xyz;
+                    if(!doc.visualAsset(asset)||!blueprintInputComponents("Vec3",position,xyz))continue;
+                    result.push_back({g,n,asset,std::strtof(xyz[0].c_str(),nullptr),std::strtof(xyz[1].c_str(),nullptr),std::strtof(xyz[2].c_str(),nullptr)});
+                }
+            }
+            return result;
+        }
+        std::string planPosition(float x,float y,float height)
+        {
+            return std::to_string(std::round((x-planCenterX)/planScale))+","+std::to_string(height)+","+
+                std::to_string(std::round((y-planCenterY)/planScale));
+        }
+    }
+    void BlueprintWorkspace::updateVisualPlacement(float x,float y,bool left,bool click)
+    {
+        m_placementX=x;m_placementY=y;
+        if(m_placementDragging)
+        {
+            if(left)return;
+            if(in(x,y,planLeft,planTop,planRight,planBottom))
+            {
+                bool ok=false;
+                if(m_placementGraph!=static_cast<size_t>(-1))
+                {
+                    const auto markers=actorMarkers(m_document,assetScreen());
+                    for(const auto& marker:markers)if(marker.graph==m_placementGraph&&marker.node==m_placementNode)
+                    {
+                        const auto position=planPosition(x,y,marker.y);
+                        ok=m_document.setInputValue(marker.graph,marker.node,"place",position,m_status);break;
+                    }
+                }
+                else ok=m_document.placeVisualActor(assetScreen(),m_placementAsset,planPosition(x,y,0),m_status);
+                if(ok){rebuildPins();filterCatalogue();m_diagnostic={};m_status="Linked placement updated. Ctrl+Z undoes it.";}
+            }
+            else m_status="Placement cancelled.";
+            cancelVisualPlacement();return;
+        }
+        if(!click)return;
+        if(in(x,y,630,208,1000,241)){m_visualPlacement=false;return;}
+        const auto& assets=m_document.visualAssets();
+        if(in(x,y,280,198,610,522))
+        {
+            const size_t row=m_visualFirst+static_cast<size_t>((y-198)/36);
+            if(row<assets.size()&&assets[row].kind=="actor")
+            {
+                m_visualSelection=assets[row].id;m_placementAsset=assets[row].id;
+                m_placementDragging=true;m_status="Drag actor to the plan; release to place.";
+            }
+            return;
+        }
+        if(!in(x,y,planLeft,planTop,planRight,planBottom))return;
+        auto markers=actorMarkers(m_document,assetScreen());
+        for(auto it=markers.rbegin();it!=markers.rend();++it)
+        {
+            const float mx=planCenterX+it->x*planScale,my=planCenterY+it->z*planScale;
+            if(std::abs(x-mx)<=10&&std::abs(y-my)<=10)
+            {
+                m_placementGraph=it->graph;m_placementNode=it->node;m_placementAsset=it->asset;
+                m_placementDragging=true;m_status="Move instance; release to save position.";return;
+            }
+        }
+    }
+    void BlueprintWorkspace::drawVisualPlacement(Canvas& c)
+    {
+        c.roundRect(630,208,370,33,4,{0.19f,0.33f,0.50f,1});
+        c.text(*m_font,"Back to asset properties",815,215,text,Align::Center);
+        c.rect(planLeft,planTop,planRight-planLeft,planBottom-planTop,{0.07f,0.10f,0.15f,1});
+        c.clip(planLeft,planTop,planRight-planLeft,planBottom-planTop);
+        for(int i=-13;i<=13;++i)
+        {
+            const float offset=static_cast<float>(i)*planScale;
+            c.rect(planCenterX+offset,planTop,i?1.f:2.f,planBottom-planTop,i?Color{0.16f,0.21f,0.28f,1}:Color{0.37f,0.49f,0.60f,1});
+            c.rect(planLeft,planCenterY+offset,planRight-planLeft,i?1.f:2.f,i?Color{0.16f,0.21f,0.28f,1}:Color{0.37f,0.49f,0.60f,1});
+        }
+        for(const auto& marker:actorMarkers(m_document,assetScreen()))
+        {
+            if(m_placementDragging&&marker.graph==m_placementGraph&&marker.node==m_placementNode)continue;
+            const float x=planCenterX+marker.x*planScale,y=planCenterY+marker.z*planScale;
+            if(!in(x,y,planLeft,planTop,planRight,planBottom))continue;
+            c.roundRect(x-8,y-8,16,16,3,{0.26f,0.56f,0.85f,1});
+            const auto* actor=m_document.visualAsset(marker.asset);
+            if(actor)c.text(*m_font,actor->title.c_str(),x+11,y-8,text);
+        }
+        if(m_placementDragging&&in(m_placementX,m_placementY,planLeft,planTop,planRight,planBottom))
+        {
+            const float x=planCenterX+std::round((m_placementX-planCenterX)/planScale)*planScale;
+            const float y=planCenterY+std::round((m_placementY-planCenterY)/planScale)*planScale;
+            c.roundRect(x-9,y-9,18,18,3,{0.35f,0.80f,0.56f,1});
+        }
+        c.noClip();
+        c.text(*m_font,"X/Z plan | 1 m snap | Drag actor from library",630,555,muted);
+        c.text(*m_font,"Only constant linked placements are shown.",630,575,muted);
+    }
+    void BlueprintWorkspace::updateVisualLibrary(Services& s,float x,float y,bool left,bool click,unsigned pressed)
     {
         auto& input=*s.input;
         if(m_visualInput)
@@ -579,6 +693,7 @@ namespace nx
             }
             return;
         }
+        if(m_placementDragging){updateVisualPlacement(x,y,left,click);return;}
         if(pressed&1u){saveCurrent(s);return;}
         if(pressed&2u){if(m_document.undo()){selectGraph(std::min(m_graph,m_document.graphs.size()-1));m_status="Library edit undone.";}return;}
         if(pressed&4u){if(m_document.redo()){selectGraph(std::min(m_graph,m_document.graphs.size()-1));m_status="Library edit redone.";}return;}
@@ -589,6 +704,7 @@ namespace nx
             if(input.wheel()<0&&m_visualFirst+9<assets.size())++m_visualFirst;
             if(input.wheel()>0&&m_visualFirst)--m_visualFirst;
         }
+        if(m_visualPlacement&&!(click&&(in(x,y,860,116,1000,150)||in(x,y,704,116,850,150)))){updateVisualPlacement(x,y,left,click);return;}
         if(const auto* selected=m_document.visualAsset(m_visualSelection);selected&&selected->kind=="actor")
         {
             JsonTree tree;
@@ -605,8 +721,8 @@ namespace nx
             }
         }
         if(!click)return;
-        if(in(x,y,860,116,1000,150)){m_assetBrowser=false;return;}
-        if(in(x,y,704,116,850,150)){m_assetLibrary=false;return;}
+        if(in(x,y,860,116,1000,150)){m_assetBrowser=false;m_visualPlacement=false;cancelVisualPlacement();return;}
+        if(in(x,y,704,116,850,150)){m_assetLibrary=false;m_visualPlacement=false;cancelVisualPlacement();return;}
         if(in(x,y,280,156,439,189)||in(x,y,449,156,610,189))
         {
             std::string id;
@@ -635,6 +751,7 @@ namespace nx
         }
         if(selected->kind=="actor")
         {
+            if(in(x,y,280,548,610,581)){m_visualPlacement=true;cancelVisualPlacement();m_status="Drag actors onto the X/Z placement plan.";return;}
             if(in(x,y,630,232,1000,266)){m_visualInspector=!m_visualInspector;m_visualPhysics=false;return;}
             if(m_visualInspector)
             {
@@ -763,7 +880,9 @@ namespace nx
         }
         if(assets.empty())c.text(*m_font,"Create a reusable asset.",290,210,muted);
         const auto* selected=m_document.visualAsset(m_visualSelection);
-        if(selected)
+        if(selected&&selected->kind=="actor"&&!m_visualPlacement)button(280,548,330,"Open placement plan");
+        if(m_visualPlacement)drawVisualPlacement(c);
+        else if(selected)
         {
             button(630,156,175,"Rename");button(815,156,185,"Remove");
             c.clip(630,195,370,32);c.text(*m_font,(selected->id+" / "+selected->title).c_str(),630,201,accent);c.noClip();
@@ -825,7 +944,7 @@ namespace nx
                         for(u32 i=0;i<3;++i)
                         {
                             const auto value=vec(i==0?"place":i==1?"angles":"size",i==2?1.f:0.f);
-                            c.clip(630,435+25*i,370,25);c.text(*m_font,value.c_str(),630,437+25*i,muted);c.noClip();
+                            c.clip(630,435+25*static_cast<float>(i),370,25);c.text(*m_font,value.c_str(),630,437+25*static_cast<float>(i),muted);c.noClip();
                         }
                         const auto model=std::string("Model: ")+item["model"].text("(none)");
                         const auto behaviour=std::string("Behaviour: ")+item["behaviour"].text("(none)");
@@ -1476,7 +1595,7 @@ namespace nx
         auto& input = *s.input;
         if (input.pressed(Action::Menu))
         {
-            if(m_assetBrowser){if(m_visualInput){m_visualInput=0;m_visualText.clear();input.setTyping(false);m_status="Input cancelled.";return;}m_assetBrowser=false;m_status="Asset browser closed.";return;}
+            if(m_assetBrowser){if(m_visualInput){m_visualInput=0;m_visualText.clear();input.setTyping(false);m_status="Input cancelled.";return;}if(m_placementDragging){cancelVisualPlacement();m_status="Placement cancelled.";return;}if(m_visualPlacement){m_visualPlacement=false;return;}m_assetBrowser=false;m_status="Asset browser closed.";return;}
             if(m_browsing){m_browsing=false;m_status="Open cancelled.";return;}
             if(m_focus){m_focus=0;input.setTyping(false);m_status="Input cancelled.";return;}
             if(m_layoutDragging||m_layoutMenu){m_layoutDragging=m_layoutMenu=false;m_status="Layout action cancelled.";return;}
@@ -1665,7 +1784,7 @@ namespace nx
         }
         if(m_assetBrowser)
         {
-            if(m_assetLibrary){updateVisualLibrary(s,x,y,click,pressed);m_left=left;return;}
+            if(m_assetLibrary){updateVisualLibrary(s,x,y,left,click,pressed);m_left=left;return;}
             if(click&&in(x,y,384,116,524,150)){m_assetLibrary=true;m_visualInput=0;m_visualText.clear();m_visualFirst=0;m_status="Project-wide reusable actors and widget pages.";m_left=left;return;}
             if(input.wheel()<0&&m_assetFirst+10<m_assetFiles.size())++m_assetFirst;
             if(input.wheel()>0&&m_assetFirst)--m_assetFirst;

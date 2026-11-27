@@ -373,6 +373,24 @@ with menu_log.open("wb") as out:
         enter_text("2")
         click(815, 249, window)
         click(815, 564, window)
+        # Drag the actor from the content list onto the plan, then move it.
+        click(445, 564, window)
+        def drag_plan(x1, y1, x2, y2):
+            geo = display_guard.create_resource_object("window", window).get_geometry()
+            scale = min(geo.width / 1280, geo.height / 720)
+            def move(x, y):
+                xdo("mousemove", "--window", window,
+                    round(x * scale + (geo.width - 1280 * scale) / 2),
+                    round(y * scale + (geo.height - 720 * scale) / 2))
+                time.sleep(0.25)
+            move(x1, y1)
+            xdo("mousedown", 1)
+            time.sleep(0.2)
+            move(x2, y2)
+            xdo("mouseup", 1)
+            time.sleep(0.35)
+        drag_plan(440, 250, 857, 428)
+        drag_plan(857, 428, 885, 442)
         click(930, 133, window)
         click(800, 53, window)
         def saved_library():
@@ -398,8 +416,10 @@ with menu_log.open("wb") as out:
         assert published.read_text(encoding="utf-8") == widget["source"]
         linked_graphs = json.loads(copy.read_text(encoding="utf-8"))["graphs"]
         assert any(n["kind"] == "ui:load-asset" for n in linked_graphs[0]["nodes"])
-        assert any(n["kind"] == "actor:spawn-asset" and n["values"]["id"] == actor["id"]
-                   for n in linked_graphs[0]["nodes"])
+        placements = [n for n in linked_graphs[0]["nodes"]
+                      if n["kind"] == "actor:spawn-asset" and n["values"]["id"] == actor["id"]]
+        assert len(placements) == 2
+        assert [float(v) for v in placements[-1]["values"]["place"].split(",")] == [5, 0, 3]
         assert any(n["kind"] == "api:Ui:Ui::draw:Canvas@" for n in linked_graphs[2]["nodes"])
         before_preview = menu_log.read_text(errors="replace").count("preview started: Screen")
         click(553, 53, window)
