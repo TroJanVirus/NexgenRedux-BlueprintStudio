@@ -1,3 +1,10 @@
+# Scene layout review increment
+
+- Native 2D/3D scene JSON import, schematic entity placement, typed coordinates and advanced entity properties.
+- Scene asset integration with existing Blueprint projects; preconfigured native Scene/Space load nodes.
+- Additional compiler/project regression checks. Both load-node variants passed native AngelScript compilation; the desktop browser workflow was tested locally.
+- No runtime changes. Full rendered 3D viewport and native scene loading/rendering on console remain unverified.
+
 # Blueprint Studio v3 — 27 November 2026
 
 Upstream source: `54bc84ce91be85d4c7e29b26f4d748547477266e`. The graphics/video update is retained unchanged. This release includes all previous v1/v2 Blueprint work.

@@ -170,3 +170,13 @@ The engine tests cover normal screen management, collision lifecycle, per-instan
 ## Compatibility and release verification
 
 The original Xbox RXDK, Windows and macOS configurations remain in place. v3 was compiled and exercised on the Linux null-GPU test target, and the browser suite uses Chromium. The upstream archive does not contain its media/docs submodule contents. Model animation playback, graphical rendering, real original Xbox hardware performance and platform-specific compilation have not been verified. The included source packages do not contain a rebuilt XBE.
+
+## Native scene layout editor
+
+The **Scenes** toolbar button opens a top-down layout editor for the current project Screen. Create a 2D Scene or 3D Space layout, import existing Nexgen scene JSON, or reopen a JSON asset already attached to this screen. For recognizable native entity fields the editor detects the scene mode; otherwise select it explicitly. Changing mode does not convert the JSON.
+
+Add, duplicate, delete and name entities, drag their markers, or enter coordinates in Details. The 3D view uses X/Z with Y height preserved. Advanced native JSON is editable per entity; untouched properties and top-level sections (including prefabs and groups) survive import/export. Save to project packages the scene under the screen's asset directory. **Save + add load node** inserts the appropriate native Scene::load or Space::load node with the asset path already set. Wire its execution pins into an event such as onEnter. Use existing entity lookup and behaviour nodes to connect level objects to gameplay.
+
+This is an initial schematic layout editor, not an engine-rendered viewport, terrain editor, or a full native scene schema validator. It does not alter the engine runtime or change the existing native scene format. Use Nexgen's existing Scene editor showcase for advanced 3D terrain and rendering work. Saved scene assets travel with project JSON and release/debug packages.
+
+Test with node test_scene_editor.js; this covers mode detection, positions, JSON preservation, load-node compilation and project packaging.
