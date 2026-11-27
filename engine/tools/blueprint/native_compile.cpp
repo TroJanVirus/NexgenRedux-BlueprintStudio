@@ -142,7 +142,7 @@ namespace nx
                     if(!available[node])return fail(node,"Captured value used before execution or outside its branch.");
                     result="bp_local_"+n.ref+"_"+std::to_string(node);return true;
                 }
-                if(n.kind=="call:function"&&pin=="result")
+                if((n.kind=="call:function"||n.kind=="call:parent")&&pin=="result")
                 {
                     if(!available[node])return fail(node,"Function result used before execution or outside its branch.");
                     result="bp_value_"+std::to_string(node);return true;
@@ -421,9 +421,9 @@ namespace nx
                     source+=pad+"if (bp_value_"+suffix+") bp_attach_"+suffix+".add(BP_Behaviour_"+n.ref+"());\n";
                     available[to]=true;mark(start,to);return flow(to,"then",indent,depth+1);
                 }
-                if(n.kind=="call:function")
+                if(n.kind=="call:function"||n.kind=="call:parent")
                 {
-                    const auto* target=document.function(graph.owner,n.ref);
+                    const auto* target=n.kind=="call:parent"?document.function(document.parentBehaviour(graph.owner),graph.name):document.function(graph.owner,n.ref);
                     if(!target)return fail(to,"Missing function.");
                     if(target->inlineMacro)
                     {
@@ -455,7 +455,7 @@ namespace nx
                         if(!args.empty())args+=", ";
                         args+=v;
                     }
-                    const auto call="bp_fn_"+n.ref+"("+args+")";
+                    const auto call=(n.kind=="call:parent"?"BP_Behaviour_"+target->owner.substr(10)+"::":"")+"bp_fn_"+target->name+"("+args+")";
                     if(target->returnType=="void")source+=pad+call+";\n";
                     else
                     {

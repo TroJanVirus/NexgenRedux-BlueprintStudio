@@ -161,7 +161,7 @@ namespace nx
         size_t m_inspectorFirst=0;
         bool beginInputEdit(size_t node,const std::string& pin,Input& input);
         std::vector<std::string> namedSceneTargets() const;
-        struct VariableRow { BlueprintDocument::Field field; bool global=false,explicitField=true; };
+        struct VariableRow { BlueprintDocument::Field field; bool global=false,explicitField=true,inherited=false,inheritedExposure=false; };
         std::vector<VariableRow> variableRows() const;
         void resetVariableEditor(bool global=false);
         size_t m_variableFirst=0;

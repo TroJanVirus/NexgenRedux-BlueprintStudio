@@ -9,7 +9,7 @@
 using namespace nx;
 NX_TEST(nativeCatalogueContainsReferenceAPI)
 {
-    NX_EXPECT(blueprintCatalogue().size()==1181);
+    NX_EXPECT(blueprintCatalogue().size()==1182);
     const auto* save=blueprintSpec("api:Save:Save::set:string,string");
     NX_EXPECT(save&&save->inputs.size()==3&&save->outputs.size()==1);
     if(save&&save->inputs.size()==3)NX_EXPECT(save->inputs[0].type=="exec"&&save->inputs[2].type=="string");
@@ -1709,4 +1709,22 @@ NX_TEST(nativeActorBehaviourInheritanceAndExposedSpawnFields)
     NX_EXPECT(doc.serialize(bytes,error));BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error));
     NX_EXPECT(copy.actorSpawnFields(child).size()==1&&copy.parentBehaviour(childOwner)==baseOwner);
     NX_EXPECT(!copy.setActorFieldExposed(baseOwner,"health",false,error));
+}
+
+NX_TEST(nativeActorClassParentCallAndInheritedContractProtection)
+{
+    BlueprintDocument doc;doc.create();std::string base,child,parent,derived,error,source;
+    NX_EXPECT(doc.createVisualAsset("actor",base,error)&&doc.createVisualActorChild(base,child,error));
+    NX_EXPECT(doc.ensureActorBehaviour(child,derived,error)&&doc.ensureActorBehaviour(base,parent,error));
+    NX_EXPECT(doc.editVariableDeclaration(parent,"field score:int=1",error)&&doc.editVariableDeclaration(derived,"field score:int=2",error));
+    NX_EXPECT(!doc.editVariableDeclaration(parent,"field score>changed:int=1",error));
+    NX_EXPECT(!doc.editVariableDeclaration(derived,"field score:string=wrong",error));
+    NX_EXPECT(doc.addFunction("Construction",error,parent)&&doc.addFunction("Construction",error,derived));
+    const auto* method=doc.function(derived,"Construction");if(!method){NX_EXPECT(false);return;}
+    const auto graph=static_cast<size_t>(method-doc.graphs.data());
+    NX_EXPECT(doc.addConnectedNode(graph,0,"then","call:parent",240,60,error));
+    NX_EXPECT(doc.placeVisualActor("Screen",child,"0,0,0",error)&&compileBlueprint(doc,source,error));
+    NX_EXPECT(source.find("BP_Behaviour_"+parent.substr(10)+"::bp_fn_Construction()")!=std::string::npos);
+    NX_EXPECT(doc.resetVisualActorOverrides(child,error)&&doc.actorBehaviour(child)==derived);
+    NX_EXPECT(!doc.setVisualActorProperty(child,0,"behaviour","",error));
 }

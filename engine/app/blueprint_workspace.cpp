@@ -236,7 +236,7 @@ namespace nx
         const bool hasBehaviours=std::any_of(behaviours.begin(),behaviours.end(),[&](const std::string& name){return m_document.canAttach(graph.owner,name);});
         const auto& globals=m_document.moduleGlobals(graph.owner);
         for(const auto& node:blueprintCatalogue())
-            if((node.id.rfind("global:",0)!=0||std::any_of(globals.begin(),globals.end(),[&](const BlueprintDocument::Field& f){return f.type==node.id.substr(11);}))&&node.id!="entry"&&(node.id!="return:function"||(graph.kind=="function"&&!graph.inlineMacro))&&(node.id!="event:entity"||behaviour)&&
+            if((node.id.rfind("global:",0)!=0||std::any_of(globals.begin(),globals.end(),[&](const BlueprintDocument::Field& f){return f.type==node.id.substr(11);}))&&node.id!="entry"&&(node.id!="return:function"||(graph.kind=="function"&&!graph.inlineMacro))&&(node.id!="call:parent"||(graph.kind=="function"&&m_document.function(m_document.parentBehaviour(graph.owner),graph.name)))&&(node.id!="event:entity"||behaviour)&&
                 (node.id!="event:other"||(behaviour&&(graph.name=="onHit"||graph.name=="onLeave")))&&
                 (node.id!="event:levelName"||(!behaviour&&(graph.name=="onLevelTouch"||graph.name=="onLevelAgent")))&&
                 (node.id!="event:levelWho"||(!behaviour&&graph.name=="onLevelTouch"))&&
@@ -270,7 +270,7 @@ namespace nx
                     if(m_document.nodeSpec(graph,{"",base->id,fn.name},resolved))consider(resolved,fn.name,std::string(fn.inlineMacro?"Macro ":"Call ")+fn.name);
                 }
             }
-            else if(base->id=="return:function")
+            else if(base->id=="return:function"||base->id=="call:parent")
             {
                 BlueprintNodeSpec resolved;if(m_document.nodeSpec(graph,{"",base->id,""},resolved))consider(resolved,"",base->title);
             }
@@ -1305,12 +1305,6 @@ namespace nx
                         m_themeStyle=m_visualText;
                     }
                     if(m_visualInput==7&&!m_document.setVisualThemeProperty(m_visualSelection,m_themeStyle,themeStates[m_themeState],m_visualProperty,m_visualText,m_status))break;
-                    if(m_visualInput==11)
-                    {
-                        const auto owner=m_document.actorBehaviour(m_visualSelection);
-                        if(!m_document.setActorFieldExposed(owner,m_visualText,true,m_status))break;
-                        rebuildPins();filterCatalogue();
-                    }
                     if(m_visualInput==10&&!m_document.editVisualActorPlacement(m_placementSelectedOwner,m_placementSelectedId,m_visualProperty,m_visualText,m_status))break;
                     if(m_visualInput==9&&!m_document.setWidgetKey(m_visualSelection,m_widgetSelection,m_visualProperty,m_visualText,m_widgetTimelineTime,m_status))break;
                     if(m_visualInput==8)
@@ -1433,8 +1427,6 @@ namespace nx
                 }
                 return;
             }
-            if(!m_visualInspector&&in(x,y,630,583,1000,609))
-            {m_visualProperty="Expose declared primitive field";m_visualText.clear();m_visualInput=11;input.setTyping(true);return;}
             if(m_visualInspector)
             {
                 if(in(x,y,630,m_visualPhysics?548.f:558.f,1000,m_visualPhysics?581.f:591.f)){m_visualPhysics=!m_visualPhysics;return;}
@@ -1696,7 +1688,6 @@ namespace nx
                 }
                 button(630,505,185,"Add child");button(820,505,180,"Add camera");
                 button(630,548,180,"Class graphs");button(820,548,180,"Add to screen");
-                button(630,583,370,"Expose declared field on spawn");
                 }
             }
         }
@@ -2208,6 +2199,13 @@ namespace nx
         std::vector<VariableRow> rows;
         const auto& owner=m_document.graphs[m_graph].owner;
         for(const auto& g:m_document.graphs)if(g.owner==owner)for(const auto& f:g.fields)rows.push_back({f,false,true});
+        for(auto at=m_document.parentBehaviour(owner);!at.empty();at=m_document.parentBehaviour(at))
+            for(const auto& g:m_document.graphs)if(g.owner==at)for(const auto& field:g.fields)
+            {
+                auto found=std::find_if(rows.begin(),rows.end(),[&](const VariableRow& row){return row.field.name==field.name;});
+                if(found==rows.end())rows.push_back({field,false,false,true});
+                else if(field.exposed){found->field.exposed=true;found->inheritedExposure=true;}
+            }
         std::vector<BlueprintPin> inferred;std::string error;
         if(m_document.variables(inferred,error,owner))for(const auto& v:inferred)
             if(blueprintVariableType(v.type)&&std::none_of(rows.begin(),rows.end(),[&](const VariableRow& r){return r.field.name==v.name;}))
@@ -2312,6 +2310,12 @@ namespace nx
                     const auto prefix=p.type+"(";
                     if(row.value.rfind(prefix,0)==0&&row.value.ends_with(")"))row.value=row.value.substr(prefix.size(),row.value.size()-prefix.size()-1);
                     if(row.value=="dt"&&p.type=="float")row.value="Event delta time";
+                }
+                else if(n.kind=="actor:spawn-asset"&&p.name.rfind("spawn_",0)==0)
+                {
+                    const auto id=std::find_if(n.values.begin(),n.values.end(),[](const BlueprintDocument::InputValue& v){return v.pin=="id";});
+                    if(id!=n.values.end())for(const auto& field:m_document.actorSpawnFields(id->value))if("spawn_"+field.name==p.name)
+                    {row.value=field.initialized?field.value:"Native default";row.origin="Class default";break;}
                 }
                 else if(!row.editable)row.value="Connect a wire";
             }
@@ -2575,6 +2579,7 @@ namespace nx
         {
             const auto rows=variableRows();const auto owner=m_document.graphs[m_graph].owner;
             const bool canGlobal=!m_document.moduleForOwner(owner).empty();
+            const auto selectedField=std::find_if(rows.begin(),rows.end(),[&](const VariableRow& row){return !row.global&&row.field.name==m_variableOld;});
             auto apply=[&]()
             {
                 if(m_variableName.empty()){m_status="Enter a variable name.";return;}
@@ -2624,6 +2629,11 @@ namespace nx
                 else if(in(x,y,650,266,1100,302)){m_variableTypes=true;m_variableInput=0;}
                 else if(in(x,y,650,322,1100,354)&&blueprintLiteralType(m_variableType)){m_variableInitialized=!m_variableInitialized;m_variableInput=m_variableInitialized?2:0;}
                 else if(in(x,y,650,370,1100,406)&&m_variableInitialized)m_variableInput=2;
+                else if(in(x,y,650,510,1100,544)&&!m_variableGlobal&&owner.rfind("behaviour:",0)==0&&selectedField!=rows.end()&&selectedField->explicitField&&!selectedField->inheritedExposure)
+                {
+                    if(m_document.setActorFieldExposed(owner,m_variableOld,!selectedField->field.exposed,m_status))
+                    {rebuildPins();filterCatalogue();m_status="Spawn exposure updated.";}
+                }
                 else if(in(x,y,650,464,860,500))apply();
                 else if(in(x,y,870,464,1100,500)&&!m_variableOld.empty())
                 {
@@ -2729,7 +2739,11 @@ namespace nx
                         clearWire();rebuildPins();
                     }
                     if(focus==5&&!saveNamed(s,m_edit))break;
-                    if(focus==6&&!m_document.setInputValue(m_graph,m_selection,m_editPin,m_edit,m_status))break;
+                    if(focus==6)
+                    {
+                        if(!m_document.setInputValue(m_graph,m_selection,m_editPin,m_edit,m_status))break;
+                        clearWire();rebuildPins();filterCatalogue();
+                    }
                     if(focus==8)
                     {
                         const size_t first=m_document.graphs.size();
@@ -2753,8 +2767,9 @@ namespace nx
             if(changed&&focus==1)filterCatalogue();
             if(focus==6&&click&&in(x,y,360,391,540,430))
             {
-                m_document.clearInputValue(m_graph,m_selection,m_editPin);m_focus=0;input.setTyping(false);
-                m_status="Input reset to its API default, or requires a wire.";
+                const bool cleared=m_document.clearInputValue(m_graph,m_selection,m_editPin);m_focus=0;input.setTyping(false);
+                clearWire();rebuildPins();filterCatalogue();
+                m_status=cleared?"Input reset to its class/API default, or requires a wire.":"Input unchanged; clear dependent spawn pins first.";
             }
             if(click&&m_focus==1&&!in(x,y,kRight+8,kTop+38,kWidth-8,kTop+68)){m_focus=0;input.setTyping(false);}
             else {m_left=left;return;}
@@ -3385,7 +3400,7 @@ namespace nx
                     const auto& r=rows[m_variableFirst+i];const float y=190+36*static_cast<float>(i);
                     const bool selected=r.global==m_variableGlobal&&r.field.name==m_variableOld;
                     c.rect(170,y,450,33,selected?Color{0.19f,0.33f,0.50f,1}:Color{0.17f,0.22f,0.30f,1});
-                    const auto label=std::string(r.global?"Global / ":"Field / ")+r.field.name+" : "+r.field.type+(r.explicitField?"":" (inferred)");
+                    const auto label=std::string(r.global?"Global / ":"Field / ")+r.field.name+" : "+r.field.type+(r.inherited?" (inherited)":r.explicitField?"":" (inferred)")+(r.field.exposed?" [spawn]":"");
                     c.clip(178,y,434,33);c.text(*m_font,label.c_str(),180,y+7,text);c.noClip();
                 }
                 if(rows.empty())c.text(*m_font,"No declared variables yet.",180,208,muted);
@@ -3400,6 +3415,13 @@ namespace nx
                 else c.text(*m_font,"Uses the native default for this type.",650,380,muted);
                 c.text(*m_font,"String values are entered without quotes.",650,420,muted);
                 variableButton(650,464,210,"Apply");variableButton(870,464,230,"Delete",!m_variableOld.empty());
+                if(owner.rfind("behaviour:",0)==0&&!m_variableGlobal)
+                {
+                    const auto selectedField=std::find_if(rows.begin(),rows.end(),[&](const VariableRow& row){return !row.global&&row.field.name==m_variableOld;});
+                    const bool selected=selectedField!=rows.end(),exposed=selected&&selectedField->field.exposed;
+                    variableButton(650,510,450,exposed?"Expose on spawn: enabled":"Expose on spawn: disabled",
+                        selected&&selectedField->explicitField&&!selectedField->inheritedExposure&&blueprintLiteralType(selectedField->field.type));
+                }
                 if(m_variableTypes)for(size_t i=0;i<sizeof(variableTypes)/sizeof(variableTypes[0]);++i)
                 {const float yy=302+28*static_cast<float>(i%8),xx=650+225*static_cast<float>(i/8);c.rect(xx,yy,225,28,{0.24f,0.35f,0.48f,1});c.text(*m_font,variableTypes[i],xx+10,yy+3,text);}
                 c.clip(170,576,940,25);c.text(*m_font,m_status.c_str(),170,576,text);c.noClip();

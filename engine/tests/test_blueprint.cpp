@@ -2719,7 +2719,7 @@ NX_TEST(nativeActorClassOverridesAndConstructionExecuteBeforeStart)
             doc.setInputValue(g,4,"key",owner==parent?"base_construction":"child_construction",error)&&doc.setInputValue(g,4,"value","ok",error);
     }
     ok=ok&&doc.placeVisualActor("Screen",base,"0,0,0",error)&&doc.placeVisualActor("Screen",child,"10,0,0",error)&&
-        doc.setInputValue(0,2,"spawn_health","42",error)&&doc.serialize(bytes,error);
+        doc.addNode(0,"literal:int",0,0,error)&&doc.setLiteral(0,3,"42",error)&&doc.connect(0,3,"value",2,"spawn_health",error)&&doc.serialize(bytes,error);
     BlueprintDocument copy;
     if(!ok||!copy.load(bytes.data(),bytes.size(),error)||!compileBlueprint(copy,source,error)){NX_ERROR("Actor class compile: %s",error.c_str());NX_EXPECT(false);return;}
     r.platform.files["project/main/screen.json"]="{\"title\":\"Actor class construction\"}";r.platform.files["project/main/main.as"]=source;

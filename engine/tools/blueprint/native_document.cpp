@@ -107,6 +107,7 @@ namespace nx
             {"flow:do-n","Do N","Flow","in:exec|count:int|reset:bool","body:exec|then:exec","","","","","void","","","count:1|reset:false"},
             {"flow:gate","Gate (condition)","Flow","in:exec|open:bool","body:exec|then:exec","","","","","void","","","open:true"},
             {"call:function","Call function","Functions","in:exec","then:exec"},
+            {"call:parent","Call parent function","Functions","in:exec","then:exec"},
             {"return:function","Return","Functions","in:exec",""},
             {"repeat","Repeat (bounded)","Flow","in:exec|count:int","body:exec|then:exec|index:int"},
             // The installed global:scene.as helper (ordinary AngelScript, not a second scene runtime).
@@ -1327,7 +1328,45 @@ namespace nx
                     !std::equal(base->parameters.begin(),base->parameters.end(),g.parameters.begin(),[](const BlueprintPin& a,const BlueprintPin& b){return a.name==b.name&&a.type==b.type;})))
                 {error="Override must preserve the inherited function signature: "+g.name;return false;}
             }
+            // Check the actual virtual call graph for each concrete class, not
+            // just the declaring class: a child override can introduce a cycle
+            // into a previously acyclic parent function.
+            std::vector<unsigned> state(graphs.size(),0);
+            const auto visit=[&](auto&& self,const Graph* g)->bool
+            {
+                if(!g)return false;
+                const auto index=static_cast<size_t>(g-graphs.data());
+                if(state[index]==1){error="Recursive inherited function dispatch in "+owner+"/"+g->name;return false;}
+                if(state[index]==2)return true;
+                state[index]=1;
+                for(const auto& node:g->nodes)if(node.kind=="call:function"||node.kind=="call:parent")
+                {
+                    const auto* target=node.kind=="call:parent"?function(parentBehaviour(g->owner),g->name):function(owner,node.ref);
+                    if(!target){error="Missing inherited function in "+g->name;return false;}
+                    if(!self(self,target))return false;
+                }
+                state[index]=2;return true;
+            };
+            for(const auto& g:graphs)if(g.kind=="function"&&function(owner,g.name)==&g&&!visit(visit,&g))return false;
+            // A construction call may not recursively spawn its own class via
+            // a helper. Keep this first implementation bounded by forbidding
+            // linked actor spawning within the entire construction call chain.
+            std::unordered_set<const Graph*> checked;
+            const auto constructionSafe=[&](auto&& self,const Graph* g)->bool
+            {
+                if(!g||!checked.insert(g).second)return true;
+                for(const auto& node:g->nodes)
+                {
+                    if(node.kind=="actor:spawn-asset"){error="Construction graphs cannot spawn linked actors; use Start instead.";return false;}
+                    if(node.kind=="call:function"&&!self(self,function(owner,node.ref)))return false;
+                    if(node.kind=="call:parent"&&!self(self,function(parentBehaviour(g->owner),g->name)))return false;
+                }
+                return true;
+            };
+            if(!constructionSafe(constructionSafe,function(owner,"Construction")))return false;
         }
+        for(const auto& asset:m_visualAssets)if(asset.kind=="actor"&&actorSpawnFields(asset.id).size()>16)
+        {error="An actor supports at most 16 exposed spawn fields.";return false;}
         return true;
     }
     bool BlueprintDocument::createVisualActorChild(const std::string& parentId,std::string& id,std::string& error)
@@ -1353,7 +1392,12 @@ namespace nx
             {
                 auto* root=delta.find("rootOverrides");
                 if(!root||!root->count()){error.clear();return true;}
+                const auto local="BP_Behaviour_Actor_"+id.substr(6);
+                const auto* binding=root->find("behaviour");
+                const bool keep=binding&&binding->text()==local;
+                if(keep&&root->count()==1){error.clear();return true;}
                 JsonValue empty;if(!empty.parse("{}",2,error)||!root->setCopy(empty))return false;
+                if(keep&&!text(*root,"behaviour",local))return false;
             }
             else
             {
@@ -1721,6 +1765,9 @@ namespace nx
             }
             else if(property=="behaviour")
             {
+                const auto local="Actor_"+id.substr(6);
+                if(component==0&&actorBehaviour(id)=="behaviour:"+local&&value!=local)
+                {error="The actor's class graphs own its root Behaviour. Edit those graphs instead.";return false;}
                 if(value.empty())item->remove("behaviour");
                 else
                 {
@@ -2337,6 +2384,8 @@ namespace nx
         auto& g=graphs[graph];
         if(kind=="return:function"&&g.inlineMacro){error="Inline macros cannot contain return nodes.";return false;}
         if(kind=="return:function"&&g.kind!="function"){error="Return belongs in a function graph.";return false;}
+        if(kind=="call:parent"&&(g.kind!="function"||!function(parentBehaviour(g.owner),g.name)))
+        {error="Call parent belongs in an overridden function.";return false;}
         if(!context(g.name,kind,g.owner)){error="This event value belongs to a different event graph.";return false;}
         std::string id;
         do{id="n"+std::to_string(++m_nextId);}while(std::any_of(g.nodes.begin(),g.nodes.end(),[&](const Node& n){return n.id==id;}));
@@ -2369,7 +2418,7 @@ namespace nx
             bool valid=false;
             for(const auto& fn:graphs)
             {
-                if(fn.owner!=g.owner||fn.kind!="function"||fn.name==g.name||(!functionTarget.empty()&&fn.name!=functionTarget))continue;
+                if(fn.kind!="function"||function(g.owner,fn.name)!=&fn||fn.name==g.name||(!functionTarget.empty()&&fn.name!=functionTarget))continue;
                 value=fn.name;g.nodes.push_back({id,kind,value,x,y});
                 valid=functions(error);g.nodes.pop_back();if(valid)break;
             }
@@ -2389,11 +2438,11 @@ namespace nx
         while(!work.empty())
         {
             const auto* g=work.back();work.pop_back();
-            if(g==&caller)return false;
+            if(g==&caller||(caller.kind=="function"&&g->name==caller.name))return false;
             if(std::find(seen.begin(),seen.end(),g)!=seen.end())continue;
             seen.push_back(g);
             for(const auto& n:g->nodes)if(n.kind=="call:function")
-            {const auto* child=function(g->owner,n.ref);if(child)work.push_back(child);}
+            {const auto* child=function(caller.owner,n.ref);if(child)work.push_back(child);}
         }
         return true;
     }
@@ -2540,6 +2589,10 @@ namespace nx
     bool BlueprintDocument::clearInputValue(size_t graph,size_t node,const std::string& pin)
     {
         if(graph>=graphs.size()||node>=graphs[graph].nodes.size())return false;
+        const auto& n=graphs[graph].nodes[node];
+        if(n.kind=="actor:spawn-asset"&&pin=="id"&&
+            (std::any_of(n.values.begin(),n.values.end(),[](const InputValue& v){return v.pin.rfind("spawn_",0)==0;})||
+             std::any_of(graphs[graph].links.begin(),graphs[graph].links.end(),[&](const Link& l){return l.to==node&&l.input.rfind("spawn_",0)==0;})))return false;
         auto& values=graphs[graph].nodes[node].values;
         const auto it=std::find_if(values.begin(),values.end(),[&](const InputValue& v){return v.pin==pin;});
         if(it==values.end())return false;
@@ -2635,11 +2688,30 @@ namespace nx
         auto old=std::find_if(fields.begin(),fields.end(),[&](const Field& f){return f.name==oldName;});
         const auto matches=[&](const Graph& g,const Node& n,const std::string& ref)
         {return (global?staged.moduleForOwner(g.owner)==scope&&globalKind(n.kind):g.owner==scope&&variableKind(n.kind))&&n.ref==ref;};
+        bool inheritedField=false;
+        if(!global&&!staged.parentBehaviour(scope).empty())
+        {
+            std::vector<BlueprintPin> inherited;
+            if(!staged.variables(inherited,error,staged.parentBehaviour(scope)))return false;
+            const auto inheritedPin=std::find_if(inherited.begin(),inherited.end(),[&](const BlueprintPin& p){return p.name==oldName;});
+            inheritedField=inheritedPin!=inherited.end();
+            if(inheritedField&&!remove&&(oldName!=next.name||inheritedPin->type!=next.type))
+            {error="Inherited fields preserve their name and type; only the default may be overridden.";return false;}
+        }
+        if(!global&&!inheritedField&&(remove||oldName!=next.name||(old!=fields.end()&&old->type!=next.type)))
+            for(const auto& g:staged.graphs)
+            {
+                bool descendant=false;
+                for(auto at=staged.parentBehaviour(g.owner);!at.empty();at=staged.parentBehaviour(at))if(at==scope){descendant=true;break;}
+                if(descendant&&(std::any_of(g.fields.begin(),g.fields.end(),[&](const Field& field){return field.name==oldName;})||
+                    std::any_of(g.nodes.begin(),g.nodes.end(),[&](const Node& node){return variableKind(node.kind)&&node.ref==oldName;})))
+                {error="Remove derived field overrides and references before changing this inherited contract.";return false;}
+            }
         bool referenced=false;
         for(const auto& g:staged.graphs)for(const auto& n:g.nodes)if(matches(g,n,oldName))
         {
             referenced=true;
-            if(remove||n.kind.substr(global?11:8)!=next.type){error="Remove or replace variable nodes before deleting or changing its type.";return false;}
+            if((remove&&!inheritedField)||(!remove&&n.kind.substr(global?11:8)!=next.type)){error="Remove or replace variable nodes before deleting or changing its type.";return false;}
         }
         if(remove)
         {
@@ -2708,8 +2780,8 @@ namespace nx
         std::vector<std::vector<size_t>> calls(graphs.size());
         for(size_t i=0;i<graphs.size();++i)for(const auto& node:graphs[i].nodes)
         {
-            if(node.kind!="call:function")continue;
-            const auto* target=function(graphs[i].owner,node.ref);
+            if(node.kind!="call:function"&&node.kind!="call:parent")continue;
+            const auto* target=node.kind=="call:parent"?function(parentBehaviour(graphs[i].owner),graphs[i].name):function(graphs[i].owner,node.ref);
             if(!target){error="Missing function: "+node.ref;return false;}
             calls[i].push_back(static_cast<size_t>(target-graphs.data()));
         }
@@ -2761,9 +2833,11 @@ namespace nx
             if(graph.kind!="function"||graph.inlineMacro)return false;
             if(graph.returnType!="void")spec.inputs.push_back({"value",graph.returnType});
         }
-        if(node.kind=="call:function")
+        if(node.kind=="call:function"||node.kind=="call:parent")
         {
-            const auto* target=function(graph.owner,node.ref);if(!target)return false;
+            if(node.kind=="call:parent"&&graph.kind!="function")return false;
+            const auto* target=node.kind=="call:parent"?function(parentBehaviour(graph.owner),graph.name):function(graph.owner,node.ref);
+            if(!target||(node.kind=="call:parent"&&target->inlineMacro))return false;
             for(const auto& p:target->parameters)spec.inputs.push_back({"arg_"+p.name,p.type});
             if(target->inlineMacro)spec.title="Macro "+target->name;
             spec.result=target->returnType;
@@ -2857,6 +2931,13 @@ namespace nx
         const auto owner=graphs[graph].owner,old=graphs[graph].name;
         if(old==functionName){error.clear();return true;}
         if(visualWidgetUsesFunction(owner,old)){error="Unbind the widget callback before renaming it.";return false;}
+        if(function(parentBehaviour(owner),old)){error="Inherited overrides cannot be renamed; remove the override to inherit instead.";return false;}
+        for(const auto& g:graphs)
+        {
+            bool derived=false;for(auto at=parentBehaviour(g.owner);!at.empty();at=parentBehaviour(at))if(at==owner){derived=true;break;}
+            if(derived&&((g.kind=="function"&&g.name==old)||std::any_of(g.nodes.begin(),g.nodes.end(),[&](const Node& node){return node.kind=="call:function"&&node.ref==old;})))
+            {error="Remove derived function references and overrides before renaming.";return false;}
+        }
         if(std::any_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==owner&&g.name==functionName;}))
         {error="A graph already uses that name.";return false;}
         recordGraphList();graphs[graph].name=functionName;
@@ -3009,10 +3090,22 @@ namespace nx
         if(graph>=graphs.size()||graphs[graph].kind!="function")
         {error="Only function graphs can be deleted.";return false;}
         if(visualWidgetUsesFunction(graphs[graph].owner,graphs[graph].name)){error="Unbind the widget callback before deleting it.";return false;}
-        for(const auto& g:graphs)if(g.owner==graphs[graph].owner)for(const auto& n:g.nodes)
-            if(n.kind=="call:function"&&n.ref==graphs[graph].name)
-            {error="Remove calls to this function before deleting it.";return false;}
-        recordGraphList();graphs.erase(graphs.begin()+static_cast<std::ptrdiff_t>(graph));error.clear();return true;
+        const auto& removed=graphs[graph];
+        if(!function(parentBehaviour(removed.owner),removed.name))
+        {
+            for(const auto& g:graphs)
+            {
+                if(g.kind=="function"&&g.name==removed.name&&function(parentBehaviour(g.owner),g.name)==&removed)
+                {error="Remove inherited overrides before deleting the base function.";return false;}
+                for(const auto& n:g.nodes)if(n.kind=="call:function"&&function(g.owner,n.ref)==&removed)
+                {error="Remove calls to this function before deleting it.";return false;}
+            }
+        }
+        BlueprintDocument staged;staged.name=name;staged.assetRoot=assetRoot;staged.graphs=graphs;staged.manifests=manifests;
+        staged.m_visualAssets=m_visualAssets;staged.m_visualSerial=m_visualSerial;staged.m_nextId=m_nextId;
+        staged.graphs.erase(staged.graphs.begin()+static_cast<std::ptrdiff_t>(graph));
+        std::string checked;if(!staged.serialize(checked,error))return false;
+        recordGraphList();graphs.swap(staged.graphs);error.clear();return true;
     }
     std::vector<std::string> BlueprintDocument::screens() const
     {
