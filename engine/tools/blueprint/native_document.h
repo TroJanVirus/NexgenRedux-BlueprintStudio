@@ -86,6 +86,7 @@ namespace nx
         std::string moduleForOwner(const std::string& owner) const;
         const std::vector<Field>& moduleGlobals(const std::string& owner="") const;
         bool canAttach(const std::string& owner,const std::string& behaviour) const;
+        bool editVariableDeclaration(const std::string& owner,const std::string& command,std::string& error);
         bool variables(std::vector<BlueprintPin>& values,std::string& error,const std::string& owner="Screen") const;
         bool undo();
         bool redo();

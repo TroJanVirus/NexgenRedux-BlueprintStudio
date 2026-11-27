@@ -738,6 +738,73 @@ namespace nx
         std::sort(result.begin(),result.end(),[](const BlueprintPin& a,const BlueprintPin& b){return a.name<b.name;});
         values.swap(result);error.clear();return true;
     }
+    bool BlueprintDocument::editVariableDeclaration(const std::string& owner,const std::string& command,std::string& error)
+    {
+        const bool global=command.rfind("global ",0)==0;
+        if(!global&&command.rfind("field ",0)!=0){error="Use field or global followed by name:type.";return false;}
+        const auto body=command.substr(global?7:6);
+        const auto scope=global?moduleForOwner(owner):owner;
+        const auto event=behaviourOwner(scope)?"start":"onEnter";
+        if(scope.empty()){error="Shared Behaviours have no single module. Select a screen for global variables.";return false;}
+        BlueprintDocument staged;staged.name=name;staged.assetRoot=assetRoot;staged.graphs=graphs;staged.manifests=manifests;
+        auto graph=std::find_if(staged.graphs.begin(),staged.graphs.end(),[&](const Graph& g){return g.owner==scope&&g.name==event;});
+        if(graph==staged.graphs.end()){error="Unknown declaration owner.";return false;}
+        auto& fields=global?graph->globals:graph->fields;
+        const bool remove=!body.empty()&&body.front()=='-';
+        std::string oldName;Field next;
+        if(remove)oldName=body.substr(1);
+        else
+        {
+            const auto colon=body.find(':');
+            if(colon==std::string::npos){error="Use name:type, optionally =value.";return false;}
+            const auto names=body.substr(0,colon);const auto arrow=names.find('>');
+            oldName=arrow==std::string::npos?names:names.substr(0,arrow);
+            next.name=arrow==std::string::npos?names:names.substr(arrow+1);
+            const auto equals=body.find('=',colon+1);
+            next.type=body.substr(colon+1,equals==std::string::npos?equals:equals-colon-1);
+            next.initialized=equals!=std::string::npos;
+            if(next.initialized)next.value=body.substr(equals+1);
+            if(!identifier(next.name)||!blueprintLiteralType(next.type)||(!global&&behaviourOwner(scope)&&next.name=="entity")||
+                (next.initialized&&!literal("literal:"+next.type,next.value)))
+            {error="Invalid name, primitive type or literal initializer.";return false;}
+        }
+        if(!identifier(oldName)){error="Invalid variable name.";return false;}
+        auto old=std::find_if(fields.begin(),fields.end(),[&](const Field& f){return f.name==oldName;});
+        const auto matches=[&](const Graph& g,const Node& n,const std::string& ref)
+        {return (global?staged.moduleForOwner(g.owner)==scope&&globalKind(n.kind):g.owner==scope&&variableKind(n.kind))&&n.ref==ref;};
+        bool referenced=false;
+        for(const auto& g:staged.graphs)for(const auto& n:g.nodes)if(matches(g,n,oldName))
+        {
+            referenced=true;
+            if(remove||n.kind.substr(global?11:8)!=next.type){error="Remove or replace variable nodes before deleting or changing its type.";return false;}
+        }
+        if(remove)
+        {
+            if(old==fields.end()){error="No explicit declaration with that name.";return false;}
+            fields.erase(old);
+        }
+        else
+        {
+            if(oldName!=next.name)
+            {
+                if(old==fields.end()&&!referenced){error="Unknown declaration to rename.";return false;}
+                if(std::any_of(fields.begin(),fields.end(),[&](const Field& f){return f.name==next.name;}))
+                {error="Destination variable already exists.";return false;}
+                for(const auto& g:staged.graphs)for(const auto& n:g.nodes)if(matches(g,n,next.name))
+                {error="Destination variable already has nodes.";return false;}
+                for(auto& g:staged.graphs)for(auto& n:g.nodes)if(matches(g,n,oldName))n.ref=next.name;
+            }
+            if(old==fields.end())
+            {
+                if(fields.size()>=256){error="Declaration limit reached.";return false;}
+                fields.push_back(std::move(next));
+            }
+            else *old=std::move(next);
+        }
+        std::string checked;
+        if(!staged.serialize(checked,error))return false;
+        recordGraphList();graphs.swap(staged.graphs);error.clear();return true;
+    }
     bool BlueprintDocument::setReference(size_t graph,size_t node,const std::string& value,std::string& error)
     {
         if(graph>=graphs.size()||node>=graphs[graph].nodes.size()||
@@ -766,6 +833,8 @@ namespace nx
             record(graph);n.ref=value;error.clear();return true;
         }
         const auto type=n.kind.substr(8);
+        for(const auto& g:graphs)if(g.owner==graphs[graph].owner)for(const auto& f:g.fields)
+            if(f.name==value&&f.type!=type){error="Declared variable has a different type.";return false;}
         for(const auto& g:graphs)if(g.owner==graphs[graph].owner)for(const auto& other:g.nodes)
             if(&other!=&n&&variableKind(other.kind)&&other.ref==value&&other.kind.substr(8)!=type)
             {error="Variable name already has a different type.";return false;}

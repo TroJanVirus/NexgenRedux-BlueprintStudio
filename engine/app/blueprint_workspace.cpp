@@ -27,7 +27,7 @@ namespace nx
         constexpr float kNodeWidth = 196, kNodeHeight = 72;
         // Each native pin is provided by the generated catalogue.
         constexpr float kPinStart=38, kPinStep=22;
-        constexpr size_t kRows = 13;
+        constexpr size_t kRows = 12;
         constexpr Color text = {0.88f, 0.91f, 0.96f, 1};
         constexpr Color muted = {0.57f, 0.65f, 0.76f, 1};
         constexpr Color accent = {0.27f, 0.65f, 0.98f, 1};
@@ -939,7 +939,7 @@ namespace nx
                     size_t end=value.size()-1;while(end&&(static_cast<unsigned char>(value[end])&0xc0)==0x80)--end;
                     value.resize(end);changed=true;
                 }
-                else if(ch>=32&&(focus==1||focus==2||focus==6||ch<127)&&appendCharacter(value,ch,focus==1?80u:(focus==2||focus==6)?4096u:focus==9?1024u:64u))changed=true;
+                else if(ch>=32&&(focus==1||focus==2||focus==6||focus==10||ch<127)&&appendCharacter(value,ch,focus==1?80u:(focus==2||focus==6||focus==10)?4096u:focus==9?1024u:64u))changed=true;
                 else if(ch==13)
                 {
                     if(focus==2&&!m_document.setLiteral(m_graph,m_selection,m_edit,m_status))break;
@@ -947,6 +947,11 @@ namespace nx
                     {
                         if(!m_document.setReference(m_graph,m_selection,m_edit,m_status))break;
                         clearWire();rebuildPins();
+                    }
+                    if(focus==10)
+                    {
+                        if(!m_document.editVariableDeclaration(m_document.graphs[m_graph].owner,m_edit,m_status))break;
+                        clearWire();rebuildPins();filterCatalogue();
                     }
                     if(focus==9)
                     {
@@ -1057,6 +1062,10 @@ namespace nx
             if(((pressed&2u)||(click&&in(x,y,864,39,948,69)))&&m_document.undo()){selectGraph(std::min(m_graph,m_document.graphs.size()-1));m_status="Undid graph change.";}
             if(((pressed&4u)||(click&&in(x,y,954,39,1038,69)))&&m_document.redo()){selectGraph(std::min(m_graph,m_document.graphs.size()-1));m_status="Redid graph change.";}
             if(click&&in(x,y,1044,39,1128,69))fitGraph();
+        }
+        if(click&&in(x,y,8,kBottom-225,kLeft-8,kBottom-193))
+        {
+            m_edit="field ";m_focus=10;input.setTyping(true);m_status="Enter a declaration command.";m_left=left;return;
         }
         if(click&&in(x,y,8,kBottom-188,kLeft-8,kBottom-156))
         {
@@ -1335,6 +1344,8 @@ namespace nx
             c.clip(5,y,kLeft-10,31);
             c.text(*m_font,shorten(g.owner+" / "+g.name,32).c_str(),12,y+6,text);c.noClip();
         }
+        c.roundRect(8,kBottom-225,kLeft-16,32,5,{0.19f,0.33f,0.50f,1});
+        c.text(*m_font,"Variables",kLeft*0.5f,kBottom-219,text,Align::Center);
         c.roundRect(8,kBottom-188,kLeft-16,32,5,{0.19f,0.33f,0.50f,1});
         c.clip(8,kBottom-188,kLeft-16,32);
         c.text(*m_font,m_focus==7?(m_edit.empty()?"Type screen ID...":m_edit.c_str()):"New screen",kLeft*0.5f,kBottom-182,text,Align::Center);c.noClip();
@@ -1388,7 +1399,7 @@ namespace nx
             const char* state=!m_document.dirty()?"Saved / clean":recoveryProtected()?"Recovery protected":"Recovery pending";
             c.text(*m_font,state,kWidth-12,kBottom+26,recoveryProtected()?muted:Color{1.f,0.72f,0.22f,1.f},Align::Right);
         }
-        if(m_assetBrowser||m_browsing||m_focus==5||m_focus==6||m_focus==9)
+        if(m_assetBrowser||m_browsing||m_focus==5||m_focus==6||m_focus==9||m_focus==10)
         {
             c.rect(0,0,kWidth,kHeight,{0,0,0,0.70f});
             if(m_assetBrowser)
@@ -1424,6 +1435,28 @@ namespace nx
                 }
                 if(m_files.empty())c.text(*m_font,"No projects, archives, source or project folders in own/.",640,330,muted,Align::Center);
                 c.clip(280,603,720,22);c.text(*m_font,shorten(m_status,90).c_str(),280,603,muted);c.noClip();
+            }
+            else if(m_focus==10)
+            {
+                c.roundRect(150,100,980,525,9,{0.12f,0.16f,0.22f,1});
+                const auto owner=m_document.graphs[m_graph].owner;
+                c.text(*m_font,("VARIABLES / "+owner).c_str(),170,122,accent);
+                c.roundRect(170,160,940,36,4,{0.24f,0.35f,0.48f,1});
+                c.clip(174,160,932,36);c.text(*m_font,m_edit.c_str(),180,168,text);c.noClip();
+                c.paragraph(*m_font,"Create or set: field score:int=10 | global count:int=2 | Omit =value for default initialization. String values are plain text.",170,207,940,muted);
+                c.paragraph(*m_font,"Rename: field score>points:int=10 | Remove: field -points (only when unused). Use global instead of field for module variables.",170,256,940,muted);
+                c.text(*m_font,"DECLARED VARIABLES",170,313,accent);
+                size_t row=0;
+                auto show=[&](const char* prefix,const BlueprintDocument::Field& f)
+                {
+                    if(row<8){const float y=343+25*static_cast<float>(row);c.clip(170,y,940,25);c.text(*m_font,(std::string(prefix)+f.name+":"+f.type+(f.initialized?"="+f.value:"")).c_str(),170,y,text);c.noClip();}++row;
+                };
+                for(const auto& g:m_document.graphs)if(g.owner==owner)for(const auto& f:g.fields)show("field ",f);
+                for(const auto& f:m_document.moduleGlobals(owner))show("global ",f);
+                if(row>8)c.text(*m_font,("Showing first 8 of "+std::to_string(row)+" declarations. Commands can edit any name.").c_str(),170,548,muted);
+                if(!row)c.text(*m_font,"No explicit declarations. Existing inferred fields can be declared by name.",170,343,muted);
+                c.clip(170,576,940,25);c.text(*m_font,m_status.c_str(),170,576,text);c.noClip();
+                c.text(*m_font,"Enter applies | Escape cancels",640,601,text,Align::Center);
             }
             else if(m_focus==9)
             {

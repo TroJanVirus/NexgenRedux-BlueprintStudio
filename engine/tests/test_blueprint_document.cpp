@@ -900,3 +900,20 @@ NX_TEST(nativeImportedMultiScreenGlobalsAndBehavioursKeepModuleOwnership)
     }
     NX_EXPECT(!restored.removeScreen("level",error));
 }
+
+NX_TEST(nativeVariableDeclarationEditorRenamesReferencesTransactionally)
+{
+    BlueprintDocument doc;std::string error,before,after,source;
+    NX_EXPECT(importBlueprintScreen("int count=2; class Example : Screen {int score=1;void onEnter(){score++;count++;}}",doc,error));
+    NX_EXPECT(doc.serialize(before,error));
+    NX_EXPECT(doc.editVariableDeclaration("Screen","field score>points:int=7",error));
+    NX_EXPECT(doc.editVariableDeclaration("Screen","global count>total:int=9",error));
+    NX_EXPECT(compileBlueprint(doc,source,error)&&source.find("bp_var_points")!=std::string::npos&&source.find("bp_global_total")!=std::string::npos&&source.find("bp_var_score")==std::string::npos);
+    NX_EXPECT(doc.serialize(after,error));
+    NX_EXPECT(!doc.editVariableDeclaration("Screen","field -points",error)&&!doc.editVariableDeclaration("Screen","global total:float=1",error));
+    std::string checked;NX_EXPECT(doc.serialize(checked,error)&&checked==after);
+    NX_EXPECT(doc.undo()&&doc.undo()&&doc.serialize(checked,error)&&checked==before);
+    NX_EXPECT(doc.redo()&&doc.redo()&&doc.serialize(checked,error)&&checked==after);
+    NX_EXPECT(doc.editVariableDeclaration("Screen","field label:string=hello world",error)&&doc.editVariableDeclaration("Screen","field -label",error));
+    NX_EXPECT(doc.serialize(checked,error)&&checked==after);
+}
