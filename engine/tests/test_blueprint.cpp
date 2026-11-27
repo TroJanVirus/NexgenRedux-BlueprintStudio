@@ -1339,3 +1339,50 @@ NX_TEST(nativeImportedBoundedLoopsMatchOriginalExecution)
         r.step(3);NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("loops",""),"correct")==0);
     }
 }
+
+NX_TEST(nativeImportedElseIfChainsMatchOriginalExecution)
+{
+    const std::string original=R"(class Example : Screen {
+        int Pick(int score) {
+            if(score < 0) { return 10; }
+            else if(score == 0) { return 20; }
+            else if(score == 1) { return 30; }
+            else { return 40; }
+        }
+        int Optional(int score) {
+            if(score == 1) { return 5; }
+            else if(score == 2) { return 6; }
+            return 7;
+        }
+        void onEnter() {
+            int first = Pick(-1);
+            int second = Pick(0);
+            int third = Pick(1);
+            int fourth = Pick(2);
+            int fallback = Optional(3);
+            int other = Optional(2);
+            int total = 0;
+            if(first == 10) { total = 1; }
+            else if(second == 20) { total = 99; }
+            if(second == 0) { total = 99; }
+            else if(third == 30) { total += 2; }
+            else { total = 99; }
+            if(fourth == 40 && fallback == 7 && other == 6 && total == 3) {
+                Save::set("else_if", "correct");
+            }
+        }
+    })";
+    BlueprintDocument doc;std::string error,generated;
+    const bool imported=importBlueprintScreen(original,doc,error);
+    if(!imported)NX_ERROR("Import diagnostic: %s",error.c_str());
+    NX_EXPECT(imported&&compileBlueprint(doc,generated,error));if(generated.empty())return;
+    for(const std::string* source:std::vector<const std::string*>{&original,&generated})
+    {
+        Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+        r.platform.files["showcase/imported/screen.json"]="{\"title\":\"Import\"}";
+        r.platform.files["showcase/imported/main.as"]=*source;
+        if(!r.screens.init(r.services,"showcase","imported")){NX_EXPECT(false);return;}
+        r.step(3);
+        NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("else_if",""),"correct")==0);
+    }
+}

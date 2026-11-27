@@ -333,6 +333,28 @@ namespace nx
                 }
                 return expression(result);
             }
+            // An else-if belongs to the false branch, not to the outer continuation.
+            // Keep its condition lazy and propagate definite returns through the whole chain.
+            bool conditional(Flow& flow,unsigned depth,bool& terminal)
+            {
+                if(depth>=32)return fail("Statement nesting limit exceeded.");
+                Value condition;if(!expect("(")||!expression(condition)||!expect(")"))return false;
+                size_t branch;if(!add("branch",branch)||!bind(branch,"condition",condition))return false;
+                chain(flow,branch);
+                bool yes=false,no=false;
+                if(!block({branch,"true"},depth+1,&yes))return false;
+                if(take("else"))
+                {
+                    if(take("if"))
+                    {
+                        Flow alternative{branch,"false"};
+                        if(!conditional(alternative,depth+1,no))return false;
+                    }
+                    else if(!block({branch,"false"},depth+1,&no))return false;
+                }
+                terminal=yes&&no;
+                return true;
+            }
             bool block(Flow flow,unsigned depth,bool* returned=nullptr)
             {
                 struct Scope
@@ -388,13 +410,8 @@ namespace nx
                     }
                     if(take("if"))
                     {
-                        Value condition;if(!expect("(")||!expression(condition)||!expect(")"))return false;
-                        size_t branch;if(!add("branch",branch)||!bind(branch,"condition",condition))return false;
-                        chain(flow,branch);
-                        bool yes=false,no=false;
-                        if(!block({branch,"true"},depth+1,&yes))return false;
-                        if(take("else")&&!block({branch,"false"},depth+1,&no))return false;
-                        terminal=yes&&no;continue;
+                        if(!conditional(flow,depth,terminal))return false;
+                        continue;
                     }
                     const bool handleAssignment=take("@");
                     std::string id;if(!name(id)||!qualified(id))return false;

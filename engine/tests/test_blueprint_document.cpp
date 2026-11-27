@@ -572,3 +572,17 @@ NX_TEST(nativeSourceImportBoundedLoopsPreserveNestedLocalScope)
         std::string after;NX_EXPECT(doc.serialize(after,error)&&after==saved);
     }
 }
+
+NX_TEST(nativeImportElseIfRejectsIncompleteAndOversizedChainsTransactionally)
+{
+    BlueprintDocument doc;doc.create();std::string error,saved,after;
+    NX_EXPECT(doc.serialize(saved,error));
+    const std::string incomplete="class Bad : Screen { int F(int n) { if(n == 0) { return 1; } else if(n == 1) { return 2; } } }";
+    NX_EXPECT(!importBlueprintScreen(incomplete,doc,error)&&!error.empty());
+    NX_EXPECT(doc.serialize(after,error)&&after==saved);
+    std::string deep="class Bad : Screen { void onEnter() { if(true) {}";
+    for(int i=0;i<40;++i)deep+=" else if(false) {}";
+    deep+=" } }";
+    NX_EXPECT(!importBlueprintScreen(deep,doc,error)&&error.find("nesting limit")!=std::string::npos);
+    NX_EXPECT(doc.serialize(after,error)&&after==saved);
+}
