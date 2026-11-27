@@ -275,3 +275,18 @@ NX_TEST(nativeProjectScreensOwnTheirStateAndFunctions)
     }
     NX_EXPECT(copy.removeScreen("level",error)&&!copy.isProject()&&copy.undo()&&copy.isProject());
 }
+
+NX_TEST(nativeProjectNavigationRejectsMissingConstantTargets)
+{
+    BlueprintDocument doc;doc.create();std::string error;BlueprintLocation location;
+    std::vector<BlueprintScreenOutput> out;
+    NX_EXPECT(doc.addScreen("level",error));
+    NX_EXPECT(doc.addNode(0,"api:Screens:Screens::push:string",0,0,error)&&doc.connect(0,0,"then",1,"in",error));
+    NX_EXPECT(doc.setInputValue(0,1,"id","unknown",error)&&!compileBlueprintProject(doc,out,error,&location));
+    NX_EXPECT(location.graph==0&&location.node==1&&out.empty());
+    NX_EXPECT(doc.setInputValue(0,1,"id","level",error)&&compileBlueprintProject(doc,out,error));
+    NX_EXPECT(!doc.removeScreen("level",error));
+    NX_EXPECT(doc.clearInputValue(0,1,"id")&&doc.addNode(0,"literal:string",0,0,error)&&doc.setLiteral(0,2,"level",error)&&doc.connect(0,2,"value",1,"id",error));
+    NX_EXPECT(!doc.removeScreen("level",error)&&compileBlueprintProject(doc,out,error));
+    NX_EXPECT(doc.setLiteral(0,2,"unknown",error)&&!compileBlueprintProject(doc,out,error,&location)&&out.size()==2);
+}

@@ -531,11 +531,16 @@ namespace nx
         const auto owners=screens();
         if(owners.size()<2||id==owners.front()||std::find(owners.begin(),owners.end(),id)==owners.end())
         {error="The initial screen cannot be deleted.";return false;}
-        // Screen API targets may be dynamic strings. Reject deletion when an explicit inline target refers to it.
-        for(const auto& g:graphs)if(g.owner!=id)for(const auto& n:g.nodes)
-            if(n.kind=="api:Screens:Screens::push:string"||n.kind=="api:Screens:Screens::replace:string")
-                for(const auto& v:n.values)if(v.pin=="id"&&v.value==id)
-                {error="Remove navigation references to "+id+" first.";return false;}
+        // Reject references in both stored input values and wired constant nodes.
+        for(const auto& g:graphs)if(g.owner!=id)for(size_t i=0;i<g.nodes.size();++i)
+        {
+            const auto& n=g.nodes[i];
+            if(n.kind!="api:Screens:Screens::push:string"&&n.kind!="api:Screens:Screens::replace:string")continue;
+            for(const auto& v:n.values)if(v.pin=="id"&&v.value==id)
+            {error="Remove navigation references to "+id+" first.";return false;}
+            for(const auto& l:g.links)if(l.to==i&&l.input=="id"&&g.nodes[l.from].kind=="literal:string"&&g.nodes[l.from].ref==id)
+            {error="Remove navigation references to "+id+" first.";return false;}
+        }
         recordGraphList();
         graphs.erase(std::remove_if(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==id;}),graphs.end());
         error.clear();return true;

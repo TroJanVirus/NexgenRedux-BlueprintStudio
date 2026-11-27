@@ -702,3 +702,24 @@ NX_TEST(nativeBlueprintProjectPreviewNavigatesWithoutTouchingHostStack)
     NX_EXPECT(strcmp(r.save.get("level","missing"),"missing")==0);
 }
 #endif
+
+NX_TEST(nativeBlueprintProjectExportRunsWithoutStudio)
+{
+    BlueprintDocument doc;doc.create();std::string error;
+    const bool authored=doc.addScreen("level",error)&&
+        doc.addNode(0,"api:Screens:Screens::push:string",0,0,error)&&doc.setInputValue(0,1,"id","level",error)&&doc.connect(0,0,"then",1,"in",error)&&
+        doc.addNode(6,"api:Save:Save::set:string,string",0,0,error)&&doc.setInputValue(6,1,"key","export_level",error)&&
+        doc.setInputValue(6,1,"value","entered",error)&&doc.connect(6,0,"then",1,"in",error);
+    std::vector<BlueprintScreenOutput> output;
+    NX_EXPECT(authored&&compileBlueprintProject(doc,output,error));if(output.size()!=2)return;
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    for(const auto& screen:output)
+    {
+        r.platform.files["project/"+screen.id+"/main.as"]=screen.source;
+        r.platform.files["project/"+screen.id+"/screen.json"]=screen.manifest;
+    }
+    NX_EXPECT(r.screens.init(r.services,"project","Screen"));
+    r.step(5);
+    NX_EXPECT(r.screens.depth()==2&&strcmp(r.screens.current(),"level")==0);
+    NX_EXPECT(strcmp(r.save.get("export_level","missing"),"entered")==0);
+}

@@ -12,6 +12,7 @@
 #include <cmath>
 #include <ctime>
 #include <cstring>
+#include <cstdio>
 #include <unordered_map>
 #include <cctype>
 

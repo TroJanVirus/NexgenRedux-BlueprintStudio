@@ -144,7 +144,7 @@ namespace nx
         snprintf(screen.info.title,sizeof(screen.info.title),"Blueprint play test");
         screen.source=source;
         const bool valid=startProjectPreview({screen},screen.info.id,error);
-        if(valid)m_previewNavigation=false;
+        if(valid){m_previewNavigation=false;m_change=Change::None;}
         return valid;
     }
 
@@ -358,7 +358,11 @@ namespace nx
             entry.world->space().init(m_services->solids, m_services->audio);
         }
         char folder[160];
-        snprintf(folder, sizeof(folder), "%s/%s", m_folder, entry.info.id);
+        const char* root=m_folder;
+#ifdef NX_DESKTOP_BLUEPRINT
+        if(previewing())root="__blueprint_preview";
+#endif
+        snprintf(folder, sizeof(folder), "%s/%s", root, entry.info.id);
         entry.ui = create<Ui>(MemTag::UI, *m_services->canvas, *m_services->assets, *m_services->audio, *m_services->input, host, *m_services->platform, folder);
         enter(entry);
 #ifdef NX_DESKTOP_BLUEPRINT
@@ -557,7 +561,11 @@ namespace nx
 
     void Screens::enter(const Entry& entry)
     {
-        snprintf(m_services->folder, sizeof(m_services->folder), "%s/%s", m_folder, entry.info.id);
+        const char* root=m_folder;
+#ifdef NX_DESKTOP_BLUEPRINT
+        if(previewing())root="__blueprint_preview";
+#endif
+        snprintf(m_services->folder, sizeof(m_services->folder), "%s/%s", root, entry.info.id);
         m_services->world = entry.world;
         m_services->ui = entry.ui;
         m_services->audio->setGroup(entry.group);
@@ -602,6 +610,9 @@ namespace nx
         Input& input = *m_services->input;
         if (m_menuOpen || entry.failed)
         {
+#ifdef NX_DESKTOP_BLUEPRINT
+            if(previewing()&&entry.failed)return;
+#endif
             updateMenu();
         }
         else if (input.pressed(Action::Menu))

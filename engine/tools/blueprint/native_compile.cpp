@@ -325,7 +325,33 @@ namespace nx
     bool compileBlueprintProject(const BlueprintDocument& document,std::vector<BlueprintScreenOutput>& output,std::string& error,BlueprintLocation* location)
     {
         std::vector<BlueprintScreenOutput> result;
-        for(const auto& owner:document.screens())
+        const auto owners=document.screens();
+        // Validate structure before inspecting graph endpoints or compiling individual screens.
+        std::string checked;if(location)*location={};
+        if(!document.serialize(checked,error))return false;
+        for(size_t g=0;g<document.graphs.size();++g)
+        {
+            const auto& graph=document.graphs[g];
+            for(size_t n=0;n<graph.nodes.size();++n)
+            {
+                const auto& node=graph.nodes[n];
+                if(node.kind!="api:Screens:Screens::push:string"&&node.kind!="api:Screens:Screens::replace:string")continue;
+                const auto wire=std::find_if(graph.links.begin(),graph.links.end(),[&](const BlueprintDocument::Link& l){return l.to==n&&l.input=="id";});
+                const std::string* target=nullptr;
+                if(wire!=graph.links.end())
+                {
+                    const auto& from=graph.nodes[wire->from];
+                    if(from.kind=="literal:string")target=&from.ref;
+                }
+                else for(const auto& v:node.values)if(v.pin=="id")target=&v.value;
+                if(target&&std::find(owners.begin(),owners.end(),*target)==owners.end())
+                {
+                    if(location)*location={g,n};
+                    error=graph.owner+"/"+graph.name+": Unknown project screen "+*target;return false;
+                }
+            }
+        }
+        for(const auto& owner:owners)
         {
             BlueprintScreenOutput screen;screen.id=owner;
             if(!compileBlueprintOwner(document,owner,screen.source,error,location,&screen.map)||
