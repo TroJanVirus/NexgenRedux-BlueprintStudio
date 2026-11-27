@@ -49,7 +49,7 @@ namespace nx
             if(node.kind.rfind("capture:",0)==0)return "Capture "+node.ref;
             if(node.kind.rfind("global:",0)==0)return (node.kind.rfind("global:get:",0)==0?"Get global ":"Set global ")+node.ref;
             if(node.kind.rfind("var:",0)==0)return (node.kind.rfind("var:get:",0)==0?"Get ":"Set ")+node.ref;
-            if(blueprintNamedCall(node.kind)||node.kind=="actor:is-class"||node.kind=="actor:cast-class")
+            if(blueprintNamedCall(node.kind)||node.kind.rfind("data:",0)==0||node.kind=="actor:is-class"||node.kind=="actor:cast-class")
                 if(const auto* spec=blueprintSpec(node.kind))return spec->title+": "+node.ref;
             if(node.kind=="attach:behaviour")return "Attach "+node.ref;
             if(node.kind=="attach:direct")return "Attach directly: "+node.ref;
@@ -271,6 +271,11 @@ namespace nx
                     BlueprintNodeSpec resolved;
                     if(m_document.nodeSpec(graph,{"",base->id,fn.name},resolved))consider(resolved,fn.name,(fn.inlineMacro?"Macro":base->title)+" "+fn.name);
                 }
+            }
+            else if(base->id.rfind("data:",0)==0)
+            {
+                for(const auto& declaration:m_document.graphs)if(m_document.dataType(declaration.name)==&declaration)
+                {BlueprintNodeSpec resolved;if(m_document.nodeSpec(graph,{"",base->id,declaration.name},resolved))consider(resolved,declaration.name,base->title+" "+declaration.name);}
             }
             else if(base->id=="actor:is-class"||base->id=="actor:cast-class")
             {
@@ -3252,7 +3257,7 @@ namespace nx
             const size_t i=m_first+row;const auto& g=m_document.graphs[i];const float y=kTop+static_cast<float>(row)*31;
             if(i==m_graph)c.rect(4,y+2,kLeft-8,28,{0.19f,0.33f,0.50f,1});
             c.clip(5,y,kLeft-10,31);
-            c.text(*m_font,shorten(g.owner+" / "+(g.sharedLibrary?"[L] ":"")+(g.inlineMacro?"[M] ":"")+g.name,32).c_str(),12,y+6,text);c.noClip();
+            c.text(*m_font,shorten(g.owner+" / "+(g.sharedLibrary?"[L] ":"")+(g.inlineMacro?"[M] ":"")+(g.dataRole.empty()?"":"["+g.dataRole+"] ")+g.name,32).c_str(),12,y+6,text);c.noClip();
         }
         c.text(*m_font,"MY BLUEPRINT / VARIABLES",10,330,accent);
         const auto quickRows=variableRows();

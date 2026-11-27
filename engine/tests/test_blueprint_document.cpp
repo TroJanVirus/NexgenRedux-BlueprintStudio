@@ -9,7 +9,7 @@
 using namespace nx;
 NX_TEST(nativeCatalogueContainsReferenceAPI)
 {
-    NX_EXPECT(blueprintCatalogue().size()==1234);
+    NX_EXPECT(blueprintCatalogue().size()==1239);
     const auto* save=blueprintSpec("api:Save:Save::set:string,string");
     NX_EXPECT(save&&save->inputs.size()==3&&save->outputs.size()==1);
     if(save&&save->inputs.size()==3)NX_EXPECT(save->inputs[0].type=="exec"&&save->inputs[2].type=="string");
@@ -1822,4 +1822,20 @@ NX_TEST(nativeSharedLibraryFunctionAndMacroAcrossOwners)
     NX_EXPECT(!doc.setSharedLibrary(g,false,error));
     NX_EXPECT(doc.serialize(bytes,error));BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error));
     NX_EXPECT(compileBlueprint(copy,source,error)&&source.find("int bp_lib_Twice(")!=std::string::npos&&source.find("inline macro SharedMacro")!=std::string::npos);
+}
+
+NX_TEST(nativeCustomTypeDeclarationsAndEvents)
+{
+    BlueprintDocument doc;doc.create();std::string error,source,bytes;
+    NX_EXPECT(doc.addFunction("State",error));const auto en=doc.graphs.size()-1;
+    NX_EXPECT(doc.editFunctionSignature(en,"enum(Idle, Running)",error));
+    NX_EXPECT(doc.addFunction("Stats",error));const auto st=doc.graphs.size()-1;
+    NX_EXPECT(doc.editFunctionSignature(st,"struct(health:int, name:string)",error));
+    NX_EXPECT(doc.addFunction("Notify",error));const auto ev=doc.graphs.size()-1;
+    NX_EXPECT(doc.editFunctionSignature(ev,"event(stats:BP_Data_Stats)",error));
+    NX_EXPECT(doc.addNode(0,"data:make-struct",0,0,error,"Stats")&&doc.setInputValue(0,1,"health","42",error)&&doc.setInputValue(0,1,"name","hero",error));
+    NX_EXPECT(doc.addNode(0,"call:event",0,0,error,"Notify")&&doc.connect(0,0,"then",2,"in",error)&&doc.connect(0,1,"result",2,"arg_stats",error));
+    NX_EXPECT(doc.addNode(ev,"data:break-struct",0,0,error,"Stats")&&doc.connect(ev,0,"arg_stats",1,"value",error));
+    NX_EXPECT(doc.serialize(bytes,error));BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error));
+    NX_EXPECT(compileBlueprint(copy,source,error)&&source.find("enum BP_Data_State")!=std::string::npos&&source.find("class BP_Data_Stats")!=std::string::npos);
 }

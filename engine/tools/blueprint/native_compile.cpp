@@ -179,6 +179,39 @@ namespace nx
                     const auto phase="(("+turns+") == floor("+turns+") ? float(0) : ("+turns+") * float(6.283185307179586))";
                     result="(("+center+") + Vec3(sin("+phase+") * ("+radius+"), "+height+", cos("+phase+") * ("+radius+")))";return true;
                 }
+                if(n.kind.rfind("data:",0)==0)
+                {
+                    const auto* decl=document.dataType(n.ref);if(!decl)return fail(node,"Unknown custom type.");
+                    const auto type="BP_Data_"+decl->name;
+                    if(n.kind=="data:enum-value")
+                    {
+                        if(incoming(node,"member"))return fail(node,"Enum member must be a constant name.");
+                        const auto at=std::find_if(n.values.begin(),n.values.end(),[](const BlueprintDocument::InputValue& v){return v.pin=="member";});
+                        if(at==n.values.end()||std::none_of(decl->parameters.begin(),decl->parameters.end(),[&](const BlueprintPin& p){return p.name==at->value;}))
+                            return fail(node,"Enter a declared enum member name.");
+                        result=type+"::bp_"+at->value;return true;
+                    }
+                    if(n.kind=="data:enum-equal")
+                    {
+                        std::string a,b;if(!value(node,"a",a,depth)||!value(node,"b",b,depth))return false;
+                        result="("+a+" == "+b+")";return true;
+                    }
+                    if(n.kind=="data:enum-index")
+                    {
+                        std::string v;if(!value(node,"value",v,depth))return false;result="int("+v+")";return true;
+                    }
+                    if(n.kind=="data:make-struct")
+                    {
+                        result=type+"(";for(size_t i=0;i<decl->parameters.size();++i)
+                        {std::string v;if(!value(node,decl->parameters[i].name,v,depth))return false;if(i)result+=", ";result+=v;}
+                        result+=")";return true;
+                    }
+                    if(n.kind=="data:break-struct")
+                    {
+                        std::string v;if(!value(node,"value",v,depth))return false;
+                        result="("+v+").bp_"+pin;return true;
+                    }
+                }
                 if(n.kind=="actor:is-class"&&pin=="result")
                 {
                     std::string actor;if(!value(node,"actor",actor,depth))return false;
@@ -814,6 +847,29 @@ namespace nx
             }
             result+=";\n";
         }
+        for(const auto& g:document.graphs)if(g.dataRole=="enum"||g.dataRole=="struct")
+        {
+            const auto type="BP_Data_"+g.name;
+            if(g.dataRole=="enum")
+            {
+                result+="enum "+type+" { ";
+                for(size_t i=0;i<g.parameters.size();++i){if(i)result+=", ";result+="bp_"+g.parameters[i].name+" = "+std::to_string(i);}
+                result+=" }\n";
+            }
+            else
+            {
+                result+="class "+type+"\n{\n";
+                std::string args,body;
+                for(const auto& p:g.parameters)
+                {
+                    result+="    "+p.type+" bp_"+p.name+";\n";
+                    if(!args.empty())args+=", ";
+                    args+=p.type+" value_"+p.name;
+                    body+="        bp_"+p.name+" = value_"+p.name+";\n";
+                }
+                result+="    "+type+"() {}\n    "+type+"("+args+")\n    {\n"+body+"    }\n}\n";
+            }
+        }
         for(size_t gi=0;gi<document.graphs.size();++gi)
         {
             const auto& g=document.graphs[gi];if(!g.sharedLibrary)continue;
@@ -854,7 +910,7 @@ namespace nx
         // Each callable void graph can be used as an instance-local named signal.
         // Fields live on the declaring class, so inherited handlers share the binding.
         for(const auto& g:document.graphs)
-            if(g.owner==classOwner&&g.kind=="function"&&!g.sharedLibrary&&g.returnType=="void"&&!g.inlineMacro&&
+            if(g.owner==classOwner&&g.kind=="function"&&!g.sharedLibrary&&g.dataRole!="enum"&&g.dataRole!="struct"&&g.returnType=="void"&&!g.inlineMacro&&
                 !document.function(parent,g.name))
                 result+="    bool bp_bound_"+g.name+" = false;\n";
         if(!document.variables(vars,error,classOwner))return false;
@@ -913,7 +969,7 @@ namespace nx
         for(size_t graphIndex=0;graphIndex<document.graphs.size();++graphIndex)
         {
             const auto& graph=document.graphs[graphIndex];
-            if(graph.owner!=classOwner||graph.sharedLibrary)continue;
+            if(graph.owner!=classOwner||graph.sharedLibrary||graph.dataRole=="enum"||graph.dataRole=="struct")continue;
             const bool inheritedEmpty=!parent.empty()&&graph.kind=="event"&&graph.nodes.size()==1;
             const bool timerWrapper=inheritedEmpty&&graph.name=="update"&&!deferred.empty();
             if(inheritedEmpty&&!timerWrapper)continue;

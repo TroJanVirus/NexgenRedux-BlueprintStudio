@@ -2872,3 +2872,27 @@ NX_TEST(nativeSharedLibraryCalledFromBehaviour)
     if(!r.screens.init(r.services,"project","main")){NX_EXPECT(false);return;}
     r.step(5);NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("library","missing"),"yes")==0);
 }
+
+NX_TEST(nativeCustomEnumAndStructRuntime)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    BlueprintDocument doc;doc.create();std::string error,source;
+    bool ok=doc.addFunction("State",error);const auto en=doc.graphs.size()-1;
+    ok=ok&&doc.editFunctionSignature(en,"enum(Idle, Running)",error)&&doc.addFunction("Stats",error);
+    const auto st=doc.graphs.size()-1;ok=ok&&doc.editFunctionSignature(st,"struct(health:int, name:string)",error);
+    auto add=[&](const char* kind,const char* ref=""){const auto n=doc.graphs[0].nodes.size();ok=ok&&doc.addNode(0,kind,0,0,error,ref);return n;};
+    auto wire=[&](size_t from,const char* output,size_t to,const char* input){ok=ok&&doc.connect(0,from,output,to,input,error);};
+    auto input=[&](size_t n,const char* pin,const char* value){ok=ok&&doc.setInputValue(0,n,pin,value,error);};
+    const auto a=add("data:enum-value","State"),b=add("data:enum-value","State");input(a,"member","Running");input(b,"member","Running");
+    const auto eq=add("data:enum-equal","State");wire(a,"result",eq,"a");wire(b,"result",eq,"b");
+    const auto make=add("data:make-struct","Stats");input(make,"health","42");input(make,"name","hero");
+    const auto split=add("data:break-struct","Stats");wire(make,"result",split,"value");
+    const auto check=add("equal:int");wire(split,"health",check,"a");input(check,"b","42");
+    const auto both=add("and:bool");wire(eq,"result",both,"a");wire(check,"result",both,"b");
+    const auto branch=add("branch");wire(0,"then",branch,"in");wire(both,"result",branch,"condition");
+    const auto save=add("api:Save:Save::set:string,string");wire(branch,"true",save,"in");input(save,"key","custom_types");wire(split,"name",save,"value");
+    if(!ok||!compileBlueprint(doc,source,error)){NX_ERROR("Custom types: %s",error.c_str());NX_EXPECT(false);return;}
+    r.platform.files["project/main/screen.json"]="{\"title\":\"Custom types\"}";r.platform.files["project/main/main.as"]=source;
+    if(!r.screens.init(r.services,"project","main")){NX_EXPECT(false);return;}
+    r.step(3);NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("custom_types","missing"),"hero")==0);
+}

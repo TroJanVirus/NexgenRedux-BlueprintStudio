@@ -54,6 +54,7 @@ namespace nx
             std::string returnType="void";
             bool inlineMacro=false;
             bool sharedLibrary=false;
+            std::string dataRole{}; // enum, struct or custom event
             // Explicit imported fields live on the owner lifecycle entry graph.
             std::vector<Field> fields{};
             std::vector<Field> globals{};
@@ -144,6 +145,7 @@ namespace nx
         bool addFunction(const std::string& name,std::string& error,const std::string& owner="Screen");
         const Graph* function(const std::string& owner,const std::string& name) const;
         const Graph* libraryFunction(const std::string& name) const;
+        const Graph* dataType(const std::string& name) const;
         bool setSharedLibrary(size_t graph,bool enabled,std::string& error);
         bool nodeSpec(const Graph& graph,const Node& node,BlueprintNodeSpec& spec) const;
         bool setFunctionSignature(size_t graph,const std::vector<BlueprintPin>& parameters,const std::string& returnType,std::string& error);
