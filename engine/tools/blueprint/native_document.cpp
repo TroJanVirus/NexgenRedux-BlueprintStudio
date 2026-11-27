@@ -33,6 +33,7 @@ namespace nx
             {"camera:orbit-timed","Orbit camera around entity (timed)","Space / Camera","in:exec|name:string|radius:float|height:float|duration:float|turns:float|angle:float|loop:bool|reset:bool|dt:float","then:exec|progress:float|elapsed:float|finished:bool|found:bool","","","","","void","","","name:\"Target\"|radius:float(6)|height:float(2)|duration:float(8)|turns:float(1)|angle:float(60)|loop:false|reset:false|dt:dt"},
             {"render:space","Render 3D scene","Space / Rendering","in:exec","then:exec"},
             {"ui:load-asset","Load linked widget page","Ui / Designer","in:exec|id:string","then:exec"},
+            {"actor:spawn-asset","Spawn linked actor","Space / Blueprint Classes","in:exec|id:string|place:Vec3","then:exec|result:Entity@","","","","","Entity@","","","place:Vec3(0, 0, 0)"},
             {"math:orbit-position","Orbit position (turns)","Math / Camera","center:Vec3|radius:float|height:float|turns:float","result:Vec3","","","","pure","Vec3","","","center:Vec3(0, 0, 0)|radius:float(6)|height:float(2)|turns:float(0)"},
             {"spawn:box","Spawn 3D box","Space / Primitives","in:exec|name:string|place:Vec3|size:Vec3|color:Color","then:exec|result:Entity@","","","","","Entity@","","","name:\"Box\"|place:Vec3(0, 0.5, 0)|size:Vec3(1, 1, 1)|color:Color(0.92, 0.35, 0.12, 1)"},
             {"spawn:plane","Spawn 3D floor plane","Space / Primitives","in:exec|name:string|place:Vec3|size:Vec3|color:Color","then:exec|result:Entity@","","","","","Entity@","","","name:\"Floor\"|place:Vec3(0, 0, 0)|size:Vec3(20, 1, 20)|color:Color(0.4, 0.46, 0.52, 1)"},
@@ -505,9 +506,9 @@ namespace nx
     }
     bool BlueprintDocument::removeVisualAsset(const std::string& id,std::string& error)
     {
-        for(const auto& g:graphs)for(const auto& node:g.nodes)if(node.kind=="ui:load-asset")
+        for(const auto& g:graphs)for(const auto& node:g.nodes)if(node.kind=="ui:load-asset"||node.kind=="actor:spawn-asset")
             for(const auto& v:node.values)if(v.pin=="id"&&v.value==id)
-            {error="Remove the linked Load widget page node before deleting this asset.";return false;}
+            {error="Remove linked widget or actor nodes before deleting this asset.";return false;}
         auto next=m_visualAssets;
         const auto at=std::find_if(next.begin(),next.end(),[&](const VisualAsset& a){return a.id==id;});
         if(at==next.end()){error="Visual asset not found.";return false;}
@@ -643,6 +644,94 @@ namespace nx
         if(linked&&drawn){error.clear();return true;}
         std::string verified;
         if(!staged.serialize(verified,error))return false;
+        recordGraphList();graphs.swap(staged.graphs);m_nextId=staged.m_nextId;error.clear();return true;
+    }
+    bool BlueprintDocument::visualActorRoot(const std::string& id,std::string& json,std::string& error)const
+    {
+        const auto* asset=visualAsset(id);
+        if(!asset||asset->kind!="actor"||!asset->dependencies.empty())
+        {error="Select a standalone actor definition.";return false;}
+        JsonValue root;
+        if(!root.parse(asset->source.data(),asset->source.size(),error))return false;
+        const auto* entities=root.find("entities");
+        if(!entities||entities->type()!=JsonValue::Type::Array||entities->count()!=1||
+            !entities->at(0)||entities->at(0)->type()!=JsonValue::Type::Object)
+        {error="This actor version requires exactly one native Space entity.";return false;}
+        // Unknown top-level scene properties could change meaning when converted
+        // to a single entity. Do not silently discard them.
+        if(root.count()!=1){error="Unsupported actor scene properties.";return false;}
+        json=entities->at(0)->write(true);error.clear();return true;
+    }
+    bool BlueprintDocument::setVisualActorShape(const std::string& id,const std::string& shape,std::string& error)
+    {
+        if(shape!="box"&&shape!="sphere"&&shape!="capsule"&&shape!="plane")
+        {error="Unsupported starter actor shape.";return false;}
+        std::string checked;
+        if(!visualActorRoot(id,checked,error))return false;
+        auto assets=m_visualAssets;
+        for(auto& a:assets)if(a.id==id)
+        {
+            JsonValue root;
+            if(!root.parse(a.source.data(),a.source.size(),error))return false;
+            auto* entity=root.find("entities")->at(0);
+            const auto* previous=entity->find("shape");
+            if(previous&&previous->text()==shape){error.clear();return true;}
+            if(entity->find("model")){error="Remove the model before changing the primitive shape.";return false;}
+            auto* value=entity->put("shape");if(!value){error="Cannot edit actor shape.";return false;}
+            value->setText(shape);a.source=root.write(true);
+            return replaceVisualAssets(assets,error);
+        }
+        error="Actor not found.";return false;
+    }
+    bool BlueprintDocument::placeVisualActor(const std::string& owner,const std::string& id,const std::string& place,std::string& error)
+    {
+        std::string json;std::vector<std::string> components;
+        if(!visualActorRoot(id,json,error))return false;
+        if(!blueprintInputComponents("Vec3",place,components)){error="Enter a valid XYZ position.";return false;}
+        size_t enter=static_cast<size_t>(-1),draw=enter;
+        for(size_t i=0;i<graphs.size();++i)if(graphs[i].owner==owner)
+        {
+            if(graphs[i].name=="onEnter")enter=i;
+            if(graphs[i].name=="draw")draw=i;
+        }
+        if(enter>=graphs.size()||draw>=graphs.size()){error="Select a screen.";return false;}
+        BlueprintDocument staged;staged.name=name;staged.assetRoot=assetRoot;staged.graphs=graphs;staged.manifests=manifests;
+        staged.m_visualAssets=m_visualAssets;staged.m_visualSerial=m_visualSerial;staged.m_nextId=m_nextId;
+        // Only append to an existing simple On Enter chain, preserving prior logic.
+        const auto& g=staged.graphs[enter];size_t last=0;
+        while(last<g.nodes.size()&&g.nodes[last].kind!="entry")++last;
+        if(last==g.nodes.size()){error="Missing On Enter entry.";return false;}
+        std::unordered_set<size_t> seen;
+        for(;;)
+        {
+            BlueprintNodeSpec spec;
+            if(!seen.insert(last).second||!staged.nodeSpec(g,g.nodes[last],spec)||
+                std::count_if(spec.outputs.begin(),spec.outputs.end(),[](const BlueprintPin& p){return p.type=="exec";})!=1||
+                std::none_of(spec.outputs.begin(),spec.outputs.end(),[](const BlueprintPin& p){return p.name=="then"&&p.type=="exec";}))
+            {error="On Enter branches or terminates; place a Spawn linked actor node manually.";return false;}
+            const auto link=std::find_if(g.links.begin(),g.links.end(),[&](const Link& l){return l.from==last&&l.output=="then";});
+            if(link==g.links.end())break;
+            if(link->to>=g.nodes.size()){error="Invalid On Enter connection.";return false;}
+            last=link->to;
+        }
+        for(size_t i=0;i<g.nodes.size();++i)if(!seen.count(i))
+        {
+            BlueprintNodeSpec spec;if(!staged.nodeSpec(g,g.nodes[i],spec))return false;
+            if(std::any_of(spec.inputs.begin(),spec.inputs.end(),[](const BlueprintPin& p){return p.type=="exec";}))
+            {error="Connect existing On Enter actions before placing an actor.";return false;}
+        }
+        const auto tail=g.nodes[last];
+        if(!staged.addConnectedNode(enter,last,"then","actor:spawn-asset",tail.x+240,tail.y,error))return false;
+        const auto placed=staged.graphs[enter].nodes.size()-1;
+        if(!staged.setInputValue(enter,placed,"id",id,error)||!staged.setInputValue(enter,placed,"place",place,error))return false;
+        // Auto-create a renderer only for a truly empty Draw graph. Other
+        // projects may already draw 3D, or need to control layering themselves.
+        if(staged.graphs[draw].nodes.size()==1&&staged.graphs[draw].nodes[0].kind=="entry")
+        {
+            const auto entry=staged.graphs[draw].nodes[0];
+            if(!staged.addConnectedNode(draw,0,"then","render:space",entry.x+240,entry.y,error))return false;
+        }
+        std::string checked;if(!staged.serialize(checked,error))return false;
         recordGraphList();graphs.swap(staged.graphs);m_nextId=staged.m_nextId;error.clear();return true;
     }
     void BlueprintDocument::create()

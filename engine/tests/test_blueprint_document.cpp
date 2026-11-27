@@ -8,7 +8,7 @@
 using namespace nx;
 NX_TEST(nativeCatalogueContainsReferenceAPI)
 {
-    NX_EXPECT(blueprintCatalogue().size()==1118);
+    NX_EXPECT(blueprintCatalogue().size()==1119);
     const auto* save=blueprintSpec("api:Save:Save::set:string,string");
     NX_EXPECT(save&&save->inputs.size()==3&&save->outputs.size()==1);
     if(save&&save->inputs.size()==3)NX_EXPECT(save->inputs[0].type=="exec"&&save->inputs[2].type=="string");
@@ -1292,4 +1292,30 @@ class Example : Screen {
         NX_EXPECT(!importBlueprintScreen(bad,doc,error));
         std::string after;NX_EXPECT(doc.serialize(after,error)&&after==bytes);
     }
+}
+
+NX_TEST(nativeLinkedActorsReuseDefinitionAndMigrateAcrossScreens)
+{
+    BlueprintDocument doc;doc.create();std::string error,id,code,bytes;
+    NX_EXPECT(doc.createVisualAsset("actor",id,error));
+    NX_EXPECT(doc.placeVisualActor("Screen",id,"1,2,3",error));
+    NX_EXPECT(doc.placeVisualActor("Screen",id,"4,5,6",error));
+    NX_EXPECT(doc.addScreen("other",error));
+    NX_EXPECT(doc.placeVisualActor("other",id,"7,8,9",error));
+    NX_EXPECT(!doc.removeVisualAsset(id,error));
+    NX_EXPECT(doc.setVisualActorShape(id,"sphere",error));
+    std::vector<BlueprintScreenOutput> output;
+    NX_EXPECT(compileBlueprintProject(doc,output,error)&&output.size()==2);
+    for(const auto& screen:output)
+    {
+        NX_EXPECT(screen.source.find("Space::make(Json(")!=std::string::npos);
+        NX_EXPECT(screen.source.find("sphere")!=std::string::npos);
+        NX_EXPECT(screen.source.find("Space::draw(canvas)")!=std::string::npos);
+    }
+    NX_EXPECT(doc.undo());
+    NX_EXPECT(compileBlueprintOwner(doc,"Screen",code,error)&&code.find("sphere")==std::string::npos);
+    NX_EXPECT(doc.redo()&&doc.serialize(bytes,error));
+    BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error));
+    NX_EXPECT(compileBlueprintOwner(copy,"other",code,error)&&code.find("sphere")!=std::string::npos);
+    NX_EXPECT(!copy.placeVisualActor("other",id,"NaN,0,0",error));
 }

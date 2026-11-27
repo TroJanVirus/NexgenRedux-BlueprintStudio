@@ -2241,3 +2241,28 @@ class Example : Screen {
     r.step(3);NX_EXPECT(!r.screens.failed());
     NX_EXPECT(strcmp(r.save.get("playlist_ok","missing"),"yes")==0);
 }
+
+NX_TEST(nativeLinkedActorsInstantiateIndependentEntities)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    BlueprintDocument doc;doc.create();std::string error,id,source;
+    const bool ok=doc.createVisualAsset("actor",id,error)&&doc.setVisualActorShape(id,"sphere",error)&&
+        doc.placeVisualActor("Screen",id,"1,2,3",error)&&doc.placeVisualActor("Screen",id,"4,5,6",error)&&
+        compileBlueprint(doc,source,error);
+    NX_EXPECT(ok);if(!ok)return;
+    r.platform.files["showcase/main/screen.json"]="{\"title\":\"Reusable actor\"}";
+    r.platform.files["showcase/main/main.as"]=source;
+    if(!r.screens.init(r.services,"showcase","main")){NX_EXPECT(false);return;}
+    r.step(3);NX_EXPECT(!r.screens.failed());
+    NX_EXPECT(r.services.world!=nullptr);if(!r.services.world)return;
+    unsigned first=0,second=0;
+    auto& world=*r.services.world;
+    world.eachEntity([&](u32 id,const World::Entity& e)
+    {
+        if(strcmp(e.name,"Root")!=0)return;
+        const auto* spatial=world.space().getSpatial(id);if(!spatial)return;
+        if(fabsf(spatial->place.x-1)<0.01f&&fabsf(spatial->place.y-2)<0.01f&&fabsf(spatial->place.z-3)<0.01f)++first;
+        if(fabsf(spatial->place.x-4)<0.01f&&fabsf(spatial->place.y-5)<0.01f&&fabsf(spatial->place.z-6)<0.01f)++second;
+    });
+    NX_EXPECT(first==1&&second==1);
+}

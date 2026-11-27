@@ -617,6 +617,27 @@ namespace nx
             {m_visualSelection.clear();m_visualText.clear();m_status="Removed definition. Ctrl+Z restores it.";}
             return;
         }
+        if(selected->kind=="actor")
+        {
+            const char* shape=nullptr;
+            if(in(x,y,630,277,810,310))shape="box";
+            else if(in(x,y,820,277,1000,310))shape="sphere";
+            else if(in(x,y,630,318,810,351))shape="capsule";
+            else if(in(x,y,820,318,1000,351))shape="plane";
+            if(shape)
+            {
+                if(m_document.setVisualActorShape(m_visualSelection,shape,m_status))m_status="Actor shape updated; all linked spawn nodes use the definition.";
+            }
+            else if(in(x,y,630,548,1000,581))
+            {
+                if(m_document.placeVisualActor(assetScreen(),m_visualSelection,"0,0,0",m_status))
+                {
+                    rebuildPins();filterCatalogue();m_diagnostic={};
+                    m_status="Linked actor added to On Enter. Set its position there; ensure Draw renders Space.";
+                }
+            }
+            return;
+        }
         if(selected->kind!="widget")return;
         if(in(x,y,630,232,1000,266))
         {m_visualInput=2;input.setTyping(true);m_status="Enter the next widget label, then press Enter.";return;}
@@ -686,9 +707,18 @@ namespace nx
             }
             else
             {
-                c.text(*m_font,"Native actor definition",630,244,text);
-                c.text(*m_font,"Root: box (starter primitive)",630,278,muted);
-                c.text(*m_font,"Scene placement is not yet available.",630,310,muted);
+                c.text(*m_font,"Native actor definition / root shape",630,244,text);
+                button(630,277,180,"Box");button(820,277,180,"Sphere");
+                button(630,318,180,"Capsule");button(820,318,180,"Plane");
+                JsonTree tree;
+                if(tree.parse(selected->source.data(),selected->source.size()))
+                {
+                    const auto root=tree.root()["entities"][0u];
+                    c.text(*m_font,(std::string("Current: ")+root["shape"].text("custom")).c_str(),630,375,accent);
+                }
+                c.text(*m_font,"Place at origin, then edit the XYZ graph pin.",630,412,muted);
+                c.text(*m_font,"Single-root actor; viewport drag/drop pending.",630,440,muted);
+                button(630,548,370,"Add linked actor to screen");
             }
         }
         else c.text(*m_font,"Select a definition to edit.",630,210,muted);

@@ -165,7 +165,7 @@ namespace nx
                     const auto phase="(("+turns+") == floor("+turns+") ? float(0) : ("+turns+") * float(6.283185307179586))";
                     result="(("+center+") + Vec3(sin("+phase+") * ("+radius+"), "+height+", cos("+phase+") * ("+radius+")))";return true;
                 }
-                if((n.kind=="spawn:box"||n.kind=="spawn:plane")&&pin=="result")
+                if((n.kind=="spawn:box"||n.kind=="spawn:plane"||n.kind=="actor:spawn-asset")&&pin=="result")
                 {
                     if(!available[node])return fail(node,"Spawn result used before execution or outside its branch.");
                     result="bp_value_"+std::to_string(node);return true;
@@ -289,6 +289,17 @@ namespace nx
                     source+=pad+"Ui::loadPage("+json+");\n";
                     if(source.size()>1024*1024)return fail(to,"Generated source exceeds the size limit.");
                     mark(start,to);return flow(to,"then",indent,depth+1);
+                }
+                if(n.kind=="actor:spawn-asset")
+                {
+                    if(incoming(to,"id"))return fail(to,"Linked actor ID must be a constant asset reference.");
+                    const auto it=std::find_if(n.values.begin(),n.values.end(),[](const BlueprintDocument::InputValue& v){return v.pin=="id";});
+                    std::string json,why,sourceJson,place;
+                    if(it==n.values.end()||!document.visualActorRoot(it->value,json,why))
+                        return fail(to,why.empty()?"Select a linked actor asset.":why);
+                    if(!literalValue(to,"string",json,sourceJson)||!value(to,"place",place,0))return false;
+                    source+=pad+"Entity@ bp_value_"+std::to_string(to)+" = Space::make(Json("+sourceJson+"), "+place+");\n";
+                    available[to]=true;mark(start,to);return flow(to,"then",indent,depth+1);
                 }
                 if(n.kind=="render:space")
                 {source+=pad+"Space::draw(canvas);\n";mark(start,to);return flow(to,"then",indent,depth+1);}
