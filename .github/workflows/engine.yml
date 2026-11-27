@@ -108,20 +108,9 @@ jobs:
           macOS)   cp -R build/showcase/nexgen.app "dist/$package/Nexgen.app"
                    codesign --force --deep --sign - "dist/$package/Nexgen.app" ;;
         esac
-        node engine/tools/blueprint/bundle.js "dist/$package/NexgenBlueprintStudio.html"
-        # The application must find Studio from its own location, even with another working directory.
-        case "$RUNNER_OS" in
-          Windows) (cd "$RUNNER_TEMP" && "$GITHUB_WORKSPACE/dist/$package/nexgen.exe" --blueprint-studio-check) ;;
-          Linux)   (cd "$RUNNER_TEMP" && "$GITHUB_WORKSPACE/dist/$package/nexgen" --blueprint-studio-check) ;;
-          macOS)   cmp "dist/$package/NexgenBlueprintStudio.html" "dist/$package/Nexgen.app/Contents/Resources/NexgenBlueprintStudio.html"
-                   (cd "$RUNNER_TEMP" && "$GITHUB_WORKSPACE/dist/$package/Nexgen.app/Contents/MacOS/nexgen" --blueprint-studio-check) ;;
-        esac
-        mkdir -p "dist/$package/BlueprintTools"
-        cp -r engine/tools/blueprint/. "dist/$package/BlueprintTools/"
-        case "$RUNNER_OS" in
-          Windows) cp build/Release/nx_blueprint_validate.exe "dist/$package/BlueprintTools/" ;;
-          Linux|macOS) cp build/nx_blueprint_validate "dist/$package/BlueprintTools/" ;;
-        esac
+        # Native Studio is compiled into nexgen. Legacy web tooling remains in source, not in the desktop package.
+        test ! -e "dist/$package/NexgenBlueprintStudio.html"
+        test ! -d "dist/$package/BlueprintTools"
         # The demos have to be there, not just the program.
         test "$(find "dist/$package" -path '*media/showcase/*/main.as' | wc -l)" -ge 20
         cd dist

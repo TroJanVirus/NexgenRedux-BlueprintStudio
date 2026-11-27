@@ -61,6 +61,8 @@ namespace nx
         void setCanQuit(bool can) { m_canQuit = can; }
         // Native desktop host may supply an optional development-tool action.
         void setBlueprintLauncher(bool (*launch)()) { m_blueprintLauncher = launch; }
+        // The desktop workspace takes input while the home screen stays paused.
+        void setDevelopmentPaused(bool paused) { setMenu(paused); }
 
         u32 count() const { return m_count; }
         const ScreenInfo* info(u32 index) const { return index < m_count ? &m_infos[index] : nullptr; }

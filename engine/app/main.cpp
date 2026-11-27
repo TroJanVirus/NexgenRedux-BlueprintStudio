@@ -12,7 +12,7 @@
 #include "screens/screens.h"
 #include "script/debugger.h"
 #ifdef NX_DESKTOP_BLUEPRINT
-#include "app/blueprint_launcher.h"
+#include "app/blueprint_workspace.h"
 #endif
 
 #include <stdio.h>
@@ -522,6 +522,11 @@ namespace
             Coroutines coroutines;
             Services services;
             Screens screens;
+#ifdef NX_DESKTOP_BLUEPRINT
+            BlueprintWorkspace studio;
+            static bool studioRequested = false;
+            studioRequested = false;
+#endif
             services.platform = &platform;
             services.device = device;
             services.assets = &assets;
@@ -574,7 +579,7 @@ namespace
 #ifdef NX_DESKTOP_BLUEPRINT
             if (!options.null && !options.hidden && !options.frames && !options.tour && options.demo <= 0 && !options.docs && !options.screen)
             {
-                screens.setBlueprintLauncher(openBlueprintStudio);
+                screens.setBlueprintLauncher([]() { studioRequested = true; return true; });
             }
 #endif
 
@@ -603,9 +608,6 @@ namespace
                 int frame = 0;
                 while (!done && platform.pumpEvents() && !screens.quitRequested())
                 {
-#ifdef NX_DESKTOP_BLUEPRINT
-                    pollBlueprintLauncher();
-#endif
                     const double now = platform.seconds();
                     if (frame == 30)
                     {
@@ -633,6 +635,9 @@ namespace
                     {
                         nextLook = now + 0.5;
                         assets.reloadChanged();
+                        #ifdef NX_DESKTOP_BLUEPRINT
+                        if (!studio.active())
+                        #endif
                         screens.reloadChanged();
                     }
 
@@ -656,7 +661,25 @@ namespace
                         input.setScreen(static_cast<float>(screenWidth), static_cast<float>(screenHeight));
                         input.update(platform.input(), kStep);
                         services.time += kStep;
-                        screens.update(kStep);
+#ifdef NX_DESKTOP_BLUEPRINT
+                        if (studio.active())
+                        {
+                            studio.update(services);
+                            if (!studio.active()) screens.setDevelopmentPaused(false);
+                        }
+                        else
+#endif
+                        {
+                            screens.update(kStep);
+#ifdef NX_DESKTOP_BLUEPRINT
+                            if (studioRequested)
+                            {
+                                studioRequested = false;
+                                studio.open(services);
+                                if (studio.active()) screens.setDevelopmentPaused(true);
+                            }
+#endif
+                        }
                         unspent -= kStep;
                         if (options.tour)
                         {
@@ -676,6 +699,10 @@ namespace
                     if (device->beginFrame({ 0, 0, 0, 1 }))
                     {
                         canvas.begin();
+#ifdef NX_DESKTOP_BLUEPRINT
+                        if (studio.active()) studio.draw(canvas);
+                        else
+#endif
                         screens.draw();
                         // Where nothing else shows the pointer, it is drawn here: an arrow, outlined.
                         if ((platform.drawsPointer() && input.raw().hasMouse) || input.stickPointing())
@@ -732,6 +759,9 @@ namespace
                     ok = saveCapture(*device, options.capture) && ok;
                 }
             }
+            #ifdef NX_DESKTOP_BLUEPRINT
+            studio.close(services);
+            #endif
             screens.shutdown();
             // No pad goes on shaking after the program has gone.
             for (u32 i = 0; i < kMaxPads; i++)
@@ -814,12 +844,6 @@ int main(int argc, char** argv)
 {
 #endif
     Options options;
-#ifdef NX_DESKTOP_BLUEPRINT
-    if (argc == 2 && strcmp(argv[1], "--blueprint-studio-check") == 0)
-    {
-        return blueprintStudioAvailable() ? 0 : 1;
-    }
-#endif
     const auto value = [&](int& i) { return i + 1 < argc ? argv[++i] : ""; };
     for (int i = 1; i < argc; i++)
     {

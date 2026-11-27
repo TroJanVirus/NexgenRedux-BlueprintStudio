@@ -2,15 +2,17 @@
 
 Make games for Nexgen Redux using connected nodes instead of writing every line of AngelScript by hand. Keep each job in a small function, reuse behaviours between entities, and organise graphs the way you like.
 
-The editor runs in a desktop browser. The game runs in Nexgen as usual; it does not need the editor, Node.js or a new scripting engine. Studio is a supplement to Nexgen, not a replacement. See [Development rules](DEVELOPMENT.md) for what belongs in the editor and what stays in Nexgen.
+The native editor is being migrated into Nexgen itself. The older browser editor is retained in source as a reference during the migration. Games continue to run in Nexgen without the editor, Node.js or a new scripting engine. Studio is a supplement to Nexgen, not a replacement. See [Development rules](DEVELOPMENT.md) for what belongs in the editor and what stays in Nexgen.
 
 ## Getting started
 
-The home-screen menu entry is available in Windows, Linux and macOS desktop builds, not console or UWP builds. It opens the local HTML bundle without an internet connection or Node.js at runtime. Source builds with Node installed generate the bundle automatically; otherwise run `node tools/blueprint/bundle.js` on a machine with Node and place the resulting HTML beside `nexgen` (macOS: `Nexgen.app/Contents/Resources`). `nexgen --blueprint-studio-check` verifies that the packaged file is present without opening a window. The menu currently opens the standalone editor; native Play test, debugging and Cook still require the opt-in local bridge described below. It is not an embedded editor window.
+**Native migration preview:** on Windows, Linux and macOS, open Nexgen's home-screen engine menu and choose Blueprint Studio. Drop an existing version-1 .bp.json or .bp.project.json file on the workspace. Select a graph in the left panel, inspect nodes by clicking them, pan with the middle/right mouse button, zoom with the wheel, or use arrow keys to pan and Shift/X to change graphs. Escape returns to Nexgen. This first native slice is read-only and does not compile or save graphs. Source files are not rewritten. Native-screen and shared-behaviour management, editing, compilation and export are still to be migrated. The desktop package no longer bundles the HTML editor or requires Node to open Studio.
+
+The remaining instructions below describe the legacy browser reference implementation, available separately in the source tree during migration, not the new native workspace.
 
 The toolbar keeps Save, Compile and Play test close at hand. Open **File** for documents and exports, **Game** for scenes, assets and project tools, and **Development** for debugging and recovery. Graph appearance and image export are under **View**. Choose **File > Show all toolbar commands** to use the full toolbar instead.
 
-1. On desktop, start Nexgen, open its engine menu from the home screen and choose **Blueprint Studio**. The bundled editor opens in your default browser with the Arcade example. Alternatively open `NexgenBlueprintStudio.html` or `index.html` directly.
+1. For the legacy reference only, open `index.html` directly. The Arcade example is loaded for you.
 2. Choose an event from **My Blueprint**. Events run when something happens in the game, such as entering a screen, updating a frame or hitting another entity.
 3. Right-click the canvas to find a node, or drag a node from the library.
 4. Connect white execution pins to decide what runs next. Connect matching data pins to pass values between nodes.
