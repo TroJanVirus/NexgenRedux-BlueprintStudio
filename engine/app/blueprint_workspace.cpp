@@ -370,7 +370,10 @@ namespace nx
         FileData current;
         if(!s.platform->readFile(m_filePath.c_str(),current,MemTag::General)||
             current.size!=m_fileBaseline.size()||std::memcmp(current.data,m_fileBaseline.data(),current.size)!=0)
-        {m_status="File changed outside Studio. Use Save as to preserve both versions.";return false;}
+        {
+            m_status="File changed outside Studio. Use Save as to preserve both versions.";
+            NX_WARN("Blueprint Studio: %s",m_status.c_str());return false;
+        }
         if(!m_document.dirty()){m_status="Already saved.";return true;}
         std::string bytes;
         if(!m_document.serialize(bytes,m_status)||!writeVerified(s,m_filePath,bytes))return false;

@@ -277,6 +277,70 @@ with menu_log.open("wb") as out:
         time.sleep(0.5)
         launch_from_menu()
         wait_for(lambda: count_launches() == 2, "Studio reopened from Redux menu", process)
+
+        # Author a fresh graph entirely through the real native UI, rather than
+        # starting with serialized fixture nodes. These coordinates are shared
+        # with the runtime workspace authoring regression.
+        def enter_text(value):
+            xdo("type", "--delay", 65, value)
+            key("Return")
+
+        click(1100, 130, window)
+        enter_text("api:Save:Save::set:string,string")
+        click(1100, 167, window)
+        click(468, 138, window)
+        click(630, 353, window)
+        click(630, 375, window)
+        enter_text("native_authoring")
+        click(630, 397, window)
+        enter_text("first")
+        click(900, 18, window)
+        enter_text("Authored Desktop")
+        authored_own = menu_root / "own"
+        authored = authored_own / "blueprint-project-Authored Desktop.bp.json"
+        wait_for(authored.is_file, "new graph saved through desktop UI", process)
+        data = json.loads(authored.read_text(encoding="utf-8"))
+        graph = data["graphs"][0]
+        assert len(graph["nodes"]) == 2 and len(graph["links"]) == 1
+        action = graph["nodes"][1]
+        assert action["kind"] == "api:Save:Save::set:string,string"
+        assert action["values"] == dict(key="native_authoring", value="first")
+        assert graph["links"][0] == dict(**{"from": "entry"}, to=action["id"],
+                                         output="then", input="in")
+
+        # An external valid file modification must not be overwritten, even
+        # if the current authoring process still holds the cooperative lease.
+        external = authored.read_bytes() + b"\n"
+        authored.write_bytes(external)
+        click(630, 397, window)
+        for _ in range(5):
+            key("BackSpace")
+        enter_text("second")
+        click(800, 53, window)
+        wait_for(lambda: "File changed outside Studio" in menu_log.read_text(errors="replace"),
+                 "save conflict rejected", process)
+        assert authored.read_bytes() == external
+        click(900, 18, window)
+        enter_text("Authored Copy")
+        copy = authored_own / "blueprint-project-Authored Copy.bp.json"
+        wait_for(copy.is_file, "save as preserves authored changes", process)
+        copy_data = json.loads(copy.read_text(encoding="utf-8"))
+        assert copy_data["graphs"][0]["nodes"][1]["values"]["value"] == "second"
+        assert authored.read_bytes() == external
+
+        click(675, 53, window)
+        def authored_exports():
+            return list(authored_own.glob("bp-*/Screen/screen.json"))
+        wait_for(authored_exports, "export freshly authored graph", process)
+        generated = authored_exports()[0].with_name("main.as").read_text(encoding="utf-8")
+        assert 'Save::set("native_authoring", "second")' in generated
+        click(553, 53, window)
+        wait_for(lambda: "preview started: Screen" in menu_log.read_text(errors="replace"),
+                 "playtest freshly authored graph", process)
+        key("Escape")
+        wait_for(lambda: "preview stopped" in menu_log.read_text(errors="replace"),
+                 "stop freshly authored graph", process)
+        assert "Preview error:" not in menu_log.read_text(errors="replace")
         click(1200, 53, window)
         request_close(window)
         assert process.wait(timeout=20) == 0
@@ -285,7 +349,7 @@ with menu_log.open("wb") as out:
             process.kill()
             process.wait(timeout=15)
         print(menu_log.read_text(errors="replace"), flush=True)
-print("Ordinary Redux menu launch, return and reopen passed.", flush=True)
+print("Ordinary Redux menu launch, return, reopen, fresh graph authoring, pin wiring, save conflict, Save As, export and play passed.", flush=True)
 
 # Benchmark the actual editor and GPU with a near-limit graph. Record timings
 # rather than claiming a hardware-independent FPS target on shared CI runners.
