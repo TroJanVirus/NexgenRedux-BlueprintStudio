@@ -433,7 +433,7 @@ namespace nx
             }
         }
         if(usesLevel)result+="#include \"global:scene.as\"\n\n";
-        for(const auto& f:document.moduleGlobals())
+        for(const auto& f:document.moduleGlobals(owner))
         {
             result+=f.type+" bp_global_"+f.name;
             if(f.initialized)
@@ -446,7 +446,12 @@ namespace nx
             result+=";\n";
         }
         std::vector<std::string> classes;
-        for(const auto& name:document.behaviours())classes.push_back("behaviour:"+name);
+        for(const auto& name:document.behaviours())
+        {
+            const auto classOwner="behaviour:"+name;
+            const auto scope=document.moduleForOwner(classOwner);
+            if(scope.empty()||scope==owner)classes.push_back(classOwner);
+        }
         classes.push_back(owner);
         for(const auto& classOwner:classes)
         {

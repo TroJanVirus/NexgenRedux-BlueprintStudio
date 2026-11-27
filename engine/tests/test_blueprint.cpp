@@ -1984,3 +1984,19 @@ NX_TEST(nativeImportedModuleGlobalsShareStateAcrossBehaviourInstances)
         NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("first","missing"),"ok")==0&&strcmp(r.save.get("second","missing"),"ok")==0);
     }
 }
+
+NX_TEST(nativeImportedMultiScreenGlobalsRunInSeparateModules)
+{
+    BlueprintDocument project;project.name="Modules";std::string error;
+    for(const auto& owner:std::vector<std::string>{"main","level"})
+    {
+        const auto code=std::string("int count=")+(owner=="main"?"1":"9")+"; class Actor : Behaviour {void start(){count++;if(count==3){Save::set(\"main_count\",\"ok\");}if(count==11){Save::set(\"level_count\",\"ok\");}}} class Example : Screen {void onEnter(){count++;Entity@ a=Scene::spawn(Vec2(0.0f,0.0f));a.add(Actor());}}";
+        BlueprintDocument doc;if(!importBlueprintScreen(code,doc,error)||!mergeImportedBlueprintScreen(project,std::move(doc),owner,error)){NX_ERROR("Module import: %s",error.c_str());NX_EXPECT(false);return;}
+    }
+    std::vector<BlueprintScreenOutput> output;if(!compileBlueprintProject(project,output,error)){NX_EXPECT(false);return;}
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    for(const auto& o:output){r.platform.files["project/"+o.id+"/screen.json"]=o.manifest;r.platform.files["project/"+o.id+"/main.as"]=o.source;}
+    if(!r.screens.init(r.services,"project","main")){NX_EXPECT(false);return;}
+    r.step(5);NX_EXPECT(strcmp(r.save.get("main_count","missing"),"ok")==0&&strcmp(r.save.get("level_count","missing"),"missing")==0);
+    r.screens.push("level");r.step(5);NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("level_count","missing"),"ok")==0);
+}

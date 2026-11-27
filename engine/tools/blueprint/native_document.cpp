@@ -370,6 +370,13 @@ namespace nx
                     g.fields.push_back(std::move(field));
                 }
             }
+            const auto scope=value["moduleOwner"];
+            if(scope.exists())
+            {
+                if(!behaviourOwner(owner)||g.name!="start"||g.kind!="event"||!scope.isString()||!screenId(scope.text()))
+                {error="Invalid Behaviour module scope.";return false;}
+                g.moduleOwner=scope.text();
+            }
             const auto globals=value["globals"];
             if(globals.exists())
             {
@@ -462,15 +469,35 @@ namespace nx
                 if(!graphNames.count(scoped(owner,event))){error="Missing behaviour event "+owner+"/"+event;return false;}
             std::vector<BlueprintPin> vars;if(!candidate.variables(vars,error,owner))return false;
         }
-        for(const auto& g:candidate.graphs)for(const auto& n:g.nodes)
-            if((n.kind=="attach:behaviour"||n.kind=="attach:direct"||n.kind=="level:attach")&&std::find(behaviours.begin(),behaviours.end(),n.ref)==behaviours.end())
-            {error="Missing behaviour "+n.ref;return false;}
-        const auto& globals=candidate.moduleGlobals();
+        const auto screens=candidate.screens();
+        // Migrate older single-screen documents whose Behaviours used implicit module scope.
+        if(screens.size()==1&&!candidate.moduleGlobals(screens.front()).empty())
+        {
+            bool changed=true;
+            while(changed)
+            {
+                changed=false;
+                for(auto& g:candidate.graphs)if(behaviourOwner(g.owner)&&g.name=="start"&&g.moduleOwner.empty())
+                {
+                    bool needsScope=false;
+                    for(const auto& method:candidate.graphs)if(method.owner==g.owner)for(const auto& n:method.nodes)
+                        if(globalKind(n.kind)||((n.kind=="attach:behaviour"||n.kind=="attach:direct"||n.kind=="level:attach")&&!candidate.moduleForOwner("behaviour:"+n.ref).empty()))needsScope=true;
+                    if(needsScope){g.moduleOwner=screens.front();changed=true;}
+                }
+            }
+        }
         for(const auto& g:candidate.graphs)
         {
-            if(!g.globals.empty()&&candidate.screens().size()!=1){error="Module variables currently require one screen.";return false;}
-            for(const auto& n:g.nodes)if(globalKind(n.kind)&&std::none_of(globals.begin(),globals.end(),[&](const Field& f){return f.name==n.ref&&f.type==n.kind.substr(11);}))
-            {error="Unknown or incompatible module variable: "+n.ref;return false;}
+            if(!g.moduleOwner.empty()&&std::find(screens.begin(),screens.end(),g.moduleOwner)==screens.end())
+            {error="Missing Behaviour module: "+g.moduleOwner;return false;}
+            const auto& globals=candidate.moduleGlobals(g.owner);
+            for(const auto& n:g.nodes)
+            {
+                if((n.kind=="attach:behaviour"||n.kind=="attach:direct"||n.kind=="level:attach")&&!candidate.canAttach(g.owner,n.ref))
+                {error="Missing or out-of-scope Behaviour: "+n.ref;return false;}
+                if(globalKind(n.kind)&&std::none_of(globals.begin(),globals.end(),[&](const Field& f){return f.name==n.ref&&f.type==n.kind.substr(11);}))
+                {error="Unknown or incompatible module variable: "+n.ref;return false;}
+            }
         }
         if(!candidate.functions(error))return false;
         *this=std::move(candidate);error.clear();return true;
@@ -512,6 +539,7 @@ namespace nx
                     if(f.initialized&&!text(*item,"value",f.value))return fail();
                 }
             }
+            if(!g.moduleOwner.empty()&&!text(*v,"moduleOwner",g.moduleOwner))return fail();
             if(!g.globals.empty())
             {
                 auto* fields=v->put("globals");if(!fields)return fail();fields->setArray();
@@ -570,7 +598,7 @@ namespace nx
         if(kind.rfind("capture:",0)==0)value="captured";
         if(globalKind(kind))
         {
-            const auto& globals=moduleGlobals();
+            const auto& globals=moduleGlobals(g.owner);
             const auto found=std::find_if(globals.begin(),globals.end(),[&](const Field& f){return f.type==kind.substr(11);});
             if(found==globals.end()){error="No declared module variable of this type.";return false;}
             value=found->name;
@@ -585,7 +613,8 @@ namespace nx
         }
         if((kind=="attach:behaviour"||kind=="attach:direct"||kind=="level:attach"))
         {
-            const auto names=behaviours();if(names.empty()){error="Create a behaviour first.";return false;}value=names.front();
+            const auto names=behaviours();const auto found=std::find_if(names.begin(),names.end(),[&](const std::string& n){return canAttach(g.owner,n);});
+            if(found==names.end()){error="No Behaviour available in this module.";return false;}value=*found;
         }
         if(kind=="call:function")
         {
@@ -663,11 +692,27 @@ namespace nx
         if(it==values.end())return false;
         record(graph);values.erase(it);return true;
     }
-    const std::vector<BlueprintDocument::Field>& BlueprintDocument::moduleGlobals() const
+    std::string BlueprintDocument::moduleForOwner(const std::string& owner) const
+    {
+        if(!behaviourOwner(owner))return owner;
+        for(const auto& g:graphs)if(g.owner==owner&&g.name=="start")return g.moduleOwner;
+        return "";
+    }
+    const std::vector<BlueprintDocument::Field>& BlueprintDocument::moduleGlobals(const std::string& owner) const
     {
         static const std::vector<Field> empty;
-        for(const auto& g:graphs)if(!g.globals.empty())return g.globals;
+        const auto owners=screens();
+        const auto module=owner.empty()?(owners.size()==1?owners.front():""):moduleForOwner(owner);
+        if(module.empty())return empty;
+        for(const auto& g:graphs)if(g.owner==module&&g.name=="onEnter")return g.globals;
         return empty;
+    }
+    bool BlueprintDocument::canAttach(const std::string& owner,const std::string& behaviour) const
+    {
+        const auto target="behaviour:"+behaviour;
+        if(std::none_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==target&&g.name=="start";}))return false;
+        const auto scope=moduleForOwner(target);
+        return scope.empty()||scope==moduleForOwner(owner);
     }
     bool BlueprintDocument::variables(std::vector<BlueprintPin>& values,std::string& error,const std::string& owner)const
     {
@@ -702,7 +747,7 @@ namespace nx
         if(n.ref==value){error.clear();return true;}
         if(globalKind(n.kind))
         {
-            const auto& globals=moduleGlobals();
+            const auto& globals=moduleGlobals(graphs[graph].owner);
             if(std::none_of(globals.begin(),globals.end(),[&](const Field& f){return f.name==value&&f.type==n.kind.substr(11);}))
             {error="Unknown or incompatible module variable.";return false;}
             record(graph);n.ref=value;error.clear();return true;
@@ -710,7 +755,7 @@ namespace nx
         if(n.kind.rfind("capture:",0)==0){record(graph);n.ref=value;error.clear();return true;}
         if((n.kind=="attach:behaviour"||n.kind=="attach:direct"||n.kind=="level:attach"))
         {
-            const auto names=behaviours();if(std::find(names.begin(),names.end(),value)==names.end()){error="Unknown behaviour "+value;return false;}
+            if(!canAttach(graphs[graph].owner,value)){error="Unknown or out-of-scope Behaviour "+value;return false;}
             record(graph);n.ref=value;error.clear();return true;
         }
         if(n.kind=="call:function")
@@ -917,7 +962,6 @@ namespace nx
     }
     bool BlueprintDocument::addScreen(const std::string& id,std::string& error)
     {
-        if(!moduleGlobals().empty()){error="Projects with module variables currently require one screen.";return false;}
         if(!screenId(id)||graphs.size()+6>kMaxGraphs||
             std::any_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==id;}))
         {error="Choose a unique lowercase screen ID (letters, digits, hyphens or underscores; not screen).";return false;}
@@ -934,6 +978,7 @@ namespace nx
         const auto owners=screens();
         if(owners.size()<2||id==owners.front()||std::find(owners.begin(),owners.end(),id)==owners.end())
         {error="The initial screen cannot be deleted.";return false;}
+        for(const auto& g:graphs)if(g.moduleOwner==id){error="Remove module-scoped Behaviours before deleting "+id+".";return false;}
         // Reject references in both stored input values and wired constant nodes.
         for(const auto& g:graphs)if(g.owner!=id)for(size_t i=0;i<g.nodes.size();++i)
         {

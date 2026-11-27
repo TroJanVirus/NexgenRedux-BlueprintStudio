@@ -44,6 +44,7 @@ namespace nx
             // Explicit imported fields live on the owner lifecycle entry graph.
             std::vector<Field> fields{};
             std::vector<Field> globals{};
+            std::string moduleOwner{}; // optional screen scope on Behaviour start graph
         };
         std::string name;
         std::string assetRoot; // external project directory, separate from graph history
@@ -82,7 +83,9 @@ namespace nx
         bool removeFunction(size_t graph,std::string& error);
         bool functions(std::string& error) const;
         // Named instance variables and function names are scoped to their owning screen.
-        const std::vector<Field>& moduleGlobals() const;
+        std::string moduleForOwner(const std::string& owner) const;
+        const std::vector<Field>& moduleGlobals(const std::string& owner="") const;
+        bool canAttach(const std::string& owner,const std::string& behaviour) const;
         bool variables(std::vector<BlueprintPin>& values,std::string& error,const std::string& owner="Screen") const;
         bool undo();
         bool redo();

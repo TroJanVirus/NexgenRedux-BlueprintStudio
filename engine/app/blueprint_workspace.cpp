@@ -198,8 +198,9 @@ namespace nx
         auto lower=[](std::string value){for(char& c:value)c=static_cast<char>(std::tolower(static_cast<unsigned char>(c)));return value;};
         const auto query=lower(m_query);
         const auto& graph=m_document.graphs[m_graph];const bool behaviour=graph.owner.rfind("behaviour:",0)==0;
-        const bool hasBehaviours=!m_document.behaviours().empty();
-        const auto& globals=m_document.moduleGlobals();
+        const auto behaviours=m_document.behaviours();
+        const bool hasBehaviours=std::any_of(behaviours.begin(),behaviours.end(),[&](const std::string& name){return m_document.canAttach(graph.owner,name);});
+        const auto& globals=m_document.moduleGlobals(graph.owner);
         for(const auto& node:blueprintCatalogue())
             if((node.id.rfind("global:",0)!=0||std::any_of(globals.begin(),globals.end(),[&](const BlueprintDocument::Field& f){return f.type==node.id.substr(11);}))&&node.id!="entry"&&(node.id!="return:function"||graph.kind=="function")&&(node.id!="event:entity"||behaviour)&&
                 (node.id!="event:other"||(behaviour&&(graph.name=="onHit"||graph.name=="onLeave")))&&

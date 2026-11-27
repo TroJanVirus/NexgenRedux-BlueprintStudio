@@ -681,6 +681,7 @@ namespace nx
                     else if(!declaration(true,"Screen"))return false;
                 }
                 if(!sawScreen)return fail("Expected one Screen class.");
+                if(!globals.empty())for(auto& g:doc.graphs)if(g.owner.rfind("behaviour:",0)==0&&g.name=="start")g.moduleOwner="Screen";
                 for(const auto& id:freeFunctions)if(globals.count(id))return fail("Function and global variable have the same name: "+id+".");
                 for(const auto& id:freeFunctions)if(classFields["Screen"].count(id))return fail("Standalone function and Screen field have the same name: "+id+".");
                 for(const auto& method:bodies)
@@ -795,8 +796,6 @@ namespace nx
         if(!probe.addScreen(owner,error)||std::find(existingScreens.begin(),existingScreens.end(),owner)!=existingScreens.end()||
             screen.screens()!=std::vector<std::string>{"Screen"})
         {error="Invalid or duplicate imported screen: "+owner;return false;}
-        if(!existingScreens.empty()&&(!project.moduleGlobals().empty()||!screen.moduleGlobals().empty()))
-        {error="Module variable imports currently require one screen.";return false;}
         std::string verified;
         if(!screen.serialize(verified,error))return false;
         const auto existing=project.behaviours(),incoming=screen.behaviours();
@@ -807,7 +806,7 @@ namespace nx
         {
             names[name]=name;
             if(std::find(existing.begin(),existing.end(),name)==existing.end())continue;
-            if(sameIndependentBehaviour(project,screen,"behaviour:"+name)){skip.insert(name);continue;}
+            if(project.moduleForOwner("behaviour:"+name).empty()&&screen.moduleForOwner("behaviour:"+name).empty()&&sameIndependentBehaviour(project,screen,"behaviour:"+name)){skip.insert(name);continue;}
             std::string prefix=owner;
             std::replace(prefix.begin(),prefix.end(),'-','_');
             for(unsigned suffix=1;;++suffix)
@@ -826,6 +825,7 @@ namespace nx
                 const auto old=g.owner.substr(10);
                 if(skip.count(old))continue;
                 g.owner="behaviour:"+names.at(old);
+                if(!g.moduleOwner.empty())g.moduleOwner=owner;
             }
             for(auto& n:g.nodes)if(attachment(n))n.ref=names.at(n.ref);
             additions.push_back(std::move(g));

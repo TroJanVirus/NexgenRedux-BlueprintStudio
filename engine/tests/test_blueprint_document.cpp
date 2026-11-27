@@ -870,11 +870,33 @@ NX_TEST(nativeImportedModuleGlobalsRetainSharedScope)
     BlueprintDocument restored;NX_EXPECT(restored.load(bytes.data(),bytes.size(),error)&&compileBlueprint(restored,source,error));
     NX_EXPECT(restored.moduleGlobals().size()==1&&source.find("int bp_global_count = int(2);")!=std::string::npos);
     NX_EXPECT(source.find("bp_global_count =")!=std::string::npos&&source.find("bp_var_count")==std::string::npos);
-    NX_EXPECT(!restored.addScreen("level",error));
+    NX_EXPECT(restored.addScreen("level",error)&&restored.undo());
     NX_EXPECT(restored.addNode(0,"global:get:int",0,0,error));
     NX_EXPECT(!restored.setReference(0,restored.graphs[0].nodes.size()-1,"missing",error));
     NX_EXPECT(restored.undo());
     std::string after;NX_EXPECT(restored.serialize(after,error)&&after==bytes);
     NX_EXPECT(!importBlueprintScreen("int state=1+2; class Bad : Screen {}",doc,error));
     NX_EXPECT(doc.serialize(after,error)&&after==bytes);
+}
+
+NX_TEST(nativeImportedMultiScreenGlobalsAndBehavioursKeepModuleOwnership)
+{
+    BlueprintDocument project;project.name="Modules";std::string error,bytes;
+    for(const auto& owner:std::vector<std::string>{"main","level"})
+    {
+        const auto code=std::string("int count=")+(owner=="main"?"1":"9")+"; class Actor : Behaviour {void start(){count++;}} class Example : Screen {void onEnter(){count++;Entity@ a=Scene::spawn(Vec2(0.0f,0.0f));a.add(Actor());}}";
+        BlueprintDocument screen;NX_EXPECT(importBlueprintScreen(code,screen,error)&&mergeImportedBlueprintScreen(project,std::move(screen),owner,error));
+    }
+    NX_EXPECT(project.moduleGlobals("main").size()==1&&project.moduleGlobals("level").size()==1);
+    NX_EXPECT(project.moduleForOwner("behaviour:Actor")=="main"&&project.moduleForOwner("behaviour:level_Actor_1")=="level");
+    NX_EXPECT(!project.canAttach("level","Actor")&&!project.canAttach("main","level_Actor_1"));
+    NX_EXPECT(project.serialize(bytes,error));
+    BlueprintDocument restored;NX_EXPECT(restored.load(bytes.data(),bytes.size(),error));
+    std::vector<BlueprintScreenOutput> out;NX_EXPECT(compileBlueprintProject(restored,out,error)&&out.size()==2);
+    if(out.size()==2)
+    {
+        NX_EXPECT(out[0].source.find("int bp_global_count = int(1);")!=std::string::npos&&out[0].source.find("BP_Behaviour_level_Actor_1")==std::string::npos);
+        NX_EXPECT(out[1].source.find("int bp_global_count = int(9);")!=std::string::npos&&out[1].source.find("BP_Behaviour_Actor")==std::string::npos);
+    }
+    NX_EXPECT(!restored.removeScreen("level",error));
 }
