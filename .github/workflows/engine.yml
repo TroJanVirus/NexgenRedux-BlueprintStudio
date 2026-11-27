@@ -66,6 +66,7 @@ jobs:
         node engine/tools/blueprint/test_polish.js
         node engine/tools/blueprint/test_organise.js
         node engine/tools/blueprint/test_game_tools.js
+        node engine/tools/blueprint/test_playtest.js
 
     # With a real window and GPU driver, though a software one.
     - name: Draw every screen

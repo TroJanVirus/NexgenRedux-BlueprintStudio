@@ -1,0 +1,17 @@
+/* Start and update a game using the optional local desktop bridge. */
+(function(){'use strict';
+const dlg=el('dialog');dlg.id='playtestDialog';dlg.style.width='min(650px,92vw)';document.body.append(dlg);
+const button=action(document.querySelector('.toolbar'),'Play test',open);let pending=false,interval=null;
+async function request(action,args={}){if(!window.NEXGEN_DEBUG_TOKEN)throw Error('Open Studio through the local bridge to run a desktop game.');const res=await fetch('/play',{method:'POST',headers:{'Content-Type':'application/json','X-Nexgen-Token':window.NEXGEN_DEBUG_TOKEN},body:JSON.stringify({action,...args})});const value=await res.json();if(!res.ok)throw Error(value.error||'Play test failed');return value;}
+function snapshotProject(){if(!project)createProject();if(!projectActive)throw Error('Open a project screen before playing.');captureProject();return project;}
+function open(){dlg.replaceChildren();dlg.append(el('h2','','Play test'),el('p','','Run Nexgen in a separate desktop window. The test uses a dedicated engine copy and temporary saves. Update scripts while the game is running.'));
+ if(!window.NEXGEN_DEBUG_TOKEN){dlg.append(el('p','','Start Studio using the local bridge with a test copy of Nexgen. See the README for setup.'),el('pre','','node debug_bridge.js --preview-engine /path/to/test-copy/nexgen'));action(dlg,'Close',()=>dlg.close());dlg.showModal();return;}
+ const status=el('p','','Checking desktop test setup…'),error=el('p','danger'),logs=el('pre');logs.style.cssText='white-space:pre-wrap;overflow:auto;max-height:35vh';const screens=el('select');try{const p=snapshotProject();for(const s of p.screens){const o=el('option','',s.title);o.value=s.id;screens.append(o);}screens.value=projectActive||p.screens[0].id;}catch(e){error.textContent=e.message;}
+ dlg.append(el('label','','Start screen'),screens,status,error);const row=el('div','row');dlg.append(row);let current={configured:false,running:false};const run=action(row,'Run game',()=>perform('start'),'accent'),update=action(row,'Update scripts',()=>perform('reload')),stop=action(row,'Stop',()=>perform('stop')),close=action(row,'Close',()=>dlg.close());dlg.append(logs);
+ function paint(){status.textContent=current.configured?(current.running?'Running '+current.screen+(current.stopping?' · stopping':''):current.exit?'Stopped · exit '+(current.exit.code??current.exit.signal):'Ready'):'The bridge needs --preview-engine pointing to a desktop test copy.';screens.disabled=current.running||pending;run.disabled=pending||!current.configured||current.running||!screens.value;update.disabled=pending||!current.running||current.stopping;stop.disabled=pending||!current.running||current.stopping;logs.textContent=current.logs||'';button.textContent=current.running?'Play test ●':'Play test';}
+ async function refresh(){if(pending||!dlg.open)return;try{const next=await request('status');if(pending||!dlg.open)return;current=next;paint();}catch(e){error.textContent=e.message;}}
+ async function perform(kind){if(pending)return;pending=true;error.textContent='';paint();try{const args=kind==='stop'?{}:{project:snapshotProject(),screen:screens.value};current=await request(kind,args);}catch(e){error.textContent=e.message;}finally{pending=false;paint();}}
+ dlg.showModal();paint();refresh();interval=setInterval(refresh,1000);
+}
+dlg.addEventListener('close',()=>{clearInterval(interval);interval=null;});
+})();

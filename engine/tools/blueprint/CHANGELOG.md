@@ -1,5 +1,12 @@
 # Changes
 
+## Play testing
+
+- Run and stop a desktop game from Studio through the local bridge.
+- Send updated scripts to Nexgen in dev mode without exporting a ZIP.
+- Use a dedicated test copy and temporary saves; never overwrite an existing screen.
+- The launcher is tested with a local process. Actual Nexgen window and reload tests remain outstanding.
+
 ## Project editing
 
 - Edit or create behaviours inside their screen. Save the whole project without leaving the behaviour graph.
