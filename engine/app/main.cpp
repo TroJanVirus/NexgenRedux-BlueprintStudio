@@ -35,7 +35,7 @@
 //                   it first, and --debug-remote lets one on another machine connect
 //   --saves FOLDER  keep saves there, and keep them with --demo too
 //   --size W H      window size
-//   --hidden (and silent), --null, --menu (open the engine's menu for a capture)
+//   --hidden (and silent), --silent (visible window without audio), --null, --menu (open the engine's menu for a capture)
 //   --clean         with --demo: no captions over the demos, for footage
 //   --meeting PORT  be a meeting place for rooms on the internet, with no window, until stopped
 namespace
@@ -60,6 +60,7 @@ namespace
         size_t budget = 0;
         u32 width = 1280, height = 720;
         bool hidden = false;
+        bool silent = false;
         bool clean = false;        // demos without their captions, for footage
         bool null = false;
         bool menu = false;
@@ -548,7 +549,7 @@ namespace
             const bool small = platform.totalMemory() && platform.totalMemory() <= 128u * 1024 * 1024;
             const size_t textures = options.budget ? options.budget : (small ? 20u : 256u) * 1024 * 1024;
             ok = assets.init(*device, platform, textures, (small ? 6u : 64u) * 1024 * 1024) && canvas.init(*device, assets) && host.init();
-            ok = ok && audio.init(options.null || options.docs || options.hidden || options.record ? createNullAudioOutput(options.record == nullptr) : createAudioOutput());
+            ok = ok && audio.init(options.null || options.docs || options.hidden || options.silent || options.record ? createNullAudioOutput(options.record == nullptr) : createAudioOutput());
             audio.onFinished([](void* asset, void* cache) { static_cast<Assets*>(cache)->release(static_cast<Asset*>(asset)); }, &assets);
             coroutines.init(host);
             save.init(platform, "showcase");
@@ -878,6 +879,7 @@ int main(int argc, char** argv)
         else if (strcmp(a, "--budget") == 0) options.budget = static_cast<size_t>(atof(value(i)) * 1024 * 1024);
         else if (strcmp(a, "--size") == 0) { options.width = static_cast<u32>(atoi(value(i))); options.height = static_cast<u32>(atoi(value(i))); }
         else if (strcmp(a, "--hidden") == 0) options.hidden = true;
+        else if (strcmp(a, "--silent") == 0) options.silent = true;
         else if (strcmp(a, "--clean") == 0) options.clean = true;
         else if (strcmp(a, "--null") == 0) options.null = true;
         else if (strcmp(a, "--menu") == 0) options.menu = true;

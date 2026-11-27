@@ -507,7 +507,11 @@ namespace nx
             browseAssets(s);
             if(m_assetBrowser)m_status="Returned from Scene editor. Saved scene files are ready.";
         }
-        else m_status="Preview stopped. Graph and original save unchanged.";
+        else
+        {
+            m_status="Preview stopped. Graph and original save unchanged.";
+            NX_INFO("Blueprint Studio: preview stopped");
+        }
     }
 
     void BlueprintWorkspace::updatePreview(Services& s,float dt)
@@ -798,7 +802,10 @@ namespace nx
                     else if(startTrace(s))
                     {
                         if(s.screens->startProjectPreview(screens,owner,m_status,m_document.assetRoot))
-                        {m_playing=true;clearWire();m_status="Playing "+owner+(m_traceDebugger?". Ctrl+T pauses trace; Escape stops.":". Escape returns to Studio.");}
+                        {
+                            m_playing=true;clearWire();m_status="Playing "+owner+(m_traceDebugger?". Ctrl+T pauses trace; Escape stops.":". Escape returns to Studio.");
+                            NX_INFO("Blueprint Studio: preview started: %s",owner.c_str());
+                        }
                         else
                         {
                             stopTrace();focusPreviewError(m_status);

@@ -41,7 +41,7 @@ jobs:
           submodules: true
           persist-credentials: false
       - name: Install native desktop build dependencies
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libx11-dev libgl-dev xvfb libgl1-mesa-dri xauth
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libx11-dev libgl-dev xvfb libgl1-mesa-dri xauth xdotool python3-xlib
       - name: Configure
         run: cmake -S engine -B build -DCMAKE_BUILD_TYPE=Release
       - name: Build native editor and regression executables
@@ -57,3 +57,5 @@ jobs:
       - name: Reopen native editor with existing save directory
         if: ${{ !cancelled() }}
         run: xvfb-run -a -s "-screen 0 1280x720x24" build/showcase/nexgen --blueprint-studio --hidden --frames 120 --saves "$RUNNER_TEMP/bp-desktop-saves"
+      - name: Exercise real X11 input, recovery, save, play and export
+        run: xvfb-run -a -s "-screen 0 1280x720x24" /usr/bin/python3 engine/tools/blueprint/test_native_desktop.py build/showcase/nexgen "$RUNNER_TEMP/bp-desktop-operational"

@@ -691,7 +691,12 @@ NX_TEST(nativeLargeProjectRoundTripHistoryAndMalformedInputStress)
         NX_EXPECT(loaded.undo()&&!loaded.dirty());
     }
     NX_EXPECT(loaded.serialize(again,error)&&again==saved);
-    for(size_t cut:{size_t(1),saved.size()/2,saved.size()-1})
+    // The serializer appends a newline; removing whitespace is not corruption.
+    const auto closing=saved.find_last_not_of(" \t\r\n");
+    NX_EXPECT(closing!=std::string::npos&&saved[closing]=='}');
+    if(closing==std::string::npos)return;
+    NX_EXPECT(loaded.load(saved.data(),closing+1,error)&&loaded.serialize(again,error)&&again==saved);
+    for(size_t cut:{size_t(1),saved.size()/2,closing})
     {
         NX_EXPECT(!loaded.load(saved.data(),cut,error));
         NX_EXPECT(loaded.serialize(again,error)&&again==saved);
