@@ -248,6 +248,8 @@ namespace nx
                 stamp.substr(0,separator).find_first_not_of("0123456789")==std::string::npos&&
                 stamp.substr(separator+1).find_first_not_of("0123456789")==std::string::npos;
         }
+        bool projectFolderName(const std::string& folder)
+        {return folder.size()>8&&folder.rfind("project-",0)==0&&blueprintAssetName(folder,true);}
         bool standaloneSourceName(const std::string& file)
         {
             return file.size()>3&&file.size()<=128&&file.front()!='.'&&file.ends_with(".as")&&
@@ -278,6 +280,59 @@ namespace nx
         m_document=std::move(candidate);m_filePath.clear();m_fileBaseline.clear();
         m_checkpointRevision=static_cast<size_t>(-1);m_first=0;selectGraph(0);m_browsing=false;
         m_status="Imported "+file+(m_document.assetRoot.empty()?" as editable graphs.":" with companion assets.")+" Save as a new project.";
+        NX_INFO("Blueprint Studio: %s",m_status.c_str());
+        checkpoint(s,true);return true;
+    }
+
+    bool BlueprintWorkspace::importProjectFolder(Services& s,const std::string& folder)
+    {
+        if(m_document.dirty()){m_status="Save changes before importing a project.";return false;}
+        if(!projectFolderName(folder)){m_status="Invalid project folder.";return false;}
+        const std::string base="own/"+folder;
+        std::vector<std::string> owners;
+        bool overflow=false;
+        struct Listing {std::vector<std::string>& names;bool& overflow;} listing{owners,overflow};
+        s.platform->listFolders(base.c_str(),[](const char* name,void* user)
+        {
+            auto& state=*static_cast<Listing*>(user);
+            if(state.names.size()>=10)state.overflow=true;
+            else state.names.emplace_back(name);
+        },&listing);
+        if(overflow||owners.empty()){m_status="Import requires 1-10 native screen folders.";return false;}
+        std::sort(owners.begin(),owners.end());
+        if(std::adjacent_find(owners.begin(),owners.end())!=owners.end())
+        {m_status="Duplicate screen folder.";return false;}
+        BlueprintDocument candidate;candidate.name=folder.substr(8);
+        for(const auto& owner:owners)
+        {
+            // Use the canonical document screen-ID validator, including reserved IDs.
+            BlueprintDocument probe;probe.create();std::string error;
+            if(!probe.addScreen(owner,error)){m_status=owner+": "+error;return false;}
+            FileData data;
+            if(!s.platform->readFile((base+"/"+owner+"/main.as").c_str(),data,MemTag::General)||
+                data.size>512*1024)
+            {m_status=owner+": missing or oversized main.as.";return false;}
+            const std::string source(reinterpret_cast<const char*>(data.data),data.size);
+            BlueprintDocument screen;
+            if(!importBlueprintScreen(source,screen,error)||!s.screens->validateBlueprintSource(source,error))
+            {m_status=owner+": "+error;return false;}
+            if(candidate.graphs.size()+screen.graphs.size()>64)
+            {m_status="Project exceeds 64 graph limit.";return false;}
+            for(auto& graph:screen.graphs){graph.owner=owner;candidate.graphs.push_back(std::move(graph));}
+        }
+        std::vector<BlueprintScreenOutput> outputs;
+        if(!compileBlueprintProject(candidate,outputs,m_status))return false;
+        for(const auto& output:outputs)
+            if(!s.screens->validateBlueprintSource(output.source,m_status))
+            {m_status=output.id+": "+m_status;return false;}
+        if(!blueprintImportFolderAssets(*s.platform,folder,owners,candidate.assetRoot,m_status))return false;
+        std::string bytes;
+        if(!candidate.serialize(bytes,m_status))return false;
+        BlueprintDocument verified;
+        if(!verified.load(bytes.data(),bytes.size(),m_status))return false;
+        verified.markRecovered();m_document=std::move(verified);m_filePath.clear();m_fileBaseline.clear();
+        m_checkpointRevision=static_cast<size_t>(-1);m_first=0;selectGraph(0);m_browsing=false;
+        m_status="Imported "+std::to_string(owners.size())+" screens from "+folder+". Save as a new project.";
         NX_INFO("Blueprint Studio: %s",m_status.c_str());
         checkpoint(s,true);return true;
     }
@@ -320,14 +375,19 @@ namespace nx
             auto& files=*static_cast<std::vector<std::string>*>(user);
             if(files.size()<4096&&(blueprintFileName(name)||recoveryArchiveName(name)||standaloneSourceName(name)))files.emplace_back(name);
         },&m_files);
+        s.platform->listFolders("own",[](const char* name,void* user)
+        {
+            auto& files=*static_cast<std::vector<std::string>*>(user);
+            if(files.size()<4096&&projectFolderName(name))files.emplace_back(name);
+        },&m_files);
         std::sort(m_files.begin(),m_files.end(),[](const std::string& a,const std::string& b)
         {
-            const auto rank=[](const std::string& file){return blueprintFileName(file)?0:recoveryArchiveName(file)?1:2;};
+            const auto rank=[](const std::string& file){return blueprintFileName(file)?0:recoveryArchiveName(file)?1:standaloneSourceName(file)?2:3;};
             return rank(a)!=rank(b)?rank(a)<rank(b):a<b;
         });
         m_files.erase(std::unique(m_files.begin(),m_files.end()),m_files.end());
         m_browsing=true;clearWire();cancelDrag();
-        m_status="Select a project, recovery archive or standalone source." ;
+        m_status="Select a project, recovery, source or project folder." ;
     }
     std::string BlueprintWorkspace::assetScreen() const
     {
@@ -818,7 +878,8 @@ namespace nx
                 if(row<m_files.size())
                 {
                     const auto file=m_files[row];
-                    if(standaloneSourceName(file))importSource(s,file);
+                    if(projectFolderName(file))importProjectFolder(s,file);
+                    else if(standaloneSourceName(file))importSource(s,file);
                     else openFile(s,file,true);
                 }
             }
@@ -1317,10 +1378,10 @@ namespace nx
                     const float y=166+36*static_cast<float>(i);
                     c.rect(280,y,720,33,{0.17f,0.22f,0.30f,1});
                     const auto& file=m_files[m_fileFirst+i];
-                    const std::string label=(recoveryArchiveName(file)?"RECOVERY  /  ":standaloneSourceName(file)?"SOURCE  /  ":"")+file;
+                    const std::string label=(recoveryArchiveName(file)?"RECOVERY  /  ":standaloneSourceName(file)?"SOURCE  /  ":projectFolderName(file)?"PROJECT FOLDER  /  ":"")+file;
                     c.clip(286,y,708,33);c.text(*m_font,label.c_str(),290,y+8,text);c.noClip();
                 }
-                if(m_files.empty())c.text(*m_font,"No projects, recovery archives or source files in own/.",640,330,muted,Align::Center);
+                if(m_files.empty())c.text(*m_font,"No projects, archives, source or project folders in own/.",640,330,muted,Align::Center);
                 c.clip(280,603,720,22);c.text(*m_font,shorten(m_status,90).c_str(),280,603,muted);c.noClip();
             }
             else if(m_focus==9)

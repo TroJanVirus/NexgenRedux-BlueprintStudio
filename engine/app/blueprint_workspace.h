@@ -39,6 +39,7 @@ namespace nx
         bool saveNamed(Services& services,const std::string& name);
         bool openFile(Services& services,const std::string& file,bool managed);
         bool importSource(Services& services,const std::string& file);
+        bool importProjectFolder(Services& services,const std::string& folder);
         void browseFiles(Services& services);
         void browseAssets(Services& services);
         void launchSceneEditor(Services& services);

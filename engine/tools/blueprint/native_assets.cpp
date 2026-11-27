@@ -170,6 +170,38 @@ namespace nx
             if(ext==type)return "sound/"+file;
         return file;
     }
+    bool blueprintImportFolderAssets(Platform& p,const std::string& folder,const std::vector<std::string>& screens,std::string& root,std::string& error)
+    {
+        if(!blueprintAssetName(folder,true)||folder.rfind("project-",0)!=0||screens.empty()||screens.size()>10)
+        {error="Invalid native project folder.";return false;}
+        std::vector<std::vector<std::string>> collected(screens.size());
+        size_t directories=0,totalFiles=0;
+        for(size_t i=0;i<screens.size();++i)
+        {
+            if(!folderId(screens[i])){error="Invalid screen asset folder.";return false;}
+            const auto base="own/"+folder+"/"+screens[i]+"/asset";
+            if(!p.fileTime(base.c_str()))continue;
+            if(!collect(p,base,"",0,directories,collected[i],error))return false;
+            totalFiles+=collected[i].size();
+            if(totalFiles>kMaxFiles){error="Project asset count limit exceeded.";return false;}
+        }
+        std::string fresh;
+        if(!blueprintCreateAssetRoot(p,fresh,error))return false;
+        size_t total=0;
+        for(size_t i=0;i<screens.size();++i)
+        {
+            if(!blueprintEnsureAssetFolder(p,fresh,screens[i],error))return false;
+            const auto dest=fresh+"/"+screens[i]+"/asset",base="own/"+folder+"/"+screens[i]+"/asset/";
+            for(const auto& file:collected[i])
+            {
+                for(size_t at=file.find('/');at!=std::string::npos;at=file.find('/',at+1))
+                    if(!ensure(p,dest+"/"+file.substr(0,at))){error="Cannot create imported asset subfolder.";return false;}
+                if(!copy(p,base+file,"own/"+dest+"/"+file,total,error))return false;
+            }
+        }
+        root=std::move(fresh);error.clear();return true;
+    }
+
     bool blueprintImportSourceAssets(Platform& p,const std::string& sourceFile,std::string& root,std::string& error)
     {
         if(!sourceFile.ends_with(".as")||sourceFile.find_first_of("/\\:")!=std::string::npos)
