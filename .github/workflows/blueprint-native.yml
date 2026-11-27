@@ -45,9 +45,9 @@ jobs:
       - name: Configure
         run: cmake -S engine -B build -DCMAKE_BUILD_TYPE=Release
       - name: Build native editor and regression executables
-        run: cmake --build build --target showcase nx_blueprint_tests nx_blueprint_document_tests --parallel 4
+        run: cmake --build build --target showcase nx_blueprint_tests nx_blueprint_document_tests nx_blueprint_platform_tests --parallel 4
       - name: Run native document and engine tests
-        run: ctest --test-dir build --output-on-failure --timeout 300 -R '^(blueprint_runtime|blueprint_native_document)$'
+        run: ctest --test-dir build --output-on-failure --timeout 300 -R '^(blueprint_runtime|blueprint_native_document|blueprint_platform_files)$'
       - name: Start editor with null GPU
         if: ${{ !cancelled() }}
         run: build/showcase/nexgen --blueprint-studio --null --frames 180 --saves "$RUNNER_TEMP/bp-null-saves"
@@ -93,9 +93,9 @@ jobs:
       - name: Configure
         run: cmake -S engine -B build -DCMAKE_BUILD_TYPE=Release
       - name: Build native editor and regression executables
-        run: cmake --build build --config Release --target showcase nx_blueprint_tests nx_blueprint_document_tests --parallel 4
+        run: cmake --build build --config Release --target showcase nx_blueprint_tests nx_blueprint_document_tests nx_blueprint_platform_tests --parallel 4
       - name: Run native document and runtime tests
-        run: ctest --test-dir build -C Release --output-on-failure --timeout 300 -R '^(blueprint_runtime|blueprint_native_document)$'
+        run: ctest --test-dir build -C Release --output-on-failure --timeout 300 -R '^(blueprint_runtime|blueprint_native_document|blueprint_platform_files)$'
       - name: Verify native process contention and crash release
         run: python3 engine/tools/blueprint/test_native_lease.py "${{ matrix.binary }}" "$RUNNER_TEMP/bp-portable-lease"
       - name: Retain native process logs

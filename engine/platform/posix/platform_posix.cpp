@@ -210,7 +210,7 @@ namespace nx
             return;
         }
         FileData data;
-        char folder[kMaxPath], full[kMaxPath + 64], fresh[kMaxPath + 70];
+        char folder[kMaxPath], full[kMaxPath + 96], fresh[kMaxPath + 102];
         if (!mediaPath("own", folder) || !readWhole(from, data, MemTag::General))
         {
             return;
