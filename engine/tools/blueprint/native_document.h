@@ -63,6 +63,7 @@ namespace nx
         bool editFunctionSignature(size_t graph,const std::string& signature,std::string& error);
         std::string functionSignature(size_t graph) const;
         bool addScreen(const std::string& id,std::string& error);
+        bool addLevelEvents(const std::string& owner,std::string& error);
         bool removeScreen(const std::string& id,std::string& error);
         std::vector<std::string> screens() const;
         std::vector<std::string> behaviours() const;

@@ -36,6 +36,7 @@ namespace nx
             if(node.kind.rfind("var:",0)==0)return (node.kind.rfind("var:get:",0)==0?"Get ":"Set ")+node.ref;
             if(node.kind=="call:function")return "Call "+node.ref;
             if(node.kind=="attach:behaviour")return "Attach "+node.ref;
+            if(node.kind=="level:attach")return "Attach named: "+node.ref;
             if(const auto* spec=blueprintSpec(node.kind))return spec->title;
             if (node.kind.rfind("api:", 0) == 0)
             {
@@ -181,7 +182,10 @@ namespace nx
         for(const auto& node:blueprintCatalogue())
             if(node.id!="entry"&&(node.id!="return:function"||graph.kind=="function")&&(node.id!="event:entity"||behaviour)&&
                 (node.id!="event:other"||(behaviour&&(graph.name=="onHit"||graph.name=="onLeave")))&&
-                (node.id!="attach:behaviour"||(!behaviour&&hasBehaviours))&&(!behaviour||node.id.rfind("level:",0)!=0)&&(node.id!="event:delta"||m_document.graphs[m_graph].name=="update")&&
+                (node.id!="event:levelName"||(!behaviour&&(graph.name=="onLevelTouch"||graph.name=="onLevelAgent")))&&
+                (node.id!="event:levelWho"||(!behaviour&&graph.name=="onLevelTouch"))&&
+                (node.id!="event:levelWhat"||(!behaviour&&graph.name=="onLevelAgent"))&&
+                ((node.id!="attach:behaviour"&&node.id!="level:attach")||(!behaviour&&hasBehaviours))&&(!behaviour||node.id.rfind("level:",0)!=0)&&(node.id!="event:delta"||m_document.graphs[m_graph].name=="update")&&
                 (node.id!="event:canvas"||m_document.graphs[m_graph].name=="draw")&&
                 lower(node.category+" "+node.title+" "+node.id).find(query)!=std::string::npos)m_palette.push_back(&node);
     }
@@ -615,6 +619,13 @@ namespace nx
             if(click&&in(x,y,1134,39,1266,69)){close(s);return;}
             if(click&&in(x,y,410,5,560,33)&&m_graph<m_document.graphs.size()&&m_document.graphs[m_graph].kind=="function")
             {m_edit=m_document.functionSignature(m_graph);m_focus=9;input.setTyping(true);m_status="Edit the typed signature.";m_left=left;return;}
+            if(click&&in(x,y,410,5,560,33)&&m_graph<m_document.graphs.size()&&m_document.graphs[m_graph].owner.rfind("behaviour:",0)!=0)
+            {
+                const auto owner=m_document.graphs[m_graph].owner;
+                const size_t first=m_document.graphs.size();
+                if(m_document.addLevelEvents(owner,m_status)){selectGraph(first);m_status="Added native Level trigger and agent events.";}
+                m_left=left;return;
+            }
             if(click&&in(x,y,566,5,734,33)){m_edit.clear();m_focus=8;input.setTyping(true);m_status="Type a behaviour name, then Enter.";m_left=left;return;}
             if(click&&in(x,y,740,5,850,33)){browseFiles(s);m_left=left;return;}
             if(click&&in(x,y,856,5,966,33)){m_edit.clear();m_focus=5;input.setTyping(true);m_status="Type a new Blueprint name and press Enter.";m_left=left;return;}
@@ -720,7 +731,7 @@ namespace nx
             if(click&&m_selection<m_document.graphs[m_graph].nodes.size())
             {
                 const auto& n=m_document.graphs[m_graph].nodes[m_selection];
-                if(in(x,y,kRight+8,kTop+456,kWidth-8,kTop+486)&&(n.kind.rfind("literal:",0)==0||n.kind.rfind("var:",0)==0||n.kind=="call:function"||n.kind=="attach:behaviour"))
+                if(in(x,y,kRight+8,kTop+456,kWidth-8,kTop+486)&&(n.kind.rfind("literal:",0)==0||n.kind.rfind("var:",0)==0||n.kind=="call:function"||n.kind=="attach:behaviour"||n.kind=="level:attach"))
                 {m_edit=n.ref;m_focus=n.kind.rfind("literal:",0)==0?2:3;input.setTyping(true);}
                 else if(in(x,y,kRight+8,kBottom-40,kWidth-8,kBottom-8)&&m_document.deleteNode(m_graph,m_selection,m_status)){m_diagnostic={};clearWire();m_selection=static_cast<size_t>(-1);rebuildPins();m_status="Deleted node.";}
             }
@@ -832,6 +843,8 @@ namespace nx
         c.text(*m_font,"Native editor",1260,13,muted,Align::Right);
         if(!m_document.graphs.empty()&&m_document.graphs[m_graph].kind=="function")
         {c.roundRect(410,5,150,28,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Signature",485,9,text,Align::Center);}
+        else if(m_graph<m_document.graphs.size()&&m_document.graphs[m_graph].owner.rfind("behaviour:",0)!=0)
+        {c.roundRect(410,5,150,28,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Level events",485,9,text,Align::Center);}
         c.roundRect(566,5,168,28,4,{0.19f,0.33f,0.50f,1});
         c.clip(566,5,168,28);c.text(*m_font,m_focus==8?(m_edit.empty()?"Type name...":m_edit.c_str()):"New behaviour",650,9,text,Align::Center);c.noClip();
         c.roundRect(740,5,110,28,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Open",795,9,text,Align::Center);
@@ -957,7 +970,7 @@ namespace nx
             const auto* spec=blueprintSpec(n.kind);
             c.clip(kRight+8,kTop+404,kWidth-kRight-16,44);
             c.paragraph(*m_font,spec?spec->title.c_str():n.kind.c_str(),kRight+12,kTop+408,244,text);c.noClip();
-            if(n.kind.rfind("literal:",0)==0||n.kind.rfind("var:",0)==0||n.kind=="call:function"||n.kind=="attach:behaviour")
+            if(n.kind.rfind("literal:",0)==0||n.kind.rfind("var:",0)==0||n.kind=="call:function"||n.kind=="attach:behaviour"||n.kind=="level:attach")
             {
                 c.roundRect(kRight+8,kTop+456,kWidth-kRight-16,30,4,(m_focus==2||m_focus==3)?Color{0.24f,0.35f,0.48f,1}:Color{0.16f,0.21f,0.28f,1});
                 c.clip(kRight+12,kTop+456,kWidth-kRight-24,30);

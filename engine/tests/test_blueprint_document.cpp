@@ -7,7 +7,7 @@
 using namespace nx;
 NX_TEST(nativeCatalogueContainsReferenceAPI)
 {
-    NX_EXPECT(blueprintCatalogue().size()==924);
+    NX_EXPECT(blueprintCatalogue().size()==928);
     const auto* save=blueprintSpec("api:Save:Save::set:string,string");
     NX_EXPECT(save&&save->inputs.size()==3&&save->outputs.size()==1);
     if(save&&save->inputs.size()==3)NX_EXPECT(save->inputs[0].type=="exec"&&save->inputs[2].type=="string");
@@ -367,4 +367,23 @@ NX_TEST(nativeLevelNodesGenerateTheOriginalSceneHelper)
     NX_EXPECT(source.find("bp_level.load(\"asset:scene.json\")")!=std::string::npos);
     NX_EXPECT(source.find("bp_level.update(dt, null, false, Vec3())")!=std::string::npos);
     NX_EXPECT(source.find("bp_level.drawHud(canvas)")!=std::string::npos);
+}
+
+NX_TEST(nativeLevelEventsAndNamedAttachmentsValidateAndPersist)
+{
+    BlueprintDocument doc;doc.create();std::string error,source,saved;
+    NX_EXPECT(doc.addLevelEvents("Screen",error)&&!doc.addLevelEvents("Screen",error));
+    NX_EXPECT(doc.graphs.size()==8&&doc.graphs[6].name=="onLevelTouch");
+    NX_EXPECT(doc.addNode(6,"event:levelName",0,0,error)&&doc.addNode(6,"event:levelWho",0,0,error));
+    NX_EXPECT(!doc.addNode(6,"event:levelWhat",0,0,error)&&!doc.addNode(0,"event:levelName",0,0,error));
+    NX_EXPECT(doc.addBehaviour("Door",error)&&doc.addNode(0,"level:attach",0,0,error));
+    NX_EXPECT(doc.setInputValue(0,1,"name","door",error)&&doc.connect(0,0,"then",1,"in",error));
+    NX_EXPECT(!doc.removeBehaviour("Door",error));
+    NX_EXPECT(doc.serialize(saved,error));BlueprintDocument copy;NX_EXPECT(copy.load(saved.data(),saved.size(),error));
+    NX_EXPECT(compileBlueprint(copy,source,error)&&source.find("LevelTouch(this.onLevelTouch)")!=std::string::npos);
+    NX_EXPECT(source.find("LevelAgent(this.onLevelAgent)")!=std::string::npos&&source.find("bp_level.find(\"door\")")!=std::string::npos);
+    NX_EXPECT(copy.addFunction("Reload",error)&&copy.addNode(13,"level:clear",0,0,error)&&copy.connect(13,0,"then",1,"in",error));
+    NX_EXPECT(copy.addNode(6,"call:function",0,0,error)&&copy.connect(6,0,"then",3,"in",error));
+    BlueprintLocation location;
+    NX_EXPECT(!compileBlueprint(copy,source,error,&location)&&location.graph==13&&location.node==1);
 }

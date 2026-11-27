@@ -151,6 +151,14 @@ namespace nx
                 if(n.kind=="event:canvas"&&graph.name=="draw"&&pin=="value"){result="canvas";return true;}
                 if(n.kind=="event:entity"&&pin=="value"){result="entity";return true;}
                 if(n.kind=="event:other"&&pin=="value"){result="other";return true;}
+                if(n.kind=="event:levelName"&&pin=="value"){result="bp_event_name";return true;}
+                if(n.kind=="event:levelWho"&&pin=="value"){result="bp_event_who";return true;}
+                if(n.kind=="event:levelWhat"&&pin=="value"){result="bp_event_what";return true;}
+                if(n.kind=="level:attach"&&pin=="result")
+                {
+                    if(!available[node])return fail(node,"Attachment result used before execution.");
+                    result="bp_value_"+std::to_string(node);return true;
+                }
                 if(n.kind.rfind("make:",0)==0&&pin=="result")
                 {
                     result=n.kind.substr(5)+"(";bool first=true;
@@ -228,6 +236,15 @@ namespace nx
                     std::string v;if(!value(to,"value",v,0))return false;
                     source+=pad+(n.kind.ends_with("@")?"@":"")+"bp_var_"+n.ref+" = "+v+";\n";mark(start,to);
                     return flow(to,"then",indent,depth+1);
+                }
+                if(n.kind=="level:attach")
+                {
+                    std::string name;if(!value(to,"name",name,0))return false;
+                    const auto suffix=std::to_string(to);
+                    source+=pad+"Entity@ bp_attach_"+suffix+" = bp_level.find("+name+");\n";
+                    source+=pad+"bool bp_value_"+suffix+" = bp_attach_"+suffix+" !is null && bp_attach_"+suffix+".alive;\n";
+                    source+=pad+"if (bp_value_"+suffix+") bp_attach_"+suffix+".add(BP_Behaviour_"+n.ref+"());\n";
+                    available[to]=true;mark(start,to);return flow(to,"then",indent,depth+1);
                 }
                 if(n.kind=="attach:behaviour")
                 {
@@ -324,9 +341,34 @@ namespace nx
         const auto owners=document.screens();
         if(std::find(owners.begin(),owners.end(),owner)==owners.end()){error="Unknown screen "+owner;return false;}
         // Generate shared native behaviour classes in each screen module, before the Screen.
-        bool usesLevel=false;
+        bool usesLevel=false,touch=false,agent=false;
         for(const auto& graph:document.graphs)if(graph.owner==owner)
+        {
+            touch=touch||graph.name=="onLevelTouch";agent=agent||graph.name=="onLevelAgent";
             for(const auto& node:graph.nodes)if(node.kind.rfind("level:",0)==0)usesLevel=true;
+        }
+        usesLevel=usesLevel||touch||agent;
+        // The Level helper calls delegates while iterating its own arrays. Do not permit rebuilding,
+        // clearing or recursively updating it on that stack, including via reusable functions.
+        std::vector<size_t> work;std::vector<bool> checkedGraphs(document.graphs.size(),false);
+        for(size_t i=0;i<document.graphs.size();++i)
+            if(document.graphs[i].owner==owner&&(document.graphs[i].name=="onLevelTouch"||document.graphs[i].name=="onLevelAgent"))work.push_back(i);
+        while(!work.empty())
+        {
+            const auto i=work.back();work.pop_back();if(checkedGraphs[i])continue;checkedGraphs[i]=true;
+            const auto& graph=document.graphs[i];
+            for(size_t n=0;n<graph.nodes.size();++n)
+            {
+                const auto& node=graph.nodes[n];
+                if(node.kind=="level:load"||node.kind=="level:clear"||node.kind=="level:update")
+                {
+                    if(location)*location={i,n};error=graph.name+": Level callbacks cannot load, clear or update the level recursively. Set a variable and handle it after Update native level.";return false;
+                }
+                if(node.kind=="call:function")
+                    for(size_t j=0;j<document.graphs.size();++j)
+                        if(document.graphs[j].owner==owner&&document.graphs[j].kind=="function"&&document.graphs[j].name==node.ref)work.push_back(j);
+            }
+        }
         if(usesLevel)result+="#include \"global:scene.as\"\n\n";
         std::vector<std::string> classes;
         for(const auto& name:document.behaviours())classes.push_back("behaviour:"+name);
@@ -346,7 +388,9 @@ namespace nx
             if(entry==graph.nodes.end()){error="Missing event entry.";return false;}
             const auto index=static_cast<size_t>(entry-graph.nodes.begin());
             std::string signature=graph.kind=="function"?"":graph.name=="update"?"float dt":graph.name=="draw"?"Canvas@ canvas":
-                (graph.name=="onHit"||graph.name=="onLeave")?"Entity@ other":"";
+                (graph.name=="onHit"||graph.name=="onLeave")?"Entity@ other":
+                graph.name=="onLevelTouch"?"const string &in bp_event_name, Entity@ bp_event_who":
+                graph.name=="onLevelAgent"?"const string &in bp_event_name, const string &in bp_event_what":"";
             if(graph.kind=="function")for(const auto& p:graph.parameters)
             {
                 if(!signature.empty())signature+=", ";
@@ -354,6 +398,17 @@ namespace nx
             }
             const size_t start=result.size();
             result+="    "+(graph.kind=="function"?graph.returnType:"void")+" "+(graph.kind=="function"?"bp_fn_"+graph.name:graph.name)+"("+signature+")\n    {\n";
+            if(!behaviour&&graph.name=="onEnter")
+            {
+                if(touch)result+="        @bp_level.onTouch = LevelTouch(this.onLevelTouch);\n";
+                if(agent)result+="        @bp_level.onAgent = LevelAgent(this.onLevelAgent);\n";
+            }
+            // Break the Level -> delegate -> Screen reference cycle on exit.
+            if(!behaviour&&graph.name=="onExit")
+            {
+                if(touch)result+="        @bp_level.onTouch = null;\n";
+                if(agent)result+="        @bp_level.onAgent = null;\n";
+            }
             spans.push_back({start,result.size(),{graphIndex,index}});
             Emitter e{document,graph,result,error,std::vector<bool>(graph.nodes.size(),false),std::vector<bool>(graph.nodes.size(),false),graphIndex,location,spans};
             if(graph.returnType!="void"&&!e.returns(index,"then",0))return e.fail(index,"Not every execution path returns a value.");

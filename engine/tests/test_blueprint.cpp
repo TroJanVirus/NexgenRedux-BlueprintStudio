@@ -1042,3 +1042,43 @@ NX_TEST(nativeLevelGraphLoadsAProjectSceneThroughOriginalLevelHelper)
     r.screens.stopPreview();
 }
 #endif
+
+#ifdef NX_DESKTOP_BLUEPRINT
+NX_TEST(nativeLevelTriggerDelegatesAndNamedBehaviourRunInOriginalLevel)
+{
+    Rig r(128*1024*1024);NX_EXPECT(r.ok);if(!r.ok)return;
+    r.host.setStatementLimit(5000000);r.platform.workspaceFiles=true;
+    r.platform.files["showcase/main/screen.json"]="{\"title\":\"Home\"}";
+    r.platform.files["showcase/main/main.as"]="class Home : Screen {}";
+    if(!r.screens.init(r.services,"showcase","main")){NX_EXPECT(false);return;}
+    r.step(3);r.screens.setDevelopmentPaused(true);
+    std::string root,error,source;
+    if(!blueprintCreateAssetRoot(r.platform,root,error)||!blueprintEnsureAssetFolder(r.platform,root,"Screen",error))
+    {NX_EXPECT(false);return;}
+    r.platform.files["own/"+root+"/Screen/asset/scene.json"]=R"({"ground":0,"entities":[{"name":"door","shape":"box","place":[0,0,0],"size":[1,1,1]},{"name":"target","trigger":true,"when":"shot","once":true,"place":[0,0,0],"size":[4,4,4]}]})";
+    BlueprintDocument doc;doc.create();bool ok=doc.addLevelEvents("Screen",error)&&doc.addBehaviour("Door",error);
+    auto add=[&](size_t g,const char* kind){ok=ok&&doc.addNode(g,kind,0,0,error);};
+    auto wire=[&](size_t g,size_t a,const char* out,size_t b,const char* in){ok=ok&&doc.connect(g,a,out,b,in,error);};
+    auto input=[&](size_t g,size_t n,const char* pin,const char* value){ok=ok&&doc.setInputValue(g,n,pin,value,error);};
+    add(0,"level:load");input(0,1,"file","asset:scene.json");wire(0,0,"then",1,"in");
+    add(0,"level:attach");input(0,2,"name","door");wire(0,1,"then",2,"in");
+    add(0,"level:attach");input(0,3,"name","missing");wire(0,2,"then",3,"in");
+    add(0,"branch");wire(0,3,"then",4,"in");wire(0,3,"result",4,"condition");
+    add(0,"api:Save:Save::set:string,string");input(0,5,"key","missing_attach");input(0,5,"value","safe");wire(0,4,"false",5,"in");
+    add(1,"level:update");input(1,1,"dt","0.016");input(1,1,"shot","true");wire(1,0,"then",1,"in");
+    add(6,"event:levelName");add(6,"api:Save:Save::set:string,string");wire(6,0,"then",2,"in");wire(6,1,"value",2,"key");input(6,2,"value","hit");
+    add(8,"api:Save:Save::set:string,string");wire(8,0,"then",1,"in");input(8,1,"key","door_behaviour");input(8,1,"value","started");
+    NX_EXPECT(ok&&compileBlueprint(doc,source,error));if(!ok||source.empty())return;
+    NX_EXPECT(r.screens.validateBlueprintSource(source,error));
+    Screens::PreviewScreen p;snprintf(p.info.id,sizeof(p.info.id),"Screen");p.source=source;
+    NX_EXPECT(r.screens.startProjectPreview({p},"Screen",error,root));if(!r.screens.previewing())return;
+    for(int i=0;i<1000&&r.screens.loading()&&!r.screens.failed();++i)
+    {r.step();std::this_thread::sleep_for(std::chrono::milliseconds(10));}
+    r.step(3);
+    NX_EXPECT(!r.screens.failed());
+    NX_EXPECT(strcmp(r.services.save->get("door_behaviour","missing"),"started")==0);
+    NX_EXPECT(strcmp(r.services.save->get("missing_attach","missing"),"safe")==0);
+    NX_EXPECT(strcmp(r.services.save->get("target","missing"),"hit")==0);
+    r.screens.stopPreview();
+}
+#endif
