@@ -295,10 +295,10 @@ namespace nx
                     if(incoming(to,"id"))return fail(to,"Linked actor ID must be a constant asset reference.");
                     const auto it=std::find_if(n.values.begin(),n.values.end(),[](const BlueprintDocument::InputValue& v){return v.pin=="id";});
                     std::string json,why,sourceJson,place;
-                    if(it==n.values.end()||!document.visualActorRoot(it->value,json,why))
+                    if(it==n.values.end()||!document.visualActorSource(it->value,json,why))
                         return fail(to,why.empty()?"Select a linked actor asset.":why);
                     if(!literalValue(to,"string",json,sourceJson)||!value(to,"place",place,0))return false;
-                    source+=pad+"Entity@ bp_value_"+std::to_string(to)+" = Space::make(Json("+sourceJson+"), "+place+");\n";
+                    source+=pad+"Entity@ bp_value_"+std::to_string(to)+" = Space::makeActor(Json("+sourceJson+"), "+place+");\n";
                     available[to]=true;mark(start,to);return flow(to,"then",indent,depth+1);
                 }
                 if(n.kind=="render:space")

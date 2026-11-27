@@ -1308,7 +1308,7 @@ NX_TEST(nativeLinkedActorsReuseDefinitionAndMigrateAcrossScreens)
     NX_EXPECT(compileBlueprintProject(doc,output,error)&&output.size()==2);
     for(const auto& screen:output)
     {
-        NX_EXPECT(screen.source.find("Space::make(Json(")!=std::string::npos);
+        NX_EXPECT(screen.source.find("Space::makeActor(Json(")!=std::string::npos);
         NX_EXPECT(screen.source.find("sphere")!=std::string::npos);
         NX_EXPECT(screen.source.find("Space::draw(canvas)")!=std::string::npos);
     }
@@ -1318,4 +1318,26 @@ NX_TEST(nativeLinkedActorsReuseDefinitionAndMigrateAcrossScreens)
     BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error));
     NX_EXPECT(compileBlueprintOwner(copy,"other",code,error)&&code.find("sphere")!=std::string::npos);
     NX_EXPECT(!copy.placeVisualActor("other",id,"NaN,0,0",error));
+}
+
+NX_TEST(nativeActorComponentHierarchyPreservesLinksAndUndo)
+{
+    BlueprintDocument doc;doc.create();std::string error,id,source,bytes;
+    NX_EXPECT(doc.createVisualAsset("actor",id,error));
+    NX_EXPECT(doc.appendVisualActorComponent(id,0,"box","0,1.5,0",error));
+    NX_EXPECT(doc.appendVisualActorComponent(id,1,"sphere","1,0,0",error));
+    NX_EXPECT(doc.setVisualActorShape(id,"capsule",error,1));
+    NX_EXPECT(doc.placeVisualActor("Screen",id,"2,0,0",error)&&compileBlueprint(doc,source,error));
+    NX_EXPECT(source.find("Space::makeActor(Json(")!=std::string::npos&&source.find("capsule")!=std::string::npos);
+    NX_EXPECT(doc.serialize(bytes,error));
+    BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error));
+    NX_EXPECT(copy.visualActorSource(id,source,error)&&source.find("parents")!=std::string::npos);
+    NX_EXPECT(!copy.appendVisualActorComponent(id,99,"box","0,0,0",error));
+    NX_EXPECT(doc.undo()&&doc.undo());
+    NX_EXPECT(doc.visualActorSource(id,source,error)&&source.find("capsule")==std::string::npos);
+    NX_EXPECT(doc.redo()&&doc.redo());
+    auto assets=copy.visualAssets();
+    assets[0].source="{\"entities\":[{},{}],\"parents\":[-1,1]}";
+    NX_EXPECT(copy.replaceVisualAssets(assets,error));
+    NX_EXPECT(!copy.visualActorSource(id,source,error));
 }

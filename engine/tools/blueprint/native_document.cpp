@@ -646,47 +646,91 @@ namespace nx
         if(!staged.serialize(verified,error))return false;
         recordGraphList();graphs.swap(staged.graphs);m_nextId=staged.m_nextId;error.clear();return true;
     }
-    bool BlueprintDocument::visualActorRoot(const std::string& id,std::string& json,std::string& error)const
+    bool BlueprintDocument::visualActorSource(const std::string& id,std::string& json,std::string& error)const
     {
         const auto* asset=visualAsset(id);
         if(!asset||asset->kind!="actor"||!asset->dependencies.empty())
         {error="Select a standalone actor definition.";return false;}
-        JsonValue root;
-        if(!root.parse(asset->source.data(),asset->source.size(),error))return false;
-        const auto* entities=root.find("entities");
-        if(!entities||entities->type()!=JsonValue::Type::Array||entities->count()!=1||
-            !entities->at(0)||entities->at(0)->type()!=JsonValue::Type::Object)
-        {error="This actor version requires exactly one native Space entity.";return false;}
-        // Unknown top-level scene properties could change meaning when converted
-        // to a single entity. Do not silently discard them.
-        if(root.count()!=1){error="Unsupported actor scene properties.";return false;}
-        json=entities->at(0)->write(true);error.clear();return true;
+        JsonTree tree;
+        if(!tree.parse(asset->source.data(),asset->source.size())){error="Invalid actor JSON.";return false;}
+        const auto root=tree.root(),entities=root["entities"],parents=root["parents"];
+        const auto count=entities.count();
+        if(!root.isObject()||!entities.isArray()||!count||count>32||
+            root.count()!=(parents.exists()?2u:1u)||
+            (parents.exists()?(!parents.isArray()||parents.count()!=count):count!=1))
+        {error="Invalid actor hierarchy: use one root and at most 32 parent-first components.";return false;}
+        unsigned depths[32]={};
+        for(unsigned i=0;i<count;++i)
+        {
+            if(!entities[i].isObject()||(i&&entities[i]["onLand"].exists()))
+            {error="Invalid actor component; terrain-relative placement is root-only.";return false;}
+            if(!parents.exists())continue;
+            const auto p=parents[i];const double n=p.exact();
+            if(!p.isNumber()||(!i?n!=-1:!(n>=0&&n<i&&std::floor(n)==n)))
+            {error="Actor component parent must precede the child.";return false;}
+            if(i&&(depths[i]=depths[static_cast<unsigned>(n)]+1)>8)
+            {error="Actor hierarchy nesting limit exceeded.";return false;}
+        }
+        json=asset->source;error.clear();return true;
     }
-    bool BlueprintDocument::setVisualActorShape(const std::string& id,const std::string& shape,std::string& error)
+    bool BlueprintDocument::visualActorRoot(const std::string& id,std::string& json,std::string& error)const
+    {
+        std::string source;if(!visualActorSource(id,source,error))return false;
+        JsonValue root;if(!root.parse(source.data(),source.size(),error))return false;
+        json=root.find("entities")->at(0)->write(true);return true;
+    }
+    bool BlueprintDocument::setVisualActorShape(const std::string& id,const std::string& shape,std::string& error,size_t component)
     {
         if(shape!="box"&&shape!="sphere"&&shape!="capsule"&&shape!="plane")
-        {error="Unsupported starter actor shape.";return false;}
-        std::string checked;
-        if(!visualActorRoot(id,checked,error))return false;
+        {error="Unsupported actor shape.";return false;}
+        std::string checked;if(!visualActorSource(id,checked,error))return false;
         auto assets=m_visualAssets;
         for(auto& a:assets)if(a.id==id)
         {
-            JsonValue root;
-            if(!root.parse(a.source.data(),a.source.size(),error))return false;
-            auto* entity=root.find("entities")->at(0);
+            JsonValue root;if(!root.parse(a.source.data(),a.source.size(),error))return false;
+            auto* entities=root.find("entities");
+            if(component>=entities->count()){error="Select a component.";return false;}
+            auto* entity=entities->at(static_cast<unsigned>(component));
             const auto* previous=entity->find("shape");
             if(previous&&previous->text()==shape){error.clear();return true;}
             if(entity->find("model")){error="Remove the model before changing the primitive shape.";return false;}
             auto* value=entity->put("shape");if(!value){error="Cannot edit actor shape.";return false;}
-            value->setText(shape);a.source=root.write(true);
-            return replaceVisualAssets(assets,error);
+            value->setText(shape);a.source=root.write(true);return replaceVisualAssets(assets,error);
+        }
+        error="Actor not found.";return false;
+    }
+    bool BlueprintDocument::appendVisualActorComponent(const std::string& id,size_t parent,const std::string& shape,const std::string& place,std::string& error)
+    {
+        std::vector<std::string> xyz;
+        if((shape!="box"&&shape!="sphere"&&shape!="capsule"&&shape!="plane")||
+            !blueprintInputComponents("Vec3",place,xyz))
+        {error="Choose a shape and valid local XYZ.";return false;}
+        std::string source;if(!visualActorSource(id,source,error))return false;
+        auto assets=m_visualAssets;
+        for(auto& a:assets)if(a.id==id)
+        {
+            JsonValue root;if(!root.parse(source.data(),source.size(),error))return false;
+            auto* entities=root.find("entities");
+            if(parent>=entities->count()||entities->count()>=32){error="Invalid parent or component limit reached.";return false;}
+            auto* parents=root.find("parents");
+            if(!parents){parents=root.put("parents");if(!parents)return false;parents->setArray();auto* first=parents->add();if(!first)return false;first->setNumber(-1);}
+            unsigned depth=1;
+            for(auto at=parent;at;at=static_cast<size_t>(parents->at(static_cast<unsigned>(at))->number()))++depth;
+            if(depth>8){error="Actor hierarchy nesting limit reached.";return false;}
+            auto* child=entities->add();auto* p=parents->add();
+            if(!child||!p||!text(*child,"name","Component"+std::to_string(entities->count()-1))||!text(*child,"shape",shape))
+            {error="Cannot allocate component.";return false;}
+            p->setNumber(static_cast<double>(parent));
+            auto* position=child->put("place");if(!position)return false;position->setArray();
+            for(const auto& value:xyz){auto* axis=position->add();if(!axis)return false;axis->setNumber(std::strtod(value.c_str(),nullptr));}
+            a.source=root.write(true);return replaceVisualAssets(assets,error);
         }
         error="Actor not found.";return false;
     }
     bool BlueprintDocument::placeVisualActor(const std::string& owner,const std::string& id,const std::string& place,std::string& error)
     {
         std::string json;std::vector<std::string> components;
-        if(!visualActorRoot(id,json,error))return false;
+        if(!visualActorSource(id,json,error))return false;
         if(!blueprintInputComponents("Vec3",place,components)){error="Enter a valid XYZ position.";return false;}
         size_t enter=static_cast<size_t>(-1),draw=enter;
         for(size_t i=0;i<graphs.size();++i)if(graphs[i].owner==owner)

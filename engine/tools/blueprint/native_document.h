@@ -80,9 +80,11 @@ namespace nx
         bool removeVisualAsset(const std::string& id,std::string& error);
         bool appendVisualWidget(const std::string& id,const std::string& kind,const std::string& label,std::string& error);
         bool connectVisualWidget(const std::string& owner,const std::string& id,std::string& error);
-        // First linked actor slice: one native Space entity per reusable definition.
+        // Linked actor definitions use native entity JSON and a parent-first hierarchy.
         bool visualActorRoot(const std::string& id,std::string& json,std::string& error)const;
-        bool setVisualActorShape(const std::string& id,const std::string& shape,std::string& error);
+        bool visualActorSource(const std::string& id,std::string& json,std::string& error)const;
+        bool setVisualActorShape(const std::string& id,const std::string& shape,std::string& error,size_t component=0);
+        bool appendVisualActorComponent(const std::string& id,size_t parent,const std::string& shape,const std::string& place,std::string& error);
         bool placeVisualActor(const std::string& owner,const std::string& id,const std::string& place,std::string& error);
         void create();
         bool load(const char* data,size_t size,std::string& error);

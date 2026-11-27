@@ -556,6 +556,17 @@ namespace nx
             }
             return s.world->ref(id);
         }
+        EntityRef* spaceMakeActor(JsonValue* json, const Vec3& at)
+        {
+            Services& s=services();
+            if(!json){scriptError("null actor json");return nullptr;}
+            const auto text=json->write(true);
+            JsonTree tree;
+            if(!tree.parse(text.data(),text.size())){scriptError("Invalid actor JSON");return nullptr;}
+            const u32 id=space().makeActor(tree.root(),s.folder,at);
+            if(!id){scriptError(s.world->takeError());return nullptr;}
+            return s.world->ref(id);
+        }
         void setStreamed(bool v, EntityRef* e) { if (e->world) e->world->space().setStreamed(e->id, v); }
         void spaceLandColors(const Color& low, const Color& middle, const Color& high, const Color& steep, float lowHeight, float highHeight) { space().setLandColors(low, middle, high, steep, lowHeight, highHeight); }
         void spaceFlatten(float x, float z, float radius) { space().flatten(x, z, radius, space().heightAt(x, z)); }
@@ -908,6 +919,7 @@ namespace nx
         b.function("uint get_regionsWaiting() property", NX_FN(spaceRegionsWaiting), "How many are still to come.");
         b.function("int load(const string &in name, const Vec3 &in at = Vec3(), bool streamed = false)", NX_FN(spaceLoad), "Makes the entities listed in a file, around a place, and returns how many. Their models arrive in the background. See the guide.");
         b.function("Entity@ make(Json@+ thing, const Vec3 &in at = Vec3())", NX_FN(spaceMake), "One entity, as such a file describes it.");
+        b.function("Entity@ makeActor(Json@+ actor, const Vec3 &in at = Vec3())", NX_FN(spaceMakeActor), "Creates a parent-first actor hierarchy from native entity definitions.");
         b.function("void landColors(const Color &in low, const Color &in middle, const Color &in high, const Color &in steep, float lowHeight, float highHeight)", NX_FN(spaceLandColors), "Colours them by height and slope.");
         b.function("void flatten(float x, float z, float radius)", NX_FN(spaceFlatten), "Levels the land around a place, to build on.");
         b.function("void flatten(float x, float z, float radius, float height)", NX_FN(spaceFlattenTo), "The same, to a height.");

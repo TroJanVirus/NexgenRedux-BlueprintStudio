@@ -443,6 +443,8 @@ namespace nx
         int load(const char* path, const FileData& file, const char* folder, const Vec3& at, bool streamed);
         // One thing, as a file has them. 0 if there is something wrong with it.
         u32 make(JsonTree::Value json, const char* folder, const Vec3& at);
+        // Parent-first actor components; all are native Space entities.
+        u32 makeActor(JsonTree::Value json, const char* folder, const Vec3& at);
         // Levels the land towards a height around a place.
         void flatten(float x, float z, float radius, float level);
         // By hand, on any land: more in the middle of the radius than at its edge. False where

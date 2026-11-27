@@ -588,6 +588,21 @@ namespace nx
             if(input.wheel()<0&&m_visualFirst+9<assets.size())++m_visualFirst;
             if(input.wheel()>0&&m_visualFirst)--m_visualFirst;
         }
+        if(const auto* selected=m_document.visualAsset(m_visualSelection);selected&&selected->kind=="actor")
+        {
+            JsonTree tree;
+            if(tree.parse(selected->source.data(),selected->source.size()))
+            {
+                const auto count=tree.root()["entities"].count();
+                if(m_visualComponent>=count)m_visualComponent=0;
+                if(m_visualComponentFirst>=count)m_visualComponentFirst=0;
+                if(in(x,y,630,366,1000,498))
+                {
+                    if(input.wheel()<0&&m_visualComponentFirst+4<count)++m_visualComponentFirst;
+                    if(input.wheel()>0&&m_visualComponentFirst)--m_visualComponentFirst;
+                }
+            }
+        }
         if(!click)return;
         if(in(x,y,860,116,1000,150)){m_assetBrowser=false;return;}
         if(in(x,y,704,116,850,150)){m_assetLibrary=false;return;}
@@ -596,7 +611,7 @@ namespace nx
             std::string id;
             if(m_document.createVisualAsset(x<440?"actor":"widget",id,m_status))
             {
-                m_visualSelection=id;m_visualText.clear();m_visualFirst=m_document.visualAssets().size()>9?m_document.visualAssets().size()-9:0;
+                m_visualSelection=id;m_visualComponent=m_visualComponentFirst=0;m_visualText.clear();m_visualFirst=m_document.visualAssets().size()>9?m_document.visualAssets().size()-9:0;
                 m_status="Created reusable definition. Ctrl+S saves the project.";
             }
             return;
@@ -604,7 +619,7 @@ namespace nx
         if(in(x,y,280,198,610,522))
         {
             const size_t row=m_visualFirst+static_cast<size_t>((y-198)/36);
-            if(row<assets.size()){m_visualSelection=assets[row].id;m_visualText.clear();m_status="Selected "+assets[row].title;}
+            if(row<assets.size()){m_visualSelection=assets[row].id;m_visualComponent=m_visualComponentFirst=0;m_visualText.clear();m_status="Selected "+assets[row].title;}
             return;
         }
         const auto* selected=m_document.visualAsset(m_visualSelection);
@@ -626,7 +641,21 @@ namespace nx
             else if(in(x,y,820,318,1000,351))shape="plane";
             if(shape)
             {
-                if(m_document.setVisualActorShape(m_visualSelection,shape,m_status))m_status="Actor shape updated; all linked spawn nodes use the definition.";
+                if(m_document.setVisualActorShape(m_visualSelection,shape,m_status,m_visualComponent))m_status="Actor shape updated; all linked spawn nodes use the definition.";
+            }
+            else if(in(x,y,630,366,1000,498))
+            {
+                JsonTree tree;
+                if(tree.parse(selected->source.data(),selected->source.size()))
+                {
+                    const auto index=m_visualComponentFirst+static_cast<size_t>((y-366)/33);
+                    if(index<tree.root()["entities"].count())m_visualComponent=index;
+                }
+            }
+            else if(in(x,y,630,505,1000,538))
+            {
+                if(m_document.appendVisualActorComponent(m_visualSelection,m_visualComponent,"box","0,1.5,0",m_status))
+                    m_status="Added box child under selected component.";
             }
             else if(in(x,y,630,548,1000,581))
             {
@@ -707,17 +736,24 @@ namespace nx
             }
             else
             {
-                c.text(*m_font,"Native actor definition / root shape",630,244,text);
+                c.text(*m_font,"Actor hierarchy / selected component shape",630,244,text);
                 button(630,277,180,"Box");button(820,277,180,"Sphere");
                 button(630,318,180,"Capsule");button(820,318,180,"Plane");
                 JsonTree tree;
                 if(tree.parse(selected->source.data(),selected->source.size()))
                 {
-                    const auto root=tree.root()["entities"][0u];
-                    c.text(*m_font,(std::string("Current: ")+root["shape"].text("custom")).c_str(),630,375,accent);
+                    const auto entries=tree.root()["entities"],parents=tree.root()["parents"];
+                    for(size_t i=0;i<4&&i+m_visualComponentFirst<entries.count();++i)
+                    {
+                        const auto index=static_cast<u32>(i+m_visualComponentFirst);
+                        const auto item=entries[index];const float yy=366+33*static_cast<float>(i);
+                        const auto label=std::to_string(index)+"  "+item["name"].text("Component")+" / "+item["shape"].text("custom")+
+                            (index?"  (parent "+std::to_string(static_cast<int>(parents[index].number()))+")":"  (root)");
+                        c.rect(630,yy,370,31,index==m_visualComponent?Color{0.19f,0.33f,0.50f,1}:Color{0.17f,0.22f,0.30f,1});
+                        c.clip(635,yy,360,31);c.text(*m_font,label.c_str(),638,yy+6,text);c.noClip();
+                    }
                 }
-                c.text(*m_font,"Place at origin, then edit the XYZ graph pin.",630,412,muted);
-                c.text(*m_font,"Single-root actor; viewport drag/drop pending.",630,440,muted);
+                button(630,505,370,"Add child to selected component");
                 button(630,548,370,"Add linked actor to screen");
             }
         }

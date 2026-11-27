@@ -2266,3 +2266,26 @@ NX_TEST(nativeLinkedActorsInstantiateIndependentEntities)
     });
     NX_EXPECT(first==1&&second==1);
 }
+
+NX_TEST(nativeActorHierarchySpawnsAndDestroysChildren)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    BlueprintDocument doc;doc.create();std::string error,id,source;
+    const bool ok=doc.createVisualAsset("actor",id,error)&&
+        doc.appendVisualActorComponent(id,0,"box","0,1.5,0",error)&&
+        doc.appendVisualActorComponent(id,1,"sphere","1,0,0",error)&&
+        doc.placeVisualActor("Screen",id,"2,0,0",error)&&compileBlueprint(doc,source,error);
+    NX_EXPECT(ok);if(!ok)return;
+    r.platform.files["showcase/main/screen.json"]="{\"title\":\"Actor hierarchy\"}";
+    r.platform.files["showcase/main/main.as"]=source;
+    if(!r.screens.init(r.services,"showcase","main")){NX_EXPECT(false);return;}
+    r.step(3);NX_EXPECT(!r.screens.failed());
+    if(!r.services.world){NX_EXPECT(false);return;}
+    auto& world=*r.services.world;
+    const u32 root=world.findNamed("Root"),child=world.findNamed("Component1"),grandchild=world.findNamed("Component2");
+    NX_EXPECT(root&&child&&grandchild&&world.parentOf(child)==root&&world.parentOf(grandchild)==child);
+    const auto* spatial=world.space().getSpatial(child);
+    NX_EXPECT(spatial&&fabsf(spatial->place.y-1.5f)<0.01f);
+    world.destroyEntity(root);r.step(3);
+    NX_EXPECT(!world.findNamed("Root")&&!world.findNamed("Component1")&&!world.findNamed("Component2"));
+}
