@@ -510,7 +510,7 @@ namespace nx
         if(!m_drag)
         {
             if(click&&in(x,y,1134,39,1266,69)){close(s);return;}
-            if(click&&in(x,y,410,5,560,33)&&m_document.graphs[m_graph].kind=="function")
+            if(click&&in(x,y,410,5,560,33)&&m_graph<m_document.graphs.size()&&m_document.graphs[m_graph].kind=="function")
             {m_edit=m_document.functionSignature(m_graph);m_focus=9;input.setTyping(true);m_status="Edit the typed signature.";m_left=left;return;}
             if(click&&in(x,y,566,5,734,33)){m_edit.clear();m_focus=8;input.setTyping(true);m_status="Type a behaviour name, then Enter.";m_left=left;return;}
             if(click&&in(x,y,740,5,850,33)){browseFiles(s);m_left=left;return;}

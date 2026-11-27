@@ -818,3 +818,28 @@ NX_TEST(nativeTypedFunctionCallsExecuteThroughAngelScript)
     if(!r.screens.init(r.services,"showcase","functions")){NX_EXPECT(false);return;}
     r.step(3);NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("function_result","missing"),"hello world")==0);
 }
+
+NX_TEST(nativeFunctionEarlyReturnAndBranchContinuationExecuteCorrectly)
+{
+    BlueprintDocument doc;doc.create();std::string error,source;
+    bool ok=doc.addFunction("Choose",error)&&doc.editFunctionSignature(6,"int(flag:bool)",error);
+    auto add=[&](const char* kind){ok=ok&&doc.addNode(6,kind,0,0,error);};
+    auto wire=[&](size_t a,const char* out,size_t b,const char* in){ok=ok&&doc.connect(6,a,out,b,in,error);};
+    add("branch");add("return:function");add("return:function");
+    wire(0,"then",1,"in");wire(0,"arg_flag",1,"condition");
+    wire(1,"true",2,"in");wire(1,"then",3,"in");
+    ok=ok&&doc.setInputValue(6,2,"value","7",error)&&doc.setInputValue(6,3,"value","8",error);
+    NX_EXPECT(ok&&compileBlueprint(doc,source,error));if(!ok||source.empty())return;
+    source+=R"(
+        void check() {
+            BP_NativeScreen screen;
+            Save::set("branch_true", screen.bp_fn_Choose(true)==7?"yes":"no");
+            Save::set("branch_false", screen.bp_fn_Choose(false)==8?"yes":"no");
+        }
+    )";
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    if(!compile(r.host,source.c_str())){NX_EXPECT(false);return;}
+    NX_EXPECT(r.host.call(r.host.find("blueprint","void check()")));
+    NX_EXPECT(strcmp(r.save.get("branch_true","missing"),"yes")==0);
+    NX_EXPECT(strcmp(r.save.get("branch_false","missing"),"yes")==0);
+}

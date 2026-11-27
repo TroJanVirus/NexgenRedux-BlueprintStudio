@@ -55,6 +55,15 @@ namespace nx
                     result=quote(value);
                 }
                 else if(type=="bool")result=value;
+                else if(type=="int"||type=="uint")
+                {
+                    const bool negative=!value.empty()&&value.front()=='-';
+                    size_t at=negative?1:0;
+                    while(at+1<value.size()&&value[at]=='0')++at;
+                    const auto digits=value.substr(at);
+                    // AngelScript may infer signed literals differently at the 32-bit boundary.
+                    result=type+"("+(negative&&digits!="0"?"-":"")+digits+")";
+                }
                 else result=type+"("+value+")";
                 return true;
             }
@@ -180,7 +189,7 @@ namespace nx
                 if(found==graph.links.end())return false;
                 const auto to=found->to;const auto& kind=graph.nodes[to].kind;
                 if(kind=="return:function")return true;
-                if(kind=="branch")return returns(to,"true",depth+1)&&returns(to,"false",depth+1);
+                if(kind=="branch"&&returns(to,"true",depth+1)&&returns(to,"false",depth+1))return true;
                 if(kind=="sequence"&&(returns(to,"first",depth+1)||returns(to,"second",depth+1)))return true;
                 return returns(to,"then",depth+1);
             }
@@ -205,7 +214,14 @@ namespace nx
                     source+=pad+"}\n"+pad+"else\n"+pad+"{\n";
                     if(!flow(to,"false",indent+1,depth+1))return false;
                     available=outer;
-                    source+=pad+"}\n";return true;
+                    source+=pad+"}\n";
+                    if(returns(to,"true",0)&&returns(to,"false",0))
+                    {
+                        if(std::any_of(graph.links.begin(),graph.links.end(),[&](const Link& l){return l.from==to&&l.output=="then";}))
+                            return fail(to,"Branch continuation is unreachable: both paths return.");
+                        return true;
+                    }
+                    return flow(to,"then",indent,depth+1);
                 }
                 if(n.kind.rfind("var:set:",0)==0)
                 {
@@ -248,13 +264,21 @@ namespace nx
                 {
                     // First and second execute in order, in separate scopes.
                     const auto outer=available;
-                    for(const char* output:{"first","second"})
+                    bool terminated=false;
+                    for(const char* output:{"first","second","then"})
                     {
+                        if(terminated)
+                        {
+                            if(std::any_of(graph.links.begin(),graph.links.end(),[&](const Link& l){return l.from==to&&l.output==output;}))
+                                return fail(to,"Sequence continuation is unreachable after return.");
+                            continue;
+                        }
+                        if(std::string(output)=="then")return flow(to,output,indent,depth+1);
                         source+=pad+"{\n";
                         if(!flow(to,output,indent+1,depth+1))return false;
-                        source+=pad+"}\n";available=outer;
+                        source+=pad+"}\n";available=outer;terminated=returns(to,output,0);
                     }
-                    return flow(to,"then",indent,depth+1);
+                    return true;
                 }
                 if(n.kind=="repeat")
                 {

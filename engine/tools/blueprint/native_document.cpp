@@ -17,7 +17,7 @@ namespace nx
             const char* call="";const char* property="";const char* member="";const char* pure="";const char* result="";const char* hasOut="";const char* arguments="";const char* defaults="";};
         constexpr Row rows[]={
             {"entry","Event entry","Flow","","then:exec"},
-            {"branch","Branch","Flow","in:exec|condition:bool","true:exec|false:exec"},
+            {"branch","Branch","Flow","in:exec|condition:bool","true:exec|false:exec|then:exec"},
             {"literal:string","String","Values","","value:string"},
             {"literal:bool","Boolean","Values","","value:bool"},
             {"literal:int","Integer","Values","","value:int"},

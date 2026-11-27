@@ -325,3 +325,19 @@ NX_TEST(nativeFunctionSignaturesResolveForwardReferencesAndProtectWires)
     NX_EXPECT(copy.disconnect(6,2,"in",false)&&!compileBlueprint(copy,source,error));
     NX_EXPECT(error.find("returns a value")!=std::string::npos);
 }
+
+NX_TEST(nativeFunctionBranchContinuationRequiresReturnsOnAllPaths)
+{
+    BlueprintDocument doc;doc.create();std::string error,source;BlueprintLocation location;
+    NX_EXPECT(doc.addFunction("Choose",error)&&doc.editFunctionSignature(6,"int(flag:bool)",error));
+    NX_EXPECT(doc.addNode(6,"branch",0,0,error)&&doc.addNode(6,"return:function",0,0,error)&&doc.addNode(6,"return:function",0,0,error));
+    NX_EXPECT(doc.connect(6,0,"then",1,"in",error)&&doc.connect(6,0,"arg_flag",1,"condition",error));
+    NX_EXPECT(doc.connect(6,1,"true",2,"in",error)&&doc.setInputValue(6,2,"value","0007",error));
+    NX_EXPECT(!compileBlueprint(doc,source,error,&location)&&location.graph==6&&location.node==0);
+    NX_EXPECT(doc.connect(6,1,"then",3,"in",error)&&doc.setInputValue(6,3,"value","-0008",error));
+    NX_EXPECT(compileBlueprint(doc,source,error)&&source.find("return int(7);")!=std::string::npos&&source.find("return int(-8);")!=std::string::npos);
+    NX_EXPECT(doc.addNode(6,"return:function",0,0,error)&&doc.setInputValue(6,4,"value","9",error));
+    NX_EXPECT(doc.connect(6,1,"false",4,"in",error)&&!compileBlueprint(doc,source,error,&location));
+    NX_EXPECT(location.graph==6&&location.node==1&&error.find("unreachable")!=std::string::npos);
+    NX_EXPECT(doc.undo()&&compileBlueprint(doc,source,error));
+}
