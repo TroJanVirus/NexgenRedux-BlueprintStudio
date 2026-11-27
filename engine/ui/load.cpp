@@ -367,6 +367,30 @@ namespace nx
                 {fail(file,p.line(),"requires a stack parent and two finite offsets","offset");return nullptr;}
                 w->offsetX=p[0u].number();w->offsetY=p[1u].number();
             }
+            else if(strcmp(key,"animation")==0)
+            {
+                const auto d=p["duration"],loop=p["loop"];
+                if(!p.isObject()||!d.isNumber()||!(d.exact()>=0.01&&d.exact()<=60)||(loop.exists()&&loop.type()!=JsonTree::Type::Bool))
+                {fail(file,p.line(),"invalid animation duration or loop","animation");return nullptr;}
+                w->animationDuration=d.number();w->animationLoop=loop.flag();
+                const char* tracks[]={"x","y","scale","opacity","rotation"};
+                const double low[]={-10000,-10000,0.05,0,-3600},high[]={10000,10000,4,1,3600};
+                for(unsigned i=0;i<5;++i)
+                {
+                    const auto keys=p[tracks[i]];if(!keys.exists())continue;
+                    if(!keys.isArray()||keys.count()>64){fail(file,p.line(),"invalid key track",tracks[i]);return nullptr;}
+                    double last=-1;
+                    for(auto k=keys.first();k.exists();k=k.next())
+                    {
+                        if(!k.isArray()||k.count()!=2||!k[0u].isNumber()||!k[1u].isNumber()||
+                            !(k[0u].exact()>last&&k[0u].exact()>=0&&k[0u].exact()<=d.exact())||
+                            !(k[1u].exact()>=low[i]&&k[1u].exact()<=high[i]))
+                        {fail(file,k.line(),"invalid or unsorted key",tracks[i]);return nullptr;}
+                        last=k[0u].exact();w->animationKeys[i].push_back({k[0u].number(),k[1u].number()});
+                    }
+                    if(!w->animationKeys[i].empty())w->animationValues[i]=w->animationKeys[i].front().value;
+                }
+            }
             else if (strcmp(key, "padding") == 0)
             {
                 for (u32 i = 0; i < 4; i++)

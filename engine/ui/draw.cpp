@@ -26,11 +26,28 @@ namespace nx
         }
     }
 
-    void Ui::animate(Widget& w, float dt,const Widget* preview,int state)
+    void Ui::animate(Widget& w, float dt,const Widget* preview,int state,float timelineTime)
     {
         if (!w.visible)
         {
             return;
+        }
+        if(w.animationDuration>0)
+        {
+            const float t=timelineTime>=0?fminf(timelineTime,w.animationDuration):w.animationTime+fmaxf(dt,0);
+            w.animationTime=timelineTime<0&&w.animationLoop?fmodf(t,w.animationDuration):fminf(t,w.animationDuration);
+            for(unsigned i=0;i<5;++i)
+            {
+                const auto& keys=w.animationKeys[i];if(keys.empty())continue;
+                float value=keys.front().value;
+                for(size_t j=1;j<keys.size();++j)
+                {
+                    const auto& a=keys[j-1];const auto& b=keys[j];
+                    if(w.animationTime<b.time){value=mix(a.value,b.value,fmaxf(0,(w.animationTime-a.time)/(b.time-a.time)));break;}
+                    value=b.value;
+                }
+                w.animationValues[i]=value;
+            }
         }
         if (w.style)
         {
@@ -64,7 +81,7 @@ namespace nx
         w.scroll = fabsf(w.scrollTo - w.scroll) < 0.3f ? w.scrollTo : mix(w.scroll, w.scrollTo, m_dragged == &w ? 1 : 1 - powf(0.001f, dt / 0.35f));
         for (Widget* child : w.children)
         {
-            animate(*child, dt,preview,state);
+            animate(*child, dt,preview,state,timelineTime);
         }
     }
 
@@ -182,15 +199,17 @@ namespace nx
         {
             return;
         }
-        float x = px + w.x, y = py + w.y;
+        float x = px + w.x+w.animationValues[0], y = py + w.y+w.animationValues[1];
         const UiLook& look = w.look;
         const UiStyle& style = *w.style;
-        const bool scaled = fabsf(look.scale - 1) > 0.001f;
+        const float scale=look.scale*w.animationValues[2];
+        const bool scaled = fabsf(scale - 1) > 0.001f||w.animationValues[3]!=1||w.animationValues[4]!=0;
         if (scaled)
         {
             c.push();
             c.translate(x + w.w * 0.5f, y + w.h * 0.5f);
-            c.scale(look.scale, look.scale);
+            c.setAlpha(c.alpha()*w.animationValues[3]);
+            c.rotate(w.animationValues[4]);c.scale(scale,scale);
             c.translate(-(x + w.w * 0.5f), -(y + w.h * 0.5f));
         }
         const bool boxed = w.kind != WidgetKind::Progress && w.kind != WidgetKind::Line && w.kind != WidgetKind::Slider;
@@ -332,9 +351,9 @@ namespace nx
         }
     }
 
-    void Ui::drawDesign(Canvas& c,float x,float y,float w,float h,const char* stateWidget,int state)
+    void Ui::drawDesign(Canvas& c,float x,float y,float w,float h,const char* stateWidget,int state,float timelineTime)
     {
-        animate(*m_root,1.f,stateWidget&&*stateWidget?find(stateWidget):nullptr,state);
+        animate(*m_root,1.f,stateWidget&&*stateWidget?find(stateWidget):nullptr,state,timelineTime);
         draw(c,x,y,w,h);
     }
 

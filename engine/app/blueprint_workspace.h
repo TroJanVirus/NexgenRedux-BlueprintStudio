@@ -68,6 +68,10 @@ namespace nx
         void drawVisualPlacement(Canvas& canvas);
         void cancelVisualPlacement(){m_placementDragging=false;m_placementAsset.clear();m_placementGraph=m_placementNode=static_cast<size_t>(-1);}
         bool m_widgetDesigner=false,m_widgetPalette=false,m_widgetFourThree=false,m_widgetEvents=false,m_widgetUnbind=false,m_widgetAnchors=false;
+        bool m_widgetTimeline=false,m_widgetTimelinePlay=false;
+        unsigned m_widgetTimelineTrack=0;
+        float m_widgetTimelineTime=0;
+        double m_widgetTimelineLast=0;
         bool m_widgetDragging=false,m_widgetPreviewDrag=false;
         float m_widgetPreviewDx=0,m_widgetPreviewDy=0,m_widgetBaseX=0,m_widgetBaseY=0;
         int m_widgetDragAnchor=0;

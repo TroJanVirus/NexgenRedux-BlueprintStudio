@@ -2442,7 +2442,9 @@ NX_TEST(nativeLinkedThemeStylesReachRuntimeWidgets)
         NX_EXPECT(widget->style->looks[static_cast<size_t>(UiState::Focused)].radius==7);
         NX_EXPECT(widget->style->minWidth==160&&widget->style->minHeight==60);
         NX_EXPECT(widget->style->align==Align::Right);
+        r.device->beginFrame({});r.canvas.begin();
         r.services.ui->drawDesign(r.canvas,0,0,1280,720,"item-1",static_cast<int>(UiState::Hovered));
+        r.canvas.end();r.device->endFrame();
         NX_EXPECT(widget->look.back.r==1.f&&widget->look.back.g==0.f);
     }
 }
@@ -2496,4 +2498,20 @@ NX_TEST(nativeActorCameraTracksParentAndRespectsManualCamera)
     NX_EXPECT(fabsf(eye.x-8)<0.001f);
     space.setCamera({0,5,8},{0,0,0},60);space.update(1.f/60);eye=space.cameraPlace();
     NX_EXPECT(eye.x==0&&eye.y==5&&eye.z==8);
+}
+
+NX_TEST(nativeWidgetTimelineInterpolatesOnRenderer)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    BlueprintDocument doc;doc.create();std::string id,error,source;
+    const bool ok=doc.createVisualAsset("widget",id,error)&&doc.appendVisualWidget(id,"label","Animated",error)&&
+        doc.setWidgetKey(id,"item-1","x","0",0,error)&&doc.setWidgetKey(id,"item-1","x","100",1,error)&&
+        doc.setWidgetKey(id,"item-1","opacity","0",0,error)&&doc.setWidgetKey(id,"item-1","opacity","1",1,error)&&
+        doc.connectVisualWidget("Screen",id,error)&&compileBlueprint(doc,source,error);
+    NX_EXPECT(ok);if(!ok)return;
+    r.platform.files["showcase/main/screen.json"]="{\"title\":\"Timeline\"}";r.platform.files["showcase/main/main.as"]=source;
+    if(!r.screens.init(r.services,"showcase","main")){NX_EXPECT(false);return;}r.step(3);if(!r.services.ui){NX_EXPECT(false);return;}
+    const auto* widget=r.services.ui->find("item-1");NX_EXPECT(widget);if(!widget)return;
+    r.device->beginFrame({});r.canvas.begin();r.services.ui->drawDesign(r.canvas,0,0,1280,720,nullptr,-1,0.5f);r.canvas.end();r.device->endFrame();
+    NX_EXPECT(fabsf(widget->animationValues[0]-50)<0.001f&&fabsf(widget->animationValues[3]-0.5f)<0.001f);
 }

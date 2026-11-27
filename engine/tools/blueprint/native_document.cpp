@@ -758,6 +758,80 @@ namespace nx
         }
         error="Select a widget page.";return false;
     }
+    bool BlueprintDocument::setWidgetKey(const std::string& id,const std::string& widget,const std::string& track,const std::string& value,float time,std::string& error)
+    {
+        const char* tracks[]={"x","y","scale","opacity","rotation"};
+        const double low[]={-10000,-10000,0.05,0,-3600},high[]={10000,10000,4,1,3600};
+        auto assets=m_visualAssets;
+        for(auto& asset:assets)if(asset.id==id&&asset.kind=="widget")
+        {
+            JsonValue root;if(!root.parse(asset.source.data(),asset.source.size(),error))return false;
+            WidgetMatch match;findVisualWidget(root,widget,match);
+            if(match.matches!=1){error="Select a unique widget.";return false;}
+            auto* a=match.item->find("animation");
+            if(a&&a->type()!=JsonValue::Type::Object){error="Invalid animation object.";return false;}
+            if(!a){a=match.item->put("animation");if(!a||!number(*a,"duration",2))return false;}
+            const auto* d=a->find("duration");const double duration=d?d->number():2;
+            if(!std::isfinite(duration)||duration<0.01||duration>60){error="Invalid duration.";return false;}
+            if(track=="duration")
+            {
+                if(!literal("literal:float",value)){error="Enter a duration in seconds.";return false;}
+                const double n=std::strtod(value.c_str(),nullptr);
+                if(n<0.01||n>60){error="Duration must be 0.01 to 60 seconds.";return false;}
+                for(const auto* name:tracks)if(const auto* keys=a->find(name))
+                    for(u32 j=0;j<keys->count();++j)if(keys->at(j)->at(0)->number()>n)
+                    {error="Remove keys beyond the new duration first.";return false;}
+                if(!number(*a,"duration",n))return false;
+            }
+            else if(track=="loop")
+            {
+                if(value!="true"&&value!="false"){error="Use true or false.";return false;}
+                auto* v=a->put("loop");if(!v)return false;v->setFlag(value=="true");
+            }
+            else
+            {
+                size_t index=0;while(index<5&&track!=tracks[index])++index;
+                if(index==5||!std::isfinite(time)||time<0||time>duration+0.00001){error="Invalid track or key time.";return false;}
+                double n=0;
+                if(!value.empty())
+                {
+                    if(!literal("literal:float",value)){error="Enter a finite key value.";return false;}
+                    n=std::strtod(value.c_str(),nullptr);
+                    if(n<low[index]||n>high[index]){error="Key value outside supported range.";return false;}
+                }
+                const double t=std::min<double>(duration,time);
+                std::vector<std::pair<double,double>> keys;
+                if(const auto* prior=a->find(track.c_str()))
+                {
+                    if(prior->type()!=JsonValue::Type::Array||prior->count()>64){error="Invalid track.";return false;}
+                    for(u32 j=0;j<prior->count();++j)
+                    {
+                        auto* key=prior->at(j);
+                        if(!key||key->type()!=JsonValue::Type::Array||key->count()!=2){error="Invalid key.";return false;}
+                        const double old=key->at(0)->number();
+                        if(std::abs(old-t)>0.00001)keys.emplace_back(old,key->at(1)->number());
+                    }
+                }
+                if(!value.empty())keys.emplace_back(t,n);
+                if(keys.size()>64){error="A track supports 64 keys.";return false;}
+                std::sort(keys.begin(),keys.end());
+                if(keys.empty())a->remove(track.c_str());
+                else
+                {
+                    auto* out=a->put(track);if(!out)return false;out->setArray();
+                    for(const auto& k:keys)
+                    {
+                        auto* pair=out->add();if(!pair)return false;pair->setArray();
+                        auto* first=pair->add();if(!first)return false;first->setNumber(k.first);
+                        auto* second=pair->add();if(!second)return false;second->setNumber(k.second);
+                    }
+                }
+            }
+            const auto changed=root.write(true);if(changed==asset.source){error.clear();return true;}
+            asset.source=changed;return replaceVisualAssets(assets,error);
+        }
+        error="Select a widget page.";return false;
+    }
     bool BlueprintDocument::positionVisualWidget(const std::string& id,const std::string& widget,const std::string& anchor,float x,float y,std::string& error)
     {
         if(!std::isfinite(x)||!std::isfinite(y)||std::abs(x)>100000||std::abs(y)>100000)

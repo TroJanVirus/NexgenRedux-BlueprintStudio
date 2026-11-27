@@ -1567,3 +1567,15 @@ NX_TEST(nativeActorCameraComponentPersistsWithValidatedFov)
     NX_EXPECT(source.find("Camera1")!=std::string::npos);
     NX_EXPECT(doc.visualActorSource(id,source,error)&&source.find("75")!=std::string::npos);
 }
+
+NX_TEST(nativeWidgetTimelineKeysPersistAndValidate)
+{
+    BlueprintDocument doc;doc.create();std::string id,error,source,bytes;
+    NX_EXPECT(doc.createVisualAsset("widget",id,error)&&doc.appendVisualWidget(id,"label","Animated",error));
+    NX_EXPECT(doc.setWidgetKey(id,"item-1","x","100",1,error)&&doc.setWidgetKey(id,"item-1","x","0",0,error));
+    NX_EXPECT(doc.setWidgetKey(id,"item-1","opacity","0.5",0.5f,error)&&doc.setWidgetKey(id,"item-1","loop","true",0,error));
+    NX_EXPECT(!doc.setWidgetKey(id,"item-1","opacity","2",0,error)&&!doc.setWidgetKey(id,"item-1","duration","0.5",0,error));
+    NX_EXPECT(doc.connectVisualWidget("Screen",id,error)&&compileBlueprint(doc,source,error)&&source.find("animation")!=std::string::npos);
+    NX_EXPECT(doc.serialize(bytes,error));BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error));
+    NX_EXPECT(copy.setWidgetKey(id,"item-1","x","",1,error)&&copy.undo());
+}

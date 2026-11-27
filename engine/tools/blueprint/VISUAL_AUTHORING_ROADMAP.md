@@ -127,3 +127,6 @@ Add a component from the native widget palette using its reusable asset ID. Refe
 ## Actor camera components
 
 Create an invisible camera child with a local position, rotation and vertical FOV (5–150 degrees). Linked actor spawning activates the last camera in the successfully constructed hierarchy; subsequent native frames follow the parent's position and orientation. An explicit Space::camera call relinquishes that automatic follow. The camera uses the native Space view and does not add a mesh or collider. Multi-camera selection and camera blending are not yet exposed as editor commands.
+
+### Widget keyframe timelines
+Native widget pages support duration, loop and linear keyframe tracks for translation X/Y, scale, opacity and rotation. The designer has a track selector, scrubber, play/pause, set/delete key and rewind. Runtime starts tracks automatically; selection uses translated layout bounds, not transformed polygon hit testing. Named clips, easing curves and graph-triggered playback are follow-up work.
