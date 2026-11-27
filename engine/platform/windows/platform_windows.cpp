@@ -246,7 +246,7 @@ namespace nx
         {
             name += plainLetter(*c < 128 ? static_cast<char>(*c) : '_');
         }
-        if (!GetFileAttributesExW(from, GetFileExInfoStandard, &data) || (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || data.nFileSizeHigh || data.nFileSizeLow > 64 * 1024 * 1024 || name.size() > 60 || name[0] == '.')
+        if (!GetFileAttributesExW(from, GetFileExInfoStandard, &data) || (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || data.nFileSizeHigh || data.nFileSizeLow > 64 * 1024 * 1024 || name.empty() || name.size() > 60 || name[0] == '.')
         {
             NX_WARN("a file that was dropped is too large, or isn't one");
             return;
@@ -260,6 +260,25 @@ namespace nx
         CreateDirectoryW(folder, nullptr);
         COPYFILE2_EXTENDED_PARAMETERS how = {};
         how.dwSize = sizeof(how);
+        if(m_blueprintLease||protectedBlueprintDrop(name))
+        {
+            FileData incoming;
+            if(!readWhole(from,incoming,MemTag::General))return;
+            how.dwCopyFlags=COPY_FILE_FAIL_IF_EXISTS;
+            for(unsigned attempt=0;attempt<100;++attempt)
+            {
+                const auto candidate=blueprintDropName(name,attempt);
+                if(swprintf(full,kMaxPath,L"%ls\\%hs",folder,candidate.c_str())<0)return;
+                const HRESULT copied=CopyFile2(from,full,&how);
+                if(SUCCEEDED(copied)){m_dropped.push_back(candidate);return;}
+                if(copied!=HRESULT_FROM_WIN32(ERROR_FILE_EXISTS)&&copied!=HRESULT_FROM_WIN32(ERROR_ALREADY_EXISTS))break;
+                FileData existing;
+                if(readWhole(full,existing,MemTag::General)&&existing.size==incoming.size&&
+                    (!incoming.size||memcmp(existing.data,incoming.data,incoming.size)==0))
+                {m_dropped.push_back(candidate);return;}
+            }
+            NX_WARN("cannot keep dropped Blueprint file without replacing existing data");return;
+        }
         if (FAILED(CopyFile2(from, full, &how)))
         {
             NX_ERROR("cannot keep %s (%lu)", name.c_str(), GetLastError());

@@ -1703,3 +1703,19 @@ NX_TEST(nativeWorkspaceRejectsConcurrentLeaseAndReleasesOnClose)
     second.close(r.services);NX_EXPECT(!r.platform.blueprintLease);
 }
 #endif
+
+#ifdef NX_DESKTOP_BLUEPRINT
+NX_TEST(nativeBlueprintDropNamesProtectManagedFilesAndKeepExtensions)
+{
+    NX_EXPECT(protectedBlueprintDrop("blueprint-recovery.bp.json"));
+    NX_EXPECT(protectedBlueprintDrop("blueprint-project-test.bp.json"));
+    NX_EXPECT(protectedBlueprintDrop("example.bp.json"));
+    NX_EXPECT(!protectedBlueprintDrop("example.as"));
+    NX_EXPECT(blueprintDropName("blueprint-recovery.bp.json",0)=="import-blueprint-recovery.bp.json");
+    NX_EXPECT(blueprintFileName(blueprintDropName("blueprint-recovery.bp.json",0)));
+    NX_EXPECT(blueprintDropName("blueprint-project-test.bp.json",1)=="import-blueprint-project-test-2.bp.json");
+    NX_EXPECT(blueprintDropName("example.bp.json",2)=="example-3.bp.json");
+    NX_EXPECT(blueprintDropName("example.as",1)=="example-2.as");
+    NX_EXPECT(blueprintDropName("texture.png",1)=="texture-2.png");
+}
+#endif

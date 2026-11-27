@@ -6,6 +6,7 @@
 #include <sys/file.h>
 #include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <time.h>
@@ -215,6 +216,37 @@ namespace nx
             return;
         }
         makeFolders(folder);
+        if(m_blueprintLease>=0||protectedBlueprintDrop(name))
+        {
+            // Write to an exclusive temporary file, then publish with link()
+            // (which fails rather than replacing an existing destination).
+            // Keep the extension so Studio still recognizes the imported type.
+            char temporary[kMaxPath+32];
+            snprintf(temporary,sizeof(temporary),"%s/.bp-drop-XXXXXX",folder);
+            const int fd=mkstemp(temporary);
+            if(fd<0){NX_WARN("cannot stage dropped Blueprint file");return;}
+            FILE* out=fdopen(fd,"wb");
+            if(!out){close(fd);unlink(temporary);return;}
+            const bool written=fwrite(data.data,1,data.size,out)==data.size;
+            const bool closed=fclose(out)==0;
+            if(written&&closed)
+            {
+                for(unsigned attempt=0;attempt<100;++attempt)
+                {
+                    const auto candidate=blueprintDropName(name,attempt);
+                    snprintf(full,sizeof(full),"%s/%s",folder,candidate.c_str());
+                    if(link(temporary,full)==0)
+                    {m_dropped.push_back(candidate);unlink(temporary);return;}
+                    if(errno!=EEXIST)break;
+                    FileData existing;
+                    if(readWhole(full,existing,MemTag::General)&&existing.size==data.size&&
+                        (!data.size||memcmp(existing.data,data.data,data.size)==0))
+                    {m_dropped.push_back(candidate);unlink(temporary);return;}
+                }
+            }
+            unlink(temporary);
+            NX_WARN("cannot keep dropped Blueprint file without replacing existing data");return;
+        }
         snprintf(full, sizeof(full), "%s/%s", folder, name.c_str());
         snprintf(fresh, sizeof(fresh), "%s.new", full);
         if (swapIn(full, fresh, name.c_str(), data.data, data.size))

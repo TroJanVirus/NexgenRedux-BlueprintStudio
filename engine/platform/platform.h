@@ -112,6 +112,25 @@ namespace nx
         return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '.' || c == '-' ? c : '_';
     }
 
+    // The generic drop receiver must never replace Studio's managed or recovery files.
+    // Stage reserved names under a distinct, portable import name.
+    inline bool protectedBlueprintDrop(const std::string& name)
+    {
+        return name.rfind("blueprint-project-",0)==0||name.rfind("blueprint-recovery",0)==0||
+            (name.size()>=8&&name.compare(name.size()-8,8,".bp.json")==0);
+    }
+    inline std::string blueprintDropName(const std::string& name,unsigned attempt)
+    {
+        std::string staged=name;
+        if(name.rfind("blueprint-project-",0)==0||name.rfind("blueprint-recovery",0)==0)staged="import-"+name;
+        if(!attempt)return staged;
+        size_t extension=staged.rfind('.');
+        if(staged.size()>=8&&staged.compare(staged.size()-8,8,".bp.json")==0)extension=staged.size()-8;
+        if(extension==std::string::npos)extension=staged.size();
+        staged.insert(extension,"-"+std::to_string(attempt+1));
+        return staged;
+    }
+
     class Platform
     {
     public:
