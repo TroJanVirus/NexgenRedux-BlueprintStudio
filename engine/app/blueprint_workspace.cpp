@@ -10,6 +10,7 @@
 #include "assets/assets.h"
 #include "base/log.h"
 #include "base/json_tree.h"
+#include "ui/ui.h"
 #include "canvas/canvas.h"
 #include "input/input.h"
 #include "platform/platform.h"
@@ -149,6 +150,7 @@ namespace nx
     {
         if (!active()) return;
         stopPreview(s);
+        releaseWidgetPreview();m_widgetDesigner=false;
         checkpoint(s,true);
         cancelDrag();clearWire();m_quickDrag=m_quickMenu=m_pinMenu=m_rightDown=false;m_layoutMenu=m_layoutDragging=false;m_graphBack.clear();m_focus=0;m_browsing=false;m_assetBrowser=false;s.input->setTyping(m_previousTyping);
         s.assets->release(m_font);
@@ -532,7 +534,7 @@ namespace nx
         {m_status="Save as a named project before importing assets.";return;}
         if(!blueprintEnsureAssetFolder(*s.platform,m_document.assetRoot,screen,m_status)||
             !blueprintListAssets(*s.platform,m_document.assetRoot,screen,m_assetFiles,m_status))return;
-        m_assetBrowser=true;m_assetLibrary=false;m_visualPlacement=false;cancelVisualPlacement();m_assetFirst=0;m_visualInput=0;clearWire();cancelDrag();
+        m_assetBrowser=true;m_assetLibrary=false;m_widgetDesigner=false;releaseWidgetPreview();m_visualPlacement=false;cancelVisualPlacement();m_assetFirst=0;m_visualInput=0;clearWire();cancelDrag();
         m_status="Drop a native asset or scene JSON into this window.";
     }
     bool BlueprintWorkspace::publishVisualWidget(Services& s)
@@ -669,6 +671,148 @@ namespace nx
         c.text(*m_font,"X/Z plan | 1 m snap | Drag actor from library",630,555,muted);
         c.text(*m_font,"Only constant linked placements are shown.",630,575,muted);
     }
+    namespace
+    {
+        struct DesignRow {std::string id,kind,label;unsigned depth;};
+        constexpr const char* designPalette[]={"column","row","grid","stack","scroll","label","button","toggle","slider","progress","field","space"};
+        constexpr const char* designProps[]={"text","width","height","gap","padding","grow","align","justify","self","style","value","visible"};
+        void designRows(JsonTree::Value value,std::vector<DesignRow>& rows,unsigned depth)
+        {
+            if(depth>12||rows.size()>=256)return;
+            if(value.isArray())
+            {
+                for(auto child=value.first();child.exists();child=child.next())designRows(child,rows,depth);
+                return;
+            }
+            if(!value.isObject())return;
+            const char* kind=nullptr;
+            for(const char* candidate:{"column","row","grid","stack","scroll","label","paragraph","image","button","toggle","slider","progress","choice","field","list","tabs","space","line","custom"})
+                if(value[candidate].exists()){kind=candidate;break;}
+            if(!kind)return;
+            const auto main=value[kind];
+            rows.push_back({value["id"].text(),kind,value["text"].text(main.text()),depth});
+            if(main.isArray())
+            {
+                if(std::string(kind)=="tabs")
+                    for(auto tab=main.first();tab.exists();tab=tab.next())designRows(tab["page"],rows,depth+1);
+                else if(std::string(kind)!="choice")designRows(main,rows,depth+1);
+            }
+        }
+    }
+    void BlueprintWorkspace::releaseWidgetPreview()
+    {
+        if(m_designUi){destroy(m_designUi);m_designUi=nullptr;}
+        m_designPreviewAsset.clear();m_designPreviewError.clear();m_designRevision=static_cast<size_t>(-1);
+    }
+    void BlueprintWorkspace::refreshWidgetPreview(Services& s)
+    {
+        if(!m_assetBrowser||!m_assetLibrary||!m_widgetDesigner){if(m_designUi)releaseWidgetPreview();return;}
+        if(m_visualInput)return;
+        if(m_designPreviewAsset==m_visualSelection&&m_designRevision==m_document.revision())return;
+        releaseWidgetPreview();
+        m_designPreviewAsset=m_visualSelection;m_designRevision=m_document.revision();
+        const auto* page=m_document.visualAsset(m_visualSelection);
+        if(!page||page->kind!="widget")return;
+        const auto folder="own/"+m_document.assetRoot+"/"+assetScreen();
+        m_designUi=create<Ui>(MemTag::UI,*s.canvas,*s.assets,*s.audio,*s.input,*s.host,*s.platform,folder.c_str());
+        if(!m_designUi){m_designPreviewError="Cannot allocate widget preview.";return;}
+        if(!m_designUi->loadPage(page->source.data(),page->source.size(),m_designUi->root(),nullptr,"designer",true))
+            m_designPreviewError=m_designUi->error();
+    }
+    void BlueprintWorkspace::updateWidgetDesigner(Services& s,float x,float y,bool click)
+    {
+        const auto* page=m_document.visualAsset(m_visualSelection);
+        if(!page||page->kind!="widget"){m_widgetDesigner=false;return;}
+        JsonTree tree;if(!tree.parse(page->source.data(),page->source.size()))return;
+        std::vector<DesignRow> rows;designRows(tree.root(),rows,0);
+        const size_t count=m_widgetPalette?sizeof(designPalette)/sizeof(designPalette[0]):rows.size()+1;
+        if(m_widgetFirst>=count)m_widgetFirst=0;
+        if(in(x,y,280,202,610,522))
+        {
+            if(s.input->wheel()<0&&m_widgetFirst+8<count)++m_widgetFirst;
+            if(s.input->wheel()>0&&m_widgetFirst)--m_widgetFirst;
+        }
+        if(!click)return;
+        if(in(x,y,280,156,610,189)){m_widgetPalette=!m_widgetPalette;m_widgetFirst=0;return;}
+        if(in(x,y,630,156,810,189)){m_widgetDesigner=false;releaseWidgetPreview();return;}
+        if(in(x,y,820,156,1000,189)){m_widgetFourThree=!m_widgetFourThree;return;}
+        if(in(x,y,280,202,610,522))
+        {
+            const auto row=m_widgetFirst+static_cast<size_t>((y-202)/40);
+            if(row>=count)return;
+            if(m_widgetPalette)
+            {
+                if(m_document.appendVisualWidget(m_visualSelection,designPalette[row],"",m_status,m_widgetSelection))
+                {m_status="Added widget to selected container.";m_widgetPalette=false;m_widgetFirst=0;}
+            }
+            else m_widgetSelection=row?rows[row-1].id:"";
+            return;
+        }
+        if(!m_widgetSelection.empty()&&in(x,y,280,548,440,581))
+        {if(m_document.moveVisualWidget(m_visualSelection,m_widgetSelection,-1,m_status))m_status="Moved widget up.";return;}
+        if(!m_widgetSelection.empty()&&in(x,y,450,548,610,581))
+        {if(m_document.moveVisualWidget(m_visualSelection,m_widgetSelection,1,m_status))m_status="Moved widget down.";return;}
+        if(!m_widgetSelection.empty()&&in(x,y,630,439,1000,583))
+        {
+            const size_t column=static_cast<size_t>((x-630)/123.34f),row=static_cast<size_t>((y-439)/36);
+            const size_t prop=row*3+column;if(prop>=sizeof(designProps)/sizeof(designProps[0]))return;
+            m_visualProperty=designProps[prop];
+            JsonTree::Value selected;
+            const auto find=[&](auto&& self,JsonTree::Value node)->void
+            {
+                if(node.isObject()&&node["id"].isString()&&m_widgetSelection==node["id"].text())selected=node;
+                if(node.isArray()||node.isObject())for(auto child=node.first();child.exists();child=child.next())self(self,child);
+            };
+            find(find,tree.root());if(!selected.exists())return;
+            const auto field=selected[m_visualProperty.c_str()];
+            m_visualText=field.isString()?field.text():field.isNumber()?std::to_string(field.exact()):
+                field.type()==JsonTree::Type::Bool?(field.flag()?"true":"false"):"";
+            if(m_visualProperty=="text"&&!field.exists())
+                for(const char* key:{"label","paragraph","button","toggle","field"})if(selected[key].isString()){m_visualText=selected[key].text();break;}
+            m_visualInput=4;s.input->setTyping(true);m_status="Edit property; blank uses default (except text).";
+        }
+    }
+    void BlueprintWorkspace::drawWidgetDesigner(Canvas& c)
+    {
+        const auto button=[&](float x,float y,float width,const char* label)
+        {c.roundRect(x,y,width,33,4,{0.19f,0.33f,0.50f,1});c.clip(x,y,width,33);c.text(*m_font,label,x+width*0.5f,y+7,text,Align::Center);c.noClip();};
+        button(280,156,330,m_widgetPalette?"Back to hierarchy":"Add widget to selection");
+        button(630,156,180,"Back to content");button(820,156,180,m_widgetFourThree?"4:3 / switch":"16:9 / switch");
+        const auto* page=m_document.visualAsset(m_visualSelection);
+        JsonTree tree;std::vector<DesignRow> rows;
+        if(page&&tree.parse(page->source.data(),page->source.size()))designRows(tree.root(),rows,0);
+        const size_t count=m_widgetPalette?sizeof(designPalette)/sizeof(designPalette[0]):rows.size()+1;
+        for(size_t i=0;i<8&&i+m_widgetFirst<count;++i)
+        {
+            const size_t at=i+m_widgetFirst;const float y=202+40*static_cast<float>(i);
+            const auto id=m_widgetPalette||!at?"":rows[at-1].id;
+            const auto label=m_widgetPalette?std::string(designPalette[at]):!at?"PAGE ROOT":std::string(rows[at-1].depth*2,' ')+rows[at-1].kind+" / "+id+" "+rows[at-1].label;
+            c.rect(280,y,330,36,!m_widgetPalette&&id==m_widgetSelection?Color{0.19f,0.33f,0.50f,1}:Color{0.17f,0.22f,0.30f,1});
+            c.clip(286,y,318,36);c.text(*m_font,label.c_str(),290,y+9,text);c.noClip();
+        }
+        button(280,548,160,"Move up");button(450,548,160,"Move down");
+        const float width=m_widgetFourThree?960.f:1280.f,scale=208.f/720.f,screenWidth=width*scale;
+        const float px=815-screenWidth*0.5f,py=207;
+        c.rect(630,202,370,219,{0.055f,0.075f,0.105f,1});
+        if(m_designUi&&m_designPreviewError.empty())
+        {
+            c.push();c.clip(px,py,screenWidth,208);c.translate(px,py);c.scale(scale,scale);
+            m_designUi->drawDesign(c,0,0,width,720);
+            if(!m_widgetSelection.empty())if(auto* selected=m_designUi->find(m_widgetSelection.c_str()))
+            {
+                float sx=0,sy=0;m_designUi->place(*selected,sx,sy);
+                c.roundLine(sx,sy,selected->w,selected->h,0,3,{0.25f,0.85f,0.55f,1});
+            }
+            c.pop();
+        }
+        else
+        {
+            c.clip(636,207,358,208);c.text(*m_font,m_designPreviewError.empty()?"Native preview":m_designPreviewError.c_str(),640,225,muted);c.noClip();
+        }
+        c.text(*m_font,"Native layout / selected widget properties",630,421,muted);
+        for(size_t i=0;i<sizeof(designProps)/sizeof(designProps[0]);++i)
+            button(630+123.34f*static_cast<float>(i%3),439+36*static_cast<float>(i/3),119,designProps[i]);
+    }
     void BlueprintWorkspace::updateVisualLibrary(Services& s,float x,float y,bool left,bool click,unsigned pressed)
     {
         auto& input=*s.input;
@@ -687,6 +831,7 @@ namespace nx
                 {
                     if(m_visualInput==1&&!m_document.renameVisualAsset(m_visualSelection,m_visualText,m_status))break;
                     if(m_visualInput==3&&!m_document.setVisualActorProperty(m_visualSelection,m_visualComponent,m_visualProperty,m_visualText,m_status))break;
+                    if(m_visualInput==4&&!m_document.setVisualWidgetProperty(m_visualSelection,m_widgetSelection,m_visualProperty,m_visualText,m_status))break;
                     m_visualInput=0;input.setTyping(false);m_status="Text applied.";break;
                 }
                 else if(ch>=32)appendCharacter(m_visualText,ch,128);
@@ -697,6 +842,7 @@ namespace nx
         if(pressed&1u){saveCurrent(s);return;}
         if(pressed&2u){if(m_document.undo()){selectGraph(std::min(m_graph,m_document.graphs.size()-1));m_status="Library edit undone.";}return;}
         if(pressed&4u){if(m_document.redo()){selectGraph(std::min(m_graph,m_document.graphs.size()-1));m_status="Library edit redone.";}return;}
+        if(m_widgetDesigner&&!(click&&(in(x,y,860,116,1000,150)||in(x,y,704,116,850,150)))){updateWidgetDesigner(s,x,y,click);return;}
         const auto& assets=m_document.visualAssets();
         if(m_visualFirst>=assets.size())m_visualFirst=assets.empty()?0:assets.size()-1;
         if(in(x,y,280,198,610,535))
@@ -721,8 +867,8 @@ namespace nx
             }
         }
         if(!click)return;
-        if(in(x,y,860,116,1000,150)){m_assetBrowser=false;m_visualPlacement=false;cancelVisualPlacement();return;}
-        if(in(x,y,704,116,850,150)){m_assetLibrary=false;m_visualPlacement=false;cancelVisualPlacement();return;}
+        if(in(x,y,860,116,1000,150)){m_assetBrowser=false;m_widgetDesigner=false;releaseWidgetPreview();m_visualPlacement=false;cancelVisualPlacement();return;}
+        if(in(x,y,704,116,850,150)){m_assetLibrary=false;m_widgetDesigner=false;releaseWidgetPreview();m_visualPlacement=false;cancelVisualPlacement();return;}
         if(in(x,y,280,156,439,189)||in(x,y,449,156,610,189))
         {
             std::string id;
@@ -841,6 +987,7 @@ namespace nx
             return;
         }
         if(selected->kind!="widget")return;
+        if(in(x,y,280,548,610,581)){m_widgetDesigner=true;m_widgetPalette=false;m_widgetSelection.clear();m_widgetFirst=0;return;}
         if(in(x,y,630,232,1000,266))
         {m_visualInput=2;input.setTyping(true);m_status="Enter the next widget label, then press Enter.";return;}
         const char* kind=nullptr;
@@ -870,6 +1017,9 @@ namespace nx
         {c.roundRect(x,y,w,33,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,label,x+w*0.5f,y+7,text,Align::Center);};
         c.text(*m_font,"CONTENT / PROJECT LIBRARY",280,122,accent);
         button(704,116,146,"Media");button(860,116,140,"Close");
+        if(m_widgetDesigner)drawWidgetDesigner(c);
+        else
+        {
         button(280,156,159,"New actor");button(449,156,161,"New widget");
         const auto& assets=m_document.visualAssets();
         for(size_t i=0;i<9&&m_visualFirst+i<assets.size();++i)
@@ -881,6 +1031,7 @@ namespace nx
         if(assets.empty())c.text(*m_font,"Create a reusable asset.",290,210,muted);
         const auto* selected=m_document.visualAsset(m_visualSelection);
         if(selected&&selected->kind=="actor"&&!m_visualPlacement)button(280,548,330,"Open placement plan");
+        if(selected&&selected->kind=="widget")button(280,548,330,"Open UI Designer");
         if(m_visualPlacement)drawVisualPlacement(c);
         else if(selected)
         {
@@ -978,11 +1129,12 @@ namespace nx
             }
         }
         else c.text(*m_font,"Select a definition to edit.",630,210,muted);
+        }
         c.clip(280,591,720,26);c.text(*m_font,m_status.c_str(),280,595,text);c.noClip();
         if(m_visualInput)
         {
             c.roundRect(420,286,440,130,6,{0.08f,0.12f,0.18f,1});
-            c.text(*m_font,m_visualInput==1?"RENAME ASSET":m_visualInput==3?m_visualProperty.c_str():"NEXT WIDGET TEXT",440,300,accent);
+            c.text(*m_font,m_visualInput==1?"RENAME ASSET":m_visualInput>=3?m_visualProperty.c_str():"NEXT WIDGET TEXT",440,300,accent);
             c.clip(440,330,400,34);c.text(*m_font,m_visualText.c_str(),440,336,text);c.noClip();
             c.text(*m_font,"Enter applies; Escape cancels.",440,379,muted);
         }
@@ -1593,9 +1745,10 @@ namespace nx
     void BlueprintWorkspace::update(Services& s)
     {
         auto& input = *s.input;
+        refreshWidgetPreview(s);
         if (input.pressed(Action::Menu))
         {
-            if(m_assetBrowser){if(m_visualInput){m_visualInput=0;m_visualText.clear();input.setTyping(false);m_status="Input cancelled.";return;}if(m_placementDragging){cancelVisualPlacement();m_status="Placement cancelled.";return;}if(m_visualPlacement){m_visualPlacement=false;return;}m_assetBrowser=false;m_status="Asset browser closed.";return;}
+            if(m_assetBrowser){if(m_visualInput){m_visualInput=0;m_visualText.clear();input.setTyping(false);m_status="Input cancelled.";return;}if(m_placementDragging){cancelVisualPlacement();m_status="Placement cancelled.";return;}if(m_visualPlacement){m_visualPlacement=false;return;}if(m_widgetDesigner){m_widgetDesigner=false;releaseWidgetPreview();return;}m_assetBrowser=false;m_status="Asset browser closed.";return;}
             if(m_browsing){m_browsing=false;m_status="Open cancelled.";return;}
             if(m_focus){m_focus=0;input.setTyping(false);m_status="Input cancelled.";return;}
             if(m_layoutDragging||m_layoutMenu){m_layoutDragging=m_layoutMenu=false;m_status="Layout action cancelled.";return;}

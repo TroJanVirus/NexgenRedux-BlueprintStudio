@@ -9,6 +9,7 @@ namespace nx
     struct Services;
     class Canvas;
     class Input;
+    class Ui;
     struct Asset;
     class ScriptDebugger;
 
@@ -61,7 +62,15 @@ namespace nx
         void updateVisualPlacement(float x,float y,bool left,bool click);
         void drawVisualPlacement(Canvas& canvas);
         void cancelVisualPlacement(){m_placementDragging=false;m_placementAsset.clear();m_placementGraph=m_placementNode=static_cast<size_t>(-1);}
-        int m_visualInput=0; // 1 rename asset, 2 palette label
+        bool m_widgetDesigner=false,m_widgetPalette=false,m_widgetFourThree=false;
+        std::string m_widgetSelection,m_designPreviewAsset,m_designPreviewError;
+        size_t m_widgetFirst=0,m_designRevision=static_cast<size_t>(-1);
+        Ui* m_designUi=nullptr;
+        void releaseWidgetPreview();
+        void refreshWidgetPreview(Services& s);
+        void updateWidgetDesigner(Services& s,float x,float y,bool click);
+        void drawWidgetDesigner(Canvas& canvas);
+        int m_visualInput=0; // 1 rename asset, 2 palette label, 3 actor property, 4 widget property
         void updateVisualLibrary(Services& services,float x,float y,bool left,bool click,unsigned pressed);
         void drawVisualLibrary(Canvas& canvas);
         bool publishVisualWidget(Services& services);

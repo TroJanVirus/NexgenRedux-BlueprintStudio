@@ -78,7 +78,9 @@ namespace nx
         bool createVisualAsset(const std::string& kind,std::string& id,std::string& error);
         bool renameVisualAsset(const std::string& id,const std::string& title,std::string& error);
         bool removeVisualAsset(const std::string& id,std::string& error);
-        bool appendVisualWidget(const std::string& id,const std::string& kind,const std::string& label,std::string& error);
+        bool appendVisualWidget(const std::string& id,const std::string& kind,const std::string& label,std::string& error,const std::string& parent="");
+        bool setVisualWidgetProperty(const std::string& id,const std::string& widget,const std::string& property,const std::string& value,std::string& error);
+        bool moveVisualWidget(const std::string& id,const std::string& widget,int direction,std::string& error);
         bool connectVisualWidget(const std::string& owner,const std::string& id,std::string& error);
         // Linked actor definitions use native entity JSON and a parent-first hierarchy.
         bool visualActorRoot(const std::string& id,std::string& json,std::string& error)const;

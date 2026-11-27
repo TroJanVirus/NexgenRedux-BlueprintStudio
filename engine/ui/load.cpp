@@ -156,7 +156,7 @@ namespace nx
         return loadPage(reinterpret_cast<const char*>(file.data),file.size,into,screen,path);
     }
 
-    bool Ui::loadPage(const char* data,size_t size,Widget& into,asIScriptObject* screen,const char* path)
+    bool Ui::loadPage(const char* data,size_t size,Widget& into,asIScriptObject* screen,const char* path,bool designOnly)
     {
         m_error[0]=0;
         JsonTree tree;
@@ -171,13 +171,13 @@ namespace nx
             return false;
         };
         const Json root=tree.root();
-        if(!root.isArray())return build(root,into,path,screen)!=nullptr||rollback();
+        if(!root.isArray())return build(root,into,path,screen,designOnly)!=nullptr||rollback();
         for(Json v=root.first();v.exists();v=v.next())
-            if(!build(v,into,path,screen))return rollback();
+            if(!build(v,into,path,screen,designOnly))return rollback();
         return true;
     }
 
-    Widget* Ui::build(Json v, Widget& into, const char* file, asIScriptObject* screen)
+    Widget* Ui::build(Json v, Widget& into, const char* file, asIScriptObject* screen,bool designOnly)
     {
         u32 which = 0;
         constexpr u32 kCount = sizeof(kKinds) / sizeof(kKinds[0]);
@@ -208,7 +208,7 @@ namespace nx
                 page->release();
                 for (Json c = t["page"].first(); c.exists(); c = c.next())
                 {
-                    if (build(c, *page, file, screen) == nullptr)
+                    if (build(c, *page, file, screen, designOnly) == nullptr)
                     {
                         return nullptr;
                     }
@@ -219,7 +219,7 @@ namespace nx
         {
             for (Json c = main.first(); c.exists(); c = c.next())
             {
-                if (build(c, *w, file, screen) == nullptr)
+                if (build(c, *w, file, screen, designOnly) == nullptr)
                 {
                     return nullptr;
                 }
@@ -304,6 +304,7 @@ namespace nx
                 if (strcmp(key, e.name) == 0)
                 {
                     known = true;
+                    if(designOnly)continue; // Never bind or execute a game method in the designer.
                     char declaration[96];
                     snprintf(declaration, sizeof(declaration), e.event == UiEvent::Draw ? "void %s(Canvas@, Widget@)" : e.event == UiEvent::Row ? "void %s(Widget@, int)" : "void %s(Widget@)", p.text());
                     asIScriptFunction* method = screen ? screen->GetObjectType()->GetMethodByDecl(declaration) : nullptr;

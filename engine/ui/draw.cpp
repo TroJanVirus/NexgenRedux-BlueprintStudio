@@ -332,6 +332,12 @@ namespace nx
         }
     }
 
+    void Ui::drawDesign(Canvas& c,float x,float y,float w,float h)
+    {
+        animate(*m_root,1.f);
+        draw(c,x,y,w,h);
+    }
+
     void Ui::draw(Canvas& c, float x, float y, float w, float h)
     {
         if (x != m_x || y != m_y || w != m_w || h != m_h || !m_drawn)

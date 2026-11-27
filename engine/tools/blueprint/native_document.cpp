@@ -514,50 +514,143 @@ namespace nx
         if(at==next.end()){error="Visual asset not found.";return false;}
         next.erase(at);return replaceVisualAssets(next,error);
     }
-    bool BlueprintDocument::appendVisualWidget(const std::string& id,const std::string& kind,const std::string& label,std::string& error)
+    namespace
     {
-        if(kind!="label"&&kind!="button"&&kind!="progress"&&kind!="toggle")
+        const char* const widgetKinds[]={"column","row","grid","stack","scroll","label","paragraph","image","button","toggle","slider","progress","choice","field","list","tabs","space","line","custom"};
+        const char* widgetKind(const JsonValue& item)
+        {
+            if(item.type()!=JsonValue::Type::Object)return nullptr;
+            for(const char* kind:widgetKinds)if(item.find(kind))return kind;
+            return nullptr;
+        }
+        JsonValue* widgetChildren(JsonValue& item)
+        {
+            const char* kind=widgetKind(item);
+            if(!kind)return nullptr;
+            const std::string k=kind;
+            if(k!="column"&&k!="row"&&k!="grid"&&k!="stack"&&k!="scroll"&&k!="button")return nullptr;
+            auto* children=item.find(kind);
+            return children&&children->type()==JsonValue::Type::Array?children:nullptr;
+        }
+        struct WidgetMatch {JsonValue* item=nullptr;JsonValue* siblings=nullptr;u32 index=0;unsigned matches=0;};
+        void findVisualWidget(JsonValue& value,const std::string& id,WidgetMatch& out,JsonValue* siblings=nullptr,u32 index=0)
+        {
+            if(widgetKind(value))
+            {
+                const auto* key=value.find("id");
+                if(key&&key->type()==JsonValue::Type::String&&key->text()==id)
+                {out.item=&value;out.siblings=siblings;out.index=index;++out.matches;}
+            }
+            if(value.type()==JsonValue::Type::Array||value.type()==JsonValue::Type::Object)
+                for(u32 n=0;n<value.count();++n)if(auto* child=value.at(n))
+                    findVisualWidget(*child,id,out,value.type()==JsonValue::Type::Array?&value:nullptr,n);
+        }
+    }
+    bool BlueprintDocument::appendVisualWidget(const std::string& id,const std::string& kind,const std::string& label,std::string& error,const std::string& parent)
+    {
+        const bool container=kind=="column"||kind=="row"||kind=="grid"||kind=="stack"||kind=="scroll";
+        if(!container&&kind!="label"&&kind!="button"&&kind!="progress"&&kind!="toggle"&&kind!="slider"&&kind!="field"&&kind!="space")
         {error="Unsupported palette widget.";return false;}
-        if(label.size()>128||std::any_of(label.begin(),label.end(),[](unsigned char c){return c<32||c==127;}))
+        if(label.size()>128||std::any_of(label.begin(),label.end(),[](unsigned char ch){return ch<32||ch==127;}))
         {error="Widget text is too long or contains control characters.";return false;}
         auto next=m_visualAssets;
         for(auto& a:next)if(a.id==id&&a.kind=="widget")
         {
-            JsonTree tree;
-            if(!tree.parse(a.source.data(),a.source.size())||!tree.root().isArray()||tree.root().count()>=64)
-            {error="Invalid or full widget page.";return false;}
-            // Preserve unknown properties, exact numbers and nested imported widgets.
-            // Only insert a new native widget at the end of the existing root array.
-            const size_t end=a.source.find_last_not_of(" \t\r\n");
-            if(end==std::string::npos||a.source[end]!=']')
-            {error="Page must end with its root array; trailing comments are not edited.";return false;}
-            std::unordered_set<std::string> ids;
-            const auto walk=[&](auto&& self,JsonTree::Value v)->void
+            JsonValue root;
+            if(!root.parse(a.source.data(),a.source.size(),error)||root.type()!=JsonValue::Type::Array)
+            {error="Invalid widget page.";return false;}
+            JsonValue* list=&root;
+            if(!parent.empty())
             {
-                if(v.isObject()&&v["id"].isString())ids.emplace(v["id"].text());
-                if(v.isArray()||v.isObject())for(auto child=v.first();child.exists();child=child.next())self(self,child);
-            };
-            walk(walk,tree.root());
+                WidgetMatch match;findVisualWidget(root,parent,match);
+                if(match.matches!=1||!(list=widgetChildren(*match.item)))
+                {error="Select a unique container widget or the page root.";return false;}
+            }
+            if(list->count()>=64){error="Container widget limit reached.";return false;}
             std::string widgetId;
-            for(unsigned i=1;i<=4096;++i)
+            for(unsigned n=1;n<=4096;++n)
             {
-                widgetId="item-"+std::to_string(i);
-                if(!ids.count(widgetId))break;
+                widgetId="item-"+std::to_string(n);
+                WidgetMatch match;findVisualWidget(root,widgetId,match);if(!match.matches)break;
+                if(n==4096){error="No free widget ID.";return false;}
             }
-            if(ids.count(widgetId)){error="No free widget ID.";return false;}
             JsonValue item;
-            if(!text(item,"id",widgetId)){error="Cannot create widget.";return false;}
-            if(kind=="progress")
+            if(!text(item,"id",widgetId))return false;
+            if(container)
             {
-                if(!number(item,"progress",0.75)||!number(item,"low",0)||!number(item,"high",1))
-                {error="Cannot create progress bar.";return false;}
+                auto* children=item.put(kind);if(!children)return false;children->setArray();
+                if(kind=="grid"&&!number(item,"columns",2))return false;
             }
-            else if(!text(item,kind.c_str(),label.empty()?(kind=="label"?"Text":kind=="button"?"Button":"Toggle"):label))
-            {error="Cannot create widget.";return false;}
-            a.source.insert(end,std::string(tree.root().count()?",\n":"\n")+item.write(true)+"\n");
-            return replaceVisualAssets(next,error);
+            else if(kind=="progress"||kind=="slider")
+            {
+                if(!number(item,kind.c_str(),0.75)||!number(item,"low",0)||!number(item,"high",1))return false;
+            }
+            else if(kind=="space"){if(!number(item,"space",24))return false;}
+            else if(!text(item,kind.c_str(),label.empty()?(kind=="label"?"Text":kind=="button"?"Button":kind=="field"?"":"Toggle"):label))return false;
+            auto* added=list->add();if(!added||!added->setCopy(item)){error="Widget hierarchy is too deep.";return false;}
+            a.source=root.write(true);return replaceVisualAssets(next,error);
         }
         error="Select a widget page first.";return false;
+    }
+    bool BlueprintDocument::setVisualWidgetProperty(const std::string& id,const std::string& widget,const std::string& property,const std::string& value,std::string& error)
+    {
+        auto assets=m_visualAssets;
+        for(auto& asset:assets)if(asset.id==id&&asset.kind=="widget")
+        {
+            JsonValue root;if(!root.parse(asset.source.data(),asset.source.size(),error))return false;
+            WidgetMatch match;findVisualWidget(root,widget,match);
+            if(match.matches!=1){error="Select a widget with a unique ID.";return false;}
+            auto& item=*match.item;
+            const std::string allowed="|text|style|width|height|gap|grow|padding|value|align|justify|self|visible|enabled|checked|";
+            if(property.empty()||property.find('|')!=std::string::npos||allowed.find("|"+property+"|")==std::string::npos)
+            {error="Unsupported widget property.";return false;}
+            if(value.empty()&&property!="text")item.remove(property.c_str());
+            else if(property=="text"||property=="style")
+            {
+                if(value.size()>128||std::any_of(value.begin(),value.end(),[](unsigned char ch){return ch<32||ch==127;}))
+                {error="Invalid widget text or style.";return false;}
+                if(!text(item,property.c_str(),value))return false;
+            }
+            else if(property=="width"||property=="height"||property=="gap"||property=="grow"||property=="padding"||property=="value")
+            {
+                if(!literal("literal:float",value)){error="Enter a finite number.";return false;}
+                const double n=std::strtod(value.c_str(),nullptr);
+                if((property!="value"&&n<0)||std::abs(n)>100000){error="Widget property outside supported range.";return false;}
+                if(!number(item,property.c_str(),n))return false;
+            }
+            else if(property=="align"||property=="justify"||property=="self")
+            {
+                if(value!="start"&&value!="center"&&value!="end"&&value!="stretch"&&value!="spread")
+                {error="Use start, center, end, stretch or spread.";return false;}
+                if(!text(item,property.c_str(),value))return false;
+            }
+            else if(property=="visible"||property=="enabled"||property=="checked")
+            {
+                if(value!="true"&&value!="false"){error="Use true or false.";return false;}
+                auto* field=item.put(property);if(!field)return false;field->setFlag(value=="true");
+            }
+            else {error="Unsupported widget property.";return false;}
+            const auto changed=root.write(true);if(changed==asset.source){error.clear();return true;}
+            asset.source=changed;return replaceVisualAssets(assets,error);
+        }
+        error="Select a widget page.";return false;
+    }
+    bool BlueprintDocument::moveVisualWidget(const std::string& id,const std::string& widget,int direction,std::string& error)
+    {
+        if(direction!=-1&&direction!=1){error="Invalid sibling movement.";return false;}
+        auto assets=m_visualAssets;
+        for(auto& asset:assets)if(asset.id==id&&asset.kind=="widget")
+        {
+            JsonValue root;if(!root.parse(asset.source.data(),asset.source.size(),error))return false;
+            WidgetMatch match;findVisualWidget(root,widget,match);
+            if(match.matches!=1||!match.siblings){error="Select a unique widget within a container.";return false;}
+            const auto target=static_cast<int>(match.index)+direction;
+            if(target<0||static_cast<u32>(target)>=match.siblings->count()){error="Already at the end of this container.";return false;}
+            auto* other=match.siblings->at(static_cast<u32>(target));
+            JsonValue before;if(!before.setCopy(*match.item)||!match.item->setCopy(*other)||!other->setCopy(before))return false;
+            asset.source=root.write(true);return replaceVisualAssets(assets,error);
+        }
+        error="Select a widget page.";return false;
     }
     bool BlueprintDocument::connectVisualWidget(const std::string& owner,const std::string& id,std::string& error)
     {

@@ -2345,3 +2345,28 @@ NX_TEST(nativeActorPhysicsAndInstanceOverridesRun)
     NX_EXPECT(body&&fabsf(body->mass-2)<0.01f&&body->gravity==0);
     NX_EXPECT(collider&&collider->shape==Shape3::Box);
 }
+
+NX_TEST(nativeNestedWidgetDesignerCompilesIntoLiveRuntime)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    BlueprintDocument doc;doc.create();std::string id,error,source;
+    const bool ok=doc.createVisualAsset("widget",id,error)&&
+        doc.appendVisualWidget(id,"column","",error)&&doc.appendVisualWidget(id,"label","Health",error,"item-1")&&
+        doc.appendVisualWidget(id,"progress","",error,"item-1")&&doc.setVisualWidgetProperty(id,"item-3","width","320",error)&&
+        doc.connectVisualWidget("Screen",id,error)&&compileBlueprint(doc,source,error);
+    NX_EXPECT(ok);if(!ok)return;
+    r.platform.files["showcase/main/screen.json"]="{\"title\":\"Nested UI\"}";
+    r.platform.files["showcase/main/main.as"]=source;
+    if(!r.screens.init(r.services,"showcase","main")){NX_EXPECT(false);return;}
+    r.step(3);NX_EXPECT(!r.screens.failed());
+    if(!r.services.ui){NX_EXPECT(false);return;}
+    auto* container=r.services.ui->find("item-1");auto* label=r.services.ui->find("item-2");auto* progress=r.services.ui->find("item-3");
+    NX_EXPECT(container&&label&&progress&&label->parent==container&&progress->parent==container&&progress->width==320);
+    const char page[]="[{\"button\":\"Do not run\",\"click\":\"MissingHandler\",\"id\":\"design-only\"}]";
+    Ui& view=*r.services.ui;
+    NX_EXPECT(!view.loadPage(page,sizeof(page)-1,view.root(),nullptr));
+    NX_EXPECT(!view.find("design-only"));
+    NX_EXPECT(view.loadPage(page,sizeof(page)-1,view.root(),nullptr,"design test",true));
+    const auto* design=view.find("design-only");
+    NX_EXPECT(design&&design->events[static_cast<size_t>(UiEvent::Click)]==nullptr);
+}

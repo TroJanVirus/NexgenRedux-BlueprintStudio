@@ -1397,3 +1397,23 @@ NX_TEST(nativeActorPhysicsAndRootInstanceOverrides)
     NX_EXPECT(copy.setVisualActorProperty(id,0,"model","",error));
     NX_EXPECT(copy.visualActorSource(id,source,error)&&source.find("capsule")==std::string::npos&&source.find("animate")==std::string::npos);
 }
+
+NX_TEST(nativeWidgetDesignerHierarchyAndPropertyEdits)
+{
+    BlueprintDocument doc;doc.create();std::string id,error,bytes,source;
+    NX_EXPECT(doc.createVisualAsset("widget",id,error));
+    NX_EXPECT(doc.appendVisualWidget(id,"column","",error));
+    NX_EXPECT(doc.appendVisualWidget(id,"label","Health",error,"item-1"));
+    NX_EXPECT(doc.appendVisualWidget(id,"progress","",error,"item-1"));
+    NX_EXPECT(doc.setVisualWidgetProperty(id,"item-2","text","Player health",error));
+    NX_EXPECT(doc.setVisualWidgetProperty(id,"item-3","width","320",error));
+    NX_EXPECT(doc.setVisualWidgetProperty(id,"item-1","align","center",error));
+    NX_EXPECT(!doc.setVisualWidgetProperty(id,"item-1","align","bad",error));
+    NX_EXPECT(!doc.appendVisualWidget(id,"button","No",error,"item-2"));
+    NX_EXPECT(doc.moveVisualWidget(id,"item-3",-1,error));
+    NX_EXPECT(doc.serialize(bytes,error));
+    BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error));
+    NX_EXPECT(copy.connectVisualWidget("Screen",id,error)&&compileBlueprint(copy,source,error));
+    NX_EXPECT(source.find("Player health")!=std::string::npos&&source.find("320")!=std::string::npos);
+    NX_EXPECT(doc.undo()&&doc.redo());
+}

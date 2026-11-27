@@ -119,7 +119,9 @@ namespace nx
         bool loadTheme(const char* name);
         // Widgets from a file, put into one of them. Click and change name methods of the screen.
         bool load(const char* name, Widget& into, asIScriptObject* screen);
-        bool loadPage(const char* data,size_t size,Widget& into,asIScriptObject* screen,const char* path="inline UI page");
+        bool loadPage(const char* data,size_t size,Widget& into,asIScriptObject* screen,const char* path="inline UI page",bool designOnly=false);
+        // Renders normal native layout/styles without processing input or callbacks.
+        void drawDesign(Canvas& canvas,float x,float y,float w,float h);
         bool words(const char* name);
         const char* word(const char* key) const;
         const char* error() const { return m_error; }
@@ -250,7 +252,7 @@ namespace nx
         bool readFile(const char* name, FileData& out, char (&path)[192]);
         bool fail(const char* file, u32 line, const char* what, const char* name);
         // load.cpp
-        Widget* build(JsonTree::Value v, Widget& into, const char* file, asIScriptObject* screen);
+        Widget* build(JsonTree::Value v, Widget& into, const char* file, asIScriptObject* screen,bool designOnly);
         bool watch(const char* path);
 
         Canvas& m_canvas;
