@@ -252,3 +252,26 @@ NX_TEST(nativeBuiltinOperatorsHaveConsistentTypedPinsAndCompile)
     }
     NX_EXPECT(operators==65);
 }
+
+NX_TEST(nativeProjectScreensOwnTheirStateAndFunctions)
+{
+    BlueprintDocument doc;doc.create();std::string error,saved;
+    NX_EXPECT(doc.addScreen("level",error)&&!doc.addScreen("level",error)&&!doc.addScreen("../bad",error));
+    NX_EXPECT(doc.graphs.size()==12&&doc.isProject());
+    NX_EXPECT(doc.addFunction("Setup",error)&&doc.addFunction("Setup",error,"level"));
+    NX_EXPECT(doc.addNode(0,"var:set:int",0,0,error)&&doc.setReference(0,1,"score",error));
+    NX_EXPECT(doc.addNode(6,"var:set:string",0,0,error)&&doc.setReference(6,1,"score",error));
+    NX_EXPECT(doc.addNode(0,"call:function",0,0,error)&&doc.addNode(6,"call:function",0,0,error));
+    NX_EXPECT(doc.connect(0,0,"then",1,"in",error)&&doc.setInputValue(0,1,"value","5",error));
+    NX_EXPECT(doc.connect(6,0,"then",1,"in",error)&&doc.setInputValue(6,1,"value","level",error));
+    NX_EXPECT(doc.serialize(saved,error));BlueprintDocument copy;NX_EXPECT(copy.load(saved.data(),saved.size(),error));
+    std::vector<BlueprintScreenOutput> output;
+    NX_EXPECT(compileBlueprintProject(copy,output,error)&&output.size()==2);
+    if(output.size()==2)
+    {
+        NX_EXPECT(output[0].source.find("int bp_var_score;")!=std::string::npos);
+        NX_EXPECT(output[1].source.find("string bp_var_score;")!=std::string::npos);
+        NX_EXPECT(output[1].id=="level"&&output[1].map.front().location.graph==6);
+    }
+    NX_EXPECT(copy.removeScreen("level",error)&&!copy.isProject()&&copy.undo()&&copy.isProject());
+}

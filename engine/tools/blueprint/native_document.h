@@ -51,17 +51,20 @@ namespace nx
         bool setInputValue(size_t graph,size_t node,const std::string& pin,const std::string& value,std::string& error);
         bool clearInputValue(size_t graph,size_t node,const std::string& pin);
         bool setReference(size_t graph,size_t node,const std::string& value,std::string& error);
-        bool addFunction(const std::string& name,std::string& error);
+        bool addFunction(const std::string& name,std::string& error,const std::string& owner="Screen");
+        bool addScreen(const std::string& id,std::string& error);
+        bool removeScreen(const std::string& id,std::string& error);
+        std::vector<std::string> screens() const;
         bool removeFunction(size_t graph,std::string& error);
         bool functions(std::string& error) const;
-        // Collect named, per-instance variables. A name must have exactly one type across all graphs.
-        bool variables(std::vector<BlueprintPin>& values,std::string& error) const;
+        // Named instance variables and function names are scoped to their owning screen.
+        bool variables(std::vector<BlueprintPin>& values,std::string& error,const std::string& owner="Screen") const;
         bool undo();
         bool redo();
         bool dirty()const{return m_revision!=m_savedRevision;}
         bool canUndo()const{return !m_undo.empty();}
         bool canRedo()const{return !m_redo.empty();}
-        bool isProject()const{return false;}
+        bool isProject()const{return screens().size()>1;}
         void markSaved(){m_savedRevision=m_revision;}
         size_t revision()const{return m_revision;}
         void markRecovered(){m_revision=++m_nextRevision;}

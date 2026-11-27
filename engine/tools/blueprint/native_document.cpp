@@ -83,6 +83,13 @@ namespace nx
             for(size_t i=0;i<s.size();++i){const char c=s[i];if(!(c=='_'||(c>='a'&&c<='z')||(c>='A'&&c<='Z')||(i&&c>='0'&&c<='9')))return false;}
             return true;
         }
+        bool screenId(const std::string& s)
+        {
+            if(s=="Screen")return true; // Initial screen, retained for native v2 drafts.
+            if(s.empty()||s.size()>40||s=="main"||s.front()<'a'||s.front()>'z')return false;
+            return std::all_of(s.begin(),s.end(),[](char c){return (c>='a'&&c<='z')||(c>='0'&&c<='9')||c=='_'||c=='-';});
+        }
+        std::string scoped(const std::string& owner,const std::string& name){return owner+"/"+name;}
         bool context(const std::string& event,const std::string& kind)
         {return (kind!="event:delta"||event=="update")&&(kind!="event:canvas"||event=="draw");}
         bool validText(JsonTree::Value v){return v.isString()&&v.text()[0]&&std::strlen(v.text())<=512;}
@@ -220,10 +227,11 @@ namespace nx
         for(auto value=gs.first();value.exists();value=value.next())
         {
             auto ns=value["nodes"],ls=value["links"];
-            if(!validText(value["name"])||!graphNames.emplace(value["name"].text()).second||
+            const std::string owner=value["owner"].text("Screen");
+            if(!screenId(owner)||!validText(value["name"])||!graphNames.emplace(scoped(owner,value["name"].text())).second||
                 !ns.isArray()||!ls.isArray()||ns.count()>kMaxNodes||ls.count()>kMaxLinks)
             {error="Invalid or duplicate graph.";return false;}
-            Graph g;g.name=value["name"].text();g.owner="Screen";g.kind="event";
+            Graph g;g.name=value["name"].text();g.owner=owner;g.kind="event";
             const auto kind=value["kind"].text("event");
             g.kind=kind;
             if((g.kind=="event"&&!lifecycle(g.name))||
@@ -270,10 +278,13 @@ namespace nx
             }
             candidate.graphs.push_back(std::move(g));
         }
-        for(const char* event:{"onEnter","update","draw"})
-            if(!graphNames.count(event)){error="Missing required event graph.";return false;}
-        std::vector<BlueprintPin> vars;
-        if(!candidate.variables(vars,error)||!candidate.functions(error))return false;
+        for(const auto& owner:candidate.screens())
+        {
+            for(const char* event:{"onEnter","update","draw"})
+                if(!graphNames.count(scoped(owner,event))){error="Missing required event graph in "+owner;return false;}
+            std::vector<BlueprintPin> vars;if(!candidate.variables(vars,error,owner))return false;
+        }
+        if(!candidate.functions(error))return false;
         *this=std::move(candidate);error.clear();return true;
     }
     bool BlueprintDocument::serialize(std::string& result,std::string& error)const
@@ -285,7 +296,7 @@ namespace nx
         auto* gs=root.put("graphs");if(!gs)return fail();gs->setArray();
         for(const auto& g:graphs)
         {
-            auto* v=gs->add();if(!v||!text(*v,"name",g.name)||!text(*v,"kind",g.kind))return fail();
+            auto* v=gs->add();if(!v||!text(*v,"owner",g.owner)||!text(*v,"name",g.name)||!text(*v,"kind",g.kind))return fail();
             auto* ns=v->put("nodes");if(!ns)return fail();ns->setArray();
             for(const auto& n:g.nodes)
             {
@@ -335,7 +346,7 @@ namespace nx
             const auto type=kind.substr(8);
             value="value_"+type; if(value.back()=='@')value.pop_back();
             std::vector<BlueprintPin> vars;
-            if(!variables(vars,error))return false;
+            if(!variables(vars,error,g.owner))return false;
             for(unsigned i=1;std::any_of(vars.begin(),vars.end(),[&](const BlueprintPin& p){return p.name==value&&p.type!=type;});++i)value="variable_"+std::to_string(i);
         }
         if(kind=="call:function")
@@ -344,7 +355,7 @@ namespace nx
             bool valid=false;
             for(const auto& fn:graphs)
             {
-                if(fn.kind!="function"||fn.name==g.name)continue;
+                if(fn.owner!=g.owner||fn.kind!="function"||fn.name==g.name)continue;
                 value=fn.name;g.nodes.push_back({id,kind,value,x,y});
                 valid=functions(error);g.nodes.pop_back();if(valid)break;
             }
@@ -405,10 +416,10 @@ namespace nx
         if(it==values.end())return false;
         record(graph);values.erase(it);return true;
     }
-    bool BlueprintDocument::variables(std::vector<BlueprintPin>& values,std::string& error)const
+    bool BlueprintDocument::variables(std::vector<BlueprintPin>& values,std::string& error,const std::string& owner)const
     {
         std::vector<BlueprintPin> result;
-        for(const auto& graph:graphs)for(const auto& node:graph.nodes)
+        for(const auto& graph:graphs)if(graph.owner==owner)for(const auto& node:graph.nodes)
         {
             if(!variableKind(node.kind))continue;
             if(!identifier(node.ref)){error="Invalid variable name in "+graph.name;return false;}
@@ -437,7 +448,7 @@ namespace nx
             record(graph);n.ref=value;error.clear();return true;
         }
         const auto type=n.kind.substr(8);
-        for(const auto& g:graphs)for(const auto& other:g.nodes)
+        for(const auto& g:graphs)if(g.owner==graphs[graph].owner)for(const auto& other:g.nodes)
             if(&other!=&n&&variableKind(other.kind)&&other.ref==value&&other.kind.substr(8)!=type)
             {error="Variable name already has a different type.";return false;}
         record(graph);n.ref=value;error.clear();return true;
@@ -446,12 +457,12 @@ namespace nx
     {
         std::unordered_map<std::string,size_t> index;
         for(size_t i=0;i<graphs.size();++i)
-            if(graphs[i].kind=="function")index.emplace(graphs[i].name,i);
+            if(graphs[i].kind=="function")index.emplace(scoped(graphs[i].owner,graphs[i].name),i);
         std::vector<std::vector<size_t>> calls(graphs.size());
         for(size_t i=0;i<graphs.size();++i)for(const auto& node:graphs[i].nodes)
         {
             if(node.kind!="call:function")continue;
-            const auto it=index.find(node.ref);
+            const auto it=index.find(scoped(graphs[i].owner,node.ref));
             if(it==index.end()){error="Missing function: "+node.ref;return false;}
             calls[i].push_back(it->second);
         }
@@ -475,14 +486,15 @@ namespace nx
         m_undo.push_back({static_cast<size_t>(-1),{},m_revision,graphs});
         m_redo.clear();m_revision=++m_nextRevision;
     }
-    bool BlueprintDocument::addFunction(const std::string& functionName,std::string& error)
+    bool BlueprintDocument::addFunction(const std::string& functionName,std::string& error,const std::string& owner)
     {
         if(!identifier(functionName)||graphs.size()>=kMaxGraphs||
-            std::any_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.name==functionName;})||
+            std::none_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==owner;})||
+            std::any_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==owner&&g.name==functionName;})||
             lifecycle(functionName))
         {error="Choose a unique function name (letters, digits and underscores).";return false;}
         recordGraphList();
-        Graph g;g.owner="Screen";g.name=functionName;g.kind="function";
+        Graph g;g.owner=owner;g.name=functionName;g.kind="function";
         g.nodes.push_back({"entry","entry","",24,60});graphs.push_back(std::move(g));
         error.clear();return true;
     }
@@ -490,10 +502,43 @@ namespace nx
     {
         if(graph>=graphs.size()||graphs[graph].kind!="function")
         {error="Only function graphs can be deleted.";return false;}
-        for(const auto& g:graphs)for(const auto& n:g.nodes)
+        for(const auto& g:graphs)if(g.owner==graphs[graph].owner)for(const auto& n:g.nodes)
             if(n.kind=="call:function"&&n.ref==graphs[graph].name)
             {error="Remove calls to this function before deleting it.";return false;}
         recordGraphList();graphs.erase(graphs.begin()+static_cast<std::ptrdiff_t>(graph));error.clear();return true;
+    }
+    std::vector<std::string> BlueprintDocument::screens() const
+    {
+        std::vector<std::string> result;
+        for(const auto& g:graphs)if(std::find(result.begin(),result.end(),g.owner)==result.end())result.push_back(g.owner);
+        return result;
+    }
+    bool BlueprintDocument::addScreen(const std::string& id,std::string& error)
+    {
+        if(!screenId(id)||graphs.size()+6>kMaxGraphs||
+            std::any_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==id;}))
+        {error="Choose a unique lowercase screen ID (letters, digits, hyphens or underscores; not main).";return false;}
+        recordGraphList();
+        for(const char* event:{"onEnter","update","draw","onSuspend","onResume","onExit"})
+        {
+            Graph g;g.owner=id;g.name=event;g.kind="event";
+            g.nodes.push_back({"entry","entry","",24,60});graphs.push_back(std::move(g));
+        }
+        error.clear();return true;
+    }
+    bool BlueprintDocument::removeScreen(const std::string& id,std::string& error)
+    {
+        const auto owners=screens();
+        if(owners.size()<2||id==owners.front()||std::find(owners.begin(),owners.end(),id)==owners.end())
+        {error="The initial screen cannot be deleted.";return false;}
+        // Screen API targets may be dynamic strings. Reject deletion when an explicit inline target refers to it.
+        for(const auto& g:graphs)if(g.owner!=id)for(const auto& n:g.nodes)
+            if(n.kind=="api:Screens:Screens::push:string"||n.kind=="api:Screens:Screens::replace:string")
+                for(const auto& v:n.values)if(v.pin=="id"&&v.value==id)
+                {error="Remove navigation references to "+id+" first.";return false;}
+        recordGraphList();
+        graphs.erase(std::remove_if(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==id;}),graphs.end());
+        error.clear();return true;
     }
     bool BlueprintDocument::undo()
     {

@@ -11,6 +11,11 @@ namespace nx
     // Generates plain AngelScript. Source and map are unchanged on failure.
     bool compileBlueprint(const BlueprintDocument& document,std::string& source,std::string& error,
         BlueprintLocation* location=nullptr,BlueprintSourceMap* map=nullptr);
+    struct BlueprintScreenOutput { std::string id,source,manifest; BlueprintSourceMap map; };
+    bool compileBlueprintOwner(const BlueprintDocument& document,const std::string& owner,std::string& source,std::string& error,
+        BlueprintLocation* location=nullptr,BlueprintSourceMap* map=nullptr);
+    bool compileBlueprintProject(const BlueprintDocument& document,std::vector<BlueprintScreenOutput>& output,std::string& error,
+        BlueprintLocation* location=nullptr);
     // A normal Redux screen, independent of Studio and its source format.
     bool compileBlueprintScreen(const BlueprintDocument& document,std::string& source,std::string& manifest,std::string& error,
         BlueprintLocation* location=nullptr,BlueprintSourceMap* map=nullptr);
