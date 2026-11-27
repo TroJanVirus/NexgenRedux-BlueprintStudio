@@ -90,3 +90,7 @@ Switch on enum derives execution outputs from declared members plus Default/Then
 ## Compact native desktop workspace and Cook release gate
 
 The editor now derives its logical canvas from the desktop client size above 1280×720, rather than enlarging a fixed game-sized canvas. Small-window compatibility is retained. The graph and palette gain working space and additional visible rows; centered modal hit testing shares the render transform, including the native 3D placement viewport. Default typography is smaller and chrome uses neutral grey panels. Windows Cook release packaging now requires Defender verification and records executable hashes and source commit. Native verification pending.
+
+## Dedicated actor class editor
+
+Open actor editor / viewport from a selected reusable actor in Content. A full-window editor presents the component hierarchy at left, isolated native 3D preview and perspective orbit/zoom in the centre, and a property inspector at right, including distinct XYZ transform fields. Create child boxes/cameras, switch component shape, reset inherited overrides, jump to the actor class graph, save, or place the class in the screen. The selected live component has an XYZ orientation indicator (not a draggable component gizmo); the preview strips runtime callbacks, sounds, cameras and physics. Collision wireframe and richer component editing remain outstanding. Verification pending.

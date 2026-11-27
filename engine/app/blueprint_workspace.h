@@ -59,7 +59,15 @@ namespace nx
         bool m_sceneEditor=false,m_sceneExit=false;
         void importAsset(Services& services,const std::string& file);
         std::string assetScreen() const;
-        bool m_assetBrowser=false,m_assetLibrary=false;
+        bool m_assetBrowser=false,m_assetLibrary=false,m_actorEditor=false;
+        void updateActorEditor(Services& services,float x,float y,bool left,bool click,unsigned pressed);
+        void drawActorEditor(Canvas& canvas);
+        bool editActorProperty(Services& services,const char* property);
+        std::string m_actorPreviewId;
+        unsigned m_actorPreviewRoot=0;
+        bool m_actorReplace=false;
+        int m_actorAxis=-1;
+        std::vector<std::string> m_actorAxisValues;
         size_t m_visualFirst=0,m_visualComponent=0,m_visualComponentFirst=0;
         std::string m_visualSelection,m_visualText,m_visualProperty;
         std::string m_themeStyle="button";
