@@ -44,8 +44,25 @@ def wait_for(predicate, label, process, timeout=30):
         time.sleep(0.1)
     raise RuntimeError(f"Timed out: {label}")
 
+def move(x, y):
+    geo = conn.create_resource_object("window", window).get_geometry()
+    scale = min(geo.width / 1280, geo.height / 720)
+    px = round(x * scale + (geo.width - 1280 * scale) / 2)
+    py = round(y * scale + (geo.height - 720 * scale) / 2)
+    xdo("mousemove", "--window", window, px, py)
+
+def key(name):
+    # Redux samples action keys per frame: a synthetic down/up pair in one
+    # frame may be missed. Match the already proven desktop harness.
+    xdo("keydown", name)
+    try:
+        time.sleep(0.20)
+    finally:
+        xdo("keyup", name)
+    time.sleep(0.35)
+
 def click(x, y):
-    xdo("mousemove", "--window", window, x, y)
+    move(x, y)
     time.sleep(0.12)
     xdo("mousedown", 1)
     time.sleep(0.15)
@@ -54,7 +71,7 @@ def click(x, y):
 
 def right_add(x, y, query):
     operations["insert"] += 1
-    xdo("mousemove", "--window", window, x, y)
+    move(x, y)
     time.sleep(0.12)
     xdo("mousedown", 3)
     time.sleep(0.15)
@@ -62,14 +79,14 @@ def right_add(x, y, query):
     time.sleep(0.2)
     xdo("type", "--delay", 35, query)
     time.sleep(0.2)
-    xdo("key", "Return")
+    key("Return")
     time.sleep(0.3)
 
 def value(x, y, text):
     operations["value"] += 1
     click(x, y)
     xdo("type", "--delay", 35, text)
-    xdo("key", "Return")
+    key("Return")
     time.sleep(0.3)
 
 def components(x, y, values):
@@ -78,16 +95,16 @@ def components(x, y, values):
     for i, text in enumerate(values):
         click(int(360 + 560 / len(values) * (i + 0.5)), 317)
         xdo("type", "--delay", 35, text)
-    xdo("key", "Return")
+    key("Return")
     time.sleep(0.3)
 
 def wire(x1, y1, x2, y2):
     operations["wire"] += 1
-    xdo("mousemove", "--window", window, x1, y1)
+    move(x1, y1)
     time.sleep(0.12)
     xdo("mousedown", 1)
     time.sleep(0.16)
-    xdo("mousemove", "--window", window, x2, y2)
+    move(x2, y2)
     time.sleep(0.18)
     xdo("mouseup", 1)
     time.sleep(0.28)
@@ -140,7 +157,7 @@ def author_scene(process):
         operations["value"] += 1
         click(500, 160)
         click(500, 485)  # Cube sorts before Floor in the known-target list.
-        xdo("key", "Return")
+        key("Return")
         time.sleep(0.3)
         value(500, 226, "8")
         wire(468, 138, 500, 138)
@@ -189,6 +206,8 @@ def author_scene(process):
     (root / "authoring-operations.json").write_text(json.dumps(operations, indent=2), encoding="utf-8")
     print(f"GUI-authored camera orbit: {operations}, exported native source.", flush=True)
 
+frame_metrics = {}
+
 def capture(label):
     win = conn.create_resource_object("window", window)
     geo = win.get_geometry()
@@ -215,8 +234,9 @@ def capture(label):
                 if r > 70 and r > g * 1.3 and g > b * 1.25:
                     orange += 1
         print(f"{label}: central orange pixels={orange}", flush=True)
-        if label != "04-start" and orange < 100:
-            raise RuntimeError(f"{label}: cube color not visible in central third")
+        frame_metrics[label] = {"central_orange_pixels": orange, "width": geo.width, "height": geo.height,
+                                "crc32": f"{zlib.crc32(data):08x}"}
+        (root / "frame-metrics.json").write_text(json.dumps(frame_metrics, indent=2), encoding="utf-8")
 
 with log.open("wb") as out:
     recorder = None
@@ -264,10 +284,22 @@ with log.open("wb") as out:
             assert recorder.wait(timeout=20) == 0, "Native recording failed"
             assert (root / "native-preview.mp4").stat().st_size > 10000
             print("Retained native preview recording.", flush=True)
-        xdo("key", "Escape")
+        key("Escape")
         wait_for(lambda: "preview stopped" in log.read_text(errors="replace"), "preview stop", process)
         assert "Preview error:" not in log.read_text(errors="replace")
+        bad_frames = [label for label, info in frame_metrics.items() if label != "04-start" and info["central_orange_pixels"] < 100]
+        assert not bad_frames, f"Cube not visible in central third: {bad_frames}"
+        assert frame_metrics["08-return"]["central_orange_pixels"] == frame_metrics["09-hold"]["central_orange_pixels"], "Endpoint did not remain stationary"
+        assert frame_metrics["05-quarter"]["crc32"] != frame_metrics["06-half"]["crc32"], "No rendered motion detected"
         print("Native orbit Blueprint loaded, rendered and captured at six times.")
+    except Exception:
+        # Preserve the final UI state even when a graph assertion or preview transition fails.
+        if window is not None and process.poll() is None:
+            try:
+                capture("failure-state")
+            except Exception as capture_error:
+                print(f"Could not capture failure state: {capture_error}", flush=True)
+        raise
     finally:
         if recorder is not None and recorder.poll() is None:
             recorder.send_signal(signal.SIGINT)
