@@ -2572,3 +2572,29 @@ NX_TEST(nativeActorComponentLookupIsScopedAndRejectsAmbiguity)
     world.destroyEntity(duplicate);
     NX_EXPECT(world.findComponent(first,"Component2")==a);
 }
+
+NX_TEST(nativeFlowControlsExecuteWithPersistentCounters)
+{
+    BlueprintDocument doc;doc.create();std::string error,source;
+    bool ok=true;const size_t g=1;
+    auto add=[&](const char* kind){ok=ok&&doc.addNode(g,kind,0,0,error);};
+    auto wire=[&](size_t from,const char* output,size_t to,const char* input){ok=ok&&doc.connect(g,from,output,to,input,error);};
+    auto input=[&](size_t n,const char* pin,const char* value){ok=ok&&doc.setInputValue(g,n,pin,value,error);};
+    auto ref=[&](size_t n,const char* value){ok=ok&&doc.setReference(g,n,value,error);};
+    add("flow:do-once");add("var:get:int");add("add:int");add("var:set:int");
+    add("flow:do-n");add("var:get:int");add("add:int");add("var:set:int");
+    add("equal:int");add("equal:int");add("and:bool");add("branch");
+    add("api:Save:Save::set:string,string");add("api:Save:Save::set:string,string");
+    ref(2,"onceCount");ref(4,"onceCount");ref(6,"nCount");ref(8,"nCount");
+    wire(0,"then",1,"in");wire(1,"body",4,"in");wire(2,"value",3,"a");input(3,"b","1");wire(3,"result",4,"value");
+    wire(1,"then",5,"in");input(5,"count","3");wire(5,"body",8,"in");wire(6,"value",7,"a");input(7,"b","1");wire(7,"result",8,"value");
+    wire(5,"then",12,"in");wire(2,"value",9,"a");input(9,"b","1");wire(6,"value",10,"a");input(10,"b","3");
+    wire(9,"result",11,"a");wire(10,"result",11,"b");wire(11,"result",12,"condition");
+    wire(12,"true",13,"in");wire(12,"false",14,"in");input(13,"key","flow");input(13,"value","ok");input(14,"key","flow");input(14,"value","bad");
+    if(!ok||!compileBlueprint(doc,source,error)){NX_ERROR("Flow authoring: %s",error.c_str());NX_EXPECT(false);return;}
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    r.platform.files["project/main/screen.json"]="{\"title\":\"Flow controls\"}";
+    r.platform.files["project/main/main.as"]=source;
+    if(!r.screens.init(r.services,"project","main")){NX_EXPECT(false);return;}
+    r.step(10);NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("flow","missing"),"ok")==0);
+}

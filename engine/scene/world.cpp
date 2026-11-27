@@ -262,7 +262,7 @@ namespace nx
     u32 World::findComponent(u32 root,const char* name) const
     {
         if(!alive(root)||!name||!*name)return 0;
-        u32 result=0;
+        u32 result=0;bool ambiguous=false;
         eachEntity([&](u32 id,const Entity& entity)
         {
             if(id==root||strcmp(entity.name,name)!=0)return;
@@ -270,11 +270,11 @@ namespace nx
                 if(parent==root)
                 {
                     // Once ambiguous, never select a later candidate.
-                    if(result!=0)result=0xffffffffu;else result=id;
+                    if(result!=0)ambiguous=true;else result=id;
                     break;
                 }
         });
-        return result==0xffffffffu?0:result;
+        return ambiguous?0:result;
     }
 
     void World::clearParticles()

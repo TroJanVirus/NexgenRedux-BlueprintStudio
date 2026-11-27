@@ -455,7 +455,7 @@ namespace nx
                     if(n.kind=="flow:gate")
                     {
                         std::string open;if(!value(to,"open",open,0))return false;
-                        source+=pad+"if ("+open+")\\n";
+                        source+=pad+"if ("+open+")\n";
                     }
                     else
                     {
@@ -463,15 +463,15 @@ namespace nx
                         std::string reset,count="1";
                         if(!value(to,"reset",reset,0)||(n.kind=="flow:do-n"&&!value(to,"count",count,0)))return false;
                         const auto state="bp_flow_state_"+std::to_string(graphIndex)+"_"+std::to_string(to);
-                        source+=pad+"if ("+reset+") "+state+" = 0;\\n";
-                        source+=pad+"if ("+state+" < clamp("+count+", 0, 10000))\\n";
+                        source+=pad+"if ("+reset+") "+state+" = 0;\n";
+                        source+=pad+"if ("+state+" < 10000 && "+state+" < ("+count+"))\n";
                     }
-                    source+=pad+"{\\n";
+                    source+=pad+"{\n";
                     if(n.kind!="flow:gate")
-                        source+=pad+"    ++bp_flow_state_"+std::to_string(graphIndex)+"_"+std::to_string(to)+";\\n";
+                        source+=pad+"    ++bp_flow_state_"+std::to_string(graphIndex)+"_"+std::to_string(to)+";\n";
                     mark(start,to);
                     if(!flow(to,"body",indent+1,depth+1))return false;
-                    available=outer;source+=pad+"}\\n";
+                    available=outer;source+=pad+"}\n";
                     return flow(to,"then",indent,depth+1);
                 }
                 if(n.kind=="sequence")
