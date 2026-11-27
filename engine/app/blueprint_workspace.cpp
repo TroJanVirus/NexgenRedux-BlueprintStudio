@@ -276,8 +276,8 @@ namespace nx
 
     bool BlueprintWorkspace::compileAndExport(Services& s)
     {
-        std::string source;
-        if(!compileBlueprint(m_document,source,m_status))return false;
+        std::string source,manifest;
+        if(!compileBlueprintScreen(m_document,source,manifest,m_status))return false;
         const char* module="bp_native_validation";
         const bool valid=s.host->compile(module,"blueprint.as",source.data(),source.size())&&s.host->findClass(module,"Screen");
         if(!valid)m_status=std::string("AngelScript validation failed: ")+s.host->lastError();
@@ -287,12 +287,16 @@ namespace nx
         std::string path;
         for(unsigned attempt=0;attempt<100;++attempt)
         {
-            path="own/blueprint-script-"+std::to_string(static_cast<long long>(std::time(nullptr)))+"-"+std::to_string(++sequence)+".as";
-            if(!s.platform->fileTime(path.c_str()))break;
-            path.clear();
+            const std::string folder="bp-"+std::to_string(static_cast<long long>(std::time(nullptr)))+"-"+std::to_string(++sequence);
+            if(s.platform->createOwnFolder(folder.c_str())){path="own/"+folder;break;}
         }
-        if(path.empty()||!s.platform->writeFile(path.c_str(),source.data(),source.size())){m_status="Script export failed.";return false;}
-        m_status="Compiled and exported: "+path;NX_INFO("Blueprint Studio: %s",m_status.c_str());return true;
+        if(path.empty()){m_status="Cannot create a new export folder.";return false;}
+        // A screen is discoverable only after its manifest is written last.
+        if(!writeVerified(s,path+"/main.as",source)||!writeVerified(s,path+"/screen.json",manifest))
+        {m_status="Incomplete export in "+path+". Do not install it.";return false;}
+        m_status="Exported "+path+" | Copy folder to media/showcase.";
+        NX_INFO("Blueprint Studio: %s",m_status.c_str());return true;
+
     }
 
     void BlueprintWorkspace::stopPreview(Services& s)
@@ -593,7 +597,7 @@ namespace nx
             c.text(*m_font,label,x+width*0.5f,44,enabled?text:muted,Align::Center);
         };
         button(504,100,"Play test",!m_document.graphs.empty());
-        button(610,132,"Compile / export",!m_document.graphs.empty());button(748,110,"Save",!m_document.graphs.empty());button(864,84,"Undo",m_document.canUndo());
+        button(610,132,"Export screen",!m_document.graphs.empty());button(748,110,"Save",!m_document.graphs.empty());button(864,84,"Undo",m_document.canUndo());
         button(954,84,"Redo",m_document.canRedo());button(1044,84,"Fit",!m_document.graphs.empty());button(1134,132,"Return",true);
         c.rect(0,kTop,kLeft,kBottom-kTop,{0.10f,0.13f,0.18f,1});
         c.rect(kRight,kTop,kWidth-kRight,kBottom-kTop,{0.10f,0.13f,0.18f,1});

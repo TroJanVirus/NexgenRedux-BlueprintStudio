@@ -13,6 +13,7 @@ on:
       - "engine/base/**"
       - "engine/screens/**"
       - "engine/save/**"
+      - "engine/platform/**"
       - ".github/workflows/blueprint-native.yml"
   pull_request:
     branches: ["blueprint/verification-base"]

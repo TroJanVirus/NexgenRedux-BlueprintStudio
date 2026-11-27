@@ -212,6 +212,18 @@ namespace nx
         return true;
     }
 
+    bool PlatformPosix::createOwnFolder(const char* name)
+    {
+        if (!name || !*name || strlen(name) > 64) return false;
+        for (const char* c=name;*c;++c)
+            if (!((*c>='a'&&*c<='z')||(*c>='0'&&*c<='9')||*c=='-'||*c=='_')) return false;
+        char root[kMaxPath], full[kMaxPath], relative[80];
+        if (!mediaPath("own",root)) return false;
+        makeFolders(root);
+        snprintf(relative,sizeof(relative),"own/%s",name);
+        return mediaPath(relative,full)&&mkdir(full,0755)==0;
+    }
+
     bool PlatformPosix::writeFile(const char* path, const void* data, size_t size)
     {
         char full[kMaxPath];

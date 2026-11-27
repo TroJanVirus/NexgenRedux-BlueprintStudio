@@ -179,3 +179,15 @@ NX_TEST(nativeBlueprintManagedFileNamesArePortableAndConfined)
     for(const char* bad:{"../a.bp.json","a/b.bp.json","a\\b.bp.json","blueprint-recovery.bp.json","a.json",".hidden.bp.json"})
         NX_EXPECT(!blueprintFileName(bad));
 }
+
+NX_TEST(nativeBlueprintScreenExportIsTransactionalAndUsesNativeManifest)
+{
+    BlueprintDocument doc;doc.create();doc.name="Test \"Game\"";
+    std::string source,manifest,error;
+    NX_EXPECT(compileBlueprintScreen(doc,source,manifest,error));
+    NX_EXPECT(source.find("class BP_NativeScreen : Screen")!=std::string::npos);
+    NX_EXPECT(manifest.find("Test \\\"Game\\\"")!=std::string::npos);
+    NX_EXPECT(doc.addNode(0,"branch",0,0,error)&&doc.connect(0,0,"then",1,"in",error));
+    const auto previousSource=source,previousManifest=manifest;
+    NX_EXPECT(!compileBlueprintScreen(doc,source,manifest,error)&&source==previousSource&&manifest==previousManifest);
+}

@@ -527,3 +527,21 @@ NX_TEST(nativeBlueprintPreviewUsesOriginalScreenStackAndIsolatedSave)
     NX_EXPECT(!r.screens.previewing() && r.services.save==&r.save && r.screens.depth()==1);
 }
 #endif
+
+NX_TEST(nativeBlueprintExportLoadsAsOrdinaryReduxScreen)
+{
+    BlueprintDocument doc;doc.create();doc.name="Exported game";
+    std::string error,source,manifest;
+    const bool authored=doc.addNode(0,"api:Save:Save::set:string,string",0,0,error)&&
+        doc.addNode(0,"literal:string",0,0,error)&&doc.addNode(0,"literal:string",0,0,error)&&
+        doc.setLiteral(0,2,"export_test",error)&&doc.setLiteral(0,3,"ran",error)&&
+        doc.connect(0,0,"then",1,"in",error)&&doc.connect(0,2,"value",1,"key",error)&&
+        doc.connect(0,3,"value",1,"value",error)&&compileBlueprintScreen(doc,source,manifest,error);
+    NX_EXPECT(authored);if(!authored)return;
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    r.platform.files["showcase/exported/screen.json"]=manifest;
+    r.platform.files["showcase/exported/main.as"]=source;
+    NX_EXPECT(r.screens.init(r.services,"showcase","exported"));
+    r.step(3);
+    NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("export_test","missing"),"ran")==0);
+}

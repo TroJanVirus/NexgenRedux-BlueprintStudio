@@ -19,6 +19,7 @@ namespace nx
         void removeSave(const char* name) override;
         bool setSaveFolder(const char* path) override;
         bool writeFile(const char* path, const void* data, size_t size) override;
+        bool createOwnFolder(const char* name) override;
         void list(const char* path, bool folders, FolderCallback callback, void* user) override;
 
         // By virtual key code, which both use.

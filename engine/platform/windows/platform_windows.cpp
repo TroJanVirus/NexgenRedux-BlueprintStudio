@@ -155,6 +155,19 @@ namespace nx
         return MultiByteToWideChar(CP_UTF8, 0, path, -1, full, kMaxPath) > 1 && wcscpy_s(m_saves, full) == 0;
     }
 
+    bool PlatformWindows::createOwnFolder(const char* name)
+    {
+        if (!name || !*name || strlen(name)>64) return false;
+        for (const char* c=name;*c;++c)
+            if (!((*c>='a'&&*c<='z')||(*c>='0'&&*c<='9')||*c=='-'||*c=='_')) return false;
+        wchar_t root[kMaxPath],full[kMaxPath];char relative[80];
+        if (!mediaPath("own",L"",root)) return false;
+        CreateDirectoryW(m_saves,nullptr);
+        if (!CreateDirectoryW(root,nullptr)&&GetLastError()!=ERROR_ALREADY_EXISTS)return false;
+        snprintf(relative,sizeof(relative),"own/%s",name);
+        return mediaPath(relative,L"",full)&&CreateDirectoryW(full,nullptr)!=0;
+    }
+
     bool PlatformWindows::writeFile(const char* path, const void* data, size_t size)
     {
         wchar_t full[kMaxPath];
