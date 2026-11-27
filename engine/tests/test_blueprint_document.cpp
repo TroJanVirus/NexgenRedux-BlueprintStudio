@@ -9,7 +9,7 @@
 using namespace nx;
 NX_TEST(nativeCatalogueContainsReferenceAPI)
 {
-    NX_EXPECT(blueprintCatalogue().size()==1233);
+    NX_EXPECT(blueprintCatalogue().size()==1234);
     const auto* save=blueprintSpec("api:Save:Save::set:string,string");
     NX_EXPECT(save&&save->inputs.size()==3&&save->outputs.size()==1);
     if(save&&save->inputs.size()==3)NX_EXPECT(save->inputs[0].type=="exec"&&save->inputs[2].type=="string");
@@ -1801,4 +1801,25 @@ NX_TEST(nativeTypedCollectionsRoundTrip)
     NX_EXPECT(doc.serialize(bytes,error));BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error));
     NX_EXPECT(compileBlueprint(copy,source,error));
     NX_EXPECT(source.find("class BP_MapInt")!=std::string::npos&&source.find("bp_var_scores")!=std::string::npos);
+}
+
+NX_TEST(nativeSharedLibraryFunctionAndMacroAcrossOwners)
+{
+    BlueprintDocument doc;doc.create();std::string error,source,bytes;
+    NX_EXPECT(doc.addFunction("Twice",error));
+    const auto g=static_cast<size_t>(doc.function("Screen","Twice")-doc.graphs.data());
+    NX_EXPECT(doc.editFunctionSignature(g,"int(amount:int)",error));
+    NX_EXPECT(doc.addNode(g,"add:int",0,0,error)&&doc.connect(g,0,"arg_amount",1,"a",error)&&doc.connect(g,0,"arg_amount",1,"b",error));
+    NX_EXPECT(doc.addNode(g,"return:function",0,0,error)&&doc.connect(g,0,"then",2,"in",error)&&doc.connect(g,1,"result",2,"value",error));
+    NX_EXPECT(doc.setSharedLibrary(g,true,error));
+    NX_EXPECT(doc.addFunction("SharedMacro",error));
+    const auto macro=static_cast<size_t>(doc.function("Screen","SharedMacro")-doc.graphs.data());
+    NX_EXPECT(doc.setInlineMacro(macro,true,error)&&doc.setSharedLibrary(macro,true,error));
+    NX_EXPECT(doc.addBehaviour("Consumer",error));
+    size_t actor=0;for(size_t i=0;i<doc.graphs.size();++i)if(doc.graphs[i].owner=="behaviour:Consumer"&&doc.graphs[i].name=="start")actor=i;
+    NX_EXPECT(doc.addNode(actor,"call:library",0,0,error,"Twice")&&doc.connect(actor,0,"then",1,"in",error)&&doc.setInputValue(actor,1,"arg_amount","21",error));
+    NX_EXPECT(doc.addNode(actor,"call:library",0,0,error,"SharedMacro")&&doc.connect(actor,1,"then",2,"in",error));
+    NX_EXPECT(!doc.setSharedLibrary(g,false,error));
+    NX_EXPECT(doc.serialize(bytes,error));BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error));
+    NX_EXPECT(compileBlueprint(copy,source,error)&&source.find("int bp_lib_Twice(")!=std::string::npos&&source.find("inline macro SharedMacro")!=std::string::npos);
 }

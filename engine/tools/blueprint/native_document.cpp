@@ -115,6 +115,7 @@ namespace nx
             {"flow:controlled-gate","Gate (Open / Close / Toggle)","Flow","in:exec|open:exec|close:exec|toggle:exec","body:exec"},
             {"flow:switch-int","Switch on int (4 cases)","Flow","in:exec|value:int|case0:int|case1:int|case2:int|case3:int","first:exec|second:exec|third:exec|fourth:exec|default:exec|then:exec","","","","","void","","","case0:0|case1:1|case2:2|case3:3"},
             {"call:function","Call function","Functions","in:exec","then:exec"},
+            {"call:library","Call shared library","Functions / Libraries","in:exec","then:exec"},
             {"call:event","Call custom event","Events","in:exec","then:exec"},
             {"dispatch:bind","Bind event dispatcher","Events / Dispatchers","in:exec","then:exec"},
             {"dispatch:unbind","Unbind event dispatcher","Events / Dispatchers","in:exec","then:exec"},
@@ -295,7 +296,7 @@ namespace nx
     bool blueprintLosslessConversion(const std::string& from,const std::string& to)
     {return arrayBorrow(from,to)||(to=="double"&&(from=="int"||from=="uint"||from=="float"));}
     bool blueprintInvokesFunction(const std::string& kind)
-    {return kind=="call:function"||kind=="call:event"||kind=="dispatch:broadcast";}
+    {return kind=="call:function"||kind=="call:library"||kind=="call:event"||kind=="dispatch:broadcast";}
     bool blueprintNamedCall(const std::string& kind)
     {return blueprintInvokesFunction(kind)||kind=="dispatch:bind"||kind=="dispatch:unbind";}
     bool blueprintBehaviourReference(const std::string& kind)
@@ -1390,7 +1391,7 @@ namespace nx
                 state[index]=1;
                 for(const auto& node:g->nodes)if(blueprintInvokesFunction(node.kind)||node.kind=="call:parent")
                 {
-                    const auto* target=node.kind=="call:parent"?function(parentBehaviour(g->owner),g->name):function(owner,node.ref);
+                    const auto* target=node.kind=="call:library"?libraryFunction(node.ref):node.kind=="call:parent"?function(parentBehaviour(g->owner),g->name):function(owner,node.ref);
                     if(!target){error="Missing inherited function in "+g->name;return false;}
                     if(!self(self,target))return false;
                 }
@@ -1407,7 +1408,7 @@ namespace nx
                 for(const auto& node:g->nodes)
                 {
                     if(node.kind=="actor:spawn-asset"||node.kind=="time:delay"||node.kind=="time:retrigger-delay"||node.kind=="time:timer"){error="Construction graphs cannot spawn linked actors or schedule deferred work; use Start instead.";return false;}
-                    if(blueprintInvokesFunction(node.kind)&&!self(self,function(owner,node.ref)))return false;
+                    if(blueprintInvokesFunction(node.kind)&&!self(self,node.kind=="call:library"?libraryFunction(node.ref):function(owner,node.ref)))return false;
                     if(node.kind=="call:parent"&&!self(self,function(parentBehaviour(g->owner),g->name)))return false;
                 }
                 return true;
@@ -2020,6 +2021,9 @@ namespace nx
             const auto macro=value["inlineMacro"];
             if(macro.exists()&&(macro.type()!=JsonTree::Type::Bool||g.kind!="function"||g.returnType!="void")){error="Invalid inline macro.";return false;}
             g.inlineMacro=macro.flag();
+            const auto shared=value["sharedLibrary"];
+            if(shared.exists()&&(shared.type()!=JsonTree::Type::Bool||g.kind!="function"||behaviourOwner(owner))){error="Invalid shared library graph.";return false;}
+            g.sharedLibrary=shared.flag();
             if(!validSignature(g.parameters,g.returnType)||(g.kind!="function"&&(!g.parameters.empty()||g.returnType!="void")))
             {error="Invalid function signature in "+g.name;return false;}
             const auto declarations=value["fields"];
@@ -2256,6 +2260,7 @@ namespace nx
         {
             auto* v=gs->add();if(!v||!text(*v,"owner",g.owner)||!text(*v,"name",g.name)||!text(*v,"kind",g.kind))return fail();
             if(g.inlineMacro){auto* macro=v->put("inlineMacro");if(!macro)return fail();macro->setFlag(true);}
+            if(g.sharedLibrary){auto* shared=v->put("sharedLibrary");if(!shared)return fail();shared->setFlag(true);}
             if(g.kind=="function")
             {
                 if(!text(*v,"returnType",g.returnType))return fail();
@@ -2467,8 +2472,8 @@ namespace nx
             bool valid=false;
             for(const auto& fn:graphs)
             {
-                if(fn.kind!="function"||function(g.owner,fn.name)!=&fn||fn.name==g.name||(!functionTarget.empty()&&fn.name!=functionTarget)||
-                    (kind!="call:function"&&(fn.inlineMacro||fn.returnType!="void")))continue;
+                if(fn.kind!="function"||(kind=="call:library"?libraryFunction(fn.name):function(g.owner,fn.name))!=&fn||&fn==&g||(!functionTarget.empty()&&fn.name!=functionTarget)||
+                    (kind!="call:function"&&kind!="call:library"&&(fn.sharedLibrary||fn.inlineMacro||fn.returnType!="void")))continue;
                 value=fn.name;g.nodes.push_back({id,kind,value,x,y});
                 valid=functions(error);g.nodes.pop_back();if(valid)break;
             }
@@ -2492,7 +2497,7 @@ namespace nx
             if(std::find(seen.begin(),seen.end(),g)!=seen.end())continue;
             seen.push_back(g);
             for(const auto& n:g->nodes)if(blueprintInvokesFunction(n.kind))
-            {const auto* child=function(caller.owner,n.ref);if(child)work.push_back(child);}
+            {const auto* child=n.kind=="call:library"?libraryFunction(n.ref):function(caller.owner,n.ref);if(child)work.push_back(child);}
         }
         return true;
     }
@@ -2827,11 +2832,23 @@ namespace nx
     }
     bool BlueprintDocument::functions(std::string& error) const
     {
+        std::unordered_set<std::string> libraryNames;
+        for(const auto& g:graphs)if(g.sharedLibrary)
+        {
+            if(g.kind!="function"||behaviourOwner(g.owner)||g.name=="Construction"||!libraryNames.insert(g.name).second)
+            {error="Shared library names must be unique across the project.";return false;}
+            for(const auto& n:g.nodes)
+            {
+                const auto* spec=blueprintSpec(n.kind);
+                const bool portable=n.kind=="entry"||n.kind=="return:function"||n.kind=="call:library"||n.kind=="branch"||n.kind=="sequence"||n.kind=="repeat"||n.kind.rfind("literal:",0)==0||n.kind.rfind("capture:",0)==0||n.kind.rfind("local:set:",0)==0||n.kind.rfind("make:",0)==0||(spec&&!spec->operation.empty());
+                if(!portable){error="Shared library "+g.name+" contains a non-portable node: "+n.kind;return false;}
+            }
+        }
         std::vector<std::vector<size_t>> calls(graphs.size());
         for(size_t i=0;i<graphs.size();++i)for(const auto& node:graphs[i].nodes)
         {
             if(!blueprintInvokesFunction(node.kind)&&node.kind!="call:parent")continue;
-            const auto* target=node.kind=="call:parent"?function(parentBehaviour(graphs[i].owner),graphs[i].name):function(graphs[i].owner,node.ref);
+            const auto* target=node.kind=="call:library"?libraryFunction(node.ref):node.kind=="call:parent"?function(parentBehaviour(graphs[i].owner),graphs[i].name):function(graphs[i].owner,node.ref);
             if(!target){error="Missing function: "+node.ref;return false;}
             calls[i].push_back(static_cast<size_t>(target-graphs.data()));
         }
@@ -2866,6 +2883,20 @@ namespace nx
         }
         return nullptr;
     }
+    const BlueprintDocument::Graph* BlueprintDocument::libraryFunction(const std::string& name) const
+    {
+        const auto at=std::find_if(graphs.begin(),graphs.end(),[&](const Graph& g){return g.sharedLibrary&&g.name==name;});
+        return at==graphs.end()?nullptr:&*at;
+    }
+    bool BlueprintDocument::setSharedLibrary(size_t graph,bool enabled,std::string& error)
+    {
+        if(graph>=graphs.size()||graphs[graph].kind!="function"||behaviourOwner(graphs[graph].owner)){error="Select a screen function or macro.";return false;}
+        auto& g=graphs[graph];if(g.sharedLibrary==enabled){error.clear();return true;}
+        if(enabled&&visualWidgetUsesFunction(g.owner,g.name)){error="Unbind the widget callback first.";return false;}
+        const bool old=g.sharedLibrary;g.sharedLibrary=enabled;std::string checked;
+        const bool ok=serialize(checked,error);g.sharedLibrary=old;if(!ok)return false;
+        record(graph);g.sharedLibrary=enabled;error.clear();return true;
+    }
     bool BlueprintDocument::nodeSpec(const Graph& graph,const Node& node,BlueprintNodeSpec& spec) const
     {
         const auto* base=blueprintSpec(node.kind);if(!base)return false;
@@ -2886,9 +2917,9 @@ namespace nx
         if(blueprintNamedCall(node.kind)||node.kind=="call:parent")
         {
             if(node.kind=="call:parent"&&graph.kind!="function")return false;
-            const auto* target=node.kind=="call:parent"?function(parentBehaviour(graph.owner),graph.name):function(graph.owner,node.ref);
+            const auto* target=node.kind=="call:library"?libraryFunction(node.ref):node.kind=="call:parent"?function(parentBehaviour(graph.owner),graph.name):function(graph.owner,node.ref);
             if(!target||(node.kind=="call:parent"&&target->inlineMacro))return false;
-            if(node.kind!="call:function"&&node.kind!="call:parent"&&(target->inlineMacro||target->returnType!="void"))return false;
+            if(node.kind!="call:function"&&node.kind!="call:library"&&node.kind!="call:parent"&&(target->sharedLibrary||target->inlineMacro||target->returnType!="void"))return false;
             if(node.kind!="dispatch:bind"&&node.kind!="dispatch:unbind")
                 for(const auto& p:target->parameters)spec.inputs.push_back({"arg_"+p.name,p.type});
             if(target->inlineMacro)spec.title="Macro "+target->name;
@@ -2980,6 +3011,7 @@ namespace nx
     {
         if(graph>=graphs.size()||graphs[graph].kind!="function"||!identifier(functionName)||ownerEvent(graphs[graph].owner,functionName))
         {error="Choose a valid function name.";return false;}
+        if(graphs[graph].sharedLibrary){error="Make the shared graph local before renaming.";return false;}
         const auto owner=graphs[graph].owner,old=graphs[graph].name;
         if(old==functionName){error.clear();return true;}
         if(visualWidgetUsesFunction(owner,old)){error="Unbind the widget callback before renaming it.";return false;}
@@ -3001,7 +3033,7 @@ namespace nx
         if(graph>=graphs.size()||graphs[graph].kind!="function"||graphs.size()>=kMaxGraphs||!identifier(functionName)||ownerEvent(graphs[graph].owner,functionName)||
             std::any_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==graphs[graph].owner&&g.name==functionName;}))
         {error="Choose a unique name for the copied function.";return false;}
-        Graph copy=graphs[graph];copy.name=functionName;
+        Graph copy=graphs[graph];copy.name=functionName;copy.sharedLibrary=false;
         recordGraphList();graphs.push_back(std::move(copy));error.clear();return true;
     }
     bool BlueprintDocument::collapseToFunction(size_t graph,const std::vector<size_t>& nodes,const std::string& functionName,std::string& error)
@@ -3149,7 +3181,7 @@ namespace nx
             {
                 if(g.kind=="function"&&g.name==removed.name&&function(parentBehaviour(g.owner),g.name)==&removed)
                 {error="Remove inherited overrides before deleting the base function.";return false;}
-                for(const auto& n:g.nodes)if(blueprintNamedCall(n.kind)&&function(g.owner,n.ref)==&removed)
+                for(const auto& n:g.nodes)if(blueprintNamedCall(n.kind)&&(n.kind=="call:library"?libraryFunction(n.ref):function(g.owner,n.ref))==&removed)
                 {error="Remove calls to this function before deleting it.";return false;}
             }
         }

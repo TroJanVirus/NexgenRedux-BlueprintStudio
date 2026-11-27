@@ -156,7 +156,7 @@ namespace nx
                     if(!available[node])return fail(node,"Captured value used before execution or outside its branch.");
                     result="bp_local_"+n.ref+"_"+std::to_string(node);return true;
                 }
-                if((n.kind=="call:function"||n.kind=="call:parent")&&pin=="result")
+                if((n.kind=="call:function"||n.kind=="call:library"||n.kind=="call:parent")&&pin=="result")
                 {
                     if(!available[node])return fail(node,"Function result used before execution or outside its branch.");
                     result="bp_value_"+std::to_string(node);return true;
@@ -506,7 +506,7 @@ namespace nx
                 }
                 if(blueprintInvokesFunction(n.kind)||n.kind=="call:parent")
                 {
-                    const auto* target=n.kind=="call:parent"?document.function(document.parentBehaviour(graph.owner),graph.name):document.function(graph.owner,n.ref);
+                    const auto* target=n.kind=="call:library"?document.libraryFunction(n.ref):n.kind=="call:parent"?document.function(document.parentBehaviour(graph.owner),graph.name):document.function(graph.owner,n.ref);
                     if(!target)return fail(to,"Missing function.");
                     if(target->inlineMacro)
                     {
@@ -538,7 +538,7 @@ namespace nx
                         if(!args.empty())args+=", ";
                         args+=v;
                     }
-                    const auto call=(n.kind=="call:parent"?"BP_Behaviour_"+target->owner.substr(10)+"::":"")+"bp_fn_"+target->name+"("+args+")";
+                    const auto call=(n.kind=="call:parent"?"BP_Behaviour_"+target->owner.substr(10)+"::":"")+(target->sharedLibrary?"bp_lib_":"bp_fn_")+target->name+"("+args+")";
                     if(n.kind=="dispatch:broadcast")
                     {
                         if(graph.inlineMacro)return fail(to,"Dispatcher broadcast requires a callable graph.");
@@ -814,6 +814,27 @@ namespace nx
             }
             result+=";\n";
         }
+        for(size_t gi=0;gi<document.graphs.size();++gi)
+        {
+            const auto& g=document.graphs[gi];if(!g.sharedLibrary)continue;
+            const auto entry=std::find_if(g.nodes.begin(),g.nodes.end(),[](const BlueprintDocument::Node& n){return n.kind=="entry";});
+            if(entry==g.nodes.end()){error="Missing library entry.";return false;}
+            const auto index=static_cast<size_t>(entry-g.nodes.begin());
+            std::string scratch;std::vector<ByteSpan> ignored;
+            if(g.inlineMacro)
+            {
+                Emitter e{document,g,scratch,error,std::vector<bool>(g.nodes.size(),false),std::vector<bool>(g.nodes.size(),false),gi,location,ignored};
+                if(!e.flow(index,"then",1,0))return false;
+                continue;
+            }
+            std::string signature;for(const auto& p:g.parameters){if(!signature.empty())signature+=", ";signature+=p.type+" bp_arg_"+p.name;}
+            const auto start=result.size();result+=g.returnType+" bp_lib_"+g.name+"("+signature+")\n{\n";
+            spans.push_back({start,result.size(),{gi,index}});
+            Emitter e{document,g,result,error,std::vector<bool>(g.nodes.size(),false),std::vector<bool>(g.nodes.size(),false),gi,location,spans};
+            if(g.returnType!="void"&&!e.returns(index,"then",0))return e.fail(index,"Not every library execution path returns a value.");
+            if(!e.flow(index,"then",1,0))return false;
+            result+="}\n";
+        }
         std::vector<std::string> classes;
         for(const auto& name:document.behaviours())
         {
@@ -833,7 +854,7 @@ namespace nx
         // Each callable void graph can be used as an instance-local named signal.
         // Fields live on the declaring class, so inherited handlers share the binding.
         for(const auto& g:document.graphs)
-            if(g.owner==classOwner&&g.kind=="function"&&g.returnType=="void"&&!g.inlineMacro&&
+            if(g.owner==classOwner&&g.kind=="function"&&!g.sharedLibrary&&g.returnType=="void"&&!g.inlineMacro&&
                 !document.function(parent,g.name))
                 result+="    bool bp_bound_"+g.name+" = false;\n";
         if(!document.variables(vars,error,classOwner))return false;
@@ -892,7 +913,7 @@ namespace nx
         for(size_t graphIndex=0;graphIndex<document.graphs.size();++graphIndex)
         {
             const auto& graph=document.graphs[graphIndex];
-            if(graph.owner!=classOwner)continue;
+            if(graph.owner!=classOwner||graph.sharedLibrary)continue;
             const bool inheritedEmpty=!parent.empty()&&graph.kind=="event"&&graph.nodes.size()==1;
             const bool timerWrapper=inheritedEmpty&&graph.name=="update"&&!deferred.empty();
             if(inheritedEmpty&&!timerWrapper)continue;
@@ -990,6 +1011,9 @@ namespace nx
         for(const auto& className:classes)if(className!=owner)
         {
             const auto type=className.substr(10);
+            bool used=false;for(const auto& g:document.graphs)for(const auto& n:g.nodes)
+                if((n.kind=="actor:is-class"||n.kind=="actor:cast-class")&&n.ref==type)used=true;
+            if(!used)continue;
             result+="bool bp_is_class_"+type+"(Entity@ actor)\n{\n";
             result+="    return Space::validEntity(actor) && cast<BP_Behaviour_"+type+">(actor.behaviour) !is null;\n}\n";
         }

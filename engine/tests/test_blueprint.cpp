@@ -2852,3 +2852,23 @@ NX_TEST(nativeTypedMapAndSetExecution)
     if(!r.screens.init(r.services,"project","main")){NX_EXPECT(false);return;}
     r.step(3);NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("collections","missing"),"yes")==0);
 }
+
+NX_TEST(nativeSharedLibraryCalledFromBehaviour)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    BlueprintDocument doc;doc.create();std::string error,source,id;
+    bool ok=doc.addFunction("Twice",error)&&doc.createVisualAsset("actor",id,error)&&doc.addBehaviour("Consumer",error)&&doc.setVisualActorProperty(id,0,"behaviour","Consumer",error)&&doc.placeVisualActor("Screen",id,"0,0,0",error);
+    const auto* fn=doc.function("Screen","Twice");if(!ok||!fn){NX_EXPECT(false);return;}
+    const auto g=static_cast<size_t>(fn-doc.graphs.data());
+    ok=doc.editFunctionSignature(g,"int(amount:int)",error)&&doc.addNode(g,"add:int",0,0,error)&&doc.connect(g,0,"arg_amount",1,"a",error)&&doc.connect(g,0,"arg_amount",1,"b",error)&&
+        doc.addNode(g,"return:function",0,0,error)&&doc.connect(g,0,"then",2,"in",error)&&doc.connect(g,1,"result",2,"value",error)&&doc.setSharedLibrary(g,true,error);
+    size_t actor=0;for(size_t i=0;i<doc.graphs.size();++i)if(doc.graphs[i].owner=="behaviour:Consumer"&&doc.graphs[i].name=="start")actor=i;
+    ok=ok&&doc.addNode(actor,"call:library",0,0,error,"Twice")&&doc.connect(actor,0,"then",1,"in",error)&&doc.setInputValue(actor,1,"arg_amount","21",error)&&
+        doc.addNode(actor,"equal:int",0,0,error)&&doc.connect(actor,1,"result",2,"a",error)&&doc.setInputValue(actor,2,"b","42",error)&&
+        doc.addNode(actor,"branch",0,0,error)&&doc.connect(actor,1,"then",3,"in",error)&&doc.connect(actor,2,"result",3,"condition",error)&&
+        doc.addNode(actor,"api:Save:Save::set:string,string",0,0,error)&&doc.connect(actor,3,"true",4,"in",error)&&doc.setInputValue(actor,4,"key","library",error)&&doc.setInputValue(actor,4,"value","yes",error);
+    if(!ok||!compileBlueprint(doc,source,error)){NX_ERROR("Shared library: %s",error.c_str());NX_EXPECT(false);return;}
+    r.platform.files["project/main/screen.json"]="{\"title\":\"Shared library\"}";r.platform.files["project/main/main.as"]=source;
+    if(!r.screens.init(r.services,"project","main")){NX_EXPECT(false);return;}
+    r.step(5);NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("library","missing"),"yes")==0);
+}

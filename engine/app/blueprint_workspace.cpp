@@ -178,8 +178,8 @@ namespace nx
     void BlueprintWorkspace::openSelectedFunction()
     {
         const auto& g=m_document.graphs[m_graph];
-        if(m_selection>=g.nodes.size()||g.nodes[m_selection].kind!="call:function"){m_status="Select a function call first.";return;}
-        const auto* target=m_document.function(g.owner,g.nodes[m_selection].ref);
+        if(m_selection>=g.nodes.size()||(g.nodes[m_selection].kind!="call:function"&&g.nodes[m_selection].kind!="call:library")){m_status="Select a function call first.";return;}
+        const auto* target=g.nodes[m_selection].kind=="call:library"?m_document.libraryFunction(g.nodes[m_selection].ref):m_document.function(g.owner,g.nodes[m_selection].ref);
         if(!target){m_status="Function target is missing.";return;}
         if(m_graphBack.size()>=32)m_graphBack.erase(m_graphBack.begin());
         m_graphBack.emplace_back(g.owner,g.name);selectGraph(static_cast<size_t>(target-m_document.graphs.data()));m_status="Opened function. Back returns to caller.";
@@ -265,7 +265,8 @@ namespace nx
         {
             if(blueprintNamedCall(base->id))
             {
-                for(const auto& fn:m_document.graphs)if(fn.kind=="function"&&m_document.function(graph.owner,fn.name)==&fn&&m_document.canCallFunction(m_graph,fn.name))
+                for(const auto& fn:m_document.graphs)if(fn.kind=="function"&&(&fn!=&graph)&&
+                    (base->id=="call:library"?m_document.libraryFunction(fn.name)==&fn:(m_document.function(graph.owner,fn.name)==&fn&&m_document.canCallFunction(m_graph,fn.name))))
                 {
                     BlueprintNodeSpec resolved;
                     if(m_document.nodeSpec(graph,{"",base->id,fn.name},resolved))consider(resolved,fn.name,(fn.inlineMacro?"Macro":base->title)+" "+fn.name);
@@ -2448,6 +2449,11 @@ namespace nx
                     const bool enable=!m_document.graphs[m_graph].inlineMacro;
                     if(m_document.setInlineMacro(m_graph,enable,m_status)){rebuildPins();filterCatalogue();m_status=enable?"Inline macro enabled. Calls expand in place.":"Converted to a callable function.";}
                 }
+                else if(in(x,y,300,335,550,365)&&m_document.graphs[m_graph].kind=="function")
+                {
+                    const bool enable=!m_document.graphs[m_graph].sharedLibrary;
+                    if(m_document.setSharedLibrary(m_graph,enable,m_status)){rebuildPins();filterCatalogue();m_status=enable?"Published to project library.":"Made function local.";}
+                }
                 m_layoutMenu=false;
             }
             m_left=left;return;
@@ -3246,7 +3252,7 @@ namespace nx
             const size_t i=m_first+row;const auto& g=m_document.graphs[i];const float y=kTop+static_cast<float>(row)*31;
             if(i==m_graph)c.rect(4,y+2,kLeft-8,28,{0.19f,0.33f,0.50f,1});
             c.clip(5,y,kLeft-10,31);
-            c.text(*m_font,shorten(g.owner+" / "+(g.inlineMacro?"[M] ":"")+g.name,32).c_str(),12,y+6,text);c.noClip();
+            c.text(*m_font,shorten(g.owner+" / "+(g.sharedLibrary?"[L] ":"")+(g.inlineMacro?"[M] ":"")+g.name,32).c_str(),12,y+6,text);c.noClip();
         }
         c.text(*m_font,"MY BLUEPRINT / VARIABLES",10,330,accent);
         const auto quickRows=variableRows();
@@ -3317,14 +3323,14 @@ namespace nx
         }
         if(m_layoutMenu)
         {
-            c.roundRect(300,35,250,300,5,{0.12f,0.16f,0.22f,1});
-            const char* labels[]={"Arrange graph","Align selected left","Align selected top","Comment selection","Collapse to function","Rename function","Duplicate function","Open selected function","Back to caller",m_document.graphs[m_graph].inlineMacro?"Convert to function":"Convert to inline macro"};
+            c.roundRect(300,35,250,330,5,{0.12f,0.16f,0.22f,1});
+            const char* labels[]={"Arrange graph","Align selected left","Align selected top","Comment selection","Collapse to function","Rename function","Duplicate function","Open selected function","Back to caller",m_document.graphs[m_graph].inlineMacro?"Convert to function":"Convert to inline macro",m_document.graphs[m_graph].sharedLibrary?"Make library graph local":"Publish to project library"};
             const auto& activeGraph=m_document.graphs[m_graph];
             const bool hasSelection=m_selection<activeGraph.nodes.size()||!m_selectedNodes.empty();
-            for(size_t i=0;i<10;++i)
+            for(size_t i=0;i<11;++i)
             {
                 const bool enabled=i==0||(i<=2&&m_selectedNodes.size()>=2)||((i==3||i==4)&&hasSelection)||((i==5||i==6)&&activeGraph.kind=="function")||
-                    (i==7&&m_selection<activeGraph.nodes.size()&&activeGraph.nodes[m_selection].kind=="call:function")||(i==8&&!m_graphBack.empty())||(i==9&&activeGraph.kind=="function");
+                    (i==7&&m_selection<activeGraph.nodes.size()&&(activeGraph.nodes[m_selection].kind=="call:function"||activeGraph.nodes[m_selection].kind=="call:library"))||(i==8&&!m_graphBack.empty())||((i==9||i==10)&&activeGraph.kind=="function");
                 const float yy=35+30*static_cast<float>(i);c.rect(304,yy+2,242,26,enabled?Color{0.19f,0.33f,0.50f,1}:Color{0.17f,0.22f,0.30f,1});c.text(*m_font,labels[i],312,yy+5,enabled?text:muted);
             }
         }
