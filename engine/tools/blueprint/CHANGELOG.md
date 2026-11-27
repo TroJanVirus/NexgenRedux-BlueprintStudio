@@ -1,5 +1,13 @@
 # Changes
 
+## Workspace
+
+- Search across graphs, switch between open tabs, and use the minimap to navigate.
+- Arrange a graph automatically, hide unused data pins, copy and paste node groups, and resize side panels.
+- Save and load themes.
+- Move action chains into functions with automatically added inputs and one return value when safe.
+- Added tests for these tools and checked that visual changes leave gameplay code unchanged.
+
 ## Graph editing
 
 - Select, move, align and space several nodes at once. Put related nodes in named, coloured groups.

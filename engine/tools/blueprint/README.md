@@ -23,9 +23,20 @@ A good event graph should read like a short list of instructions. For a player, 
 - Click **+** beside Functions to create one. Choose the name, folder, return type and any inputs using ordinary fields. A value-only function returns a result without action wires.
 - Double-click a function or macro call to open its graph. Use the back arrow to return.
 - Shift-click nodes or Shift-drag empty space to select several nodes. Drag a selected node to move the selection. Use Details to align, space or group nodes.
-- **Move to function** turns a self-contained chain of actions into a new function and leaves one call behind. Include its value nodes; the selection needs one incoming execution wire and at most one outgoing execution wire, with no data wires crossing its boundary. The editor refuses unsafe selections. More complex graphs can be split by creating functions with inputs and returns manually.
+- **Move to function** turns a self-contained chain of actions into a new function and leaves one call behind. Include its value nodes; the selection needs one incoming execution wire and at most one outgoing execution wire. The editor adds inputs for values already available before the first action, and a return pin if one captured result is needed outside the function. Include live value nodes in the selection so they are still read at the right time. Selections that cannot be moved safely are refused.
 - Give a group a name, then click its heading to select its nodes. Double-click the heading to change its name and colour. Remove the group without removing the nodes.
 - Assign functions or macros to folders from Layout. Click a sidebar section heading to fold it away. Use **Focus** for a larger canvas.
+
+## Find and tidy your work
+
+- **Find** (Ctrl+F) searches function names, folders, node names, comments and default values across the current Blueprint. Click a result to jump to it.
+- Open graphs appear as tabs. Switch between them without losing your zoom and position.
+- The minimap shows the whole graph. Click or drag it to move around. Hide it from **Tools** if you prefer.
+- **Tools → Arrange whole graph** lays out the nodes from left to right, following their connections. Undo if you prefer your original layout. The arrangement never changes a wire or the generated script.
+- Copy selected nodes with Ctrl+C and paste with Ctrl+V, or use Tools. Internal wires and complete groups are kept; outside wires are left behind. You can paste into another graph or Blueprint in the same editor session, provided its required variables and functions exist.
+- Select a node and use **Hide unused data pins** to keep just connected pins and action pins visible. Show them again to add new connections.
+- Drag the inside edge of either side panel to resize it. You can also focus the divider and use the arrow keys.
+- Save or load your own colour and layout theme from Tools.
 
 ## Make it look the way you want
 
@@ -79,9 +90,10 @@ node cli.js project examples/showcase.bp.project.json --out BlueprintShowcase.zi
 node test_compiler.js
 node test_scene_editor.js
 node test_layout.js
+node test_workspace.js
 ```
 
-No npm packages are needed. To run the optional browser tests, install Python Playwright and Chromium, then run `python test_browser.py` and `python test_layout_browser.py`. Set `CHROMIUM_PATH` if Chromium is installed outside Playwright's usual location.
+No npm packages are needed. To run the optional browser tests, install Python Playwright and Chromium, then run `python test_browser.py` and `python test_layout_browser.py` and `python test_workspace_browser.py`. Set `CHROMIUM_PATH` if Chromium is installed outside Playwright's usual location.
 
 The 720 engine API definitions are based on Nexgen's script reference. The compiler checks data types and graph structure; the native engine compiler checks the resulting AngelScript. Neither check guarantees that all assets are present or that a game performs well on real hardware.
 

@@ -12,6 +12,7 @@ const selection=()=>{active();return [...ids].map(getNode).filter(Boolean);};
 const rect=n=>({x:n.x||0,y:n.y||0,w:element(n.id)?.offsetWidth||218,h:element(n.id)?.offsetHeight||100});
 const bounds=nodes=>{const r=nodes.map(rect);return {x:Math.min(...r.map(a=>a.x)),y:Math.min(...r.map(a=>a.y)),right:Math.max(...r.map(a=>a.x+a.w)),bottom:Math.max(...r.map(a=>a.y+a.h))};};
 function choose(nodes){ids.clear();nodes.forEach(n=>ids.add(n.id));selected=nodes.length?{node:nodes.at(-1).id}:null;paint();renderDetails();}
+globalThis.NexgenLayout={select:choose};
 function paint(){for(const n of graph().nodes)element(n.id)?.classList.toggle('selected',ids.has(n.id)||selected?.node===n.id);}
 function control(parent,label,type,value,change,opts){const l=el('label','',label),i=el(opts?'select':'input');if(opts)for(const v of opts){const o=el('option','',v);o.value=v;i.append(o);}else i.type=type;i.value=value;if(type==='checkbox')i.checked=value;i.onchange=()=>change(type==='checkbox'?i.checked:type==='number'?Number(i.value):i.value);parent.append(l,i);return i;}
 function setPref(k,v){remember();(doc.appearance??={})[k]=v;render();}

@@ -1,0 +1,12 @@
+'use strict';
+const assert=require('node:assert/strict'),B=require('./blueprint'),W=require('./workspace');
+const doc=require('./examples/arcade.bp.json'),g=doc.graphs[0],base=B.compile(doc).source;
+const before=JSON.stringify(doc),sizes=Object.fromEntries(g.nodes.map((n,i)=>[n.id,{w:180+i*10,h:80+i*10}]));
+const layout=W.arrange(g,sizes);assert.equal(JSON.stringify(doc),before);assert.deepEqual(W.arrange(g,sizes),layout);
+for(const l of g.links)assert.ok(layout[l.from.node].x<layout[l.to.node].x);
+const changed=JSON.parse(before);for(const n of changed.graphs[0].nodes)Object.assign(n,layout[n.id]);assert.equal(B.compile(changed).source,base);
+assert.ok(W.find(B,doc,'Player').some(x=>x.node==='name'));assert.ok(W.find(B,doc,'AddScore').some(x=>x.kind==='function'));
+const group=W.clip(g,['spawn','name','rect']);assert.equal(group.nodes.length,3);assert.equal(group.links.length,4);let i=0;const p=W.paste(B,doc,g,group,{x:100,y:200},()=>`copy_${++i}`);assert.equal(p.nodes.length,3);assert.equal(p.links.length,group.links.length);assert.ok(p.links.every(l=>l.from.node.startsWith('copy_')&&l.to.node.startsWith('copy_')));assert.equal(p.nodes[0].x,100);assert.equal(p.nodes[0].y,200);
+assert.throws(()=>W.paste(B,doc,g,{...group,nodes:[{id:'bad',kind:'bad'}]}, {x:0,y:0},()=>`copy_${++i}`),/Missing definition/);
+const cyc={nodes:[{id:'a'},{id:'b'}],links:[{from:{node:'a'},to:{node:'b'}},{from:{node:'b'},to:{node:'a'}}]};assert.equal(Object.keys(W.arrange(cyc)).length,2);
+console.log('PASS graph arrangement, source preservation, search, copy/paste and invalid node handling');
