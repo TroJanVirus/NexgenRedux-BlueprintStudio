@@ -621,9 +621,9 @@ namespace nx
                 }
                 else if(property=="anchor")
                 {
-                    const std::string names="|top-left|top-center|top-right|middle-left|center|middle-right|bottom-left|bottom-center|bottom-right|";
+                    const std::string names="|top-left|top-center|top-right|middle-left|center|middle-right|bottom-left|bottom-center|bottom-right|stretch-x|stretch-y|stretch-both|";
                     if(value.find('|')!=std::string::npos||names.find("|"+value+"|")==std::string::npos)
-                    {error="Choose one of the nine named anchors.";return false;}
+                    {error="Choose a named point or stretch anchor.";return false;}
                     if(!text(item,"anchor",value))return false;
                 }
                 else
@@ -832,17 +832,31 @@ namespace nx
         const std::string looks="|radius|lineWidth|scale|shadow|";
         const std::string geometry="|size|padding|gap|minWidth|minHeight|seconds|slice|";
         const auto contains=[](const std::string& list,const std::string& key){return !key.empty()&&key.find('|')==std::string::npos&&list.find("|"+key+"|")!=std::string::npos;};
-        const bool color=contains(colors,property),look=contains(looks,property),metric=contains(geometry,property),alignment=property=="align";
+        const bool color=contains(colors,property),look=contains(looks,property),metric=contains(geometry,property),alignment=property=="align",media=property=="font"||property=="image"||contains("|soundMove|soundAccept|soundBack|soundChange|",property);
         if(!identifier(styleName)||styleName.size()>31||!contains(states,state)||
-            (!color&&!look&&!metric&&!alignment)||((metric||alignment)&&state!="normal"))
+            (!color&&!look&&!metric&&!alignment&&!media)||((metric||alignment||media)&&state!="normal"))
         {error="Invalid style name, state or property.";return false;}
         if(color&&!value.empty()&&((value.size()!=7&&value.size()!=9)||value.front()!='#'||
             value.find_first_not_of("0123456789abcdefABCDEF",1)!=std::string::npos))
         {error="Use #RRGGBB or #RRGGBBAA.";return false;}
         if(alignment&&!value.empty()&&value!="left"&&value!="center"&&value!="right")
         {error="Use left, center or right.";return false;}
+        if(media&&!value.empty())
+        {
+            const auto prefix=value.rfind("asset:",0)==0?6u:value.rfind("global:",0)==0?7u:0u;
+            if(!prefix||value.size()>95||value.size()<=prefix||value.find('\\')!=std::string::npos)
+            {error="Use a local asset: or global: path (95 bytes maximum).";return false;}
+            size_t begin=prefix;
+            while(begin<value.size())
+            {
+                const auto slash=value.find('/',begin);const auto part=value.substr(begin,slash==std::string::npos?slash:slash-begin);
+                if(!blueprintAssetName(part,slash!=std::string::npos)){error="Invalid media asset path.";return false;}
+                if(slash==std::string::npos)break;
+                begin=slash+1;if(begin==value.size()){error="Invalid media asset path.";return false;}
+            }
+        }
         double n=0;
-        if(!color&&!alignment&&!value.empty())
+        if(!color&&!alignment&&!media&&!value.empty())
         {
             if(!literal("literal:float",value)){error="Enter a finite number.";return false;}
             n=std::strtod(value.c_str(),nullptr);
@@ -854,13 +868,21 @@ namespace nx
         for(auto& theme:assets)if(theme.id==id&&theme.kind=="theme")
         {
             JsonValue root;if(!root.parse(theme.source.data(),theme.source.size(),error))return false;
+            if(property.rfind("sound",0)==0)
+            {
+                auto* sounds=root.put("sounds");if(!sounds)return false;
+                const char* key=property=="soundMove"?"move":property=="soundAccept"?"accept":property=="soundBack"?"back":"change";
+                if(value.empty())sounds->remove(key);else if(!text(*sounds,key,value))return false;
+                const auto changed=root.write(true);if(changed==theme.source){error.clear();return true;}
+                theme.source=changed;return replaceVisualAssets(assets,error);
+            }
             auto* styles=root.put("styles");if(!styles)return false;
             if(styles->type()!=JsonValue::Type::Object&&styles->type()!=JsonValue::Type::Null){error="Invalid styles object.";return false;}
             if(!styles->find(styleName.c_str())&&styles->count()>=24){error="Custom style limit reached.";return false;}
             auto* style=styles->put(styleName);if(!style)return false;
             auto* target=state=="normal"?style:style->put(state);if(!target)return false;
             if(value.empty())target->remove(property.c_str());
-            else if(color||alignment){if(!text(*target,property.c_str(),value))return false;}
+            else if(color||alignment||media){if(!text(*target,property.c_str(),value))return false;}
             else if(!number(*target,property.c_str(),n))return false;
             const auto changed=root.write(true);if(changed==theme.source){error.clear();return true;}
             theme.source=changed;return replaceVisualAssets(assets,error);

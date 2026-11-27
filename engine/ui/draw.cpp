@@ -26,7 +26,7 @@ namespace nx
         }
     }
 
-    void Ui::animate(Widget& w, float dt)
+    void Ui::animate(Widget& w, float dt,const Widget* preview,int state)
     {
         if (!w.visible)
         {
@@ -40,12 +40,12 @@ namespace nx
             UiLook wanted = s.looks[0];
             for (u32 i = 1; i < static_cast<u32>(UiState::Count); i++)
             {
-                if (on[i])
+                if (&w==preview&&state>=0?i==static_cast<u32>(state):on[i])
                 {
                     put(wanted, s.looks[i], s.given[i]);
                 }
             }
-            const float k = !w.lookReady || s.seconds <= 0 ? 1 : 1 - powf(0.05f, dt / s.seconds);
+            const float k = (&w==preview&&state>=0)||!w.lookReady || s.seconds <= 0 ? 1 : 1 - powf(0.05f, dt / s.seconds);
             UiLook& l = w.look;
             l.back = mix(l.back, wanted.back, k);
             l.text = mix(l.text, wanted.text, k);
@@ -64,7 +64,7 @@ namespace nx
         w.scroll = fabsf(w.scrollTo - w.scroll) < 0.3f ? w.scrollTo : mix(w.scroll, w.scrollTo, m_dragged == &w ? 1 : 1 - powf(0.001f, dt / 0.35f));
         for (Widget* child : w.children)
         {
-            animate(*child, dt);
+            animate(*child, dt,preview,state);
         }
     }
 
@@ -332,9 +332,9 @@ namespace nx
         }
     }
 
-    void Ui::drawDesign(Canvas& c,float x,float y,float w,float h)
+    void Ui::drawDesign(Canvas& c,float x,float y,float w,float h,const char* stateWidget,int state)
     {
-        animate(*m_root,1.f);
+        animate(*m_root,1.f,stateWidget&&*stateWidget?find(stateWidget):nullptr,state);
         draw(c,x,y,w,h);
     }
 

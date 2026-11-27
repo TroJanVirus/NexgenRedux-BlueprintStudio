@@ -1517,6 +1517,11 @@ NX_TEST(nativeReusableThemeLinksAndStyleProperties)
     NX_EXPECT(!doc.setVisualThemeProperty(theme,"button","normal","align","invalid",error));
     NX_EXPECT(!doc.setVisualThemeProperty(theme,"button","focused","align","left",error));
     NX_EXPECT(!doc.setVisualThemeProperty(theme,"button","hovered","minWidth","80",error));
+    NX_EXPECT(doc.setVisualThemeProperty(theme,"button","normal","font","global:freesans.sfn",error));
+    NX_EXPECT(doc.setVisualThemeProperty(theme,"button","normal","image","asset:ui/panel.png",error));
+    NX_EXPECT(doc.setVisualThemeProperty(theme,"button","normal","soundAccept","global:sound/accept.wav",error));
+    NX_EXPECT(!doc.setVisualThemeProperty(theme,"button","normal","image","asset:../bad.png",error));
+    NX_EXPECT(!doc.setVisualThemeProperty(theme,"button","pressed","font","global:freesans.sfn",error));
     NX_EXPECT(!doc.setVisualThemeProperty(theme,"button","focused","padding","3",error));
     NX_EXPECT(!doc.setVisualThemeProperty(theme,"button","normal","back","#xyz",error));
     NX_EXPECT(doc.setVisualTheme(page,theme,error)&&doc.connectVisualWidget("Screen",page,error));

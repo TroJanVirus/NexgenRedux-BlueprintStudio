@@ -124,7 +124,7 @@ namespace nx
         bool load(const char* name, Widget& into, asIScriptObject* screen);
         bool loadPage(const char* data,size_t size,Widget& into,asIScriptObject* screen,const char* path="inline UI page",bool designOnly=false);
         // Renders normal native layout/styles without processing input or callbacks.
-        void drawDesign(Canvas& canvas,float x,float y,float w,float h);
+        void drawDesign(Canvas& canvas,float x,float y,float w,float h,const char* stateWidget=nullptr,int state=-1);
         bool words(const char* name);
         const char* word(const char* key) const;
         const char* error() const { return m_error; }
@@ -225,7 +225,7 @@ namespace nx
         void drawText(Canvas& c, const Widget& w, const char* text, float x, float y, float width, float height, const Color& color, Align align);
         void drawField(Canvas& c, Widget& w, float x, float y);
         void drawScrollBar(Canvas& c, const Widget& w, float x, float y);
-        void animate(Widget& w, float dt);
+        void animate(Widget& w, float dt,const Widget* preview=nullptr,int state=-1);
 
         // ui.cpp
         Widget& top() { return m_layerCount ? *m_layers[m_layerCount - 1].root : *m_root; }

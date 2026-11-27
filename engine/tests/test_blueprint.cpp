@@ -2424,6 +2424,7 @@ NX_TEST(nativeLinkedThemeStylesReachRuntimeWidgets)
     const bool ok=doc.createVisualAsset("widget",page,error)&&doc.appendVisualWidget(page,"button","Play",error)&&
         doc.createVisualAsset("theme",theme,error)&&doc.setVisualThemeProperty(theme,"button","normal","back","#123456",error)&&
         doc.setVisualThemeProperty(theme,"button","focused","radius","7",error)&&
+        doc.setVisualThemeProperty(theme,"button","hovered","back","#FF0000",error)&&
         doc.setVisualThemeProperty(theme,"button","normal","minWidth","160",error)&&
         doc.setVisualThemeProperty(theme,"button","normal","minHeight","60",error)&&
         doc.setVisualThemeProperty(theme,"button","normal","align","right",error)&&doc.setVisualTheme(page,theme,error)&&
@@ -2441,5 +2442,25 @@ NX_TEST(nativeLinkedThemeStylesReachRuntimeWidgets)
         NX_EXPECT(widget->style->looks[static_cast<size_t>(UiState::Focused)].radius==7);
         NX_EXPECT(widget->style->minWidth==160&&widget->style->minHeight==60);
         NX_EXPECT(widget->style->align==Align::Right);
+        r.services.ui->drawDesign(r.canvas,0,0,1280,720,"item-1",static_cast<int>(UiState::Hovered));
+        NX_EXPECT(widget->look.back.r==1.f&&widget->look.back.g==0.f);
     }
+}
+
+NX_TEST(nativeStretchAnchorsFillResponsiveStack)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    BlueprintDocument doc;doc.create();std::string id,error,source;
+    const bool ok=doc.createVisualAsset("widget",id,error)&&doc.appendVisualWidget(id,"stack","",error)&&
+        doc.setVisualWidgetProperty(id,"item-1","grow","1",error)&&doc.appendVisualWidget(id,"label","HUD",error,"item-1")&&
+        doc.setVisualWidgetProperty(id,"item-2","anchor","stretch-both",error)&&doc.setVisualWidgetProperty(id,"item-2","offset","20,30",error)&&
+        doc.connectVisualWidget("Screen",id,error)&&compileBlueprint(doc,source,error);
+    NX_EXPECT(ok);if(!ok)return;
+    r.platform.files["showcase/main/screen.json"]="{\"title\":\"Stretch HUD\"}";r.platform.files["showcase/main/main.as"]=source;
+    if(!r.screens.init(r.services,"showcase","main")){NX_EXPECT(false);return;}r.step(3);if(!r.services.ui){NX_EXPECT(false);return;}
+    auto& view=*r.services.ui;auto* stack=view.find("item-1");auto* label=view.find("item-2");NX_EXPECT(stack&&label);if(!stack||!label)return;
+    view.drawDesign(r.canvas,0,0,1280,720);const float wide=label->w;
+    NX_EXPECT(fabsf(label->w-(stack->w-stack->pad(0)-stack->pad(2)-40))<0.01f);
+    NX_EXPECT(fabsf(label->h-(stack->h-stack->pad(1)-stack->pad(3)-60))<0.01f);
+    view.drawDesign(r.canvas,0,0,960,720);NX_EXPECT(fabsf(wide-label->w-320)<0.01f);
 }

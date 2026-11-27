@@ -676,6 +676,28 @@ namespace nx
         constexpr const char* themeStates[]={"normal","hovered","checked","focused","pressed","disabled"};
         constexpr const char* themeProps[]={"back","text","line","track","radius","lineWidth","scale","shadow","size","padding","gap","seconds","minWidth","minHeight","slice","align"};
         constexpr size_t themeLookCount=8;
+        constexpr const char* themeMediaProps[]={"font","image","soundMove","soundAccept","soundBack","soundChange"};
+        bool themeColorProperty(const std::string& key){return key=="back"||key=="text"||key=="line"||key=="track";}
+        bool themeMediaProperty(const std::string& key){for(const auto* p:themeMediaProps)if(key==p)return true;return false;}
+        bool themeMediaMatch(const std::string& key,const std::string& path)
+        {
+            const auto dot=path.rfind('.');if(dot==std::string::npos)return false;
+            auto ext=path.substr(dot);for(char& ch:ext)ch=static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+            if(key=="font")return ext==".sfn"||ext==".ttf"||ext==".otf";
+            if(key=="image")return ext==".png"||ext==".jpg"||ext==".jpeg"||ext==".dds"||ext==".bmp"||ext==".tga";
+            return ext==".wav"||ext==".ogg"||ext==".mp3";
+        }
+        Color themePickerColor(const std::string& value)
+        {
+            if((value.size()!=7&&value.size()!=9)||value[0]!='#'||value.find_first_not_of("0123456789abcdefABCDEF",1)!=std::string::npos)return {1,1,1,1};
+            const auto byte=[&](size_t at){return static_cast<float>(std::strtoul(value.substr(at,2).c_str(),nullptr,16))/255.f;};
+            return {byte(1),byte(3),byte(5),value.size()==9?byte(7):1.f};
+        }
+        std::string themePickerHex(Color color)
+        {
+            char value[10];const auto byte=[](float n){return static_cast<unsigned>(std::round(std::clamp(n,0.f,1.f)*255.f));};
+            snprintf(value,sizeof(value),"#%02X%02X%02X%02X",byte(color.r),byte(color.g),byte(color.b),byte(color.a));return value;
+        }
         struct DesignRow {std::string id,kind,label;unsigned depth;};
         constexpr const char* designPalette[]={"column","row","grid","stack","scroll","label","button","toggle","slider","progress","field","space"};
         constexpr const char* designEvents[]={"click","change","focus","done","draw","makeRow"};
@@ -792,7 +814,9 @@ namespace nx
             if(auto* item=hit(hit,m_designUi->root()))
             {
                 m_widgetSelection=item->id;
-                if(item->parent&&item->parent->kind==WidgetKind::Stack)
+                if(item->parent&&item->parent->kind==WidgetKind::Stack&&item->anchor>=9)
+                {m_status="Stretch anchor selected. Edit inset / offset in Anchors.";}
+                else if(item->parent&&item->parent->kind==WidgetKind::Stack)
                 {
                     // Preserve the existing anchor, or convert the current
                     // visual position to a top-left anchor with no jump.
@@ -809,7 +833,8 @@ namespace nx
             else m_widgetSelection.clear();
             return;
         }
-        if(in(x,y,280,156,610,189)){m_widgetPalette=!m_widgetPalette;m_widgetFirst=0;return;}
+        if(in(x,y,510,156,610,189)){m_widgetPreviewState=m_widgetPreviewState>=5?-1:m_widgetPreviewState+1;return;}
+        if(in(x,y,280,156,500,189)){m_widgetPalette=!m_widgetPalette;m_widgetFirst=0;return;}
         if(in(x,y,630,156,810,189)){m_widgetDesigner=false;releaseWidgetPreview();return;}
         if(in(x,y,820,156,1000,189)){m_widgetFourThree=!m_widgetFourThree;return;}
         if(in(x,y,280,202,610,522))
@@ -822,6 +847,12 @@ namespace nx
                 {m_status="Added widget to selected container.";m_widgetPalette=false;m_widgetFirst=0;}
             }
             else {m_widgetSelection=row?rows[row-1].id:"";if(!m_widgetSelection.empty()){m_widgetDragging=true;m_widgetDragId=m_widgetSelection;m_widgetDragX=x;m_widgetDragY=y;}}
+            return;
+        }
+        if(m_widgetAnchors&&in(x,y,280,548,610,581))
+        {
+            const size_t at=static_cast<size_t>((x-280)/110);const char* modes[]={"stretch-x","stretch-y","stretch-both"};
+            if(at<3&&!m_widgetSelection.empty()&&m_document.setVisualWidgetProperty(m_visualSelection,m_widgetSelection,"anchor",modes[at],m_status))m_status="Stretch anchor updated.";
             return;
         }
         if(!m_widgetSelection.empty()&&in(x,y,280,548,440,581))
@@ -848,7 +879,7 @@ namespace nx
             if(in(x,y,820,548,1000,581))
             {
                 m_visualProperty="offset";m_visualText="";m_visualInput=4;s.input->setTyping(true);
-                m_status="Enter signed X,Y offset from anchor.";return;
+                m_status="Enter X,Y offset; stretch axes use symmetric insets.";return;
             }
             return;
         }
@@ -897,7 +928,8 @@ namespace nx
     {
         const auto button=[&](float x,float y,float width,const char* label)
         {c.roundRect(x,y,width,33,4,{0.19f,0.33f,0.50f,1});c.clip(x,y,width,33);c.text(*m_font,label,x+width*0.5f,y+7,text,Align::Center);c.noClip();};
-        button(280,156,330,m_widgetPalette?"Back to hierarchy":"Add widget to selection");
+        button(280,156,220,m_widgetPalette?"Back to hierarchy":"Add widget");
+        button(510,156,100,m_widgetPreviewState<0?"Live style":themeStates[m_widgetPreviewState]);
         button(630,156,180,"Back to content");button(820,156,180,m_widgetFourThree?"4:3 / switch":"16:9 / switch");
         const auto* page=m_document.visualAsset(m_visualSelection);
         JsonTree tree;std::vector<DesignRow> rows;
@@ -911,7 +943,8 @@ namespace nx
             c.rect(280,y,330,36,!m_widgetPalette&&id==m_widgetSelection?Color{0.19f,0.33f,0.50f,1}:Color{0.17f,0.22f,0.30f,1});
             c.clip(286,y,318,36);c.text(*m_font,label.c_str(),290,y+9,text);c.noClip();
         }
-        button(280,548,160,"Move up");button(450,548,160,"Move down");
+        if(m_widgetAnchors){button(280,548,106,"Fill X");button(390,548,106,"Fill Y");button(500,548,110,"Fill both");}
+        else {button(280,548,160,"Move up");button(450,548,160,"Move down");}
         c.rect(280,524,330,21,{0.19f,0.33f,0.50f,1});c.text(*m_font,m_widgetAnchors?"Back to properties":"Anchors / offset",445,525,text,Align::Center);
         const float width=m_widgetFourThree?960.f:1280.f,scale=208.f/720.f,screenWidth=width*scale;
         const float px=815-screenWidth*0.5f,py=207;
@@ -919,7 +952,7 @@ namespace nx
         if(m_designUi&&m_designPreviewError.empty())
         {
             c.push();c.clip(px,py,screenWidth,208);c.translate(px,py);c.scale(scale,scale);
-            m_designUi->drawDesign(c,0,0,width,720);
+            m_designUi->drawDesign(c,0,0,width,720,m_widgetSelection.c_str(),m_widgetPreviewState);
             if(!m_widgetSelection.empty())if(auto* selected=m_designUi->find(m_widgetSelection.c_str()))
             {
                 float sx=0,sy=0;m_designUi->place(*selected,sx,sy);
@@ -960,6 +993,24 @@ namespace nx
         auto& input=*s.input;
         if(m_visualInput)
         {
+            if(m_visualInput==7&&themeColorProperty(m_visualProperty)&&click&&in(x,y,500,320,820,432))
+            {
+                Color color=themePickerColor(m_visualText);const int channel=static_cast<int>((y-320)/28);
+                const float value=std::clamp((x-500)/320.f,0.f,1.f);
+                if(channel==0)color.r=value;else if(channel==1)color.g=value;else if(channel==2)color.b=value;else if(channel==3)color.a=value;
+                m_visualText=themePickerHex(color);return;
+            }
+            if(m_visualInput==7&&themeMediaProperty(m_visualProperty))
+            {
+                if(input.wheel()<0&&m_themeMediaFirst+5<m_themeMediaFiles.size())++m_themeMediaFirst;
+                if(input.wheel()>0&&m_themeMediaFirst)--m_themeMediaFirst;
+                if(click&&in(x,y,440,345,840,495))
+                {
+                    const size_t at=m_themeMediaFirst+static_cast<size_t>((y-345)/30);
+                    if(at<m_themeMediaFiles.size())m_visualText="asset:"+m_themeMediaFiles[at];
+                    return;
+                }
+            }
             for(u32 i=0;i<input.typedCount();++i)
             {
                 const auto ch=input.typed(i);
@@ -1050,18 +1101,26 @@ namespace nx
         {
             if(in(x,y,630,232,810,266))
             {m_visualInput=6;m_visualText=m_themeStyle;input.setTyping(true);m_status="Enter style name (e.g. button or custom).";return;}
-            if(in(x,y,820,232,1000,266)){m_themeState=(m_themeState+1)%6;return;}
+            if(in(x,y,820,232,1000,266)){m_themeState=(m_themeState+1)%6;m_themeMedia=false;return;}
+            if(in(x,y,630,548,1000,581)){m_themeMedia=!m_themeMedia;m_themeState=0;return;}
             if(in(x,y,630,277,1000,493))
             {
                 const size_t index=static_cast<size_t>((y-277)/36)*3+static_cast<size_t>((x-630)/123.34f);
-                const size_t count=m_themeState?themeLookCount:sizeof(themeProps)/sizeof(themeProps[0]);
+                const size_t count=m_themeMedia?sizeof(themeMediaProps)/sizeof(themeMediaProps[0]):m_themeState?themeLookCount:sizeof(themeProps)/sizeof(themeProps[0]);
                 if(index>=count)return;
-                m_visualProperty=themeProps[index];
+                m_visualProperty=m_themeMedia?themeMediaProps[index]:themeProps[index];
                 JsonTree tree;if(!tree.parse(selected->source.data(),selected->source.size()))return;
                 const auto style=tree.root()["styles"][m_themeStyle.c_str()];
                 const auto state=m_themeState?style[themeStates[m_themeState]]:style;
-                const auto property=state[m_visualProperty.c_str()];
+                const auto property=m_visualProperty.rfind("sound",0)==0?
+                    tree.root()["sounds"][m_visualProperty=="soundMove"?"move":m_visualProperty=="soundAccept"?"accept":m_visualProperty=="soundBack"?"back":"change"]:state[m_visualProperty.c_str()];
                 m_visualText=property.isNumber()?std::to_string(property.exact()):property.text();
+                if(themeMediaProperty(m_visualProperty))
+                {
+                    m_themeMediaFiles.clear();m_themeMediaFirst=0;std::vector<std::string> available;std::string error;
+                    if(blueprintListAssets(*s.platform,m_document.assetRoot,assetScreen(),available,error))
+                        for(const auto& file:available)if(themeMediaMatch(m_visualProperty,file))m_themeMediaFiles.push_back(file);
+                }
                 m_visualInput=7;input.setTyping(true);m_status=m_visualProperty=="align"?"Enter left, center or right; blank restores default.":"Edit style value; blank restores default.";return;
             }
             return;
@@ -1213,12 +1272,12 @@ namespace nx
             if(selected->kind=="theme")
             {
                 button(630,232,180,m_themeStyle.c_str());button(820,232,180,themeStates[m_themeState]);
-                const size_t count=m_themeState?themeLookCount:sizeof(themeProps)/sizeof(themeProps[0]);
+                const size_t count=m_themeMedia?sizeof(themeMediaProps)/sizeof(themeMediaProps[0]):m_themeState?themeLookCount:sizeof(themeProps)/sizeof(themeProps[0]);
                 for(size_t i=0;i<count;++i)
-                    button(630+123.34f*static_cast<float>(i%3),277+36*static_cast<float>(i/3),119,themeProps[i]);
+                    button(630+123.34f*static_cast<float>(i%3),277+36*static_cast<float>(i/3),119,m_themeMedia?themeMediaProps[i]:themeProps[i]);
                 c.text(*m_font,"Colours: #RRGGBB or #RRGGBBAA",630,505,muted);
                 c.text(*m_font,m_themeState?"State overrides appearance only.":"Normal also controls size and layout.",630,530,muted);
-                c.text(*m_font,"Assign this theme ID to a UI page.",630,555,muted);
+                button(630,548,370,m_themeMedia?"Back to style properties":"Fonts, images and sounds");
             }
             else if(selected->kind=="widget")
             {
@@ -1315,7 +1374,42 @@ namespace nx
         else c.text(*m_font,"Select a definition to edit.",630,210,muted);
         }
         c.clip(280,591,720,26);c.text(*m_font,m_status.c_str(),280,595,text);c.noClip();
-        if(m_visualInput)
+        if(m_visualInput==7&&themeColorProperty(m_visualProperty))
+        {
+            c.roundRect(420,250,440,230,6,{0.08f,0.12f,0.18f,1});
+            c.text(*m_font,m_visualProperty.c_str(),440,260,accent);
+            const Color value=themePickerColor(m_visualText);
+            c.rect(440,286,48,24,{0.5f,0.5f,0.5f,1});c.rect(440,286,48,24,value);
+            c.text(*m_font,m_visualText.empty()?"Default":m_visualText.c_str(),500,286,text);
+            const float channels[]={value.r,value.g,value.b,value.a};const char* labels[]={"R","G","B","A"};
+            for(int i=0;i<4;++i)
+            {
+                const float y=320+28.f*static_cast<float>(i);c.text(*m_font,labels[i],450,y,text);
+                for(int j=0;j<32;++j)
+                {
+                    Color sample=value;const float t=static_cast<float>(j)/31.f;
+                    if(i==0)sample.r=t;else if(i==1)sample.g=t;else if(i==2)sample.b=t;else sample.a=t;
+                    c.rect(500+10.f*static_cast<float>(j),y,10,20,{0.35f,0.35f,0.35f,1});
+                    c.rect(500+10.f*static_cast<float>(j),y,10,20,sample);
+                }
+                c.rect(500+320.f*channels[i]-2,y,4,20,{1,1,1,1});
+            }
+            c.text(*m_font,"Click channels or type hex; Enter applies.",440,445,muted);
+        }
+        else if(m_visualInput==7&&themeMediaProperty(m_visualProperty))
+        {
+            c.roundRect(420,265,440,270,6,{0.08f,0.12f,0.18f,1});
+            c.text(*m_font,m_visualProperty.c_str(),440,275,accent);
+            c.clip(440,305,400,30);c.text(*m_font,m_visualText.empty()?"Default / enter asset: or global: path":m_visualText.c_str(),440,305,text);c.noClip();
+            for(size_t i=0;i<5&&m_themeMediaFirst+i<m_themeMediaFiles.size();++i)
+            {
+                const float y=345+30.f*static_cast<float>(i);c.rect(440,y,400,28,{0.17f,0.22f,0.30f,1});
+                c.clip(446,y,388,28);c.text(*m_font,m_themeMediaFiles[m_themeMediaFirst+i].c_str(),446,y+4,text);c.noClip();
+            }
+            if(m_themeMediaFiles.empty())c.text(*m_font,"No matching imported media on this screen.",440,365,muted);
+            c.text(*m_font,"Select or type path; Enter applies.",440,505,muted);
+        }
+        else if(m_visualInput)
         {
             c.roundRect(420,286,440,130,6,{0.08f,0.12f,0.18f,1});
             c.text(*m_font,m_visualInput==1?"RENAME ASSET":m_visualInput==5?"THEME ASSET ID":m_visualInput==6?"STYLE NAME":m_visualInput>=3?m_visualProperty.c_str():"NEXT WIDGET TEXT",440,300,accent);

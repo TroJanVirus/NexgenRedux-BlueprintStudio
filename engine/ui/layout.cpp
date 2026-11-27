@@ -192,8 +192,9 @@ namespace nx
         for (Widget* child : w.children)
         {
             const bool stretch = across(w, *child) == UiPlace::Stretch && child->width <= 0 && !(w.kind==WidgetKind::Stack&&child->anchor>=0);
-            float give = stretch ? cell : smaller(child->naturalW, cell);
-            give = child->maxWidth > 0 ? smaller(give, child->maxWidth) : give;
+            const bool fillX=w.kind==WidgetKind::Stack&&(child->anchor==9||child->anchor==11);
+            float give = fillX?larger(cell-2*larger(child->offsetX,0),0):stretch ? cell : smaller(child->naturalW, cell);
+            give = !fillX&&child->maxWidth > 0 ? smaller(give, child->maxWidth) : give;
             giveWidth(*child, child->visible ? give : 0);
         }
     }
@@ -356,8 +357,14 @@ namespace nx
             {
                 const UiPlace place = across(w, *child);
                 const bool anchored=child->anchor>=0&&child->anchor<9;
-                const float tall = !anchored&&place == UiPlace::Stretch && child->height <= 0 ? innerH : smaller(child->naturalH, innerH);
-                if(anchored)
+                const bool fillX=child->anchor==9||child->anchor==11,fillY=child->anchor==10||child->anchor==11;
+                const float tall = fillY?larger(innerH-2*larger(child->offsetY,0),0):child->anchor<0&&place == UiPlace::Stretch && child->height <= 0 ? innerH : smaller(child->naturalH, innerH);
+                if(fillX||fillY)
+                {
+                    child->x=left+(innerW-child->w)*0.5f+(fillX?0:child->offsetX);
+                    child->y=top+(innerH-tall)*0.5f+(fillY?0:child->offsetY);
+                }
+                else if(anchored)
                 {
                     const float ax=static_cast<float>(child->anchor%3)*0.5f,ay=static_cast<float>(child->anchor/3)*0.5f;
                     child->x=left+(innerW-child->w)*ax+child->offsetX;
