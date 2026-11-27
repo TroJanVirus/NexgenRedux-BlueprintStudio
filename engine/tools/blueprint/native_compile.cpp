@@ -211,6 +211,11 @@ namespace nx
                 }
                 if(n.kind.rfind("global:get:",0)==0&&pin=="value"){result="bp_global_"+n.ref;return true;}
                 if(n.kind.rfind("var:get:",0)==0&&pin=="value"){result="bp_var_"+n.ref;return true;}
+                if(n.kind.rfind("flow:foreach:",0)==0&&(pin=="index"||pin=="element"))
+                {
+                    if(!available[node])return fail(node,"For Each values are only available in the loop body.");
+                    result=std::string(pin=="index"?"bp_index_":"bp_element_")+std::to_string(node);return true;
+                }
                 if(n.kind=="repeat"&&pin=="index")
                 {
                     if(!available[node])return fail(node,"Loop index is only available in its body.");
@@ -236,6 +241,7 @@ namespace nx
                 const auto found=std::find_if(graph.links.begin(),graph.links.end(),[&](const Link& l){return l.from==node&&l.output==pin;});
                 if(found==graph.links.end())return false;
                 const auto to=found->to;const auto& kind=graph.nodes[to].kind;
+                if(kind=="flow:controlled-gate")return false;
                 if(kind=="return:function")return true;
                 if(kind=="branch"&&returns(to,"true",depth+1)&&returns(to,"false",depth+1))return true;
                 if(kind=="sequence"&&(returns(to,"first",depth+1)||returns(to,"second",depth+1)))return true;
@@ -246,8 +252,10 @@ namespace nx
                 const auto found=std::find_if(graph.links.begin(),graph.links.end(),[&](const Link& l){return l.from==node&&l.output==pin;});
                 if(found==graph.links.end())return true;
                 const auto to=found->to;
-                if(to>=graph.nodes.size()||depth>128||budget==0||emitted[to])return fail(to,"Execution cycle or complexity limit.");
-                --budget;emitted[to]=true;
+                if(to>=graph.nodes.size()||depth>128||budget==0)return fail(to,"Execution cycle or complexity limit.");
+                const bool gateCommand=graph.nodes[to].kind=="flow:controlled-gate"&&found->input!="in";
+                if(!gateCommand&&emitted[to])return fail(to,"Execution cycle or complexity limit.");
+                --budget;if(!gateCommand)emitted[to]=true;
                 const auto& n=graph.nodes[to];const auto* spec=blueprintSpec(n.kind);
                 const std::string pad(indent*4,' ');
                 const size_t start=source.size();
@@ -469,6 +477,77 @@ namespace nx
                     if(graph.returnType!="void"&&!value(to,"value",v,0))return false;
                     source+=pad+(v.empty()?"return;":"return "+v+";")+"\n";mark(start,to);return true;
                 }
+                if(n.kind=="flow:controlled-gate")
+                {
+                    if(graph.inlineMacro)return fail(to,"Stateful gates are not supported in inline macros.");
+                    const auto state="bp_flow_state_"+std::to_string(graphIndex)+"_"+std::to_string(to);
+                    if(gateCommand)
+                    {
+                        if(found->input=="open")source+=pad+state+" = 1;\n";
+                        else if(found->input=="close")source+=pad+state+" = 0;\n";
+                        else if(found->input=="toggle")source+=pad+state+" = 1 - "+state+";\n";
+                        else return fail(to,"Unknown gate command.");
+                        mark(start,to);return true;
+                    }
+                    const auto outer=available;
+                    source+=pad+"if ("+state+" != 0)\n"+pad+"{\n";mark(start,to);
+                    if(!flow(to,"body",indent+1,depth+1))return false;
+                    available=outer;source+=pad+"}\n";return true;
+                }
+                if(n.kind=="flow:flip-flop"||n.kind=="flow:multi-gate"||n.kind=="flow:switch-int")
+                {
+                    const bool flip=n.kind=="flow:flip-flop",multi=n.kind=="flow:multi-gate";
+                    const auto suffix=std::to_string(to),state="bp_flow_state_"+std::to_string(graphIndex)+"_"+suffix,choice="bp_choice_"+suffix;
+                    if(flip||multi)
+                    {
+                        if(graph.inlineMacro)return fail(to,"Stateful flow nodes are not supported in inline macros.");
+                        std::string reset,loop;
+                        if(!value(to,"reset",reset,0)||(multi&&!value(to,"loop",loop,0)))return false;
+                        source+=pad+"if ("+reset+") "+state+" = 0;\n";
+                        if(multi)source+=pad+"if ("+state+" >= 4 && ("+loop+")) "+state+" = 0;\n";
+                        source+=pad+"int "+choice+" = "+state+";\n";
+                        source+=pad+(flip?state+" = 1 - "+state+";\n":"if ("+state+" < 4) ++"+state+";\n");
+                    }
+                    else
+                    {
+                        std::string v;if(!value(to,"value",v,0))return false;
+                        source+=pad+"int "+choice+" = "+v+";\n";
+                    }
+                    const auto outer=available;
+                    const std::vector<std::string> ports=flip?std::vector<std::string>{"a","b"}:std::vector<std::string>{"first","second","third","fourth"};
+                    for(size_t i=0;i<ports.size();++i)
+                    {
+                        std::string key=std::to_string(i);
+                        if(!flip&&!multi&&!value(to,"case"+key,key,0))return false;
+                        source+=pad+(i?"else if (":"if (")+choice+" == ("+key+"))\n"+pad+"{\n";
+                        if(i==0)mark(start,to);
+                        if(!flow(to,ports[i],indent+1,depth+1))return false;
+                        available=outer;source+=pad+"}\n";
+                    }
+                    if(!flip&&!multi)
+                    {
+                        source+=pad+"else\n"+pad+"{\n";
+                        if(!flow(to,"default",indent+1,depth+1))return false;
+                        available=outer;source+=pad+"}\n";
+                    }
+                    return flow(to,"then",indent,depth+1);
+                }
+                if(n.kind.rfind("flow:foreach:",0)==0)
+                {
+                    std::string target;if(!value(to,"target",target,0))return false;
+                    const auto element=n.kind.substr(13),suffix=std::to_string(to),array="bp_each_array_"+suffix,index="bp_index_"+suffix,limit="bp_each_limit_"+suffix;
+                    const auto outer=available;
+                    source+=pad+"{\n"+pad+"    array<"+element+">@ "+array+" = "+target+";\n";
+                    source+=pad+"    if ("+array+" !is null)\n"+pad+"    {\n";
+                    source+=pad+"        uint "+limit+" = "+array+".length();\n";
+                    source+=pad+"        if ("+limit+" > 10000) "+limit+" = 10000;\n";
+                    source+=pad+"        for (uint "+index+" = 0; "+index+" < "+limit+" && "+index+" < "+array+".length(); ++"+index+")\n"+pad+"        {\n";
+                    source+=pad+"            "+element+" bp_element_"+suffix+" = "+array+"["+index+"];\n";
+                    mark(start,to);available[to]=true;
+                    if(!flow(to,"body",indent+3,depth+1))return false;
+                    available=outer;source+=pad+"        }\n"+pad+"    }\n"+pad+"}\n";
+                    return flow(to,"then",indent,depth+1);
+                }
                 if(n.kind=="flow:do-once"||n.kind=="flow:do-n"||n.kind=="flow:gate")
                 {
                     const auto outer=available;
@@ -681,7 +760,7 @@ namespace nx
                 const auto& kind=g.nodes[ni].kind;
                 if(kind=="time:timeline"||kind=="camera:orbit-timed")
                     result+="    float bp_timeline_state_"+std::to_string(gi)+"_"+std::to_string(ni)+" = 0;\n";
-                else if(kind=="flow:do-once"||kind=="flow:do-n")
+                else if(kind=="flow:do-once"||kind=="flow:do-n"||kind=="flow:flip-flop"||kind=="flow:multi-gate"||kind=="flow:controlled-gate")
                     result+="    int bp_flow_state_"+std::to_string(gi)+"_"+std::to_string(ni)+" = 0;\n";
             }
         }

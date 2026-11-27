@@ -106,6 +106,10 @@ namespace nx
             {"flow:do-once","Do Once","Flow","in:exec|reset:bool","body:exec|then:exec","","","","","void","","","reset:false"},
             {"flow:do-n","Do N","Flow","in:exec|count:int|reset:bool","body:exec|then:exec","","","","","void","","","count:1|reset:false"},
             {"flow:gate","Gate (condition)","Flow","in:exec|open:bool","body:exec|then:exec","","","","","void","","","open:true"},
+            {"flow:flip-flop","Flip Flop","Flow","in:exec|reset:bool","a:exec|b:exec|then:exec","","","","","void","","","reset:false"},
+            {"flow:multi-gate","MultiGate (4 outputs)","Flow","in:exec|reset:bool|loop:bool","first:exec|second:exec|third:exec|fourth:exec|then:exec","","","","","void","","","reset:false|loop:false"},
+            {"flow:controlled-gate","Gate (Open / Close / Toggle)","Flow","in:exec|open:exec|close:exec|toggle:exec","body:exec"},
+            {"flow:switch-int","Switch on int (4 cases)","Flow","in:exec|value:int|case0:int|case1:int|case2:int|case3:int","first:exec|second:exec|third:exec|fourth:exec|default:exec|then:exec","","","","","void","","","case0:0|case1:1|case2:2|case3:3"},
             {"call:function","Call function","Functions","in:exec","then:exec"},
             {"call:parent","Call parent function","Functions","in:exec","then:exec"},
             {"return:function","Return","Functions","in:exec",""},
@@ -358,6 +362,8 @@ namespace nx
                     BlueprintNodeSpec getter;getter.id=scope+":get:"+type;getter.title="Get "+type+(scope=="global"?" global":" field");getter.category="Arrays";
                     getter.outputs={{"value",type}};getter.pure=true;getter.result=type;result.push_back(std::move(getter));
                 }
+                BlueprintNodeSpec each;each.id="flow:foreach:"+element;each.title="For Each ("+element+")";each.category="Arrays";
+                each.inputs={{"in","exec"},{"target",type+"@"}};each.outputs={{"body","exec"},{"then","exec"},{"index","uint"},{"element",element}};result.push_back(std::move(each));
                 for(const std::string op:{"length","get","set","append","remove","resize","clear"})
                 {
                     BlueprintNodeSpec spec;spec.id="array:"+op+":"+element;spec.title="Array "+op+" ("+element+")";spec.category="Arrays";

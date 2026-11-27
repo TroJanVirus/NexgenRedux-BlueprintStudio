@@ -2680,8 +2680,17 @@ NX_TEST(nativeFlowResetAndGateIsolationAcrossBehaviourInstances)
     const auto once=add("flow:do-once");wire(tick,"then",once,"in");wire(reset,"result",once,"reset");increment(once,"body","onceCount");
     const auto n=add("flow:do-n");wire(once,"then",n,"in");input(n,"count","3");wire(reset,"result",n,"reset");increment(n,"body","nCount");
     const auto gate=add("flow:gate");wire(n,"then",gate,"in");wire(equals("tick","4"),"result",gate,"open");increment(gate,"body","gateCount");
-    const auto branch=add("branch");wire(gate,"then",branch,"in");
-    const auto checks=both(both(equals("onceCount","2"),equals("nCount","6")),equals("gateCount","1"));
+    const auto flip=add("flow:flip-flop");wire(gate,"then",flip,"in");wire(reset,"result",flip,"reset");
+    increment(flip,"a","flipA");increment(flip,"b","flipB");
+    const auto multi=add("flow:multi-gate");wire(flip,"then",multi,"in");wire(reset,"result",multi,"reset");
+    increment(multi,"first","multiFirst");increment(multi,"fourth","multiFourth");
+    const auto seq=add("sequence");wire(multi,"then",seq,"in");
+    const auto controlled=add("flow:controlled-gate");wire(seq,"first",controlled,"open");wire(seq,"second",controlled,"in");increment(controlled,"body","controlledCount");
+    const auto seq2=add("sequence");wire(seq,"then",seq2,"in");wire(seq2,"first",controlled,"close");wire(seq2,"second",controlled,"toggle");
+    const auto sw=add("flow:switch-int");wire(seq2,"then",sw,"in");input(sw,"value","9");increment(sw,"default","switchCount");
+    const auto branch=add("branch");wire(sw,"then",branch,"in");
+    const auto checks=both(both(both(equals("onceCount","2"),equals("nCount","6")),equals("gateCount","1")),
+        both(both(equals("multiFirst","2"),equals("multiFourth","2")),both(equals("flipA","8"),equals("flipB","7"))));
     wire(checks,"result",branch,"condition");
     const auto self=add("event:entity"),name=add("api:Entity:get_name:Entity@");wire(self,"value",name,"target");
     const auto good=add("api:Save:Save::set:string,string"),bad=add("api:Save:Save::set:string,string");

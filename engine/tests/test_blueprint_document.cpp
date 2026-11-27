@@ -9,7 +9,7 @@
 using namespace nx;
 NX_TEST(nativeCatalogueContainsReferenceAPI)
 {
-    NX_EXPECT(blueprintCatalogue().size()==1182);
+    NX_EXPECT(blueprintCatalogue().size()==1193);
     const auto* save=blueprintSpec("api:Save:Save::set:string,string");
     NX_EXPECT(save&&save->inputs.size()==3&&save->outputs.size()==1);
     if(save&&save->inputs.size()==3)NX_EXPECT(save->inputs[0].type=="exec"&&save->inputs[2].type=="string");
@@ -1727,4 +1727,20 @@ NX_TEST(nativeActorClassParentCallAndInheritedContractProtection)
     NX_EXPECT(source.find("BP_Behaviour_"+parent.substr(10)+"::bp_fn_Construction()")!=std::string::npos);
     NX_EXPECT(doc.resetVisualActorOverrides(child,error)&&doc.actorBehaviour(child)==derived);
     NX_EXPECT(!doc.setVisualActorProperty(child,0,"behaviour","",error));
+}
+
+NX_TEST(nativeAdvancedFlowPinsAndRoundTrip)
+{
+    BlueprintDocument doc;doc.create();std::string error,bytes,source;
+    NX_EXPECT(doc.addNode(0,"sequence",0,0,error)&&doc.addNode(0,"flow:controlled-gate",0,0,error));
+    NX_EXPECT(doc.connect(0,0,"then",1,"in",error)&&doc.connect(0,1,"first",2,"open",error)&&doc.connect(0,1,"second",2,"in",error)&&doc.connect(0,1,"then",2,"close",error));
+    NX_EXPECT(doc.addNode(0,"flow:flip-flop",0,0,error)&&doc.connect(0,2,"body",3,"in",error));
+    NX_EXPECT(doc.addNode(0,"flow:multi-gate",0,0,error)&&doc.connect(0,3,"then",4,"in",error));
+    NX_EXPECT(doc.addNode(0,"flow:switch-int",0,0,error)&&doc.connect(0,4,"then",5,"in",error));
+    NX_EXPECT(doc.setInputValue(0,5,"value","2",error));
+    NX_EXPECT(doc.addNode(0,"var:get:array<int>",0,0,error)&&doc.addNode(0,"flow:foreach:int",0,0,error));
+    NX_EXPECT(doc.connect(0,5,"then",7,"in",error)&&doc.connect(0,6,"value",7,"target",error));
+    NX_EXPECT(doc.serialize(bytes,error));BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error));
+    NX_EXPECT(compileBlueprint(copy,source,error));
+    NX_EXPECT(source.find("bp_each_array_7")!=std::string::npos&&source.find("bp_choice_4")!=std::string::npos);
 }
