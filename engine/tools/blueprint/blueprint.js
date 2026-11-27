@@ -256,7 +256,7 @@
         }
         return null;
     }
-    function palette(doc, g) { let list = [{ kind: 'branch' }, { kind: 'sequence' }, { kind: 'repeat' }, { kind: 'once' }, { kind: 'flipflop' }, { kind: 'print' }, { kind: 'not' }, ...(doc.kind === 'Behaviour' ? [{ kind: 'self' }] : []), ...(g.kind === 'function' ? [{ kind: 'return' }] : [])]; if (g.kind === 'macro' || g.kind === 'event' && !['draw', 'onExit', 'onGone'].includes(g.name))
+    function palette(doc, g) { if(g.handwritten)return []; let list = [{ kind: 'branch' }, { kind: 'sequence' }, { kind: 'repeat' }, { kind: 'once' }, { kind: 'flipflop' }, { kind: 'print' }, { kind: 'not' }, ...(doc.kind === 'Behaviour' ? [{ kind: 'self' }] : []), ...(g.kind === 'function' ? [{ kind: 'return' }] : [])]; if (g.kind === 'macro' || g.kind === 'event' && !['draw', 'onExit', 'onGone'].includes(g.name))
         list.push({ kind: 'delay' }, {kind:'timeline'}); list.push({kind:'gate'},{kind:'doN'},{kind:'lerp'},{kind:'comment'},{kind:'while'},{kind:'breakLoop'},{kind:'continueLoop'}); for(const t of ['int','uint','string'])list.push({kind:'switch',type:t,cases:t==='string'?['A','B']:[0,1]});for(const v of g.locals||[])list.push({kind:'getLocal',ref:v.name},{kind:'setLocal',ref:v.name});
         for(const d of doc.dispatchers || []) { list.push({kind:'broadcast',ref:d.name},{kind:'unbindAll',ref:d.name}); for(const f of doc.graphs.filter(f=>compatibleHandler(f,d))) list.push({kind:'bind',ref:d.name,handler:f.name},{kind:'unbind',ref:d.name,handler:f.name}); }
         if(doc.kind==='Screen')for(const kind of levelNodes.keys())list.push({kind});
@@ -354,6 +354,31 @@
         }
         for(const n of [...g.nodes])if(n.kind==='macroCall')expand(n,[]);return g;
     }
+    // Find token boundaries without interpreting handwritten code. Native AngelScript checks its syntax.
+    function scriptTokens(source) {
+        if(typeof source!=='string'||new TextEncoder().encode(source).length>256*1024||source.includes('\0'))throw Error('Script must be UTF-8 text of at most 256 KiB');
+        const pattern=/\s+|\/\/[^\r\n]*|\/\*[\s\S]*?\*\/|"""[\s\S]*?"""|"(?:[^"\\\r\n]|\\[^\r\n])*"|'(?:[^'\\\r\n]|\\[^\r\n])*'|(?:\d+\.\d+|\d+)(?:[eE][+-]?\d+)?[fFuU]?|[A-Za-z_]\w*|::|==|!=|<=|>=|&&|\|\||\+=|-=|\*=|\/=|[^\s]/y;
+        const out=[];let offset=0,line=1;
+        while(offset<source.length){pattern.lastIndex=offset;const m=pattern.exec(source);if(!m)throw Error('Line '+line+': cannot read source');const v=m[0];
+            if((source.startsWith('/*',offset)&&!v.startsWith('/*'))||(source.startsWith('"""',offset)&&!v.startsWith('"""'))||v==='"'||v==="'")throw Error('Line '+line+': unclosed comment or string');
+            if(!/^\s|^\/\/|^\/\*/.test(v))out.push({v,line,start:offset,end:pattern.lastIndex});
+            line+=(v.match(/\n/g)||[]).length;offset=pattern.lastIndex;if(out.length>24000)throw Error('Script has too many tokens');
+        }return out;
+    }
+    function validateScriptBody(body){
+        const tokens=scriptTokens(body);let depth=0;
+        for(const t of tokens){if(t.v==='#')throw Error('Preprocessor directives are not supported inside handwritten functions');if(t.v==='{')depth++;if(t.v==='}'&&--depth<0)throw Error('Handwritten function closes outside its body');if(depth>64)throw Error('Handwritten function nesting exceeds limit');}
+        if(depth!==0)throw Error('Unbalanced braces in handwritten function');return true;
+    }
+    function scriptContract(doc){return {name:doc.name,kind:doc.kind,variables:doc.variables.map(v=>({name:v.name,type:v.type})),graphs:doc.graphs.filter(g=>g.kind!=='macro').map(g=>({name:g.name,kind:g.kind,returns:g.returns,params:g.params||[],pure:!!g.pure}))};}
+    function checkScriptContract(doc){
+        const contract=doc.importedScript?.contract;
+        let bytes=0;for(const g of doc.graphs)if(g.handwritten){if(!['event','function'].includes(g.kind)||typeof g.handwritten.body!=='string')throw Error('Invalid handwritten method');bytes+=new TextEncoder().encode(g.handwritten.body).length;if(bytes>256*1024)throw Error('Combined handwritten bodies exceed 256 KiB');}
+        if(!contract){if(doc.graphs.some(g=>g.handwritten))throw Error('Handwritten functions need their imported class contract');return;}
+        if(contract.name!==doc.name||contract.kind!==doc.kind||doc.parent||!Array.isArray(contract.variables)||!Array.isArray(contract.graphs))throw Error('Keep the imported class name and base while handwritten functions remain');
+        const now=scriptContract(doc);for(const v of contract.variables)if(!now.variables.some(x=>x.name===v.name&&x.type===v.type))throw Error('Keep imported variable '+v.name+' while handwritten functions remain');
+        for(const g of contract.graphs)if(!now.graphs.some(x=>JSON.stringify(x)===JSON.stringify(g)))throw Error('Keep imported function signature '+g.name+' while handwritten functions remain');
+    }
     function compile(doc, nested = false, options = {}) {
         const diagnostics = [];
         const fail = (message, graph = '', node = '') => { diagnostics.push({ message, graph, node }); throw Error(message); };
@@ -363,6 +388,7 @@
                 fail('Invalid blueprint: expected version 1, Screen/Behaviour, class name, variables and graphs');
             if (doc.variables.length > 128 || doc.graphs.length > 64)
                 fail('Blueprint exceeds size limits');
+            checkScriptContract(doc);
             const chain=lineage(doc);
             validateHierarchies(doc);
             const emitInterfaces = !options.interfaceRegistry;
@@ -475,6 +501,14 @@
             for (const original of doc.graphs) {
                 if(original.kind==='macro')continue;
                 current=original.name;
+                if(original.handwritten){
+                    const raw=original.handwritten, expected=original.kind==='event'?events[doc.kind][original.name].map(([name,type])=>({name,type})):original.params;
+                    if(original.pure||original.nodes?.length!==1||original.nodes[0].kind!=='entry'||original.links?.length!==0||original.locals?.length||!Array.isArray(raw.params)||raw.params.length!==expected.length||raw.params.some((p,i)=>!ident(p.name)||p.type!==expected[i].type||original.kind==='function'&&p.name!==expected[i].name)||new Set(raw.params.map(p=>p.name)).size!==raw.params.length)fail('Invalid handwritten function or unexpected graph nodes',current);
+                    validateScriptBody(raw.body);
+                    diagnostics.push({severity:'warning',code:'handwritten',message:'Handwritten AngelScript needs native compilation',graph:current,node:original.nodes[0].id});
+                    methods.push('    '+(original.kind==='event'?'void':original.returns)+' '+original.name+'('+raw.params.map(p=>p.type+' '+p.name).join(', ')+')','    {',raw.body,'    }');
+                    continue;
+                }
                 const g=expandMacros(doc,original);
                 current = g.name;
                 node = '';
@@ -863,11 +897,13 @@
                 // The concrete class owns the engine tick. Base latent state continues even when
                 // an event is overridden; Call Parent Update executes only the parent's graph.
                 if(!options.abstract) {
-                    const index = methods.indexOf('    void update(float bp_arg_dt)');
+                    const rawUpdate=doc.graphs.find(g=>g.name==='update')?.handwritten;
+                    const dtName=rawUpdate?rawUpdate.params[0].name:'bp_arg_dt';
+                    const index = methods.indexOf('    void update(float '+dtName+')');
                     if (index < 0)
                         methods.push('    void update(float bp_arg_dt)', '    {', '        '+tickName+'(bp_arg_dt);', ...(doc.parent && inheritedGraphs.some(g=>g.name==='update') ? ['        '+doc.parent.name+'::update(bp_arg_dt);'] : []), '    }');
                     else
-                        methods.splice(index + 2, 0, '        '+tickName+'(bp_arg_dt);');
+                        methods.splice(index + 2, 0, '        '+tickName+'('+dtName+');');
                 }
                 latentMethods.push('    '+(options.abstract?'protected':'private')+' void '+tickName+'(float dt)', '    {');
                 for (const t of timelines) latentMethods.push('        bool '+t+'_wasActive = '+t+'_active;');
@@ -900,7 +936,7 @@
             if(m){const [className,graph,node]=m[1].split('/'); map.push({line:i+1,className,graph,node});}
         }); return map;
     }
-    const exported = { hierarchyOrder, validateHierarchies, interfaceRegistry, validateMachine, validateTimeline, validateKeys, expandMacros, validateMacro, lineage, members, parentGraph, debugMap, traceCompile, compile, describe, palette, events, types, defaultValue, literal, ident, catalog };
+    const exported = { scriptTokens, validateScriptBody, scriptContract, checkScriptContract, hierarchyOrder, validateHierarchies, interfaceRegistry, validateMachine, validateTimeline, validateKeys, expandMacros, validateMacro, lineage, members, parentGraph, debugMap, traceCompile, compile, describe, palette, events, types, defaultValue, literal, ident, catalog };
     if (typeof module !== 'undefined')
         module.exports = exported;
     else

@@ -426,3 +426,20 @@ NX_TEST(blueprintDesignedSceneLoadsNativeObjects)
     NX_EXPECT(world.behaviourAt(crate, 0) != nullptr);
     NX_EXPECT(strcmp(r.save.get("bp_started", "missing"), "yes") == 0);
 }
+
+#include "blueprint_mixed_fixture.h"
+
+NX_TEST(blueprintMixedScriptsKeepOriginalBehaviour)
+{
+    for (const char* script : {blueprint_mixed::original, blueprint_mixed::converted})
+    {
+        Rig r;
+        NX_EXPECT(r.ok);
+        r.platform.files["showcase/main/screen.json"] = "{\"title\":\"Mixed script\"}";
+        r.platform.files["showcase/main/main.as"] = script;
+        if (!r.screens.init(r.services, "showcase", "main")) { NX_EXPECT(false); continue; }
+        r.step(3);
+        NX_EXPECT(!r.screens.failed());
+        NX_EXPECT(strcmp(r.save.get("mixed_result", "missing"), "yes") == 0);
+    }
+}

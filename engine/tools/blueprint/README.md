@@ -143,9 +143,9 @@ The Debug panel uses Nexgen's built-in script profiler. Install the normal expor
 
 Open **File → Import AngelScript**. Choose a UTF-8 `.as` file (up to 256 KiB), or paste a script, and choose **Review conversion**. Studio shows the generated script and graph/node counts. If the local debug bridge has a native validator, **Check with Nexgen** compiles both the original and converted scripts. Open the converted graph only when you are happy with the result. The original source is retained in the saved Blueprint and can be downloaded from the import window. Keep your original game files as well.
 
-This first importer supports one Screen or Behaviour class with scalar fields, normal event signatures, typed functions, simple assignments, scalar local variables in functions, arithmetic, comparisons, braced `if`/`else` blocks, returns and native calls with exact argument types. It uses the existing node catalogue and graph compiler. Names and source-line references are retained; the original text retains comments and formatting. A function call that has side effects is only supported as a standalone action. The importer refuses unsupported syntax, unknown or ambiguous calls, implicit type conversions, constructors, includes, extra classes, loops, reference parameters and other unsupported features. It does not guess at missing logic or drop unsupported functions. A rejected conversion leaves the open graph unchanged. It does not import a complete folder or assets, or execute user code.
+This first importer supports one Screen or Behaviour class with scalar fields, normal event signatures, typed functions, simple assignments, scalar local variables in functions, arithmetic, comparisons, braced `if`/`else` blocks, returns and native calls with exact argument types. It uses the existing node catalogue and graph compiler. Names and source-line references are retained; the original text retains comments and formatting. A function call that has side effects is only supported as a standalone action. In strict mode the importer refuses unsupported syntax, unknown or ambiguous calls, implicit type conversions, constructors, includes, extra classes, loops, reference parameters and other unsupported features. It does not guess at missing logic or drop unsupported functions. A rejected conversion leaves the open graph unchanged. It does not import a complete folder or assets, or execute user code.
 
-This is a reviewed conversion, not lossless round-trip editing or proof of equal gameplay. The regenerated script has a new layout and may differ in internal variables and debug information. Keep the original script and test the game before replacing it. Source-line references refer to the original import, not later graph edits. Full AngelScript parsing and mixed code/graph projects are not supported yet.
+This is a reviewed conversion, not lossless round-trip editing or proof of equal gameplay. The regenerated script has a new layout and may differ in internal variables and debug information. Keep the original script and test the game before replacing it. Source-line references refer to the original import, not later graph edits. Full AngelScript parsing and whole-project import are not supported yet. For mixed code and graphs, see below.
 
 ## Other tools
 
@@ -164,6 +164,12 @@ This is a reviewed conversion, not lossless round-trip editing or proof of equal
 | Debugger | Pausing at a node and inspecting values while the game runs |
 
 See [Advanced use](ADVANCED.md) for the detailed instructions and limits of these tools.
+
+## Mixed AngelScript and graphs
+
+In **File → Import AngelScript**, enable **Keep unsupported function bodies as AngelScript**. Studio attempts the supported graph conversion method by method. A method that cannot be translated keeps its original body and parameter names; it appears as Script in the graph list. Open it to read or edit the body, and call it from ordinary function nodes in other graphs. The original source is still available separately. The game uses ordinary AngelScript for both kinds of function.
+
+The import still requires one Screen or Behaviour class with supported scalar fields and supported method signatures. Includes, other classes, constructors, complex member declarations and unsupported signatures are not imported. Some errors in the complete converted graph still cause the entire import to be refused. Handwritten bodies are not interpreted by Studio; check the original and result with Nexgen before using them. Editing a body checks its boundaries and graph structure, not AngelScript semantics. Class names, member names and method signatures are protected because handwritten code may refer to them. Automatic scene and UI wiring leaves handwritten events alone; add those calls in code. Keep original files and assets; this is not yet a whole-project importer.
 
 ## Build and test
 
@@ -189,6 +195,7 @@ node test_scene_viewport.js
 node test_native_scene.js
 node test_node_library.js
 node test_script_import.js
+node test_mixed_script.js
 ```
 
 No npm packages are needed. To run the optional browser tests, install Python Playwright and Chromium, then run `python test_browser.py` and `python test_layout_browser.py` and `python test_workspace_browser.py` and `python test_polish_browser.py` and `python test_organise_browser.py` and `python test_game_tools_browser.py` and `python test_playtest_browser.py`, `python test_ui_design_browser.py` , `python test_shared_behaviours_browser.py` and `python test_shared_media_browser.py`, `python test_scene_viewport_browser.py` and `python test_native_scene_browser.py` and `python test_profile_browser.py`, `python test_node_library_browser.py` and `python test_graph_performance_browser.py` and `python test_command_bar_browser.py`. Set `CHROMIUM_PATH` if Chromium is installed outside Playwright's usual location. The recovery test uses real browser storage by default; `BLUEPRINT_MOCK_STORAGE=1` checks its UI with a simulated storage backend on restricted test hosts. Actual storage across a browser restart has not been verified on this branch.

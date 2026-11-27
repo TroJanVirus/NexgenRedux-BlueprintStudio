@@ -2,6 +2,7 @@
 (function(root){'use strict';
 const copy=x=>JSON.parse(JSON.stringify(x));
 function rename(B,original,kind,oldName,newName,graphName){
+ if(original.importedScript?.contract&&kind!=='local')throw Error('Imported names are protected while handwritten functions remain.');
  if(!B.ident(newName))throw Error('Use a valid name with letters, numbers or underscores.');
  const d=copy(original),g=d.graphs.find(g=>g.name===graphName);
  const list=kind==='variable'?d.variables:kind==='local'?g?.locals:d.graphs;

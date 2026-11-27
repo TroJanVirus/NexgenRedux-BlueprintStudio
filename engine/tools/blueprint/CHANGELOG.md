@@ -1,5 +1,9 @@
 # Changes
 
+## Mixed scripts and graphs
+
+- Optionally retain unsupported function bodies when importing a supported class. Call handwritten methods from graph nodes, edit their bodies, and keep the original source. Protect imported names and signatures while handwritten functions remain. Use Nexgen to check the resulting script.
+
 ## Import AngelScript
 
 - Review supported handwritten Screen and Behaviour scripts as editable graphs, keep the original source, and refuse unsupported syntax without changing the current graph. Optionally compile both scripts with Nexgen.

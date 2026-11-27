@@ -2,6 +2,7 @@
 (function(root){'use strict';
 const copy=x=>JSON.parse(JSON.stringify(x));
 function editSignature(B,original,name,rows,returns){
+ if(original.importedScript?.contract)throw Error('Imported signatures are protected while handwritten functions remain.');
  const d=copy(original),g=d.graphs.find(g=>g.name===name&&g.kind==='function');
  if(!g)throw Error('Choose a function.');
  if(B.parentGraph(d,g)||[...B.interfaceRegistry(d).values()].some(i=>i.methods.some(m=>m.name===name)))throw Error('Edit the parent or interface first.');

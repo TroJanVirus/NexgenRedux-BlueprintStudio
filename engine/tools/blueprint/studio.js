@@ -41,7 +41,7 @@ function renderSidebar() { const c = $('classInfo'); c.replaceChildren(); const 
     for (const [k, id] of [['event', 'events'], ['function', 'functions'], ['macro','macros']]) {
     $(id).replaceChildren();
     for (const g of doc.graphs.filter(g => g.kind === k))
-        $(id).append(item((k === 'event' ? '◆ ' : 'ƒ ') + g.name, () => selectGraph(g.name), B.parentGraph(doc,g)?'Override':null, g.name === graphId));
+        $(id).append(item((k === 'event' ? '◆ ' : 'ƒ ') + g.name, () => selectGraph(g.name), g.handwritten?'Script':B.parentGraph(doc,g)?'Override':null, g.name === graphId));
     if(doc.parent&&k!=='macro')for(const g of B.members(doc.parent,'graphs').filter(g=>g.kind===k&&!doc.graphs.some(x=>x.name===g.name))) $(id).append(item('↳ '+g.name,()=>{if(confirm('Override '+g.name+' in this child?')){remember();const next=freshGraph(g.kind,g.name,clone(g.params||[]),g.returns||'void');if(g.pure)next.pure=true; const entry=next.nodes[0], par={id:uid(),kind:'parentCall',x:300,y:60};next.nodes.push(par);if(!g.pure)next.links.push({from:{node:entry.id,pin:'then'},to:{node:par.id,pin:'in'}});const params=g.kind==='event'?B.events[doc.kind][g.name].map(([name,type])=>({name,type})):g.params;for(const p of params)next.links.push({from:{node:entry.id,pin:p.name},to:{node:par.id,pin:p.name}});if(g.kind==='function'&&g.returns!=='void'){const ret={id:uid(),kind:'return',x:560,y:60};next.nodes.push(ret);next.links.push({from:{node:g.pure?entry.id:par.id,pin:'then'},to:{node:ret.id,pin:'in'}},{from:{node:par.id,pin:'result'},to:{node:ret.id,pin:'value'}});}doc.graphs.push(next);selectGraph(g.name);}},'Override…'));
 } const v = $('variables'); v.replaceChildren(); for (const x of doc.variables) {
     const r = item(x.name, () => { selected = { variable: x.name }; renderDetails(); }, x.type);
@@ -70,7 +70,7 @@ function fillPalette(target, q, port, choose) { target.replaceChildren(); const 
 } if (!items.length)
     target.append(el('div', 'empty', 'No matching nodes')); return items.length; }
 function renderPalette() { $('nodeCount').textContent = fillPalette($('palette'), $('search').value, null, x => addNode(x.n)); }
-function addNode(n, pos = null, from = null) { remember(); const v = $('viewport').getBoundingClientRect(); const p = pos || worldPoint(v.left + v.width / 2 - 109 * view.z, v.top + v.height / 2 - 50 * view.z); if (!pos) {
+function addNode(n, pos = null, from = null) { if(graph()?.handwritten)return; remember(); const v = $('viewport').getBoundingClientRect(); const p = pos || worldPoint(v.left + v.width / 2 - 109 * view.z, v.top + v.height / 2 - 50 * view.z); if (!pos) {
     const overlaps = () => graph().nodes.some(n => p.x < (n.x || 0) + 238 && p.x + 238 > (n.x || 0) && p.y < (n.y || 0) + (document.getElementById('node-' + n.id)?.offsetHeight || 140) + 18 && p.y + 145 > (n.y || 0));
     let tries = 0;
     while (overlaps() && tries++ < 30) {
@@ -92,7 +92,7 @@ function addNode(n, pos = null, from = null) { remember(); const v = $('viewport
     if (r.right > v.right || r.bottom > v.bottom || r.left < v.left || r.top < v.top)
         fit();
 } }
-function showContext(x, y, port = null) { contextPos = worldPoint(x, y); filterPort = port; const c = $('context'), v = $('viewport').getBoundingClientRect(); c.hidden = false; c.style.left = Math.max(0, Math.min(x - v.left, v.width - 290)) + 'px'; c.style.top = Math.max(0, Math.min(y - v.top, v.height - 350)) + 'px'; const i = c.querySelector('input'); i.value = ''; renderContext(); i.focus(); }
+function showContext(x, y, port = null) { if(graph()?.handwritten)return; contextPos = worldPoint(x, y); filterPort = port; const c = $('context'), v = $('viewport').getBoundingClientRect(); c.hidden = false; c.style.left = Math.max(0, Math.min(x - v.left, v.width - 290)) + 'px'; c.style.top = Math.max(0, Math.min(y - v.top, v.height - 350)) + 'px'; const i = c.querySelector('input'); i.value = ''; renderContext(); i.focus(); }
 function renderContext() { const c = $('context'); fillPalette(c.querySelector('div'), c.querySelector('input').value, filterPort, x => addNode(x.n, contextPos, filterPort)); }
 function hideContext() { $('context').hidden = true; filterPort = null; }
 function worldPoint(x, y) { const r = $('viewport').getBoundingClientRect(); return { x: (x - r.left - view.x) / view.z, y: (y - r.top - view.y) / view.z }; }
@@ -206,6 +206,7 @@ function drawWires(pointer = null) {
 // Check the proposed connection before changing the graph or undo history.
 function connectionError(message) { $('status').textContent = message; return false; }
 function connect(a, b, record = true) {
+    if(graph()?.handwritten)return connectionError("This function uses handwritten AngelScript");
     if (a.dir === b.dir || a.type !== b.type || a.node === b.node)
         return connectionError('Incompatible pins');
     const from = a.dir === 'out' ? a : b, to = a.dir === 'in' ? a : b, g = graph();
@@ -317,7 +318,7 @@ function renderDetails() {
         }
         d.append(el('strong', '', v.name), el('p', '', v.type + ' · Instance variable'));
         field(d, 'Default value', v.type, v.default, x => { remember(); v.default = x; render(); });
-        action(d, 'Delete variable', () => { if (!confirm('Delete variable and its Get/Set nodes?'))
+        action(d, 'Delete variable', () => { if(doc.importedScript?.contract)return alert('Imported variables are protected while handwritten functions remain.'); if (!confirm('Delete variable and its Get/Set nodes?'))
             return; remember(); doc.variables = doc.variables.filter(x => x !== v); for (const g of doc.graphs) {
             const ids = new Set(g.nodes.filter(n => ['get', 'set'].includes(n.kind) && n.ref === v.name).map(n => n.id));
             g.nodes = g.nodes.filter(n => !ids.has(n.id));
@@ -481,7 +482,7 @@ $('addInterface').onclick=()=>modal('Create Blueprint interface',[{name:'name',l
 $('importInterface').onclick=()=>$('interfaceFile').click();
 $('interfaceFile').onchange=async()=>{const f=$('interfaceFile').files[0];$('interfaceFile').value='';if(!f)return;try{if(f.size>256*1024)throw Error('Interface file too large');const i=JSON.parse(await f.text());if(i.version!==1||i.kind!=='BlueprintInterface')throw Error('Not a Blueprint interface file');const previous=(doc.interfaces||[]).find(x=>x.name===i.name);if(previous){const canon=x=>JSON.stringify(x.methods.map(m=>({name:m.name,returns:m.returns,params:m.params.map(p=>({name:p.name,type:p.type}))})).sort((a,b)=>a.name.localeCompare(b.name)));if(canon(previous)!==canon(i))throw Error('Conflicting existing interface contract');}installInterface(i,!!previous?.implement);}catch(e){alert(e.message);}};
 $('examplesButton').onclick=()=>modal('Open example',[{name:'name',label:'Example graph',options:Object.keys(NexgenExamples)}],v=>{if(dirty&&!confirm('Replace unsaved graph?'))return;if(typeof projectBeforeDocumentChange==='function')projectBeforeDocumentChange();remember();doc=clone(NexgenExamples[v.name]);dirty=false;selectGraph(doc.graphs[0].name);compile();});
-$('settings').onclick = () => modal('Blueprint class', [{ name: 'name', label: 'Class name', value: doc.name }], v => { if (!B.ident(v.name) || doc.variables.some(x => x.name === v.name) || doc.graphs.some(x => x.name === v.name))
+$('settings').onclick = () => doc.importedScript?.contract?alert('The imported class name is protected while handwritten functions remain.'):modal('Blueprint class', [{ name: 'name', label: 'Class name', value: doc.name }], v => { if (!B.ident(v.name) || doc.variables.some(x => x.name === v.name) || doc.graphs.some(x => x.name === v.name))
     throw Error('Invalid class name'); remember(); doc.name = v.name; render(); });
 $('new').onclick = () => modal('Create blueprint', [{ name: 'name', label: 'Class name', value: 'MyBlueprint' }, { name: 'kind', label: 'Parent class', options: ['Screen', 'Behaviour'] }], v => { if (!B.ident(v.name))
     throw Error('Invalid class name'); if (dirty && !confirm('Discard unsaved changes?'))
@@ -493,14 +494,14 @@ function parseParams(value){const ps=value.trim()?value.split(',').map(p=>{const
 $('addMacro').onclick=()=>modal('Create reusable macro',[{name:'name',label:'Macro name',value:'MyMacro'},{name:'params',label:'Inputs (name:type, optional)',value:''},{name:'results',label:'Data outputs (single exit only)',value:''},{name:'exits',label:'Execution outputs (comma separated)',value:'then'}],v=>{validName(v.name);const params=parseParams(v.params),results=parseParams(v.results),exits=v.exits.split(',').map(x=>x.trim()).filter(Boolean);const g=freshGraph('macro',v.name,params);g.results=results;g.exits=exits;exits.forEach((ref,i)=>g.nodes.push({id:uid(),kind:'macroExit',ref,x:620,y:60+i*180}));B.validateMacro({...doc,graphs:[...doc.graphs,g]},g);remember();doc.graphs.push(g);selectGraph(g.name);});
 $('exportLibrary').onclick=()=>{const graphs=doc.graphs.filter(g=>g.kind==='macro');if(!graphs.length)return alert('No macros to export');download(doc.name+'.bplib.json',JSON.stringify({version:1,kind:'MacroLibrary',graphs},null,2),'application/json');};
 $('importLibrary').onclick=()=>$('libraryFile').click();$('libraryFile').onchange=async()=>{const f=$('libraryFile').files[0];$('libraryFile').value='';if(!f)return;try{if(f.size>2*1024*1024)throw Error('Library exceeds 2 MB');const lib=JSON.parse(await f.text());if(lib.version!==1||lib.kind!=='MacroLibrary'||!Array.isArray(lib.graphs)||lib.graphs.some(g=>g.kind!=='macro'))throw Error('Choose a macro library');const candidate=clone(doc);candidate.graphs.push(...lib.graphs);const r=B.compile(candidate);if(!r.ok)throw Error(r.diagnostics[0].message);remember();doc=candidate;render();}catch(e){alert(e.message);}};
-$('addLocal').onclick=()=>{const g=graph();if(g.kind!=='function')return;modal('Add local variable',[{name:'name',label:'Name',value:'temp'},{name:'type',label:'Type',options:B.types}],v=>{if(!B.ident(v.name)||(g.locals||[]).some(x=>x.name===v.name))throw Error('Invalid or duplicate local');remember();(g.locals??=[]).push({...v,default:B.defaultValue(v.type)});selected={local:v.name};render();});};
+$('addLocal').onclick=()=>{const g=graph();if(g.kind!=='function'||g.handwritten)return;modal('Add local variable',[{name:'name',label:'Name',value:'temp'},{name:'type',label:'Type',options:B.types}],v=>{if(!B.ident(v.name)||(g.locals||[]).some(x=>x.name===v.name))throw Error('Invalid or duplicate local');remember();(g.locals??=[]).push({...v,default:B.defaultValue(v.type)});selected={local:v.name};render();});};
 $('addDispatcher').onclick=()=>modal('Add event dispatcher',[{name:'name',label:'Dispatcher name',value:'OnChanged'},{name:'params',label:'Parameters (name:type, optional)',value:''}],v=>{validName(v.name);const params=parseParams(v.params);remember();(doc.dispatchers??=[]).push({name:v.name,params});selected={dispatcher:v.name};render();});
 $('addParent').onclick=()=>$('parentFile').click();
 $('parentFile').onchange=async()=>{const f=$('parentFile').files[0];$('parentFile').value='';if(!f)return;try{if(f.size>2*1024*1024)throw Error('File exceeds 2 MB');const p=JSON.parse(await f.text());if(p.kind!==doc.kind||!B.compile(p).ok)throw Error('Choose a valid parent of the same engine base');const test=clone(doc);test.parent=p;const r=B.compile(test);if(!r.ok)throw Error('Parent cannot be applied: '+r.diagnostics[0].message);remember();doc.parent=p;selected={parent:true};render();compile();}catch(e){alert(e.message);}};
 $('addFunction').onclick = () => modal('Add function / custom event', [{ name: 'name', label: 'Name', value: 'DoSomething' }, { name: 'returns', label: 'Return type (void for custom event)', options: ['void', ...B.types] }, { name: 'params', label: 'Parameters: name:type, name:type (optional)', value: '' }, {name:'purity',label:'Execution',options:['Impure','Pure (data only)']}], v => { validName(v.name); const params = v.params.trim() ? v.params.split(',').map(p => { const [name, type, ...rest] = p.split(':').map(x => x.trim()); if (rest.length || !B.ident(name) || !B.types.includes(type) || name === 'then' || name === 'in')
     throw Error('Use name:type for each parameter'); return { name, type }; }) : []; if (new Set(params.map(p => p.name)).size !== params.length)
     throw Error('Duplicate parameter'); if(v.purity==='Pure (data only)'&&v.returns==='void')throw Error('Pure functions must return a value');remember();const g=freshGraph('function',v.name,params,v.returns);if(v.purity==='Pure (data only)')g.pure=true;doc.graphs.push(g); selectGraph(v.name); });
-$('deleteGraph').onclick = () => { if (doc.graphs.length === 1)
+$('deleteGraph').onclick = () => { if(doc.importedScript?.contract)return alert('Imported functions are protected while handwritten functions remain.'); if (doc.graphs.length === 1)
     return alert('Keep at least one graph'); if (!confirm('Delete this graph and calls to it?'))
     return; remember(); doc.graphs = doc.graphs.filter(g => g.name !== graphId); for (const g of doc.graphs) {
     const ids = new Set(g.nodes.filter(n => ['call','macroCall'].includes(n.kind) && n.ref === graphId || ['bind','unbind'].includes(n.kind)&&n.handler===graphId).map(n => n.id));

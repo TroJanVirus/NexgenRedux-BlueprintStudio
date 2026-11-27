@@ -81,6 +81,7 @@ jobs:
           export NEXGEN_NATIVE_VALIDATE="$PWD/build/nx_blueprint_validate"
         fi
         node engine/tools/blueprint/test_script_import.js
+        node engine/tools/blueprint/test_mixed_script.js
 
     # With a real window and GPU driver, though a software one.
     - name: Draw every screen
