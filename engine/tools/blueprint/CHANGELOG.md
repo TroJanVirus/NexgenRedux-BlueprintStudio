@@ -1,5 +1,12 @@
 # Changes
 
+## Shared behaviours
+
+- Keep one Behaviour definition in the project and link it to several screens.
+- Edit a linked Behaviour once; all linked screens use the changes. Undo and redo keep the library and screen copies together.
+- Make a local copy when a screen needs different logic. Import and export library entries and see where they are used.
+- Warn about missing literal asset paths in screen and Behaviour graphs. Standalone graph exports keep their own copies.
+
 ## Game UI designer
 
 - Build menus and HUDs with Nexgen widgets. Edit layout, colours, named styles and widget states; preview 16:9 and 4:3.

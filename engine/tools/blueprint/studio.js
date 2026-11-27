@@ -10,15 +10,19 @@ function freshGraph(kind, name, params = [], returns = 'void') { return { kind, 
 function snapshot(extra = {}) { return JSON.stringify({ doc, graphId, ...extra }); }
 function remember(extra) { history.push(snapshot(extra)); if (history.length > 80)
     history.shift(); future = []; dirty = true; last = null; $('diagnostics').replaceChildren(el('div', 'empty', 'Graph changed — compile to refresh results.')); $('source').textContent = ''; updateStatus(); }
-function restore(s) { const a = JSON.parse(s); if(a.uiFiles)globalThis.NexgenUiHistory?.restore(a.uiFiles); doc = a.doc; graphId = a.graphId; selected = null; armed = null; last = null; dirty = true; render(); }
+function restore(s) { const a = JSON.parse(s); if(a.uiFiles)globalThis.NexgenUiHistory?.restore(a.uiFiles); if(a.sharedLibrary)globalThis.NexgenSharedHistory?.restore(a.sharedLibrary,a.doc); doc = globalThis.NexgenSharedHistory?.resolve(a.doc) || a.doc; graphId = a.graphId; selected = null; armed = null; last = null; dirty = true; render(); }
+function historyExtras(target) {
+    const record=JSON.parse(target), extra={};
+    if(record.uiFiles)extra.uiFiles=globalThis.NexgenUiHistory.capture(record.uiFiles.paths);
+    if(record.sharedLibrary)extra.sharedLibrary=globalThis.NexgenSharedHistory.capture();
+    return extra;
+}
 function undo() { if (history.length) {
-    const target=history.at(-1),files=JSON.parse(target).uiFiles;
-    future.push(snapshot(files?{uiFiles:globalThis.NexgenUiHistory.capture(files.paths)}:{}));
+    future.push(snapshot(historyExtras(history.at(-1))));
     restore(history.pop());
 } }
 function redo() { if (future.length) {
-    const target=future.at(-1),files=JSON.parse(target).uiFiles;
-    history.push(snapshot(files?{uiFiles:globalThis.NexgenUiHistory.capture(files.paths)}:{}));
+    history.push(snapshot(historyExtras(future.at(-1))));
     restore(future.pop());
 } }
 function updateStatus() { $('status').textContent = last ? (last.ok ? 'Compiled' : 'Compile failed') : (dirty ? 'Unsaved changes' : 'Ready'); $('undo').disabled = !history.length; $('redo').disabled = !future.length; }
@@ -240,7 +244,7 @@ function renderDetails() {
         d.append(el('strong', '', c.name), el('p', '', 'Reusable Behaviour asset. Search for Attach ' + c.name + ' in the node library. Its graph source is embedded in this screen Blueprint.'));
         action(d, 'Save component graph', () => download(c.name + '.bp.json', JSON.stringify(c, null, 2), 'application/json'));
         action(d, 'Remove component', () => { if (!confirm('Remove this component and its Attach nodes?'))
-            return; if((doc.hierarchies||[]).some(h=>h.entities.some(e=>e.behaviours.includes(c.name))))return alert('Remove this Behaviour from its entity hierarchies first.'); remember(); doc.components = doc.components.filter(x => x !== c); for (const g of doc.graphs) {
+            return; if((doc.hierarchies||[]).some(h=>h.entities.some(e=>e.behaviours.includes(c.name))))return alert('Remove this Behaviour from its entity hierarchies first.'); remember(); doc.components = doc.components.filter(x => x !== c); if(doc.sharedComponents){doc.sharedComponents=doc.sharedComponents.filter(name=>name!==c.name);if(!doc.sharedComponents.length)delete doc.sharedComponents;} for (const g of doc.graphs) {
             const ids = new Set(g.nodes.filter(n => n.kind === 'attach' && n.ref === c.name).map(n => n.id));
             g.nodes = g.nodes.filter(n => !ids.has(n.id));
             g.links = g.links.filter(l => !ids.has(l.from.node) && !ids.has(l.to.node));
@@ -454,6 +458,7 @@ $('componentFile').onchange = async () => { const f = $('componentFile').files[0
     if (c.kind !== 'Behaviour' || c.name === doc.name || !B.compile(c).ok)
         throw Error('Choose a valid, compiled Behaviour blueprint');
     const old = (doc.components || []).find(x => x.name === c.name);
+    if(doc.sharedComponents?.includes(c.name))throw Error('This behaviour is shared. Update it from the Shared behaviours library or unlink it first.');
     if (old && !confirm('Replace component ' + c.name + '?'))
         return;
     B.interfaceRegistry({...doc,components:[...(doc.components||[]).filter(x=>x.name!==c.name),c]});
@@ -479,7 +484,7 @@ $('file').onchange = async () => { const f = $('file').files[0]; $('file').value
         return;
     if(typeof projectBeforeDocumentChange==='function')projectBeforeDocumentChange();
     remember();
-    doc = next;
+    doc = globalThis.NexgenSharedBehaviours?.standalone(next) || next;
     dirty = false;
     selectGraph(doc.graphs[0].name);
     compile();

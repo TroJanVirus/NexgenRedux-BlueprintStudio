@@ -14,7 +14,17 @@ The editor runs in a desktop browser. The game runs in Nexgen as usual; it does 
 6. Click **Compile** to check your graph. Click an error to find the offending node.
 7. **Save graph** keeps the editable Blueprint. **Export .as** saves the script Nexgen runs.
 
-**Screen** blueprints control menus, levels and other screens. **Behaviour** blueprints contain reusable entity logic, such as movement, damage or pickups. Import a Behaviour into a Screen and use its Attach node to add it to an entity. Each entity has its own copy of the behaviour's variables. Imported components and parents are saved copies; reimport them to pick up edits.
+**Screen** blueprints control menus, levels and other screens. **Behaviour** blueprints contain reusable entity logic, such as movement, damage or pickups. Import a Behaviour into a Screen and use its Attach node to add it to an entity. Each entity has its own copy of the behaviour's variables. Imported components and parents are saved copies by default. Use Shared behaviours to keep one Behaviour definition for several screens.
+
+## Share behaviours between screens
+
+Open a Screen in a project and select one of its Behaviours. **Share in project** adds it to the project library. On another screen, open **Shared behaviours** and choose **Link to screen**. The normal Attach node is available on both screens; each entity still has its own variables and state.
+
+Double-click a linked Behaviour to edit it. Returning to the screen or saving updates all linked screens. Undo or redo the editing session from that screen to undo or redo the shared change. The library lists which screens use each definition. Choose **Make local copy** if a screen needs to keep a different version, or remove its component to stop using it. An unused library entry can be removed separately. Replacing an existing definition or a different local copy requires confirmation.
+
+The project file keeps the shared definition and its links. Screen copies are refreshed from the library when opened, checked or packaged. Individual graph exports contain independent copies so they work outside the project. Sharing changes the editor's source management, not how Nexgen runs scripts.
+
+**Check project** reports compile errors and warns about missing files in literal asset-loading calls. A shared Behaviour uses the current screen's asset folder; add the files it needs to each linked screen. Paths built from variables or other code and files referenced inside models or scene JSON are not checked by this warning. The warnings do not prevent packaging. Existing projects with local components continue to work.
 
 ## Keep graphs small
 
@@ -149,9 +159,10 @@ node test_organise.js
 node test_game_tools.js
 node test_playtest.js
 node test_ui_design.js
+node test_shared_behaviours.js
 ```
 
-No npm packages are needed. To run the optional browser tests, install Python Playwright and Chromium, then run `python test_browser.py` and `python test_layout_browser.py` and `python test_workspace_browser.py` and `python test_polish_browser.py` and `python test_organise_browser.py` and `python test_game_tools_browser.py` and `python test_playtest_browser.py`. Set `CHROMIUM_PATH` if Chromium is installed outside Playwright's usual location. The recovery test uses real browser storage by default; `BLUEPRINT_MOCK_STORAGE=1` checks its UI with a simulated storage backend on restricted test hosts. Actual storage across a browser restart has not been verified on this branch.
+No npm packages are needed. To run the optional browser tests, install Python Playwright and Chromium, then run `python test_browser.py` and `python test_layout_browser.py` and `python test_workspace_browser.py` and `python test_polish_browser.py` and `python test_organise_browser.py` and `python test_game_tools_browser.py` and `python test_playtest_browser.py`, `python test_ui_design_browser.py` and `python test_shared_behaviours_browser.py`. Set `CHROMIUM_PATH` if Chromium is installed outside Playwright's usual location. The recovery test uses real browser storage by default; `BLUEPRINT_MOCK_STORAGE=1` checks its UI with a simulated storage backend on restricted test hosts. Actual storage across a browser restart has not been verified on this branch.
 
 The 720 engine API definitions are based on Nexgen's script reference. The compiler checks data types and graph structure; the native engine compiler checks the resulting AngelScript. Neither check guarantees that all assets are present or that a game performs well on real hardware.
 
