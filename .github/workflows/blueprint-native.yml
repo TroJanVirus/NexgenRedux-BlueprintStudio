@@ -76,6 +76,17 @@ jobs:
         run: xvfb-run -a -s "-screen 0 1280x720x24 -noreset" build/showcase/nexgen --blueprint-studio --hidden --frames 120 --saves "$RUNNER_TEMP/bp-desktop-saves"
       - name: Exercise real X11 input, crash recovery, save, play, export and large graph
         run: xvfb-run -a -s "-screen 0 1280x720x24 -noreset" /usr/bin/python3 engine/tools/blueprint/test_native_desktop.py build/showcase/nexgen "$RUNNER_TEMP/bp-desktop-operational"
+      - name: Exercise compact 1080p actor class editor and resize
+        run: xvfb-run -a -s "-screen 0 1920x1080x24 -noreset" /usr/bin/python3 engine/tools/blueprint/test_compact_desktop.py build/showcase/nexgen "$RUNNER_TEMP/bp-compact-desktop"
+      - name: Retain compact editor screenshot evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: compact-desktop-evidence
+          path: |
+            ${{ runner.temp }}/bp-compact-desktop/*.png
+            ${{ runner.temp }}/bp-compact-desktop/*.log
+          if-no-files-found: ignore
       - name: Exercise editable 3D camera orbit and capture native frames
         if: ${{ !cancelled() }}
         run: xvfb-run -a -s "-screen 0 1280x720x24 -noreset" /usr/bin/python3 engine/tools/blueprint/test_camera_orbit_desktop.py build/showcase/nexgen "$RUNNER_TEMP/bp-camera-orbit"

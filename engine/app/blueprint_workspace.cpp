@@ -667,7 +667,9 @@ namespace nx
                 json=root.write(true);JsonTree tree;
                 if(tree.parse(json.data(),json.size()))m_actorPreviewRoot=space.makeActor(tree.root(),folder.c_str(),{0,0,0});
             }
-            m_placementOmitted=m_actorPreviewRoot?0u:1u;return;
+            m_placementOmitted=m_actorPreviewRoot?0u:1u;
+            if(m_actorPreviewRoot)NX_INFO("Blueprint Studio: Actor class preview ready: %s",previewId.c_str());
+            return;
         }
         for(const auto& marker:actorMarkers(m_document,owner))
         {
