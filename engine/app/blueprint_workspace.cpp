@@ -49,7 +49,8 @@ namespace nx
             if(node.kind.rfind("capture:",0)==0)return "Capture "+node.ref;
             if(node.kind.rfind("global:",0)==0)return (node.kind.rfind("global:get:",0)==0?"Get global ":"Set global ")+node.ref;
             if(node.kind.rfind("var:",0)==0)return (node.kind.rfind("var:get:",0)==0?"Get ":"Set ")+node.ref;
-            if(node.kind=="call:function")return "Call "+node.ref;
+            if(blueprintNamedCall(node.kind)||node.kind=="actor:is-class"||node.kind=="actor:cast-class")
+                if(const auto* spec=blueprintSpec(node.kind))return spec->title+": "+node.ref;
             if(node.kind=="attach:behaviour")return "Attach "+node.ref;
             if(node.kind=="attach:direct")return "Attach directly: "+node.ref;
             if(node.kind=="level:attach")return "Attach named: "+node.ref;
@@ -262,13 +263,17 @@ namespace nx
         };
         for(const auto* base:m_palette)
         {
-            if(base->id=="call:function")
+            if(blueprintNamedCall(base->id))
             {
                 for(const auto& fn:m_document.graphs)if(fn.kind=="function"&&m_document.function(graph.owner,fn.name)==&fn&&m_document.canCallFunction(m_graph,fn.name))
                 {
                     BlueprintNodeSpec resolved;
-                    if(m_document.nodeSpec(graph,{"",base->id,fn.name},resolved))consider(resolved,fn.name,std::string(fn.inlineMacro?"Macro ":"Call ")+fn.name);
+                    if(m_document.nodeSpec(graph,{"",base->id,fn.name},resolved))consider(resolved,fn.name,(fn.inlineMacro?"Macro":base->title)+" "+fn.name);
                 }
+            }
+            else if(base->id=="actor:is-class"||base->id=="actor:cast-class")
+            {
+                for(const auto& name:behaviours)if(m_document.canAttach(graph.owner,name))consider(*base,name,base->title+" "+name);
             }
             else if(base->id=="return:function"||base->id=="call:parent")
             {
@@ -2919,7 +2924,7 @@ namespace nx
             if(click&&m_selection<m_document.graphs[m_graph].nodes.size())
             {
                 const auto& n=m_document.graphs[m_graph].nodes[m_selection];
-                if(in(x,y,kRight+8,kTop+456,kWidth-8,kTop+486)&&(n.kind.rfind("literal:",0)==0||n.kind.rfind("var:",0)==0||n.kind.rfind("global:",0)==0||n.kind.rfind("capture:",0)==0||n.kind=="call:function"||n.kind=="attach:behaviour"||n.kind=="attach:direct"||n.kind=="level:attach"))
+                if(in(x,y,kRight+8,kTop+456,kWidth-8,kTop+486)&&(n.kind.rfind("literal:",0)==0||n.kind.rfind("var:",0)==0||n.kind.rfind("global:",0)==0||n.kind.rfind("capture:",0)==0||blueprintNamedCall(n.kind)||blueprintBehaviourReference(n.kind)))
                 {m_edit=n.ref;m_focus=n.kind.rfind("literal:",0)==0?2:3;input.setTyping(true);}
                 else if(in(x,y,kRight+8,kTop+520,kWidth-8,kTop+552)&&!inputDetails(m_selection).empty())
                 {m_inspectorFirst=0;m_focus=15;input.setTyping(false);m_status="Inspect all input values, including defaults and wires.";}
@@ -3286,7 +3291,7 @@ namespace nx
             const auto* spec=blueprintSpec(n.kind);
             c.clip(kRight+8,kTop+404,kWidth-kRight-16,44);
             c.paragraph(*m_font,spec?spec->title.c_str():n.kind.c_str(),kRight+12,kTop+408,244,text);c.noClip();
-            if(n.kind.rfind("literal:",0)==0||n.kind.rfind("var:",0)==0||n.kind.rfind("global:",0)==0||n.kind.rfind("capture:",0)==0||n.kind=="call:function"||n.kind=="attach:behaviour"||n.kind=="attach:direct"||n.kind=="level:attach")
+            if(n.kind.rfind("literal:",0)==0||n.kind.rfind("var:",0)==0||n.kind.rfind("global:",0)==0||n.kind.rfind("capture:",0)==0||blueprintNamedCall(n.kind)||blueprintBehaviourReference(n.kind))
             {
                 c.roundRect(kRight+8,kTop+456,kWidth-kRight-16,30,4,(m_focus==2||m_focus==3)?Color{0.24f,0.35f,0.48f,1}:Color{0.16f,0.21f,0.28f,1});
                 c.clip(kRight+12,kTop+456,kWidth-kRight-24,30);

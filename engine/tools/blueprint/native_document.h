@@ -26,6 +26,9 @@ namespace nx
     std::string blueprintArrayElement(const std::string& type);
     bool blueprintVariableType(const std::string& type);
     bool blueprintLosslessConversion(const std::string& from,const std::string& to);
+    bool blueprintNamedCall(const std::string& kind);
+    bool blueprintInvokesFunction(const std::string& kind);
+    bool blueprintBehaviourReference(const std::string& kind);
     // Managed authoring files are direct children of Redux's own folder.
     bool blueprintFileName(const std::string& file);
     bool blueprintManagedName(const std::string& name,std::string& file);

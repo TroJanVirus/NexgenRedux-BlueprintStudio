@@ -179,6 +179,16 @@ namespace nx
                     const auto phase="(("+turns+") == floor("+turns+") ? float(0) : ("+turns+") * float(6.283185307179586))";
                     result="(("+center+") + Vec3(sin("+phase+") * ("+radius+"), "+height+", cos("+phase+") * ("+radius+")))";return true;
                 }
+                if(n.kind=="actor:is-class"&&pin=="result")
+                {
+                    std::string actor;if(!value(node,"actor",actor,depth))return false;
+                    result="bp_is_class_"+n.ref+"("+actor+")";return true;
+                }
+                if(n.kind=="actor:cast-class"&&pin=="result")
+                {
+                    if(!available[node])return fail(node,"Cast result is only available in the success branch or after the cast.");
+                    result="bp_value_"+std::to_string(node);return true;
+                }
                 if((n.kind=="spawn:box"||n.kind=="spawn:plane"||n.kind=="actor:spawn-asset")&&pin=="result")
                 {
                     if(!available[node])return fail(node,"Spawn result used before execution or outside its branch.");
@@ -475,7 +485,26 @@ namespace nx
                     source+=pad+"if (bp_value_"+suffix+") bp_attach_"+suffix+".add(BP_Behaviour_"+n.ref+"());\n";
                     available[to]=true;mark(start,to);return flow(to,"then",indent,depth+1);
                 }
-                if(n.kind=="call:function"||n.kind=="call:parent")
+                if(n.kind=="actor:cast-class")
+                {
+                    std::string actor;if(!value(to,"actor",actor,0))return false;
+                    const auto v="bp_value_"+std::to_string(to);
+                    source+=pad+"Entity@ "+v+" = "+actor+";\n";
+                    source+=pad+"if (bp_is_class_"+n.ref+"("+v+"))\n"+pad+"{\n";mark(start,to);
+                    const auto outer=available;available[to]=true;
+                    if(!flow(to,"success",indent+1,depth+1))return false;
+                    available=outer;source+=pad+"}\n"+pad+"else\n"+pad+"{\n"+pad+"    @"+v+" = null;\n";
+                    if(!flow(to,"failure",indent+1,depth+1))return false;
+                    available=outer;available[to]=true;source+=pad+"}\n";
+                    return flow(to,"then",indent,depth+1);
+                }
+                if(n.kind=="dispatch:bind"||n.kind=="dispatch:unbind")
+                {
+                    if(graph.inlineMacro)return fail(to,"Dispatcher binding requires a callable graph.");
+                    source+=pad+"bp_bound_"+n.ref+(n.kind=="dispatch:bind"?" = true;\n":" = false;\n");
+                    mark(start,to);return flow(to,"then",indent,depth+1);
+                }
+                if(blueprintInvokesFunction(n.kind)||n.kind=="call:parent")
                 {
                     const auto* target=n.kind=="call:parent"?document.function(document.parentBehaviour(graph.owner),graph.name):document.function(graph.owner,n.ref);
                     if(!target)return fail(to,"Missing function.");
@@ -510,7 +539,12 @@ namespace nx
                         args+=v;
                     }
                     const auto call=(n.kind=="call:parent"?"BP_Behaviour_"+target->owner.substr(10)+"::":"")+"bp_fn_"+target->name+"("+args+")";
-                    if(target->returnType=="void")source+=pad+call+";\n";
+                    if(n.kind=="dispatch:broadcast")
+                    {
+                        if(graph.inlineMacro)return fail(to,"Dispatcher broadcast requires a callable graph.");
+                        source+=pad+"if (bp_bound_"+n.ref+") "+call+";\n";
+                    }
+                    else if(target->returnType=="void")source+=pad+call+";\n";
                     else
                     {
                         source+=pad+target->returnType+" bp_value_"+std::to_string(to)+" = "+call+";\n";available[to]=true;
@@ -708,7 +742,7 @@ namespace nx
                     error=graph.name+": Level callbacks cannot load, clear or update the level recursively. Set a variable and handle it after Update native level.";
                     return false;
                 }
-                if(node.kind=="call:function")
+                if(blueprintInvokesFunction(node.kind))
                     for(size_t j=0;j<document.graphs.size();++j)
                         if(document.graphs[j].owner==owner&&document.graphs[j].kind=="function"&&document.graphs[j].name==node.ref)work.push_back(j);
             }
@@ -733,7 +767,7 @@ namespace nx
                         error=graph.name+": Agent callbacks cannot change Level visibility during Crowd.update. Request it after Update native level.";
                         return false;
                     }
-                    if(node.kind=="call:function")
+                    if(blueprintInvokesFunction(node.kind))
                         for(size_t j=0;j<document.graphs.size();++j)
                             if(document.graphs[j].owner==owner&&document.graphs[j].kind=="function"&&document.graphs[j].name==node.ref)work.push_back(j);
                 }
@@ -768,6 +802,12 @@ namespace nx
         const auto parent=document.parentBehaviour(classOwner);
         result+=behaviour?"class BP_Behaviour_"+classOwner.substr(10)+" : "+(parent.empty()?"Behaviour":"BP_Behaviour_"+parent.substr(10))+"\n{\n":"class BP_NativeScreen : Screen\n{\n";
         if(!behaviour&&usesLevel)result+="    Level bp_level;\n";
+        // Each callable void graph can be used as an instance-local named signal.
+        // Fields live on the declaring class, so inherited handlers share the binding.
+        for(const auto& g:document.graphs)
+            if(g.owner==classOwner&&g.kind=="function"&&g.returnType=="void"&&!g.inlineMacro&&
+                !document.function(parent,g.name))
+                result+="    bool bp_bound_"+g.name+" = false;\n";
         if(!document.variables(vars,error,classOwner))return false;
         std::vector<BlueprintPin> inherited;
         if(!parent.empty()&&!document.variables(inherited,error,parent))return false;
@@ -918,6 +958,12 @@ namespace nx
             }
         }
         result+="}\n";
+        }
+        for(const auto& className:classes)if(className!=owner)
+        {
+            const auto type=className.substr(10);
+            result+="bool bp_is_class_"+type+"(Entity@ actor)\n{\n";
+            result+="    return Space::validEntity(actor) && cast<BP_Behaviour_"+type+">(actor.behaviour) !is null;\n}\n";
         }
         if(map)
         {

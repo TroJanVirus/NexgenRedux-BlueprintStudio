@@ -2793,3 +2793,35 @@ NX_TEST(nativeDeferredActorInheritanceAndCallableEvents)
     r.step(15);NX_EXPECT(!r.screens.failed());
     NX_EXPECT(strcmp(r.save.get("parent_delayed","missing"),"yes")==0&&strcmp(r.save.get("child_delayed","missing"),"yes")==0);
 }
+
+NX_TEST(nativeDispatcherBindingAndActorCastExecution)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    BlueprintDocument doc;doc.create();std::string id,error,source;
+    bool ok=doc.addFunction("OnScore",error)&&doc.createVisualAsset("actor",id,error)&&
+        doc.addBehaviour("Target",error)&&doc.setVisualActorProperty(id,0,"behaviour","Target",error)&&
+        doc.placeVisualActor("Screen",id,"0,0,0",error);
+    const auto* fn=doc.function("Screen","OnScore");if(!ok||!fn){NX_EXPECT(false);return;}
+    const auto g=static_cast<size_t>(fn-doc.graphs.data());
+    ok=doc.editFunctionSignature(g,"void(amount:string)",error)&&
+        doc.addNode(g,"api:Save:Save::set:string,string",0,0,error)&&doc.connect(g,0,"then",1,"in",error)&&
+        doc.connect(g,0,"arg_amount",1,"value",error)&&doc.setInputValue(g,1,"key","dispatcher",error);
+    auto add=[&](const char* kind,const char* ref=""){const auto n=doc.graphs[0].nodes.size();ok=ok&&doc.addNode(0,kind,0,0,error,ref);return n;};
+    auto wire=[&](size_t from,const char* output,size_t to,const char* input){ok=ok&&doc.connect(0,from,output,to,input,error);};
+    auto input=[&](size_t n,const char* pin,const char* value){ok=ok&&doc.setInputValue(0,n,pin,value,error);};
+    const auto event=add("call:event","OnScore");wire(1,"then",event,"in");input(event,"arg_amount","direct");
+    const auto bind=add("dispatch:bind","OnScore");wire(event,"then",bind,"in");
+    const auto send=add("dispatch:broadcast","OnScore");wire(bind,"then",send,"in");input(send,"arg_amount","bound");
+    const auto unbind=add("dispatch:unbind","OnScore");wire(send,"then",unbind,"in");
+    const auto ignored=add("dispatch:broadcast","OnScore");wire(unbind,"then",ignored,"in");input(ignored,"arg_amount","incorrect");
+    const auto cast=add("actor:cast-class","Target");wire(ignored,"then",cast,"in");wire(1,"result",cast,"actor");
+    const auto save=add("api:Save:Save::set:string,string");wire(cast,"success",save,"in");input(save,"key","cast");input(save,"value","yes");
+    const auto missing=add("null:entity"),bad=add("actor:cast-class","Target");wire(cast,"then",bad,"in");wire(missing,"value",bad,"actor");
+    const auto fail=add("api:Save:Save::set:string,string");wire(bad,"failure",fail,"in");input(fail,"key","null_cast");input(fail,"value","yes");
+    if(!ok||!compileBlueprint(doc,source,error)){NX_ERROR("Native dispatch and cast: %s",error.c_str());NX_EXPECT(false);return;}
+    r.platform.files["project/main/screen.json"]="{\"title\":\"Dispatch and cast\"}";r.platform.files["project/main/main.as"]=source;
+    if(!r.screens.init(r.services,"project","main")){NX_EXPECT(false);return;}
+    r.step(3);NX_EXPECT(!r.screens.failed());
+    NX_EXPECT(strcmp(r.save.get("dispatcher","missing"),"bound")==0);
+    NX_EXPECT(strcmp(r.save.get("cast","missing"),"yes")==0&&strcmp(r.save.get("null_cast","missing"),"yes")==0);
+}

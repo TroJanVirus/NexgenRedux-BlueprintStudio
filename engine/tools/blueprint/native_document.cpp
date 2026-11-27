@@ -115,6 +115,12 @@ namespace nx
             {"flow:controlled-gate","Gate (Open / Close / Toggle)","Flow","in:exec|open:exec|close:exec|toggle:exec","body:exec"},
             {"flow:switch-int","Switch on int (4 cases)","Flow","in:exec|value:int|case0:int|case1:int|case2:int|case3:int","first:exec|second:exec|third:exec|fourth:exec|default:exec|then:exec","","","","","void","","","case0:0|case1:1|case2:2|case3:3"},
             {"call:function","Call function","Functions","in:exec","then:exec"},
+            {"call:event","Call custom event","Events","in:exec","then:exec"},
+            {"dispatch:bind","Bind event dispatcher","Events / Dispatchers","in:exec","then:exec"},
+            {"dispatch:unbind","Unbind event dispatcher","Events / Dispatchers","in:exec","then:exec"},
+            {"dispatch:broadcast","Broadcast event dispatcher","Events / Dispatchers","in:exec","then:exec"},
+            {"actor:is-class","Is actor class","Space / Blueprint Classes","actor:Entity@","result:bool","","","","pure","bool"},
+            {"actor:cast-class","Cast actor to class","Space / Blueprint Classes","in:exec|actor:Entity@","success:exec|failure:exec|then:exec|result:Entity@"},
             {"call:parent","Call parent function","Functions","in:exec","then:exec"},
             {"return:function","Return","Functions","in:exec",""},
             {"repeat","Repeat (bounded)","Flow","in:exec|count:int","body:exec|then:exec|index:int"},
@@ -288,6 +294,12 @@ namespace nx
     bool blueprintVariableType(const std::string& type){return blueprintLiteralType(type)||!blueprintArrayElement(type).empty()||type=="Playlist@"||type=="WebSocket@"||type=="Widget@";}
     bool blueprintLosslessConversion(const std::string& from,const std::string& to)
     {return arrayBorrow(from,to)||(to=="double"&&(from=="int"||from=="uint"||from=="float"));}
+    bool blueprintInvokesFunction(const std::string& kind)
+    {return kind=="call:function"||kind=="call:event"||kind=="dispatch:broadcast";}
+    bool blueprintNamedCall(const std::string& kind)
+    {return blueprintInvokesFunction(kind)||kind=="dispatch:bind"||kind=="dispatch:unbind";}
+    bool blueprintBehaviourReference(const std::string& kind)
+    {return kind=="attach:behaviour"||kind=="attach:direct"||kind=="level:attach"||kind=="actor:is-class"||kind=="actor:cast-class";}
     bool blueprintFileName(const std::string& file)
     {
         return file.size()>8&&file.size()<=240&&file.ends_with(".bp.json")&&file!="blueprint-recovery.bp.json"&&
@@ -1350,7 +1362,7 @@ namespace nx
                 if(state[index]==1){error="Recursive inherited function dispatch in "+owner+"/"+g->name;return false;}
                 if(state[index]==2)return true;
                 state[index]=1;
-                for(const auto& node:g->nodes)if(node.kind=="call:function"||node.kind=="call:parent")
+                for(const auto& node:g->nodes)if(blueprintInvokesFunction(node.kind)||node.kind=="call:parent")
                 {
                     const auto* target=node.kind=="call:parent"?function(parentBehaviour(g->owner),g->name):function(owner,node.ref);
                     if(!target){error="Missing inherited function in "+g->name;return false;}
@@ -1369,7 +1381,7 @@ namespace nx
                 for(const auto& node:g->nodes)
                 {
                     if(node.kind=="actor:spawn-asset"||node.kind=="time:delay"||node.kind=="time:retrigger-delay"||node.kind=="time:timer"){error="Construction graphs cannot spawn linked actors or schedule deferred work; use Start instead.";return false;}
-                    if(node.kind=="call:function"&&!self(self,function(owner,node.ref)))return false;
+                    if(blueprintInvokesFunction(node.kind)&&!self(self,function(owner,node.ref)))return false;
                     if(node.kind=="call:parent"&&!self(self,function(parentBehaviour(g->owner),g->name)))return false;
                 }
                 return true;
@@ -2052,7 +2064,7 @@ namespace nx
                 if(!validText(n["id"])||!blueprintSpec(kind)||!context(g.name,kind,g.owner)||!n["x"].isNumber()||!n["y"].isNumber()||
                     !coordinate(x)||!coordinate(y)||!ids.emplace(n["id"].text(),g.nodes.size()).second||
                     (kind.rfind("literal:",0)==0&&(!n["value"].isString()||!literal(kind,ref)))||
-                    ((variableKind(kind)||globalKind(kind)||kind.rfind("capture:",0)==0||kind=="call:function"||(kind=="attach:behaviour"||kind=="attach:direct"||kind=="level:attach"))&&(!n["value"].isString()||!identifier(ref))))
+                    ((variableKind(kind)||globalKind(kind)||kind.rfind("capture:",0)==0||blueprintNamedCall(kind)||blueprintBehaviourReference(kind))&&(!n["value"].isString()||!identifier(ref))))
                 {error="Invalid node in "+g.name;return false;}
                 if(g.inlineMacro&&kind=="return:function"){error="Inline macros cannot return from the caller.";return false;}
                 if(kind=="entry")++entries;
@@ -2160,7 +2172,7 @@ namespace nx
                 {
                     bool needsScope=false;
                     for(const auto& method:candidate.graphs)if(method.owner==g.owner)for(const auto& n:method.nodes)
-                        if(globalKind(n.kind)||((n.kind=="attach:behaviour"||n.kind=="attach:direct"||n.kind=="level:attach")&&!candidate.moduleForOwner("behaviour:"+n.ref).empty()))needsScope=true;
+                        if(globalKind(n.kind)||(blueprintBehaviourReference(n.kind)&&!candidate.moduleForOwner("behaviour:"+n.ref).empty()))needsScope=true;
                     if(needsScope){g.moduleOwner=screens.front();changed=true;}
                 }
             }
@@ -2172,7 +2184,7 @@ namespace nx
             const auto& globals=candidate.moduleGlobals(g.owner);
             for(const auto& n:g.nodes)
             {
-                if((n.kind=="attach:behaviour"||n.kind=="attach:direct"||n.kind=="level:attach")&&!candidate.canAttach(g.owner,n.ref))
+                if(blueprintBehaviourReference(n.kind)&&!candidate.canAttach(g.owner,n.ref))
                 {error="Missing or out-of-scope Behaviour: "+n.ref;return false;}
                 if(globalKind(n.kind)&&std::none_of(globals.begin(),globals.end(),[&](const Field& f){return f.name==n.ref&&f.type==n.kind.substr(11);}))
                 {error="Unknown or incompatible module variable: "+n.ref;return false;}
@@ -2252,7 +2264,7 @@ namespace nx
             for(const auto& n:g.nodes)
             {
                 auto* j=ns->add();if(!j||!text(*j,"id",n.id)||!text(*j,"kind",n.kind)||!number(*j,"x",n.x)||!number(*j,"y",n.y))return fail();
-                if((n.kind.rfind("literal:",0)==0||variableKind(n.kind)||globalKind(n.kind)||n.kind.rfind("capture:",0)==0||n.kind=="call:function"||(n.kind=="attach:behaviour"||n.kind=="attach:direct"||n.kind=="level:attach"))&&!text(*j,"value",n.ref))return fail();
+                if((n.kind.rfind("literal:",0)==0||variableKind(n.kind)||globalKind(n.kind)||n.kind.rfind("capture:",0)==0||blueprintNamedCall(n.kind)||blueprintBehaviourReference(n.kind))&&!text(*j,"value",n.ref))return fail();
                 if(n.watch){auto* watch=j->put("watch");if(!watch)return fail();watch->setFlag(true);}
                 if(!n.values.empty())
                 {
@@ -2418,18 +2430,19 @@ namespace nx
             if(!variables(vars,error,g.owner))return false;
             for(unsigned i=1;std::any_of(vars.begin(),vars.end(),[&](const BlueprintPin& p){return p.name==value&&p.type!=type;});++i)value="variable_"+std::to_string(i);
         }
-        if((kind=="attach:behaviour"||kind=="attach:direct"||kind=="level:attach"))
+        if(blueprintBehaviourReference(kind))
         {
-            const auto names=behaviours();const auto found=std::find_if(names.begin(),names.end(),[&](const std::string& n){return canAttach(g.owner,n);});
+            const auto names=behaviours();const auto found=std::find_if(names.begin(),names.end(),[&](const std::string& n){return canAttach(g.owner,n)&&(functionTarget.empty()||functionTarget==n);});
             if(found==names.end()){error="No Behaviour available in this module.";return false;}value=*found;
         }
-        if(kind=="call:function")
+        if(blueprintNamedCall(kind))
         {
             // Choose the first valid target, not merely the first function in the list.
             bool valid=false;
             for(const auto& fn:graphs)
             {
-                if(fn.kind!="function"||function(g.owner,fn.name)!=&fn||fn.name==g.name||(!functionTarget.empty()&&fn.name!=functionTarget))continue;
+                if(fn.kind!="function"||function(g.owner,fn.name)!=&fn||fn.name==g.name||(!functionTarget.empty()&&fn.name!=functionTarget)||
+                    (kind!="call:function"&&(fn.inlineMacro||fn.returnType!="void")))continue;
                 value=fn.name;g.nodes.push_back({id,kind,value,x,y});
                 valid=functions(error);g.nodes.pop_back();if(valid)break;
             }
@@ -2452,7 +2465,7 @@ namespace nx
             if(g==&caller||(caller.kind=="function"&&g->name==caller.name))return false;
             if(std::find(seen.begin(),seen.end(),g)!=seen.end())continue;
             seen.push_back(g);
-            for(const auto& n:g->nodes)if(n.kind=="call:function")
+            for(const auto& n:g->nodes)if(blueprintInvokesFunction(n.kind))
             {const auto* child=function(caller.owner,n.ref);if(child)work.push_back(child);}
         }
         return true;
@@ -2483,7 +2496,7 @@ namespace nx
             if(!staged.addVariableNode(graph,reference,globalKind(kind),kind.find(":set:")!=std::string::npos,x,y,error))return false;
             if(staged.graphs[graph].nodes.back().kind!=kind){error="Variable type changed.";return false;}
         }
-        else if(!staged.addNode(graph,kind,x,y,error,kind=="call:function"?reference:""))return false;
+        else if(!staged.addNode(graph,kind,x,y,error,(blueprintNamedCall(kind)||blueprintBehaviourReference(kind))?reference:""))return false;
         const auto added=staged.graphs[graph].nodes.size()-1;
         if(existing!=static_cast<size_t>(-1))
         {
@@ -2754,7 +2767,7 @@ namespace nx
     bool BlueprintDocument::setReference(size_t graph,size_t node,const std::string& value,std::string& error)
     {
         if(graph>=graphs.size()||node>=graphs[graph].nodes.size()||
-            (!variableKind(graphs[graph].nodes[node].kind)&&!globalKind(graphs[graph].nodes[node].kind)&&graphs[graph].nodes[node].kind.rfind("capture:",0)!=0&&graphs[graph].nodes[node].kind!="call:function"&&graphs[graph].nodes[node].kind!="attach:behaviour"&&graphs[graph].nodes[node].kind!="attach:direct"&&graphs[graph].nodes[node].kind!="level:attach")||!identifier(value))
+            (!variableKind(graphs[graph].nodes[node].kind)&&!globalKind(graphs[graph].nodes[node].kind)&&graphs[graph].nodes[node].kind.rfind("capture:",0)!=0&&!blueprintNamedCall(graphs[graph].nodes[node].kind)&&!blueprintBehaviourReference(graphs[graph].nodes[node].kind))||!identifier(value))
         {error="Use a variable name containing letters, digits and underscores.";return false;}
         auto& n=graphs[graph].nodes[node];
         if(n.ref==value){error.clear();return true;}
@@ -2766,12 +2779,12 @@ namespace nx
             record(graph);n.ref=value;error.clear();return true;
         }
         if(n.kind.rfind("capture:",0)==0){record(graph);n.ref=value;error.clear();return true;}
-        if((n.kind=="attach:behaviour"||n.kind=="attach:direct"||n.kind=="level:attach"))
+        if(blueprintBehaviourReference(n.kind))
         {
             if(!canAttach(graphs[graph].owner,value)){error="Unknown or out-of-scope Behaviour "+value;return false;}
             record(graph);n.ref=value;error.clear();return true;
         }
-        if(n.kind=="call:function")
+        if(blueprintNamedCall(n.kind))
         {
             const std::string previous=n.ref;n.ref=value;
             std::string checked;
@@ -2791,7 +2804,7 @@ namespace nx
         std::vector<std::vector<size_t>> calls(graphs.size());
         for(size_t i=0;i<graphs.size();++i)for(const auto& node:graphs[i].nodes)
         {
-            if(node.kind!="call:function"&&node.kind!="call:parent")continue;
+            if(!blueprintInvokesFunction(node.kind)&&node.kind!="call:parent")continue;
             const auto* target=node.kind=="call:parent"?function(parentBehaviour(graphs[i].owner),graphs[i].name):function(graphs[i].owner,node.ref);
             if(!target){error="Missing function: "+node.ref;return false;}
             calls[i].push_back(static_cast<size_t>(target-graphs.data()));
@@ -2844,12 +2857,14 @@ namespace nx
             if(graph.kind!="function"||graph.inlineMacro)return false;
             if(graph.returnType!="void")spec.inputs.push_back({"value",graph.returnType});
         }
-        if(node.kind=="call:function"||node.kind=="call:parent")
+        if(blueprintNamedCall(node.kind)||node.kind=="call:parent")
         {
             if(node.kind=="call:parent"&&graph.kind!="function")return false;
             const auto* target=node.kind=="call:parent"?function(parentBehaviour(graph.owner),graph.name):function(graph.owner,node.ref);
             if(!target||(node.kind=="call:parent"&&target->inlineMacro))return false;
-            for(const auto& p:target->parameters)spec.inputs.push_back({"arg_"+p.name,p.type});
+            if(node.kind!="call:function"&&node.kind!="call:parent"&&(target->inlineMacro||target->returnType!="void"))return false;
+            if(node.kind!="dispatch:bind"&&node.kind!="dispatch:unbind")
+                for(const auto& p:target->parameters)spec.inputs.push_back({"arg_"+p.name,p.type});
             if(target->inlineMacro)spec.title="Macro "+target->name;
             spec.result=target->returnType;
             if(spec.result!="void")spec.outputs.push_back({"result",spec.result});
@@ -2946,13 +2961,13 @@ namespace nx
         for(const auto& g:graphs)
         {
             bool derived=false;for(auto at=parentBehaviour(g.owner);!at.empty();at=parentBehaviour(at))if(at==owner){derived=true;break;}
-            if(derived&&((g.kind=="function"&&g.name==old)||std::any_of(g.nodes.begin(),g.nodes.end(),[&](const Node& node){return node.kind=="call:function"&&node.ref==old;})))
+            if(derived&&((g.kind=="function"&&g.name==old)||std::any_of(g.nodes.begin(),g.nodes.end(),[&](const Node& node){return blueprintNamedCall(node.kind)&&node.ref==old;})))
             {error="Remove derived function references and overrides before renaming.";return false;}
         }
         if(std::any_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==owner&&g.name==functionName;}))
         {error="A graph already uses that name.";return false;}
         recordGraphList();graphs[graph].name=functionName;
-        for(auto& g:graphs)if(g.owner==owner)for(auto& n:g.nodes)if(n.kind=="call:function"&&n.ref==old)n.ref=functionName;
+        for(auto& g:graphs)if(g.owner==owner)for(auto& n:g.nodes)if(blueprintNamedCall(n.kind)&&n.ref==old)n.ref=functionName;
         error.clear();return true;
     }
     bool BlueprintDocument::duplicateFunction(size_t graph,const std::string& functionName,std::string& error)
@@ -3108,7 +3123,7 @@ namespace nx
             {
                 if(g.kind=="function"&&g.name==removed.name&&function(parentBehaviour(g.owner),g.name)==&removed)
                 {error="Remove inherited overrides before deleting the base function.";return false;}
-                for(const auto& n:g.nodes)if(n.kind=="call:function"&&function(g.owner,n.ref)==&removed)
+                for(const auto& n:g.nodes)if(blueprintNamedCall(n.kind)&&function(g.owner,n.ref)==&removed)
                 {error="Remove calls to this function before deleting it.";return false;}
             }
         }
@@ -3155,7 +3170,7 @@ namespace nx
         if(std::none_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==owner;}))
         {error="Unknown behaviour.";return false;}
         for(const auto& g:graphs)for(const auto& n:g.nodes)
-            if((n.kind=="attach:behaviour"||n.kind=="attach:direct"||n.kind=="level:attach")&&n.ref==behaviourName){error="Remove attachment nodes referencing "+behaviourName+" first.";return false;}
+            if(blueprintBehaviourReference(n.kind)&&n.ref==behaviourName){error="Remove attachment nodes referencing "+behaviourName+" first.";return false;}
         for(const auto& asset:m_visualAssets)if(asset.kind=="actor")
         {
             JsonTree tree;std::string resolved,why;

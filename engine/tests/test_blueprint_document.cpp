@@ -9,7 +9,7 @@
 using namespace nx;
 NX_TEST(nativeCatalogueContainsReferenceAPI)
 {
-    NX_EXPECT(blueprintCatalogue().size()==1197);
+    NX_EXPECT(blueprintCatalogue().size()==1203);
     const auto* save=blueprintSpec("api:Save:Save::set:string,string");
     NX_EXPECT(save&&save->inputs.size()==3&&save->outputs.size()==1);
     if(save&&save->inputs.size()==3)NX_EXPECT(save->inputs[0].type=="exec"&&save->inputs[2].type=="string");
@@ -1769,4 +1769,24 @@ NX_TEST(nativeDeferredFunctionsRejectOriginalArguments)
     NX_EXPECT(doc.addNode(g,"api:Save:Save::set:string,string",0,0,error)&&doc.connect(g,1,"completed",2,"in",error));
     NX_EXPECT(doc.setInputValue(g,2,"key","later",error)&&doc.connect(g,0,"arg_message",2,"value",error));
     NX_EXPECT(!compileBlueprint(doc,source,error)&&error.find("original function parameters")!=std::string::npos);
+}
+
+NX_TEST(nativeCustomEventDispatcherPinsAndClassCastRoundTrip)
+{
+    BlueprintDocument doc;doc.create();std::string error,bytes,source;
+    NX_EXPECT(doc.addFunction("OnScore",error)&&doc.addBehaviour("Target",error));
+    const auto* fn=doc.function("Screen","OnScore");if(!fn){NX_EXPECT(false);return;}
+    const auto g=static_cast<size_t>(fn-doc.graphs.data());
+    NX_EXPECT(doc.editFunctionSignature(g,"void(amount:int)",error));
+    NX_EXPECT(doc.addNode(0,"dispatch:bind",0,0,error,"OnScore")&&doc.connect(0,0,"then",1,"in",error));
+    NX_EXPECT(doc.addNode(0,"dispatch:broadcast",0,0,error,"OnScore")&&doc.connect(0,1,"then",2,"in",error));
+    NX_EXPECT(doc.setInputValue(0,2,"arg_amount","3",error));
+    NX_EXPECT(doc.addNode(0,"dispatch:unbind",0,0,error,"OnScore")&&doc.connect(0,2,"then",3,"in",error));
+    NX_EXPECT(doc.addNode(0,"call:event",0,0,error,"OnScore")&&doc.connect(0,3,"then",4,"in",error)&&doc.setInputValue(0,4,"arg_amount","4",error));
+    NX_EXPECT(doc.addNode(0,"actor:cast-class",0,0,error,"Target")&&doc.connect(0,4,"then",5,"in",error));
+    NX_EXPECT(doc.addNode(0,"null:entity",0,0,error)&&doc.connect(0,6,"value",5,"actor",error));
+    NX_EXPECT(doc.serialize(bytes,error));BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error));
+    NX_EXPECT(compileBlueprint(copy,source,error));
+    NX_EXPECT(source.find("if (bp_bound_OnScore) bp_fn_OnScore")!=std::string::npos&&source.find("cast<BP_Behaviour_Target>")!=std::string::npos);
+    NX_EXPECT(!copy.editFunctionSignature(g,"int(amount:int)",error));
 }
