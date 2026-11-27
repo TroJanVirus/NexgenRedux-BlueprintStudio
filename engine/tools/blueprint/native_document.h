@@ -44,6 +44,11 @@ namespace nx
         std::string name;
         std::string assetRoot; // external project directory, separate from graph history
         std::vector<Graph> graphs;
+        struct ScreenManifest { std::string owner, source; };
+        // Original screen.json bytes, optional for backwards-compatible v2 documents.
+        std::vector<ScreenManifest> manifests;
+        const std::string* screenManifest(const std::string& owner) const;
+        bool importScreenManifest(const std::string& owner,const std::string& source,std::string& error);
         void create();
         bool load(const char* data,size_t size,std::string& error);
         bool serialize(std::string& result,std::string& error) const;
@@ -84,7 +89,7 @@ namespace nx
         size_t revision()const{return m_revision;}
         void markRecovered(){m_revision=++m_nextRevision;}
     private:
-        struct Edit { size_t graph; Graph state; size_t revision; std::vector<Graph> all; };
+        struct Edit { size_t graph; Graph state; size_t revision; std::vector<Graph> all; std::vector<ScreenManifest> manifests{}; };
         void record(size_t graph);
         void recordGraphList();
         std::vector<Edit> m_undo,m_redo;

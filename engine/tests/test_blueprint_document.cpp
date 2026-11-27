@@ -716,3 +716,25 @@ NX_TEST(nativeDocumentAcceptsReduxMainScreenId)
     NX_EXPECT(compileBlueprintProject(restored,output,error)&&output.size()==2);
     if(output.size()==2)NX_EXPECT(output[0].id=="main"&&output[1].id=="level");
 }
+
+NX_TEST(nativeScreenManifestsSurviveSaveExportAndScreenHistory)
+{
+    BlueprintDocument doc;doc.create();std::string error,bytes;
+    const std::string original="{\n  \"title\": \"Original title\", \"custom\": {\"precision\": 1.234567891}, \"order\": 12\n}\n";
+    NX_EXPECT(doc.addScreen("level",error));
+    NX_EXPECT(doc.importScreenManifest("level",original,error));
+    NX_EXPECT(!doc.importScreenManifest("level",original,error));
+    NX_EXPECT(!doc.importScreenManifest("Screen","{}",error));
+    NX_EXPECT(!doc.importScreenManifest("missing",original,error));
+    NX_EXPECT(!doc.importScreenManifest("Screen",std::string(65537,'x'),error));
+    NX_EXPECT(doc.serialize(bytes,error));
+    BlueprintDocument restored;NX_EXPECT(restored.load(bytes.data(),bytes.size(),error));
+    std::vector<BlueprintScreenOutput> output;
+    NX_EXPECT(compileBlueprintProject(restored,output,error)&&output.size()==2);
+    if(output.size()==2)NX_EXPECT(output[1].manifest==original&&output[0].manifest!=original);
+    NX_EXPECT(restored.removeScreen("level",error)&&!restored.screenManifest("level"));
+    NX_EXPECT(restored.undo()&&restored.screenManifest("level")&&*restored.screenManifest("level")==original);
+    NX_EXPECT(restored.redo()&&!restored.screenManifest("level"));
+    NX_EXPECT(restored.addScreen("level",error)&&!restored.screenManifest("level"));
+    NX_EXPECT(restored.serialize(bytes,error));
+}

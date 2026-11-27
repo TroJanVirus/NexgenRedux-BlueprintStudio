@@ -276,6 +276,23 @@ namespace nx
         const auto found=index.find(kind);
         return found==index.end()?nullptr:found->second;
     }
+    const std::string* BlueprintDocument::screenManifest(const std::string& owner) const
+    {
+        for(const auto& m:manifests)if(m.owner==owner)return &m.source;
+        return nullptr;
+    }
+    bool BlueprintDocument::importScreenManifest(const std::string& owner,const std::string& source,std::string& error)
+    {
+        const auto owners=screens();
+        if(std::find(owners.begin(),owners.end(),owner)==owners.end()||screenManifest(owner))
+        {error="Unknown or duplicate screen manifest: "+owner;return false;}
+        if(source.empty()||source.size()>64*1024||source.find('\0')!=std::string::npos)
+        {error="Invalid or oversized screen.json: "+owner;return false;}
+        JsonTree tree;
+        if(!tree.parse(source.data(),source.size())||!tree.root().isObject()||!validText(tree.root()["title"]))
+        {error="screen.json requires a valid object and nonempty title: "+owner;return false;}
+        manifests.push_back({owner,source});error.clear();return true;
+    }
     void BlueprintDocument::create()
     {
         *this=BlueprintDocument{};
@@ -380,6 +397,18 @@ namespace nx
             std::vector<BlueprintPin> vars;if(!candidate.variables(vars,error,owner))return false;
         }
         if(candidate.screens().empty()){error="A project requires at least one screen.";return false;}
+        const auto metadata=root["manifests"];
+        if(metadata.exists())
+        {
+            if(!metadata.isArray()||metadata.count()>candidate.screens().size())
+            {error="Invalid screen manifest list.";return false;}
+            for(auto m=metadata.first();m.exists();m=m.next())
+            {
+                if(!m.isObject()||!m["owner"].isString()||!m["source"].isString())
+                {error="Invalid screen manifest entry.";return false;}
+                if(!candidate.importScreenManifest(m["owner"].text(),m["source"].text(),error))return false;
+            }
+        }
         const auto behaviours=candidate.behaviours();
         for(const auto& behaviour:behaviours)
         {
@@ -400,6 +429,15 @@ namespace nx
         auto fail=[&](){error="Not enough memory to serialize Blueprint.";return false;};
         JsonValue root;
         if(!number(root,"version",2)||!text(root,"kind","NativeBlueprint")||!text(root,"name",name)||!text(root,"assetRoot",assetRoot))return fail();
+        if(!manifests.empty())
+        {
+            auto* metadata=root.put("manifests");if(!metadata)return fail();metadata->setArray();
+            for(const auto& m:manifests)
+            {
+                if(m.source.find('\0')!=std::string::npos){error="Invalid screen manifest bytes.";return false;}
+                auto* entry=metadata->add();if(!entry||!text(*entry,"owner",m.owner)||!text(*entry,"source",m.source))return fail();
+            }
+        }
         auto* gs=root.put("graphs");if(!gs)return fail();gs->setArray();
         for(const auto& g:graphs)
         {
@@ -622,7 +660,7 @@ namespace nx
     void BlueprintDocument::recordGraphList()
     {
         if(m_undo.size()>=kHistory)m_undo.erase(m_undo.begin());
-        m_undo.push_back({static_cast<size_t>(-1),{},m_revision,graphs});
+        m_undo.push_back({static_cast<size_t>(-1),{},m_revision,graphs,manifests});
         m_redo.clear();m_revision=++m_nextRevision;
     }
     const BlueprintDocument::Graph* BlueprintDocument::function(const std::string& owner,const std::string& functionName) const
@@ -811,6 +849,7 @@ namespace nx
         }
         recordGraphList();
         graphs.erase(std::remove_if(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==id;}),graphs.end());
+        manifests.erase(std::remove_if(manifests.begin(),manifests.end(),[&](const ScreenManifest& m){return m.owner==id;}),manifests.end());
         error.clear();return true;
     }
     bool BlueprintDocument::undo()
@@ -819,7 +858,7 @@ namespace nx
         auto e=std::move(m_undo.back());m_undo.pop_back();
         if(e.graph==static_cast<size_t>(-1))
         {
-            m_redo.push_back({e.graph,{},m_revision,std::move(graphs)});graphs=std::move(e.all);
+            m_redo.push_back({e.graph,{},m_revision,std::move(graphs),std::move(manifests)});graphs=std::move(e.all);manifests=std::move(e.manifests);
         }
         else
         {
@@ -833,7 +872,7 @@ namespace nx
         auto e=std::move(m_redo.back());m_redo.pop_back();
         if(e.graph==static_cast<size_t>(-1))
         {
-            m_undo.push_back({e.graph,{},m_revision,std::move(graphs)});graphs=std::move(e.all);
+            m_undo.push_back({e.graph,{},m_revision,std::move(graphs),std::move(manifests)});graphs=std::move(e.all);manifests=std::move(e.manifests);
         }
         else
         {

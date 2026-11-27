@@ -1804,6 +1804,8 @@ NX_TEST(nativeWorkspaceImportsNativeExportScreensAndTheirAssets)
         const std::vector<std::string> expected=multiple?std::vector<std::string>{firstId,"level"}:std::vector<std::string>{firstId};
         const std::string first=multiple?"class Start : Screen { void onEnter(){ Screens::push(\"level\"); } }":"class Start : Screen { void onEnter(){ Save::set(\"start\",\"ok\"); } }";
         const std::string second="class LevelScreen : Screen { void onEnter(){ Save::set(\"level\",\"ok\"); } }";
+        const std::string originalManifest="{\n  \"title\": \"Original title\", \"category\": \"Game\", \"order\": 7, \"custom\": [1,2]\n}\n";
+        r.platform.files[folder+"/"+firstId+"/screen.json"]=originalManifest;
         r.platform.files[folder+"/"+firstId+"/main.as"]=first;
         if(multiple)r.platform.files[folder+"/level/main.as"]=second;
         for(const auto& screen:expected)
@@ -1834,6 +1836,9 @@ NX_TEST(nativeWorkspaceImportsNativeExportScreensAndTheirAssets)
         std::vector<BlueprintScreenOutput> output;
         NX_EXPECT(compileBlueprintProject(project,output,error)&&output.size()==expected.size());
         NX_EXPECT(project.screens()==expected);
+        NX_EXPECT(project.screenManifest(firstId)&&*project.screenManifest(firstId)==originalManifest);
+        if(!output.empty())NX_EXPECT(output[0].manifest==originalManifest);
+        NX_EXPECT(r.platform.files[folder+"/"+firstId+"/screen.json"]==originalManifest);
         NX_EXPECT(project.name=="bp-1790000000-1");
         for(const auto& screen:expected)
             NX_EXPECT(r.platform.files["own/"+project.assetRoot+"/"+screen+"/asset/data.bin"]==r.platform.files[folder+"/"+screen+"/asset/data.bin"]);

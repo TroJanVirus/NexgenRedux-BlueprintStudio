@@ -323,6 +323,14 @@ namespace nx
             if(candidate.graphs.size()+screen.graphs.size()>64)
             {m_status="Project exceeds 64 graph limit.";return false;}
             for(auto& graph:screen.graphs){graph.owner=owner;candidate.graphs.push_back(std::move(graph));}
+            const auto manifestPath=base+"/"+owner+"/screen.json";
+            if(s.platform->fileTime(manifestPath.c_str()))
+            {
+                FileData manifest;
+                if(!s.platform->readFile(manifestPath.c_str(),manifest,MemTag::General)||!manifest.size||manifest.size>64*1024)
+                {m_status=owner+": cannot read screen.json or exceeds 64 KiB.";return false;}
+                if(!candidate.importScreenManifest(owner,std::string(reinterpret_cast<const char*>(manifest.data),manifest.size),m_status))return false;
+            }
         }
         std::vector<BlueprintScreenOutput> outputs;
         if(!compileBlueprintProject(candidate,outputs,m_status))return false;
