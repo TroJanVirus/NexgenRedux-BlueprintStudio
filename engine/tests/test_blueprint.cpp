@@ -2047,7 +2047,10 @@ NX_TEST(nativeWorkspaceRightClickSearchPlacesNodeAndUndoRemovesIt)
     BlueprintDocument doc;std::string error;const std::string recovery="own/blueprint-recovery.bp.json";auto bytes=r.platform.files[recovery];
     NX_EXPECT(doc.load(bytes.data(),bytes.size(),error)&&doc.graphs[0].nodes.size()==2);
     if(!doc.graphs.empty()&&doc.graphs[0].nodes.size()==2)NX_EXPECT(doc.graphs[0].nodes[1].kind=="branch");
-    click(900,53);studio.checkpoint(r.services,true);bytes=r.platform.files[recovery];NX_EXPECT(doc.load(bytes.data(),bytes.size(),error)&&doc.graphs[0].nodes.size()==1);
+    // Undo to the original clean document deliberately clears the recovery draft.
+    click(900,53);studio.checkpoint(r.services,true);NX_EXPECT(r.platform.files[recovery].empty());
+    click(990,53);studio.checkpoint(r.services,true);bytes=r.platform.files[recovery];NX_EXPECT(doc.load(bytes.data(),bytes.size(),error)&&doc.graphs[0].nodes.size()==2);
+    click(900,53);studio.checkpoint(r.services,true);NX_EXPECT(r.platform.files[recovery].empty());
     // Fit leaves the entry node at (272,100), with its execution output at (468,138).
     auto drag=[&](float x1,float y1,float x2,float y2){state.mouseX=x1;state.mouseY=y1;state.mouseButtons[0]=true;frame();state.mouseX=x2;state.mouseY=y2;frame();state.mouseButtons[0]=false;frame();};
     auto type=[&](const char* value){for(;*value;++value){state.typed[state.typedCount%InputState::kTyped]=static_cast<u32>(*value);++state.typedCount;}frame();};
