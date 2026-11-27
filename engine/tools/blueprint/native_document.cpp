@@ -1249,18 +1249,25 @@ namespace nx
         for(auto& asset:assets)if(asset.id==id&&asset.kind=="actor"&&asset.dependencies.size()==1)
         {
             std::string source;if(!visualActorSource(id,source,error))return false;
-            if(asset.source=="{\"rootOverrides\":{}}"){error.clear();return true;}
-            asset.source="{\"rootOverrides\":{}}";return replaceVisualAssets(assets,error);
+            JsonValue delta;if(!delta.parse(asset.source.data(),asset.source.size(),error))return false;
+            if(!delta.find("rootOverrides")->count()){error.clear();return true;}
+            JsonValue empty;if(!empty.parse("{}",2,error)||!delta.find("rootOverrides")->setCopy(empty))return false;
+            asset.source=delta.write(true);return replaceVisualAssets(assets,error);
         }
         error="Select a derived actor.";return false;
     }
     namespace
     {
-        bool storeActorRootOverrides(BlueprintDocument::VisualAsset& asset,const JsonValue& effective,const std::string& property,std::string& error)
+        bool storeActorOverrides(BlueprintDocument::VisualAsset& asset,const JsonValue& effective,const std::string& property,const std::string& keyId,bool rootComponent,std::string& error)
         {
             JsonValue delta;if(!delta.parse(asset.source.data(),asset.source.size(),error))return false;
             auto* overrides=delta.find("rootOverrides");
             if(!overrides||overrides->type()!=JsonValue::Type::Object){error="Invalid child actor overrides.";return false;}
+            if(!rootComponent)
+            {
+                auto* table=delta.put("componentOverrides");if(!table)return false;
+                overrides=table->put(keyId);if(!overrides)return false;
+            }
             std::vector<std::string> keys;
             if(property=="collision")keys={"cube","sphere","capsule","exact"};
             else if(property=="model"||property=="shape")keys={"model","shape","animate"};
@@ -1276,6 +1283,12 @@ namespace nx
     }
     bool BlueprintDocument::visualActorSource(const std::string& id,std::string& json,std::string& error)const
     {
+        std::vector<std::string> keys;
+        return resolveVisualActor(id,json,keys,error);
+    }
+    bool BlueprintDocument::resolveVisualActor(const std::string& id,std::string& json,std::vector<std::string>& keys,std::string& error)const
+    {
+        keys.clear();
         const auto* asset=visualAsset(id);
         if(!asset||asset->kind!="actor"){error="Select an actor definition.";return false;}
         std::string source=asset->source;
@@ -1284,21 +1297,62 @@ namespace nx
             // Dependencies have already passed the document's acyclic, bounded validation.
             if(asset->dependencies.size()!=1){error="A child actor must have one parent.";return false;}
             JsonValue delta;
-            if(!delta.parse(source.data(),source.size(),error)||delta.count()!=1){error="Invalid child actor definition.";return false;}
+            if(!delta.parse(source.data(),source.size(),error)||delta.type()!=JsonValue::Type::Object){error="Invalid child actor definition.";return false;}
+            for(u32 i=0;i<delta.count();++i)
+            {
+                const std::string key=delta.key(i);
+                if(key!="rootOverrides"&&key!="componentOverrides"&&key!="additions"){error="Unknown child actor field.";return false;}
+            }
             const auto* overrides=delta.find("rootOverrides");
             if(!overrides||overrides->type()!=JsonValue::Type::Object){error="Invalid child actor overrides.";return false;}
-            if(!visualActorSource(asset->dependencies.front(),source,error))return false;
+            if(!resolveVisualActor(asset->dependencies.front(),source,keys,error))return false;
             JsonValue parent;if(!parent.parse(source.data(),source.size(),error))return false;
-            auto* rootEntity=parent.find("entities")->at(0);
-            const std::string allowed="|name|place|angles|size|shape|model|animate|camera|mass|friction|bounce|gravity|drag|cube|sphere|capsule|exact|behaviour|";
-            for(u32 i=0;i<overrides->count();++i)
+            auto* entities=parent.find("entities");
+            const auto* additions=delta.find("additions");
+            if(additions)
             {
-                const std::string key=overrides->key(i);
-                if(key.empty()||key.find('|')!=std::string::npos||allowed.find("|"+key+"|")==std::string::npos)
-                {error="Unsupported child actor override: "+key;return false;}
-                const auto* value=overrides->at(i);
-                if(value->type()==JsonValue::Type::Null)rootEntity->remove(key.c_str());
-                else {auto* target=rootEntity->put(key);if(!target||!target->setCopy(*value))return false;}
+                if(additions->type()!=JsonValue::Type::Array){error="Invalid child component additions.";return false;}
+                auto* parents=parent.find("parents");
+                if(!parents){parents=parent.put("parents");if(!parents)return false;parents->setArray();auto* first=parents->add();if(!first)return false;first->setNumber(-1);}
+                for(u32 i=0;i<additions->count();++i)
+                {
+                    const auto* entry=additions->at(i);
+                    const auto* parentKey=entry->find("parent");const auto* definition=entry->find("entity");
+                    if(!parentKey||parentKey->type()!=JsonValue::Type::String||!definition||definition->type()!=JsonValue::Type::Object||entities->count()>=32)
+                    {error="Invalid child component or component limit reached.";return false;}
+                    const auto at=std::find(keys.begin(),keys.end(),parentKey->text());
+                    if(at==keys.end()){error="Inherited component parent no longer exists.";return false;}
+                    const auto index=static_cast<double>(at-keys.begin());
+                    auto* entity=entities->add();auto* p=parents->add();
+                    if(!entity||!p||!entity->setCopy(*definition))return false;
+                    p->setNumber(index);keys.push_back(id+":"+std::to_string(i+1));
+                }
+            }
+            const std::string allowed="|name|place|angles|size|shape|model|animate|camera|mass|friction|bounce|gravity|drag|cube|sphere|capsule|exact|behaviour|";
+            const auto apply=[&](JsonValue* entity,const JsonValue* fields)->bool
+            {
+                if(!entity||!fields||fields->type()!=JsonValue::Type::Object){error="Invalid component overrides.";return false;}
+                for(u32 i=0;i<fields->count();++i)
+                {
+                    const std::string key=fields->key(i);
+                    if(key.empty()||key.find('|')!=std::string::npos||allowed.find("|"+key+"|")==std::string::npos)
+                    {error="Unsupported child actor override: "+key;return false;}
+                    const auto* value=fields->at(i);
+                    if(value->type()==JsonValue::Type::Null)entity->remove(key.c_str());
+                    else {auto* target=entity->put(key);if(!target||!target->setCopy(*value))return false;}
+                }
+                return true;
+            };
+            if(!apply(entities->at(0),overrides))return false;
+            if(const auto* table=delta.find("componentOverrides"))
+            {
+                if(table->type()!=JsonValue::Type::Object){error="Invalid component override table.";return false;}
+                for(u32 i=0;i<table->count();++i)
+                {
+                    const auto at=std::find(keys.begin(),keys.end(),table->key(i));
+                    if(at==keys.end()||at==keys.begin()){error="Component override target no longer exists.";return false;}
+                    if(!apply(entities->at(static_cast<u32>(at-keys.begin())),table->at(i)))return false;
+                }
             }
             source=parent.write(true);
         }
@@ -1322,6 +1376,8 @@ namespace nx
             if(i&&(depths[i]=depths[static_cast<unsigned>(n)]+1)>8)
             {error="Actor hierarchy nesting limit exceeded.";return false;}
         }
+        if(asset->dependencies.empty())for(u32 i=0;i<count;++i)keys.push_back(id+":"+std::to_string(i));
+        if(keys.size()!=count||source.size()>64*1024){error="Resolved actor exceeds source budget.";return false;}
         json=source;error.clear();return true;
     }
     bool BlueprintDocument::visualActorRoot(const std::string& id,std::string& json,std::string& error)const
@@ -1334,11 +1390,10 @@ namespace nx
     {
         if(shape!="box"&&shape!="sphere"&&shape!="capsule"&&shape!="plane")
         {error="Unsupported actor shape.";return false;}
-        std::string checked;if(!visualActorSource(id,checked,error))return false;
+        std::string checked;std::vector<std::string> keys;if(!resolveVisualActor(id,checked,keys,error))return false;
         auto assets=m_visualAssets;
         for(auto& a:assets)if(a.id==id)
         {
-            if(!a.dependencies.empty()&&component){error="Inherited child components are read-only; edit the parent class.";return false;}
             JsonValue root;if(!root.parse(checked.data(),checked.size(),error))return false;
             auto* entities=root.find("entities");
             if(component>=entities->count()){error="Select a component.";return false;}
@@ -1349,7 +1404,7 @@ namespace nx
             auto* value=entity->put("shape");if(!value){error="Cannot edit actor shape.";return false;}
             value->setText(shape);
             if(a.dependencies.empty())a.source=root.write(true);
-            else if(!storeActorRootOverrides(a,*entity,"shape",error))return false;
+            else if(!storeActorOverrides(a,*entity,"shape",keys[component],component==0,error))return false;
             return replaceVisualAssets(assets,error);
         }
         error="Actor not found.";return false;
@@ -1360,11 +1415,10 @@ namespace nx
         if((shape!="box"&&shape!="sphere"&&shape!="capsule"&&shape!="plane"&&shape!="camera")||
             !blueprintInputComponents("Vec3",place,xyz))
         {error="Choose a shape and valid local XYZ.";return false;}
-        std::string source;if(!visualActorSource(id,source,error))return false;
+        std::string source;std::vector<std::string> keys;if(!resolveVisualActor(id,source,keys,error))return false;
         auto assets=m_visualAssets;
         for(auto& a:assets)if(a.id==id)
         {
-            if(!a.dependencies.empty()){error="Add components to the parent class; derived component additions are not yet supported.";return false;}
             JsonValue root;if(!root.parse(source.data(),source.size(),error))return false;
             auto* entities=root.find("entities");
             if(parent>=entities->count()||entities->count()>=32){error="Invalid parent or component limit reached.";return false;}
@@ -1380,7 +1434,23 @@ namespace nx
             p->setNumber(static_cast<double>(parent));
             auto* position=child->put("place");if(!position)return false;position->setArray();
             for(const auto& value:xyz){auto* axis=position->add();if(!axis)return false;axis->setNumber(std::strtod(value.c_str(),nullptr));}
-            a.source=root.write(true);return replaceVisualAssets(assets,error);
+            if(a.dependencies.empty())a.source=root.write(true);
+            else
+            {
+                JsonValue delta;if(!delta.parse(a.source.data(),a.source.size(),error))return false;
+                auto* additions=delta.find("additions");
+                if(!additions){additions=delta.put("additions");if(!additions)return false;additions->setArray();}
+                auto* entry=additions->add();if(!entry||!text(*entry,"parent",keys[parent]))return false;
+                auto* definition=entry->put("entity");if(!definition||!definition->setCopy(*child))return false;
+                // Names stay fixed when a parent later adds components.
+                if(!text(*definition,"name",std::string(shape=="camera"?"Camera":"Component")+a.id.substr(6)+"_"+std::to_string(additions->count())))return false;
+                a.source=delta.write(true);
+            }
+            BlueprintDocument staged=*this;
+            if(!staged.replaceVisualAssets(assets,error))return false;
+            for(const auto& dependent:assets)if(dependent.kind=="actor"&&dependent.source.find("\"rootOverrides\"")!=std::string::npos)
+            {std::string resolved;if(!staged.visualActorSource(dependent.id,resolved,error))return false;}
+            return replaceVisualAssets(assets,error);
         }
         error="Actor not found.";return false;
     }
@@ -1442,12 +1512,11 @@ namespace nx
     }
     bool BlueprintDocument::setVisualActorProperty(const std::string& id,size_t component,const std::string& property,const std::string& value,std::string& error)
     {
-        std::string source;if(!visualActorSource(id,source,error))return false;
+        std::string source;std::vector<std::string> keys;if(!resolveVisualActor(id,source,keys,error))return false;
         auto assets=m_visualAssets;
         for(auto& a:assets)if(a.id==id)
         {
             JsonValue root;if(!root.parse(source.data(),source.size(),error))return false;
-            if(!a.dependencies.empty()&&component){error="Inherited child components are read-only; edit the parent class.";return false;}
             auto* entities=root.find("entities");
             if(component>=entities->count()){error="Select a component.";return false;}
             auto* item=entities->at(static_cast<unsigned>(component));
@@ -1573,7 +1642,7 @@ namespace nx
             if(!a.dependencies.empty())
             {
                 const auto before=a.source;
-                if(!storeActorRootOverrides(a,*item,property,error))return false;
+                if(!storeActorOverrides(a,*item,property,keys[component],component==0,error))return false;
                 if(before==a.source){error.clear();return true;}
             }
             else

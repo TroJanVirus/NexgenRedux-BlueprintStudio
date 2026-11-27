@@ -1518,7 +1518,7 @@ namespace nx
         else if(selected)
         {
             button(630,156,175,"Rename");button(815,156,185,"Remove");
-            c.clip(630,195,selected->kind=="actor"?180:370,32);c.text(*m_font,(selected->id+" / "+selected->title).c_str(),630,201,accent);c.noClip();
+            c.clip(630,195,selected->kind=="actor"?180.f:370.f,32);c.text(*m_font,(selected->id+" / "+selected->title).c_str(),630,201,accent);c.noClip();
             if(selected->kind=="actor")button(815,193,185,"Create child class");
             if(selected->kind=="theme")
             {
@@ -1619,8 +1619,7 @@ namespace nx
                         c.clip(635,yy,360,31);c.text(*m_font,label.c_str(),638,yy+6,text);c.noClip();
                     }
                 }
-                if(selected->dependencies.empty()){button(630,505,185,"Add child");button(820,505,180,"Add camera");}
-                else {c.clip(630,505,370,33);c.text(*m_font,("Inherits "+selected->dependencies.front()+" (children read-only)").c_str(),630,512,muted);c.noClip();}
+                button(630,505,185,"Add child");button(820,505,180,"Add camera");
                 button(630,548,370,"Add linked actor to screen");
                 }
             }

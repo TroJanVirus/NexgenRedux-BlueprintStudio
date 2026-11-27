@@ -98,6 +98,7 @@ namespace nx
         // Linked actor definitions use native entity JSON and a parent-first hierarchy.
         bool createVisualActorChild(const std::string& parentId,std::string& id,std::string& error);
         bool resetVisualActorOverrides(const std::string& id,std::string& error);
+        bool resolveVisualActor(const std::string& id,std::string& json,std::vector<std::string>& keys,std::string& error)const;
         bool visualActorRoot(const std::string& id,std::string& json,std::string& error)const;
         bool visualActorSource(const std::string& id,std::string& json,std::string& error)const;
         bool setVisualActorShape(const std::string& id,const std::string& shape,std::string& error,size_t component=0);

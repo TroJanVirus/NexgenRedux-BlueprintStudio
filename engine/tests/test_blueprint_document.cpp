@@ -1613,8 +1613,8 @@ NX_TEST(nativeActorClassInheritancePropagatesAndResetsRootOverrides)
     JsonTree tree;NX_EXPECT(tree.parse(source.data(),source.size()));
     NX_EXPECT(tree.root()["entities"][0u]["mass"].number()==7&&tree.root()["entities"][0u]["size"][0u].number()==2);
     NX_EXPECT(tree.root()["entities"][1u]["camera"].number()==85);
-    NX_EXPECT(!doc.setVisualActorProperty(child,1,"camera","60",error));
-    NX_EXPECT(!doc.appendVisualActorComponent(child,0,"box","0,0,0",error));
+    NX_EXPECT(doc.setVisualActorProperty(child,1,"camera","60",error));
+    NX_EXPECT(doc.appendVisualActorComponent(child,0,"box","0,0,0",error));
     NX_EXPECT(!doc.removeVisualAsset(parent,error));
     NX_EXPECT(doc.placeVisualActor("Screen",grand,"0,0,0",error)&&compileBlueprint(doc,source,error));
     NX_EXPECT(doc.serialize(bytes,error));BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error));
@@ -1632,4 +1632,24 @@ NX_TEST(nativeActorCameraSelectionCompilesTypedActorReference)
     NX_EXPECT(doc.addConnectedNode(0,1,"then","camera:activate-actor",480,60,error));
     NX_EXPECT(doc.connect(0,1,"result",2,"actor",error)&&doc.setInputValue(0,2,"component","Camera1",error));
     NX_EXPECT(compileBlueprint(doc,source,error)&&source.find("Space::activateActorCamera(")!=std::string::npos);
+}
+
+NX_TEST(nativeDerivedComponentsKeepIdentityWhenParentAddsComponents)
+{
+    BlueprintDocument doc;doc.create();std::string base,child,grand,error,source,bytes;
+    NX_EXPECT(doc.createVisualAsset("actor",base,error)&&doc.appendVisualActorComponent(base,0,"camera","0,2,-5",error));
+    NX_EXPECT(doc.createVisualActorChild(base,child,error)&&doc.appendVisualActorComponent(child,1,"box","0,1,0",error));
+    NX_EXPECT(doc.setVisualActorProperty(child,2,"mass","11",error));
+    NX_EXPECT(doc.createVisualActorChild(child,grand,error)&&doc.appendVisualActorComponent(grand,2,"sphere","0,0,1",error));
+    NX_EXPECT(doc.setVisualActorProperty(grand,1,"camera","90",error));
+    NX_EXPECT(doc.appendVisualActorComponent(base,0,"plane","0,0,0",error));
+    NX_EXPECT(doc.visualActorSource(grand,source,error));
+    JsonTree tree;NX_EXPECT(tree.parse(source.data(),source.size()));
+    NX_EXPECT(tree.root()["entities"].count()==5);
+    NX_EXPECT(tree.root()["entities"][1u]["camera"].number()==90);
+    NX_EXPECT(tree.root()["entities"][3u]["mass"].number()==11);
+    NX_EXPECT(tree.root()["parents"][3u].number()==1&&tree.root()["parents"][4u].number()==3);
+    NX_EXPECT(doc.serialize(bytes,error));BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error));
+    std::string actual;NX_EXPECT(copy.visualActorSource(grand,actual,error)&&actual==source);
+    NX_EXPECT(copy.placeVisualActor("Screen",grand,"0,0,0",error)&&compileBlueprint(copy,actual,error));
 }
