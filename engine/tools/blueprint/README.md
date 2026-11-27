@@ -6,9 +6,11 @@ The editor runs in a desktop browser. The game runs in Nexgen as usual; it does 
 
 ## Getting started
 
+The home-screen menu entry is available in Windows, Linux and macOS desktop builds, not console or UWP builds. It opens the local HTML bundle without an internet connection or Node.js at runtime. Source builds with Node installed generate the bundle automatically; otherwise run `node tools/blueprint/bundle.js` on a machine with Node and place the resulting HTML beside `nexgen` (macOS: `Nexgen.app/Contents/Resources`). `nexgen --blueprint-studio-check` verifies that the packaged file is present without opening a window. The menu currently opens the standalone editor; native Play test, debugging and Cook still require the opt-in local bridge described below. It is not an embedded editor window.
+
 The toolbar keeps Save, Compile and Play test close at hand. Open **File** for documents and exports, **Game** for scenes, assets and project tools, and **Development** for debugging and recovery. Graph appearance and image export are under **View**. Choose **File > Show all toolbar commands** to use the full toolbar instead.
 
-1. Open `index.html` in a desktop browser. The Arcade example is loaded for you.
+1. On desktop, start Nexgen, open its engine menu from the home screen and choose **Blueprint Studio**. The bundled editor opens in your default browser with the Arcade example. Alternatively open `NexgenBlueprintStudio.html` or `index.html` directly.
 2. Choose an event from **My Blueprint**. Events run when something happens in the game, such as entering a screen, updating a frame or hitting another entity.
 3. Right-click the canvas to find a node, or drag a node from the library.
 4. Connect white execution pins to decide what runs next. Connect matching data pins to pass values between nodes.

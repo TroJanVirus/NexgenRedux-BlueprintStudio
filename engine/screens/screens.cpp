@@ -17,6 +17,7 @@ namespace nx
         const char kRetry[] = "Try again";
         const char kHome[] = "Main menu";
         const char kQuit[] = "Quit";
+        const char kBlueprint[] = "Blueprint Studio";
     }
 
     bool Screens::init(Services& services, const char* folder, const char* home)
@@ -361,6 +362,7 @@ namespace nx
             m_services->audio->pauseGroup(m_stack[m_depth - 1].group, open);
         }
         m_menuOpen = open;
+        if (!open) m_blueprintError = false;
     }
 
     void Screens::reloadChanged()
@@ -538,6 +540,10 @@ namespace nx
         {
             items[count++] = kHome;
         }
+        if (!broken && m_depth == 1 && m_blueprintLauncher)
+        {
+            items[count++] = kBlueprint;
+        }
         if (m_canQuit && m_depth == 1)
         {
             items[count++] = kQuit;
@@ -568,8 +574,14 @@ namespace nx
         else if (input.pressed(Action::Accept))
         {
             const char* item = items[m_menuChoice];
-            setMenu(false);
             input.consume();
+            if (item == kBlueprint)
+            {
+                m_blueprintError = !m_blueprintLauncher();
+                if (!m_blueprintError) setMenu(false);
+                return;
+            }
+            setMenu(false);
             if (item == kRestart || item == kRetry)
             {
                 restart();
@@ -606,6 +618,10 @@ namespace nx
                 c.roundRect(middle - 176, y, 352, 52, 12, { 0.22f, 0.45f, 0.9f, 1 });
             }
             c.text(*m_font, items[i], middle, y + 11, chosen ? Color{ 1, 1, 1, 1 } : Color{ 0.75f, 0.8f, 0.88f, 1 }, Align::Center);
+        }
+        if (m_blueprintError)
+        {
+            c.text(*m_smallFont, "Studio could not open. Check the log and installation.", middle, top + height + 12, { 1, 0.65f, 0.65f, 1 }, Align::Center);
         }
     }
 

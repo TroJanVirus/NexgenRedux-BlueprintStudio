@@ -59,6 +59,8 @@ namespace nx
         bool quitRequested() const { return m_quit; }
         // Off where closing the app makes no sense.
         void setCanQuit(bool can) { m_canQuit = can; }
+        // Native desktop host may supply an optional development-tool action.
+        void setBlueprintLauncher(bool (*launch)()) { m_blueprintLauncher = launch; }
 
         u32 count() const { return m_count; }
         const ScreenInfo* info(u32 index) const { return index < m_count ? &m_infos[index] : nullptr; }
@@ -126,6 +128,8 @@ namespace nx
         u32 m_menuChoice = 0;
         bool m_canQuit = true;
         bool m_quit = false;
+        bool (*m_blueprintLauncher)() = nullptr;
+        bool m_blueprintError = false;
         std::vector<std::string> m_included;
     };
 }

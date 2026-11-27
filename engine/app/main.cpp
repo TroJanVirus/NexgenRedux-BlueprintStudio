@@ -11,6 +11,9 @@
 #include "platform/platform.h"
 #include "screens/screens.h"
 #include "script/debugger.h"
+#ifdef NX_DESKTOP_BLUEPRINT
+#include "app/blueprint_launcher.h"
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -568,6 +571,12 @@ namespace
                 debugger.waitForReady();
             }
             ok = ok && (options.docs || screens.init(services, "showcase", "main"));
+#ifdef NX_DESKTOP_BLUEPRINT
+            if (!options.null && !options.hidden && !options.frames && !options.tour && options.demo <= 0 && !options.docs && !options.screen)
+            {
+                screens.setBlueprintLauncher(openBlueprintStudio);
+            }
+#endif
 
             if (ok && !options.docs)
             {
@@ -594,6 +603,9 @@ namespace
                 int frame = 0;
                 while (!done && platform.pumpEvents() && !screens.quitRequested())
                 {
+#ifdef NX_DESKTOP_BLUEPRINT
+                    pollBlueprintLauncher();
+#endif
                     const double now = platform.seconds();
                     if (frame == 30)
                     {
@@ -802,6 +814,12 @@ int main(int argc, char** argv)
 {
 #endif
     Options options;
+#ifdef NX_DESKTOP_BLUEPRINT
+    if (argc == 2 && strcmp(argv[1], "--blueprint-studio-check") == 0)
+    {
+        return blueprintStudioAvailable() ? 0 : 1;
+    }
+#endif
     const auto value = [&](int& i) { return i + 1 < argc ? argv[++i] : ""; };
     for (int i = 1; i < argc; i++)
     {

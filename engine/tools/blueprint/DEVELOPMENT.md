@@ -21,7 +21,7 @@ Do not push changes to Team Resurgent's repository. If a safe merge cannot be co
 
 Blueprint Studio is a development tool for the desktop Nexgen application, not just a separate download. Users should be able to open it from Nexgen's own graphical interface, with project creation, existing project import, native scene editing, play testing and packaging available as one connected workflow.
 
-- Provide a clear desktop-only entry point in the existing Nexgen menu. Reuse Nexgen's existing desktop launch and file-opening facilities; do not require users to type bridge commands for ordinary use.
+- The initial desktop-only home-screen menu entry opens the bundled offline editor through the operating system. Keep ordinary graph editing independent of Node.js at runtime. Native bridge startup and an isolated test environment remain follow-up work; do not silently run play tests against the live installation.
 - Keep the existing Studio editor as the single implementation. A browser launched by Nexgen is an initial integration, not the final goal of an integrated editor experience. Assess an embedded or dedicated companion window before adding a new GUI dependency, and respect Nexgen's self-contained build rules.
 - Bundle the required desktop tools with the release where practical. Handle missing dependencies, startup failures, paths and clean shutdown explicitly. Keep standalone HTML and command-line use available.
 - Reuse the native scene editor, debugger, profiler, asset cooker and runtime. Do not create duplicate implementations or put the desktop editor into Xbox game packages.

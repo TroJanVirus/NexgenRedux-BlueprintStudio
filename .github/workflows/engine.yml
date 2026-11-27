@@ -109,6 +109,13 @@ jobs:
                    codesign --force --deep --sign - "dist/$package/Nexgen.app" ;;
         esac
         node engine/tools/blueprint/bundle.js "dist/$package/NexgenBlueprintStudio.html"
+        # The application must find Studio from its own location, even with another working directory.
+        case "$RUNNER_OS" in
+          Windows) (cd "$RUNNER_TEMP" && "$GITHUB_WORKSPACE/dist/$package/nexgen.exe" --blueprint-studio-check) ;;
+          Linux)   (cd "$RUNNER_TEMP" && "$GITHUB_WORKSPACE/dist/$package/nexgen" --blueprint-studio-check) ;;
+          macOS)   cmp "dist/$package/NexgenBlueprintStudio.html" "dist/$package/Nexgen.app/Contents/Resources/NexgenBlueprintStudio.html"
+                   (cd "$RUNNER_TEMP" && "$GITHUB_WORKSPACE/dist/$package/Nexgen.app/Contents/MacOS/nexgen" --blueprint-studio-check) ;;
+        esac
         mkdir -p "dist/$package/BlueprintTools"
         cp -r engine/tools/blueprint/. "dist/$package/BlueprintTools/"
         case "$RUNNER_OS" in
