@@ -567,7 +567,7 @@ namespace nx
         // scene renderer. Runtime-generated and wired coordinates are omitted.
         constexpr float planLeft=630,planTop=252,planRight=1000,planBottom=548;
         constexpr float planCenterX=815,planCenterY=400,planScale=14;
-        struct ActorMarker {size_t graph,node;std::string asset;float x,y,z;};
+        struct ActorMarker {size_t graph,node;std::string asset,id,label;float x,y,z;};
         std::vector<ActorMarker> actorMarkers(const BlueprintDocument& doc,const std::string& owner)
         {
             std::vector<ActorMarker> result;
@@ -579,11 +579,12 @@ namespace nx
                     const auto& node=graph.nodes[n];if(node.kind!="actor:spawn-asset")continue;
                     if(std::any_of(graph.links.begin(),graph.links.end(),[&](const BlueprintDocument::Link& link)
                         {return link.to==n&&(link.input=="place"||link.input=="id");}))continue;
-                    std::string asset,position="0,0,0";
-                    for(const auto& value:node.values){if(value.pin=="id")asset=value.value;else if(value.pin=="place")position=value.value;}
+                    std::string asset,position="0,0,0",label;
+                    for(const auto& value:node.values){if(value.pin=="id")asset=value.value;else if(value.pin=="place")position=value.value;else if(value.pin=="instanceName")label=value.value;}
                     std::vector<std::string> xyz;
                     if(!doc.visualAsset(asset)||!blueprintInputComponents("Vec3",position,xyz))continue;
-                    result.push_back({g,n,asset,std::strtof(xyz[0].c_str(),nullptr),std::strtof(xyz[1].c_str(),nullptr),std::strtof(xyz[2].c_str(),nullptr)});
+                    if(label.empty())label=doc.visualAsset(asset)->title;
+                    result.push_back({g,n,asset,node.id,label,std::strtof(xyz[0].c_str(),nullptr),std::strtof(xyz[1].c_str(),nullptr),std::strtof(xyz[2].c_str(),nullptr)});
                 }
             }
             return result;
@@ -648,12 +649,14 @@ namespace nx
         Vec2 p;if(!m_placementWorld->space().toScreen({wx,wy,wz},p))return false;
         x=p.x;y=p.y;return std::isfinite(x)&&std::isfinite(y);
     }
-    void BlueprintWorkspace::updateVisualPlacement(float x,float y,bool left,bool click)
+    void BlueprintWorkspace::updateVisualPlacement(Services& s,float x,float y,bool left,bool click)
     {
         m_placementX=x;m_placementY=y;
         if(m_placementDragging)
         {
             if(left)return;
+            if(m_document.revision()!=m_placementDragRevision){cancelVisualPlacement();m_status="Placement cancelled: document changed.";return;}
+            if(m_placementGraph!=static_cast<size_t>(-1)&&std::abs(x-m_placementStartX)<3&&std::abs(y-m_placementStartY)<3){cancelVisualPlacement();return;}
             if(in(x,y,planLeft,planTop,planRight,planBottom))
             {
                 bool ok=false;
@@ -664,7 +667,7 @@ namespace nx
                     {
                         const float height=m_placement3D?m_placementHeight:marker.y;
                         float wx=0,wz=0;
-                        if(placementPoint(x,y,height,wx,wz))ok=m_document.setInputValue(marker.graph,marker.node,"place",std::to_string(wx)+","+std::to_string(height)+","+std::to_string(wz),m_status);
+                        if(placementPoint(x,y,height,wx,wz))ok=m_document.editVisualActorPlacement(assetScreen(),marker.id,"place",std::to_string(wx)+","+std::to_string(height)+","+std::to_string(wz),m_status);
                         else m_status="No forward intersection with placement plane.";
                         break;
                     }
@@ -680,7 +683,35 @@ namespace nx
             else m_status="Placement cancelled.";
             cancelVisualPlacement();return;
         }
+        const auto owner=assetScreen();
+        if(m_placementSelectedOwner!=owner){m_placementSelectedId.clear();m_placementSelectedOwner=owner;m_placementFirst=0;}
+        const auto listed=actorMarkers(m_document,owner);
+        if(m_placementFirst>=listed.size())m_placementFirst=0;
+        if(m_placementOutliner&&in(x,y,280,198,610,486))
+        {
+            if(s.input->wheel()<0&&m_placementFirst+8<listed.size())++m_placementFirst;
+            if(s.input->wheel()>0&&m_placementFirst)--m_placementFirst;
+        }
         if(!click)return;
+        if(in(x,y,280,156,610,189)){m_placementOutliner=x>=449;return;}
+        if(m_placementOutliner&&in(x,y,280,198,610,486))
+        {
+            const size_t index=m_placementFirst+static_cast<size_t>((y-198)/36);
+            if(index<listed.size()){const auto& marker=listed[index];m_placementSelectedId=marker.id;m_visualSelection=marker.asset;m_status="Instance selected.";}
+            return;
+        }
+        if(m_placementOutliner&&in(x,y,280,490,610,560))
+        {
+            const auto it=std::find_if(listed.begin(),listed.end(),[&](const ActorMarker& marker){return marker.id==m_placementSelectedId;});
+            if(it==listed.end()){m_status="Select an instance in the outliner.";return;}
+            const char* pins[]={"place","rotationOverride","sizeOverride","instanceName"};
+            const unsigned index=(y>=526?2u:0u)+(x>=449?1u:0u);
+            m_visualProperty=pins[index];m_visualText.clear();
+            const auto& node=m_document.graphs[it->graph].nodes[it->node];
+            for(const auto& value:node.values)if(value.pin==m_visualProperty)m_visualText=value.value;
+            if(index==0&&m_visualText.empty())m_visualText="0,0,0";
+            m_visualInput=10;s.input->setTyping(true);m_status=index==0?"Enter world X,Y,Z.":"Enter instance override; blank inherits class default.";return;
+        }
         if(in(x,y,825,208,1000,241)){m_placement3D=!m_placement3D;releasePlacementPreview();return;}
         if(in(x,y,630,208,825,241)){m_visualPlacement=false;releasePlacementPreview();return;}
         if(m_placement3D&&in(x,y,630,551,1000,573))
@@ -699,24 +730,26 @@ namespace nx
             return;
         }
         const auto& assets=m_document.visualAssets();
-        if(in(x,y,280,198,610,522))
+        if(!m_placementOutliner&&in(x,y,280,198,610,522))
         {
             const size_t row=m_visualFirst+static_cast<size_t>((y-198)/36);
             if(row<assets.size()&&assets[row].kind=="actor")
             {
                 m_visualSelection=assets[row].id;m_placementAsset=assets[row].id;
-                m_placementDragging=true;m_status="Drag actor to the viewport; release to place.";
+                m_placementDragging=true;m_placementDragRevision=m_document.revision();m_status="Drag actor to the viewport; release to place.";
             }
             return;
         }
         if(!in(x,y,planLeft,planTop,planRight,planBottom))return;
-        auto markers=actorMarkers(m_document,assetScreen());
+        m_placementSelectedId.clear();
+        const auto& markers=listed;
         for(auto it=markers.rbegin();it!=markers.rend();++it)
         {
             float mx=0,my=0;if(!placementProject(it->x,it->y,it->z,mx,my))continue;
             if(std::abs(x-mx)<=10&&std::abs(y-my)<=10)
             {
                 m_placementGraph=it->graph;m_placementNode=it->node;m_placementAsset=it->asset;
+                m_placementSelectedId=it->id;m_visualSelection=it->asset;m_placementStartX=x;m_placementStartY=y;m_placementDragRevision=m_document.revision();
                 if(m_placement3D)m_placementHeight=it->y;
                 m_placementDragging=true;m_status="Move instance; release to save position.";return;
             }
@@ -759,9 +792,9 @@ namespace nx
         {
             if(m_placementDragging&&marker.graph==m_placementGraph&&marker.node==m_placementNode)continue;
             float x=0,y=0;if(!placementProject(marker.x,marker.y,marker.z,x,y)||!in(x,y,planLeft,planTop,planRight,planBottom))continue;
-            c.roundRect(x-8,y-8,16,16,3,{0.26f,0.56f,0.85f,1});
-            const auto* actor=m_document.visualAsset(marker.asset);
-            if(actor)c.text(*m_font,actor->title.c_str(),x+11,y-8,text);
+            const bool selected=marker.id==m_placementSelectedId&&m_placementSelectedOwner==assetScreen();
+            c.roundRect(x-8,y-8,16,16,3,selected?Color{0.95f,0.72f,0.24f,1}:Color{0.26f,0.56f,0.85f,1});
+            c.text(*m_font,marker.label.c_str(),x+11,y-8,text);
         }
         if(m_placementDragging&&in(m_placementX,m_placementY,planLeft,planTop,planRight,planBottom))
         {
@@ -1215,6 +1248,7 @@ namespace nx
                         m_themeStyle=m_visualText;
                     }
                     if(m_visualInput==7&&!m_document.setVisualThemeProperty(m_visualSelection,m_themeStyle,themeStates[m_themeState],m_visualProperty,m_visualText,m_status))break;
+                    if(m_visualInput==10&&!m_document.editVisualActorPlacement(m_placementSelectedOwner,m_placementSelectedId,m_visualProperty,m_visualText,m_status))break;
                     if(m_visualInput==9&&!m_document.setWidgetKey(m_visualSelection,m_widgetSelection,m_visualProperty,m_visualText,m_widgetTimelineTime,m_status))break;
                     if(m_visualInput==8)
                     {
@@ -1227,7 +1261,7 @@ namespace nx
             }
             return;
         }
-        if(m_placementDragging){updateVisualPlacement(x,y,left,click);return;}
+        if(m_placementDragging){updateVisualPlacement(s,x,y,left,click);return;}
         if(m_widgetPreviewDrag){updateWidgetDesigner(s,x,y,left,click);return;}
         if(pressed&1u){saveCurrent(s);return;}
         if(pressed&2u){if(m_document.undo()){selectGraph(std::min(m_graph,m_document.graphs.size()-1));m_status="Library edit undone.";}return;}
@@ -1240,7 +1274,7 @@ namespace nx
             if(input.wheel()<0&&m_visualFirst+9<assets.size())++m_visualFirst;
             if(input.wheel()>0&&m_visualFirst)--m_visualFirst;
         }
-        if(m_visualPlacement&&!(click&&(in(x,y,860,116,1000,150)||in(x,y,704,116,850,150)))){updateVisualPlacement(x,y,left,click);return;}
+        if(m_visualPlacement&&!(click&&(in(x,y,860,116,1000,150)||in(x,y,704,116,850,150)))){updateVisualPlacement(s,x,y,left,click);return;}
         if(const auto* selected=m_document.visualAsset(m_visualSelection);selected&&selected->kind=="actor")
         {
             JsonTree tree;
@@ -1315,7 +1349,7 @@ namespace nx
         }
         if(selected->kind=="actor")
         {
-            if(in(x,y,280,548,610,581)){m_visualPlacement=true;cancelVisualPlacement();m_status="Drag actors onto the X/Z placement plan.";return;}
+            if(in(x,y,280,548,610,581)){m_visualPlacement=true;m_placementOutliner=false;m_placementSelectedId.clear();m_placementSelectedOwner=assetScreen();m_placementFirst=0;cancelVisualPlacement();m_status="Drag actors into placement or open the World outliner.";return;}
             if(in(x,y,630,232,1000,266)){m_visualInspector=!m_visualInspector;m_visualPhysics=false;return;}
             if(m_visualInspector)
             {
@@ -1442,7 +1476,23 @@ namespace nx
         if(m_widgetDesigner)drawWidgetDesigner(c);
         else
         {
-        button(280,156,159,"New actor");button(449,156,161,"New widget");
+        button(280,156,159,m_visualPlacement?"Content library":"New actor");button(449,156,161,m_visualPlacement?"World outliner":"New widget");
+        if(m_visualPlacement&&m_placementOutliner)
+        {
+            const auto markers=actorMarkers(m_document,assetScreen());
+            for(size_t i=0;i<8&&m_placementFirst+i<markers.size();++i)
+            {
+                const auto& marker=markers[m_placementFirst+i];const float y=198+36*static_cast<float>(i);
+                c.rect(280,y,330,33,marker.id==m_placementSelectedId?Color{0.28f,0.40f,0.52f,1}:Color{0.17f,0.22f,0.30f,1});
+                c.clip(287,y,316,33);c.text(*m_font,(marker.label+" / "+marker.id).c_str(),290,y+8,text);c.noClip();
+            }
+            if(markers.empty())c.text(*m_font,"No constant linked actors.",290,210,muted);
+            button(280,490,159,"Position XYZ");button(449,490,161,"Rotation XYZ");
+            button(280,526,159,"Scale XYZ");button(449,526,161,"Instance name");
+            c.text(*m_font,"Blank override = inherit class",290,568,muted);
+        }
+        else
+        {
         const auto& assets=m_document.visualAssets();
         for(size_t i=0;i<9&&m_visualFirst+i<assets.size();++i)
         {
@@ -1451,9 +1501,10 @@ namespace nx
             c.clip(287,y,316,33);c.text(*m_font,((a.kind=="actor"?"ACTOR  ":a.kind=="theme"?"THEME  ":"UI  ")+a.title).c_str(),290,y+8,text);c.noClip();
         }
         if(assets.empty())c.text(*m_font,"Create a reusable asset.",290,210,muted);
+        }
         const auto* selected=m_document.visualAsset(m_visualSelection);
         if(selected&&selected->kind=="actor"&&!m_visualPlacement)button(280,548,330,"Open placement plan");
-        if(selected&&selected->kind=="widget")button(280,548,330,"Open UI Designer");
+        if(selected&&selected->kind=="widget"&&!m_visualPlacement)button(280,548,330,"Open UI Designer");
         if(m_visualPlacement)drawVisualPlacement(c);
         else if(selected)
         {

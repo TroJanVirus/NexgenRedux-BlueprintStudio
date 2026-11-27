@@ -1579,3 +1579,21 @@ NX_TEST(nativeWidgetTimelineKeysPersistAndValidate)
     NX_EXPECT(doc.serialize(bytes,error));BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error));
     NX_EXPECT(copy.setWidgetKey(id,"item-1","x","",1,error)&&copy.undo());
 }
+
+NX_TEST(nativeActorOutlinerEditsStableInstanceAndPreservesClass)
+{
+    BlueprintDocument doc;doc.create();std::string id,error,first,second,bytes;
+    NX_EXPECT(doc.createVisualAsset("actor",id,error)&&doc.placeVisualActor("Screen",id,"0,0,0",error)&&doc.placeVisualActor("Screen",id,"4,0,0",error));
+    const auto stable=doc.graphs[0].nodes[1].id;
+    NX_EXPECT(doc.editVisualActorPlacement("Screen",stable,"instanceName","Guard",error));
+    NX_EXPECT(doc.editVisualActorPlacement("Screen",stable,"sizeOverride","2,3,4",error));
+    NX_EXPECT(doc.editVisualActorPlacement("Screen",stable,"place","5,2,1",error));
+    NX_EXPECT(!doc.editVisualActorPlacement("Screen",stable,"sizeOverride","0,1,1",error));
+    NX_EXPECT(!doc.editVisualActorPlacement("Screen",stable,"place","nan,0,0",error));
+    NX_EXPECT(!doc.editVisualActorPlacement("Other",stable,"place","0,0,0",error));
+    NX_EXPECT(doc.visualActorInstance(id,"Screen",doc.graphs[0].nodes[1].values,first,error)&&doc.visualActorInstance(id,"Screen",doc.graphs[0].nodes[2].values,second,error));
+    NX_EXPECT(first.find("Guard")!=std::string::npos&&second.find("Guard")==std::string::npos);
+    NX_EXPECT(doc.serialize(bytes,error));BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error));
+    NX_EXPECT(copy.editVisualActorPlacement("Screen",stable,"sizeOverride","",error)&&copy.undo());
+    NX_EXPECT(copy.visualActorInstance(id,"Screen",copy.graphs[0].nodes[1].values,second,error)&&first==second);
+}

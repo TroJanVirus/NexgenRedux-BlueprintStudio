@@ -1505,6 +1505,27 @@ namespace nx
         }
         error="Actor not found.";return false;
     }
+    bool BlueprintDocument::editVisualActorPlacement(const std::string& owner,const std::string& nodeId,const std::string& property,const std::string& value,std::string& error)
+    {
+        if(nodeId.empty()||(property!="place"&&property!="instanceName"&&property!="rotationOverride"&&property!="sizeOverride"))
+        {error="Select an instance and a supported property.";return false;}
+        for(size_t g=0;g<graphs.size();++g)
+        {
+            const auto& graph=graphs[g];if(graph.owner!=owner||graph.name!="onEnter")continue;
+            for(size_t n=0;n<graph.nodes.size();++n)
+            {
+                const auto& node=graph.nodes[n];if(node.id!=nodeId||node.kind!="actor:spawn-asset")continue;
+                for(const auto& link:graph.links)if(link.to==n&&(link.input=="id"||link.input=="place"||link.input==property))
+                {error="This property is wired in the graph. Edit its source node instead.";return false;}
+                if(property=="place")
+                {
+                    JsonValue checked;if(!actorTransform(checked,"place",value,error))return false;
+                }
+                return setInputValue(g,n,property,value,error);
+            }
+        }
+        error="The selected linked instance no longer exists.";return false;
+    }
     bool BlueprintDocument::placeVisualActor(const std::string& owner,const std::string& id,const std::string& place,std::string& error)
     {
         std::string json;std::vector<std::string> components;

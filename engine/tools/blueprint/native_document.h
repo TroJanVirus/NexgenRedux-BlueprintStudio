@@ -104,6 +104,7 @@ namespace nx
         bool setVisualActorProperty(const std::string& id,size_t component,const std::string& property,const std::string& value,std::string& error);
         bool visualActorInstance(const std::string& id,const std::string& owner,const std::vector<InputValue>& overrides,std::string& json,std::string& error)const;
         bool visualActorForOwner(const std::string& id,const std::string& owner,std::string& json,std::string& error)const;
+        bool editVisualActorPlacement(const std::string& owner,const std::string& nodeId,const std::string& property,const std::string& value,std::string& error);
         bool placeVisualActor(const std::string& owner,const std::string& id,const std::string& place,std::string& error);
         void create();
         bool load(const char* data,size_t size,std::string& error);
