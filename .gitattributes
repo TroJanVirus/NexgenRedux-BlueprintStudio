@@ -1,0 +1,3 @@
+# Blueprint compiler fixtures and generated sources are compared byte-for-byte.
+# Keep text in this tree canonical on Windows as well as Unix; leave binary assets untouched.
+engine/tools/blueprint/** text=auto eol=lf
