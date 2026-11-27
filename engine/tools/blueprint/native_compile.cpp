@@ -469,8 +469,8 @@ namespace nx
     }
     BlueprintLocation blueprintSourceLocation(const BlueprintSourceMap& map,size_t line)
     {
-        for(const auto& span:map)if(line>=span.firstLine&&line<=span.lastLine)return span.location;
-        return {};
+        const auto found=std::lower_bound(map.begin(),map.end(),line,[](const BlueprintSourceSpan& span,size_t target){return span.lastLine<target;});
+        return found!=map.end()&&line>=found->firstLine?found->location:BlueprintLocation{};
     }
     size_t blueprintErrorLine(const std::string& error,const std::string& section)
     {

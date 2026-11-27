@@ -586,7 +586,8 @@ NX_TEST(nativeBlueprintWorkspaceAuthorsSavesAndRunsThroughMouseAndKeyboard)
         else studio.update(r.services);
         studio.checkpoint(r.services);
         r.device->beginFrame({});r.canvas.begin();
-        if(studio.previewing()){r.screens.draw();studio.drawPreviewOverlay(r.canvas);}else studio.draw(r.canvas);
+        if(!studio.previewing()||studio.tracePaused())studio.draw(r.canvas);else r.screens.draw();
+        if(studio.previewing())studio.drawPreviewOverlay(r.canvas);
         r.canvas.end();r.device->endFrame();
     };
     auto click=[&](float x,float y)
@@ -1114,10 +1115,66 @@ NX_TEST(nativeDebuggerLocalTraceUsesRealStatementCallbacksWithoutNetwork)
         for(const auto& v:values)if(v=="amount = 42")state.found=true;
     },&trace));
     NX_EXPECT(!debugger.listening()&&!debugger.connected());
-    NX_EXPECT(compile(r.host,"void check() { int amount = 42;\n Save::set(\"traced\", \"yes\");\n }"));
+    NX_EXPECT(compile(r.host,"void check() { int amount = 42;\n Save::set(\"traced\", amount==42 ? \"yes\" : \"no\");\n }"));
     NX_EXPECT(r.host.call(r.host.find("blueprint","void check()")));
     NX_EXPECT(trace.hits>0&&trace.found&&strcmp(r.save.get("traced","missing"),"yes")==0);
     debugger.stopLocalTrace();const auto hits=trace.hits;
     NX_EXPECT(r.host.call(r.host.find("blueprint","void check()"))&&trace.hits==hits);
+}
+#endif
+
+#ifdef NX_DESKTOP_BLUEPRINT
+NX_TEST(nativeWorkspaceWatchPausesAtBoundaryAndStepsWithoutRunningWhilePaused)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    ScriptDebugger debugger;r.services.debugger=&debugger;
+    r.platform.workspaceFiles=true;
+    r.platform.files["showcase/main/screen.json"]="{\"title\":\"Home\"}";
+    r.platform.files["showcase/main/main.as"]="class Home : Screen {}";
+    if(!r.screens.init(r.services,"showcase","main")){NX_EXPECT(false);return;}
+    r.step(3);r.screens.setDevelopmentPaused(true);
+    BlueprintDocument doc;doc.create();std::string error,bytes;
+    bool ok=doc.addNode(0,"api:Save:Save::set:string,string",350,240,error)&&
+        doc.setInputValue(0,1,"key","watch_test",error)&&doc.setInputValue(0,1,"value","executed",error)&&
+        doc.connect(0,0,"then",1,"in",error)&&doc.toggleWatch(0,1)&&
+        doc.addNode(1,"var:set:int",350,240,error)&&doc.setInputValue(1,1,"value","5",error)&&doc.connect(1,0,"then",1,"in",error)&&
+        doc.serialize(bytes,error);
+    NX_EXPECT(ok);if(!ok)return;
+    r.platform.files["own/trace.bp.json"]=bytes;
+    BlueprintWorkspace studio;studio.open(r.services);
+    NX_EXPECT(studio.active());if(!studio.active())return;
+    auto& state=r.platform.state;state.hasMouse=true;
+    auto frame=[&]()
+    {
+        r.assets.finish();r.input.update(state,1.0f/60);r.platform.now+=1.0/60;
+        if(studio.previewing())studio.updatePreview(r.services,1.0f/60);else studio.update(r.services);
+        r.device->beginFrame({});r.canvas.begin();
+        if(!studio.previewing()||studio.tracePaused())studio.draw(r.canvas);else r.screens.draw();
+        if(studio.previewing())studio.drawPreviewOverlay(r.canvas);
+        r.canvas.end();r.device->endFrame();
+    };
+    auto click=[&](float x,float y)
+    {
+        state.mouseX=x;state.mouseY=y;state.mouseButtons[0]=true;frame();state.mouseButtons[0]=false;frame();
+    };
+    frame();r.platform.dropped="trace.bp.json";frame();
+    click(1224,18);click(553,53);
+    for(int i=0;i<10&&studio.previewing()&&!studio.tracePaused();++i)frame();
+    NX_EXPECT(studio.previewing()&&studio.tracePaused());
+    if(studio.tracePaused())
+    {
+        // This is deliberately an update-boundary watch: the watched action has already run.
+        NX_EXPECT(strcmp(r.services.save->get("watch_test","missing"),"executed")==0);
+        const auto stopped=r.host.runs();
+        frame();frame();NX_EXPECT(r.host.runs()==stopped);
+        click(566,640);
+        for(int i=0;i<3&&!studio.tracePaused();++i)frame();
+        NX_EXPECT(studio.tracePaused()&&r.host.runs()>stopped);
+        const auto stepped=r.host.runs();frame();NX_EXPECT(r.host.runs()==stepped);
+        click(360,640);frame();NX_EXPECT(studio.previewing()&&!studio.tracePaused()&&r.host.runs()>stepped);
+    }
+    studio.stopPreview(r.services);studio.close(r.services);
+    NX_EXPECT(!studio.previewing()&&!studio.tracePaused()&&r.services.save==&r.save);
+    NX_EXPECT(strcmp(r.save.get("watch_test","missing"),"missing")==0);
 }
 #endif

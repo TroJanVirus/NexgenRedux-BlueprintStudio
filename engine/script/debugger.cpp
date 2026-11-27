@@ -71,9 +71,9 @@ namespace nx
 
     bool ScriptDebugger::start(ScriptHost& host, u16 port, bool onlyHere)
     {
- #ifdef NX_DESKTOP_BLUEPRINT
+#ifdef NX_DESKTOP_BLUEPRINT
         if(m_localHost)return false;
- #endif
+#endif
         if (!netStart())
         {
             NX_ERROR("debugger: no network");

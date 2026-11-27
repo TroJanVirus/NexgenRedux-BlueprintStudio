@@ -418,10 +418,11 @@ namespace nx
 
     void BlueprintWorkspace::traceLine(const char* section,int line,unsigned run,asIScriptContext* context)
     {
-        if(!m_traceDebugger||m_tracePaused||line<=0)return;
+        if(!m_traceDebugger||m_tracePaused||m_tracePending||line<=0)return;
         BlueprintLocation location;
         for(const auto& screen:m_previewOutputs)
-            if(screen.id+"/main.as"==section){location=blueprintSourceLocation(screen.map,static_cast<size_t>(line));break;}
+            if(strncmp(section,screen.id.c_str(),screen.id.size())==0&&strcmp(section+screen.id.size(),"/main.as")==0)
+            {location=blueprintSourceLocation(screen.map,static_cast<size_t>(line));break;}
         if(location.graph>=m_document.graphs.size()||location.node>=m_document.graphs[location.graph].nodes.size())return;
         const auto& node=m_document.graphs[location.graph].nodes[location.node];
         const bool firstWatch=node.watch&&!m_tracePending;
@@ -445,6 +446,7 @@ namespace nx
     void BlueprintWorkspace::pauseTrace(Services& s)
     {
         m_tracePaused=true;m_tracePending=false;m_traceStep=false;
+        m_tracePointer=s.input->wantsPointer();m_traceTyping=s.input->typing();
         s.screens->setDevelopmentPaused(true);
         s.input->setWantsPointer(true);s.input->setTyping(false);s.platform->lockMouse(false);s.input->consume();
         focusDiagnostic(m_traceLocation);m_diagnostic={};
@@ -455,6 +457,7 @@ namespace nx
     void BlueprintWorkspace::resumeTrace(Services& s,bool step)
     {
         m_tracePaused=false;m_tracePending=false;m_traceStep=step;m_traceBudget=128;
+        s.input->setWantsPointer(m_tracePointer);s.input->setTyping(m_traceTyping);
         s.input->consume();s.screens->setDevelopmentPaused(false);
     }
 

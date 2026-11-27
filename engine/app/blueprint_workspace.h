@@ -57,6 +57,7 @@ namespace nx
         struct TraceHit { BlueprintLocation location; int line; unsigned run; };
         ScriptDebugger* m_traceDebugger=nullptr;
         bool m_traceEnabled=false,m_tracePaused=false,m_tracePending=false,m_traceStep=false,m_traceKey=false;
+        bool m_tracePointer=false,m_traceTyping=false;
         unsigned m_traceBudget=0;
         std::vector<TraceHit> m_traceHits;
         BlueprintLocation m_traceLocation;
