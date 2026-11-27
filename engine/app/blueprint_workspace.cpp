@@ -1053,6 +1053,43 @@ namespace nx
         else for(size_t i=0;i<l.route.size();++i){const auto p=routeLayoutPosition(link,i);points.push_back({kLeft+m_x+p.x*m_zoom,kTop+m_y+p.y*m_zoom});}
         points.push_back({x2,y2});return points;
     }
+    std::vector<std::string> BlueprintWorkspace::namedSceneTargets() const
+    {
+        std::vector<std::string> names;
+        const auto& current=m_document.graphs[m_graph];
+        for(const auto& graph:m_document.graphs)
+        {
+            if(graph.owner!=current.owner)continue;
+            for(size_t i=0;i<graph.nodes.size();++i)
+            {
+                const auto& n=graph.nodes[i];if(n.kind!="spawn:box"&&n.kind!="spawn:plane")continue;
+                if(std::any_of(graph.links.begin(),graph.links.end(),[&](const BlueprintDocument::Link& l){return l.to==i&&l.input=="name";}))continue;
+                std::string label=n.kind=="spawn:box"?"Box":"Floor";
+                for(const auto& v:n.values)if(v.pin=="name")label=v.value;
+                if(!label.empty()&&std::find(names.begin(),names.end(),label)==names.end())names.push_back(label);
+            }
+        }
+        std::sort(names.begin(),names.end());return names;
+    }
+    void BlueprintWorkspace::prepareInputEditor(size_t node)
+    {
+        m_inputComponents.clear();m_inputChoices.clear();m_inputChoiceFirst=m_inputComponent=0;m_inputReplace=true;
+        const auto& graph=m_document.graphs[m_graph];const auto& n=graph.nodes[node];
+        const auto labels=blueprintInputComponentLabels(m_editType);
+        if(!labels.empty())
+        {
+            std::string value=m_edit;
+            if(value.empty())
+            {
+                BlueprintNodeSpec spec;
+                if(m_document.nodeSpec(graph,n,spec))for(const auto& d:spec.defaults)if(d.name==m_editPin&&d.type.rfind(m_editType+"(",0)==0&&d.type.ends_with(")"))
+                    value=d.type.substr(m_editType.size()+1,d.type.size()-m_editType.size()-2);
+            }
+            if(!blueprintInputComponents(m_editType,value,m_inputComponents))
+            {m_inputComponents.assign(labels.size(),"0");if(m_editType=="Color")m_inputComponents[3]="1";}
+        }
+        if(n.kind=="camera:orbit-timed"&&m_editPin=="name")m_inputChoices=namedSceneTargets();
+    }
     void BlueprintWorkspace::update(Services& s)
     {
         auto& input = *s.input;
@@ -1204,11 +1241,11 @@ namespace nx
                 else if(!moved&&!m_pendingOutput&&m_pending<m_rows.size())
                 {
                     const auto& row=m_rows[m_pending];const auto pin=std::find(row.inputs.begin(),row.inputs.end(),m_pendingPin);
-                    if(pin!=row.inputs.end()&&blueprintLiteralType(row.inputTypes[static_cast<size_t>(pin-row.inputs.begin())]))
+                    if(pin!=row.inputs.end()&&blueprintInputLiteralType(row.inputTypes[static_cast<size_t>(pin-row.inputs.begin())]))
                     {
                         m_editPin=m_pendingPin;m_editType=row.inputTypes[static_cast<size_t>(pin-row.inputs.begin())];m_edit.clear();
                         for(const auto& v:m_document.graphs[m_graph].nodes[m_pending].values)if(v.pin==m_editPin)m_edit=v.value;
-                        clearWire();m_focus=6;input.setTyping(true);m_status="Enter a typed value. Drag the pin to connect a node.";
+                        prepareInputEditor(m_pending);clearWire();m_focus=6;input.setTyping(true);m_status=m_inputComponents.empty()?"Enter a typed value. Drag the pin to connect a node.":"Click a component or use Tab to move between fields.";
                     }
                 }
                 else if(!over&&moved)clearWire();
@@ -1335,6 +1372,40 @@ namespace nx
             }
             const auto count=variableRows().size();m_variableFirst=std::min(m_variableFirst,count>10?count-10:0);
             m_left=left;return;
+        }
+        if(m_focus==6&&!m_inputComponents.empty())
+        {
+            if(click&&in(x,y,360,285,920,341))
+            {m_inputComponent=std::min(m_inputComponents.size()-1,static_cast<size_t>((x-360)/(560.f/static_cast<float>(m_inputComponents.size()))));m_inputReplace=true;}
+            for(u32 i=0;i<input.typedCount();++i)
+            {
+                const auto ch=input.typed(i);auto& part=m_inputComponents[m_inputComponent];
+                if(ch==9){m_inputComponent=(m_inputComponent+1)%m_inputComponents.size();m_inputReplace=true;}
+                else if(ch==8){if(m_inputReplace){part.clear();m_inputReplace=false;}else if(!part.empty())part.pop_back();}
+                else if(ch==13)
+                {
+                    std::string joined;for(const auto& component:m_inputComponents){if(!joined.empty())joined+=",";joined+=component;}
+                    // Preserve empty components as invalid rather than collapsing their positions.
+                    if(std::any_of(m_inputComponents.begin(),m_inputComponents.end(),[](const std::string& component){return component.empty();})){m_status="Every component requires a finite number.";break;}
+                    if(m_document.setInputValue(m_graph,m_selection,m_editPin,joined,m_status)){m_focus=0;input.setTyping(false);m_diagnostic={};m_status="Input components applied.";}break;
+                }
+                else if(ch<128&&std::string("0123456789.eE+-").find(static_cast<char>(ch))!=std::string::npos)
+                {if(m_inputReplace){part.clear();m_inputReplace=false;}appendCharacter(part,ch,64);}
+            }
+            if(click&&in(x,y,360,391,540,430)){m_document.clearInputValue(m_graph,m_selection,m_editPin);m_focus=0;input.setTyping(false);m_status="Input reset to default, or requires a wire.";}
+            m_left=left;return;
+        }
+        if(m_focus==6&&!m_inputChoices.empty())
+        {
+            if(in(x,y,360,452,920,620))
+            {
+                const float scroll=input.wheel();if(scroll<0&&m_inputChoiceFirst+5<m_inputChoices.size())++m_inputChoiceFirst;if(scroll>0&&m_inputChoiceFirst)--m_inputChoiceFirst;
+                if(click&&y>=472)
+                {
+                    const auto index=m_inputChoiceFirst+static_cast<size_t>((y-472)/28);
+                    if(index<m_inputChoices.size()){m_edit=m_inputChoices[index];m_status="Selected known scene entity. Enter confirms.";}
+                }
+            }
         }
         if(m_focus)
         {
@@ -2061,11 +2132,34 @@ namespace nx
             {
                 c.roundRect(340,226,600,224,9,{0.12f,0.16f,0.22f,1});
                 c.text(*m_font,("INPUT: "+m_editPin+" ("+m_editType+")").c_str(),360,245,accent);
-                c.roundRect(360,285,560,36,4,{0.24f,0.35f,0.48f,1});
-                c.clip(364,285,552,36);c.text(*m_font,m_edit.c_str(),370,293,text);c.noClip();
-                c.paragraph(*m_font,m_status.c_str(),360,330,560,muted);
+                if(m_inputComponents.empty())
+                {
+                    c.roundRect(360,285,560,36,4,{0.24f,0.35f,0.48f,1});
+                    c.clip(364,285,552,36);c.text(*m_font,m_edit.c_str(),370,293,text);c.noClip();
+                }
+                else
+                {
+                    const auto labels=blueprintInputComponentLabels(m_editType);const float width=560.f/static_cast<float>(labels.size());
+                    for(size_t i=0;i<labels.size();++i)
+                    {
+                        const float xx=360+width*static_cast<float>(i);
+                        c.text(*m_font,labels[i].c_str(),xx+6,282,muted);
+                        c.roundRect(xx+2,303,width-4,34,4,i==m_inputComponent?Color{0.26f,0.42f,0.59f,1}:Color{0.17f,0.23f,0.31f,1});
+                        c.push();c.clip(xx+5,303,width-10,34);c.text(*m_font,m_inputComponents[i].c_str(),xx+8,310,text);c.pop();
+                    }
+                }
+                c.paragraph(*m_font,m_status.c_str(),360,345,560,muted);
                 c.roundRect(360,391,180,39,4,{0.22f,0.31f,0.43f,1});c.text(*m_font,"Reset value",450,400,text,Align::Center);
                 c.text(*m_font,"Enter confirms | Escape cancels",730,400,text,Align::Center);
+                if(!m_inputChoices.empty())
+                {
+                    c.roundRect(340,450,600,178,8,{0.12f,0.16f,0.22f,1});c.text(*m_font,"Known named entities (scroll to choose)",360,451,accent);
+                    for(size_t i=m_inputChoiceFirst;i<std::min(m_inputChoiceFirst+5,m_inputChoices.size());++i)
+                    {
+                        const float yy=472+28*static_cast<float>(i-m_inputChoiceFirst);c.rect(360,yy,560,26,m_edit==m_inputChoices[i]?Color{0.24f,0.35f,0.48f,1}:Color{0.17f,0.23f,0.31f,1});
+                        c.push();c.clip(365,yy,550,26);c.text(*m_font,m_inputChoices[i].c_str(),370,yy+3,text);c.pop();
+                    }
+                }
             }
             else
             {

@@ -96,6 +96,11 @@ namespace nx
         std::vector<const BlueprintNodeSpec*> m_palette;
         int m_focus=0; // 1 catalogue search, 2 literal, 3 reference, 4 new function, 5 save as, 6 input value
         std::string m_editPin,m_editType;
+        std::vector<std::string> m_inputComponents,m_inputChoices;
+        size_t m_inputComponent=0,m_inputChoiceFirst=0;
+        bool m_inputReplace=false;
+        void prepareInputEditor(size_t node);
+        std::vector<std::string> namedSceneTargets() const;
         struct VariableRow { BlueprintDocument::Field field; bool global=false,explicitField=true; };
         std::vector<VariableRow> variableRows() const;
         void resetVariableEditor(bool global=false);

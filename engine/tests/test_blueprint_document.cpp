@@ -8,7 +8,7 @@
 using namespace nx;
 NX_TEST(nativeCatalogueContainsReferenceAPI)
 {
-    NX_EXPECT(blueprintCatalogue().size()==1030);
+    NX_EXPECT(blueprintCatalogue().size()==1032);
     const auto* save=blueprintSpec("api:Save:Save::set:string,string");
     NX_EXPECT(save&&save->inputs.size()==3&&save->outputs.size()==1);
     if(save&&save->inputs.size()==3)NX_EXPECT(save->inputs[0].type=="exec"&&save->inputs[2].type=="string");
@@ -1090,4 +1090,18 @@ NX_TEST(nativeTimedCameraOrbitReducesSceneToSevenActiveNodes)
     NX_EXPECT(doc.graphs[0].links.size()+doc.graphs[1].links.size()+doc.graphs[2].links.size()==4);
     NX_EXPECT(compileBlueprint(doc,source,error)&&source.find("Scene::find")!=std::string::npos&&source.find("Space::camera")!=std::string::npos&&source.find("Space::draw(canvas)")!=std::string::npos);
     NX_EXPECT(!doc.addNode(0,"camera:orbit-timed",100,100,error)&&!doc.addNode(1,"render:space",100,100,error));
+}
+
+NX_TEST(nativeVectorAndColorPinsStoreTypedComponentsWithoutExtraNodes)
+{
+    BlueprintDocument doc;doc.create();std::string error,source,bytes,before;
+    NX_EXPECT(doc.addNode(0,"spawn:box",300,100,error)&&doc.connect(0,0,"then",1,"in",error));
+    NX_EXPECT(doc.setInputValue(0,1,"place","1, 2.5, -3",error)&&doc.setInputValue(0,1,"size","2,2,2",error)&&doc.setInputValue(0,1,"color","0.9,0.4,0.2,1",error));
+    NX_EXPECT(doc.serialize(before,error));
+    NX_EXPECT(!doc.setInputValue(0,1,"place","1,2,3);Save::set(\"bad\",\"bad\")",error)&&!doc.setInputValue(0,1,"place","1,2",error)&&!doc.setInputValue(0,1,"place","1,,3",error)&&!doc.setInputValue(0,1,"color","1,2,3,NaN",error));
+    NX_EXPECT(doc.serialize(bytes,error)&&bytes==before);
+    BlueprintDocument loaded;NX_EXPECT(loaded.load(bytes.data(),bytes.size(),error)&&compileBlueprint(loaded,source,error));
+    NX_EXPECT(source.find("Vec3(float(1), float(2.5), float(-3))")!=std::string::npos&&source.find("Color(float(0.9), float(0.4), float(0.2), float(1))")!=std::string::npos);
+    NX_EXPECT(doc.undo()&&doc.graphs[0].nodes[1].values.size()==2);
+    NX_EXPECT(doc.redo()&&doc.serialize(bytes,error)&&bytes==before);
 }

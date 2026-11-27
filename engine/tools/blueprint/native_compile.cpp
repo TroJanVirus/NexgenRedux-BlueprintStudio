@@ -64,6 +64,14 @@ namespace nx
                     // AngelScript may infer signed literals differently at the 32-bit boundary.
                     result=type+"("+(negative&&digits!="0"?"-":"")+digits+")";
                 }
+                else if(!blueprintInputComponentLabels(type).empty())
+                {
+                    std::vector<std::string> components;
+                    if(!blueprintInputComponents(type,value,components))return fail(node,"Invalid component value.");
+                    result=type+"(";
+                    for(size_t i=0;i<components.size();++i){if(i)result+=", ";result+="float("+components[i]+")";}
+                    result+=")";
+                }
                 else result=type+"("+value+")";
                 return true;
             }

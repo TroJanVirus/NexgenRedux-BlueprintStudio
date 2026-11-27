@@ -20,6 +20,9 @@ namespace nx
     const std::vector<BlueprintNodeSpec>& blueprintCatalogue();
     const BlueprintNodeSpec* blueprintSpec(const std::string& kind);
     bool blueprintLiteralType(const std::string& type);
+    bool blueprintInputLiteralType(const std::string& type);
+    bool blueprintInputComponents(const std::string& type,const std::string& value,std::vector<std::string>& components);
+    std::vector<std::string> blueprintInputComponentLabels(const std::string& type);
     std::string blueprintArrayElement(const std::string& type);
     bool blueprintVariableType(const std::string& type);
     bool blueprintLosslessConversion(const std::string& from,const std::string& to);

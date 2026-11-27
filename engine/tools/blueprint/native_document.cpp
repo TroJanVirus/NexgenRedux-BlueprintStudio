@@ -176,6 +176,11 @@ namespace nx
             }
             return kind=="literal:double"||(kind=="literal:float"&&std::abs(n)<=3.402823466e38);
         }
+        bool inputLiteral(const std::string& type,const std::string& value)
+        {
+            if(blueprintLiteralType(type))return literal("literal:"+type,value);
+            std::vector<std::string> components;return blueprintInputComponents(type,value,components);
+        }
         bool validWire(const BlueprintDocument& doc,const BlueprintDocument::Graph& g,size_t from,const std::string& output,size_t to,const std::string& input,std::string& error)
         {
             if(from>=g.nodes.size()||to>=g.nodes.size()||from==to){error="Choose two different nodes.";return false;}
@@ -205,6 +210,34 @@ namespace nx
     }
     bool blueprintLiteralType(const std::string& type)
     {return type=="bool"||type=="int"||type=="uint"||type=="float"||type=="double"||type=="string";}
+    std::vector<std::string> blueprintInputComponentLabels(const std::string& type)
+    {
+        if(type=="Vec2")return {"X","Y"};
+        if(type=="Vec3")return {"X","Y","Z"};
+        if(type=="Color")return {"R","G","B","A"};
+        return {};
+    }
+    bool blueprintInputLiteralType(const std::string& type){return blueprintLiteralType(type)||!blueprintInputComponentLabels(type).empty();}
+    bool blueprintInputComponents(const std::string& type,const std::string& value,std::vector<std::string>& components)
+    {
+        const auto labels=blueprintInputComponentLabels(type);
+        if(labels.empty()||value.size()>270)return false;
+        std::vector<std::string> result;
+        size_t start=0;
+        for(size_t i=0;i<labels.size();++i)
+        {
+            const auto comma=value.find(',',start);
+            if((i+1==labels.size())!=(comma==std::string::npos))return false;
+            auto part=value.substr(start,comma==std::string::npos?comma:comma-start);
+            const auto first=part.find_first_not_of(" \t"),last=part.find_last_not_of(" \t");
+            if(first==std::string::npos)return false;
+            part=part.substr(first,last-first+1);
+            if(!literal("literal:float",part))return false;
+            result.push_back(std::move(part));
+            if(comma!=std::string::npos)start=comma+1;
+        }
+        components.swap(result);return true;
+    }
     std::string blueprintArrayElement(const std::string& type)
     {
         if(type.size()<8||type.rfind("array<",0)!=0||!type.ends_with(">"))return "";
@@ -467,8 +500,7 @@ namespace nx
                     {
                         const std::string pin=v.key();
                         const auto* input=findPin(resolved.inputs,pin);
-                        if(!input||!blueprintLiteralType(input->type)||!v.isString()||
-                            !literal("literal:"+input->type,v.text())||
+                        if(!input||!v.isString()||!inputLiteral(input->type,v.text())||
                             std::any_of(node.values.begin(),node.values.end(),[&](const InputValue& old){return old.pin==pin;}))
                         {error="Invalid or duplicate input value: "+pin;return false;}
                         node.values.push_back({pin,v.text()});
@@ -945,7 +977,7 @@ namespace nx
         auto& n=graphs[graph].nodes[node];
         BlueprintNodeSpec spec;
         const auto* input=nodeSpec(graphs[graph],n,spec)?findPin(spec.inputs,pin):nullptr;
-        if(!input||!blueprintLiteralType(input->type)||!literal("literal:"+input->type,value))
+        if(!input||!inputLiteral(input->type,value))
         {error="Invalid value for input "+pin+".";return false;}
         const auto it=std::find_if(n.values.begin(),n.values.end(),[&](const InputValue& v){return v.pin==pin;});
         if(it!=n.values.end()&&it->value==value){error.clear();return true;}
