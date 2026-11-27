@@ -20,6 +20,10 @@ namespace nx
             }
             return result+"\"";
         }
+        bool deferredTime(const std::string& kind)
+        {return kind=="time:delay"||kind=="time:retrigger-delay"||kind=="time:timer";}
+        std::string deferredKey(size_t graph,size_t node)
+        {return "bp_deferred_"+std::to_string(graph)+"_"+std::to_string(node);}
         struct ByteSpan { size_t begin,end; BlueprintLocation location; };
         struct Emitter
         {
@@ -241,7 +245,7 @@ namespace nx
                 const auto found=std::find_if(graph.links.begin(),graph.links.end(),[&](const Link& l){return l.from==node&&l.output==pin;});
                 if(found==graph.links.end())return false;
                 const auto to=found->to;const auto& kind=graph.nodes[to].kind;
-                if(kind=="flow:controlled-gate")return false;
+                if(kind=="flow:controlled-gate"||deferredTime(kind))return false;
                 if(kind=="return:function")return true;
                 if(kind=="branch"&&returns(to,"true",depth+1)&&returns(to,"false",depth+1))return true;
                 if(kind=="sequence"&&(returns(to,"first",depth+1)||returns(to,"second",depth+1)))return true;
@@ -254,11 +258,29 @@ namespace nx
                 const auto to=found->to;
                 if(to>=graph.nodes.size()||depth>128||budget==0)return fail(to,"Execution cycle or complexity limit.");
                 const bool gateCommand=graph.nodes[to].kind=="flow:controlled-gate"&&found->input!="in";
-                if(!gateCommand&&emitted[to])return fail(to,"Execution cycle or complexity limit.");
-                --budget;if(!gateCommand)emitted[to]=true;
+                const bool cancelTime=deferredTime(graph.nodes[to].kind)&&found->input=="cancel";
+                if(!gateCommand&&!cancelTime&&emitted[to])return fail(to,"Execution cycle or complexity limit.");
+                --budget;if(!gateCommand&&!cancelTime)emitted[to]=true;
                 const auto& n=graph.nodes[to];const auto* spec=blueprintSpec(n.kind);
                 const std::string pad(indent*4,' ');
                 const size_t start=source.size();
+                if(deferredTime(n.kind))
+                {
+                    const auto key=deferredKey(graphIndex,to);
+                    if(cancelTime){source+=pad+key+"_active = false;\n";mark(start,to);return true;}
+                    if(graph.kind!="event"||graph.owner.rfind("behaviour:",0)==0||(graph.name!="onEnter"&&graph.name!="update"))
+                        return fail(to,"Deferred time nodes currently require Screen On Enter or Update.");
+                    std::string seconds,loop="false";
+                    if(!value(to,"seconds",seconds,0)||(n.kind=="time:timer"&&!value(to,"loop",loop,0)))return false;
+                    if(n.kind=="time:delay")source+=pad+"if (!"+key+"_active)\n"+pad+"{\n";
+                    const auto p=n.kind=="time:delay"?pad+"    ":pad;
+                    source+=p+key+"_period = max(float(0.000001), "+seconds+");\n";
+                    source+=p+key+"_remaining = "+key+"_period;\n";
+                    source+=p+key+"_loop = "+loop+";\n"+p+key+"_active = true;\n";
+                    if(n.kind=="time:delay")source+=pad+"}\n";
+                    mark(start,to);
+                    return n.kind=="time:timer"?flow(to,"then",indent,depth+1):true;
+                }
                 if(n.kind=="time:timeline"||n.kind=="camera:orbit-timed")
                 {
                     std::string delta,duration,loop,reset;
@@ -751,6 +773,7 @@ namespace nx
             result+=";\n";
         }
         if(!initializers.empty())result+="    BP_Behaviour_"+classOwner.substr(10)+"()\n    {\n"+initializers+"    }\n";
+        std::vector<std::pair<size_t,size_t>> deferred;
         // Each Timeline belongs to one screen/Behaviour instance and one Update node.
         for(size_t gi=0;gi<document.graphs.size();++gi)
         {
@@ -758,7 +781,13 @@ namespace nx
             for(size_t ni=0;ni<g.nodes.size();++ni)
             {
                 const auto& kind=g.nodes[ni].kind;
-                if(kind=="time:timeline"||kind=="camera:orbit-timed")
+                if(deferredTime(kind))
+                {
+                    deferred.emplace_back(gi,ni);
+                    const auto key=deferredKey(gi,ni);
+                    result+="    bool "+key+"_active = false;\n    bool "+key+"_loop = false;\n    float "+key+"_period = 0;\n    float "+key+"_remaining = 0;\n";
+                }
+                else if(kind=="time:timeline"||kind=="camera:orbit-timed")
                     result+="    float bp_timeline_state_"+std::to_string(gi)+"_"+std::to_string(ni)+" = 0;\n";
                 else if(kind=="flow:do-once"||kind=="flow:do-n"||kind=="flow:flip-flop"||kind=="flow:multi-gate"||kind=="flow:controlled-gate")
                     result+="    int bp_flow_state_"+std::to_string(gi)+"_"+std::to_string(ni)+" = 0;\n";
@@ -798,6 +827,7 @@ namespace nx
                 if(touch)result+="        @bp_level.onTouch = LevelTouch(this.onLevelTouch);\n";
                 if(agent)result+="        @bp_level.onAgent = LevelAgent(this.onLevelAgent);\n";
             }
+            if(graph.kind=="event"&&graph.name=="update"&&!deferred.empty())result+="        bp_tick_deferred(dt);\n";
             // Break the Level -> delegate -> Screen reference cycle on exit.
             if(!behaviour&&graph.name=="onExit")
             {
@@ -810,6 +840,35 @@ namespace nx
             if(!e.flow(index,"then",2,0))return false;
             result+="    }\n";
             if(result.size()>1024*1024){error="Generated source exceeds the size limit.";return false;}
+        }
+        if(!deferred.empty())
+        {
+            result+="    void bp_tick_deferred(float dt)\n    {\n";
+            // Snapshot/decrement first so a callback cannot make a new timer fire in the same tick.
+            for(const auto& item:deferred)
+            {
+                const auto key=deferredKey(item.first,item.second);
+                result+="        bool "+key+"_due = false;\n";
+                result+="        if ("+key+"_active) { "+key+"_remaining -= max(float(0), dt); "+key+"_due = "+key+"_remaining <= 0; }\n";
+            }
+            for(const auto& item:deferred)
+            {
+                const auto key=deferredKey(item.first,item.second);
+                result+="        if ("+key+"_due && "+key+"_active && "+key+"_remaining <= 0)\n        {\n";
+                result+="            "+key+"_active = "+key+"_loop;\n";
+                result+="            "+key+"_remaining = "+key+"_period;\n";
+                result+="            "+key+"_resume(dt);\n        }\n";
+            }
+            result+="    }\n";
+            for(const auto& item:deferred)
+            {
+                const auto& g=document.graphs[item.first];
+                result+="    void "+deferredKey(item.first,item.second)+"_resume(float dt)\n    {\n";
+                Emitter e{document,g,result,error,std::vector<bool>(g.nodes.size(),false),std::vector<bool>(g.nodes.size(),false),item.first,location,spans};
+                if(!e.flow(item.second,"completed",2,0))return false;
+                result+="    }\n";
+                if(result.size()>1024*1024){error="Generated source exceeds the size limit.";return false;}
+            }
         }
         result+="}\n";
         }

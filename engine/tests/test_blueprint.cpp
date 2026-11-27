@@ -2688,9 +2688,11 @@ NX_TEST(nativeFlowResetAndGateIsolationAcrossBehaviourInstances)
     const auto controlled=add("flow:controlled-gate");wire(seq,"first",controlled,"open");wire(seq,"second",controlled,"in");increment(controlled,"body","controlledCount");
     const auto seq2=add("sequence");wire(seq,"then",seq2,"in");wire(seq2,"first",controlled,"close");wire(seq2,"second",controlled,"toggle");
     const auto sw=add("flow:switch-int");wire(seq2,"then",sw,"in");input(sw,"value","9");increment(sw,"default","switchCount");
-    const auto branch=add("branch");wire(sw,"then",branch,"in");
+    const auto sample=add("branch");wire(sw,"then",sample,"in");wire(equals("tick","15"),"result",sample,"condition");
+    const auto branch=add("branch");wire(sample,"true",branch,"in");
     const auto checks=both(both(both(equals("onceCount","2"),equals("nCount","6")),equals("gateCount","1")),
-        both(both(equals("multiFirst","2"),equals("multiFourth","2")),both(equals("flipA","8"),equals("flipB","7"))));
+        both(both(equals("multiFirst","2"),equals("multiFourth","2")),both(both(equals("flipA","8"),equals("flipB","7")),
+        both(equals("controlledCount","15"),equals("switchCount","15")))));
     wire(checks,"result",branch,"condition");
     const auto self=add("event:entity"),name=add("api:Entity:get_name:Entity@");wire(self,"value",name,"target");
     const auto good=add("api:Save:Save::set:string,string"),bad=add("api:Save:Save::set:string,string");
@@ -2700,7 +2702,7 @@ NX_TEST(nativeFlowResetAndGateIsolationAcrossBehaviourInstances)
     r.platform.files["project/main/screen.json"]="{\"title\":\"Flow instance isolation\"}";
     r.platform.files["project/main/main.as"]=source;
     if(!r.screens.init(r.services,"project","main")){NX_EXPECT(false);return;}
-    r.step(15);NX_EXPECT(!r.screens.failed());
+    r.step(20);NX_EXPECT(!r.screens.failed());
     NX_EXPECT(strcmp(r.save.get("FlowFirst","missing"),"ok")==0&&strcmp(r.save.get("FlowSecond","missing"),"ok")==0);
 }
 
@@ -2736,4 +2738,28 @@ NX_TEST(nativeActorClassOverridesAndConstructionExecuteBeforeStart)
     r.platform.files["project/main/screen.json"]="{\"title\":\"Actor class construction\"}";r.platform.files["project/main/main.as"]=source;
     if(!r.screens.init(r.services,"project","main")){NX_EXPECT(false);return;}
     r.step(5);NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("base_construction","missing"),"ok")==0&&strcmp(r.save.get("child_construction","missing"),"ok")==0);
+}
+
+NX_TEST(nativeDeferredTimeExecutesOnRealScreenUpdates)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    BlueprintDocument doc;doc.create();std::string error,source;
+    bool ok=true;
+    auto add=[&](const char* kind){const auto n=doc.graphs[0].nodes.size();ok=ok&&doc.addNode(0,kind,0,0,error);return n;};
+    auto wire=[&](size_t from,const char* output,size_t to,const char* input){ok=ok&&doc.connect(0,from,output,to,input,error);};
+    auto input=[&](size_t n,const char* pin,const char* value){ok=ok&&doc.setInputValue(0,n,pin,value,error);};
+    auto save=[&](size_t from,const char* port,const char* key){const auto n=add("api:Save:Save::set:string,string");wire(from,port,n,"in");input(n,"key",key);input(n,"value","yes");};
+    const auto seq=add("sequence");wire(0,"then",seq,"in");
+    const auto delay=add("time:delay");wire(seq,"first",delay,"in");input(delay,"seconds","0.1");save(delay,"completed","delay_done");
+    const auto cancelled=add("time:delay");wire(seq,"second",cancelled,"in");input(cancelled,"seconds","0.05");save(cancelled,"completed","cancelled");
+    const auto tail=add("sequence");wire(seq,"then",tail,"in");wire(tail,"first",cancelled,"cancel");
+    const auto timer=add("time:timer");wire(tail,"second",timer,"in");input(timer,"seconds","0.05");input(timer,"loop","false");save(timer,"completed","timer_done");save(timer,"then","timer_started");
+    if(!ok||!compileBlueprint(doc,source,error)){NX_ERROR("Deferred time: %s",error.c_str());NX_EXPECT(false);return;}
+    r.platform.files["project/main/screen.json"]="{\"title\":\"Deferred time\"}";r.platform.files["project/main/main.as"]=source;
+    if(!r.screens.init(r.services,"project","main")){NX_EXPECT(false);return;}
+    r.step(1);NX_EXPECT(strcmp(r.save.get("timer_started","missing"),"yes")==0);
+    NX_EXPECT(strcmp(r.save.get("delay_done","missing"),"missing")==0);
+    r.step(12);NX_EXPECT(!r.screens.failed());
+    NX_EXPECT(strcmp(r.save.get("delay_done","missing"),"yes")==0&&strcmp(r.save.get("timer_done","missing"),"yes")==0);
+    NX_EXPECT(strcmp(r.save.get("cancelled","missing"),"missing")==0);
 }

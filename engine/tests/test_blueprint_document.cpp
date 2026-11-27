@@ -9,7 +9,7 @@
 using namespace nx;
 NX_TEST(nativeCatalogueContainsReferenceAPI)
 {
-    NX_EXPECT(blueprintCatalogue().size()==1193);
+    NX_EXPECT(blueprintCatalogue().size()==1196);
     const auto* save=blueprintSpec("api:Save:Save::set:string,string");
     NX_EXPECT(save&&save->inputs.size()==3&&save->outputs.size()==1);
     if(save&&save->inputs.size()==3)NX_EXPECT(save->inputs[0].type=="exec"&&save->inputs[2].type=="string");
@@ -1743,4 +1743,17 @@ NX_TEST(nativeAdvancedFlowPinsAndRoundTrip)
     NX_EXPECT(doc.serialize(bytes,error));BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error));
     NX_EXPECT(compileBlueprint(copy,source,error));
     NX_EXPECT(source.find("bp_each_array_7")!=std::string::npos&&source.find("bp_choice_4")!=std::string::npos);
+}
+
+NX_TEST(nativeDeferredTimeRoundTripAndScope)
+{
+    BlueprintDocument doc;doc.create();std::string error,bytes,source;
+    NX_EXPECT(doc.addNode(0,"time:delay",0,0,error)&&doc.connect(0,0,"then",1,"in",error));
+    NX_EXPECT(doc.addConnectedNode(0,1,"completed","time:retrigger-delay",250,0,error));
+    NX_EXPECT(doc.addConnectedNode(0,2,"completed","time:timer",500,0,error));
+    NX_EXPECT(doc.setInputValue(0,3,"loop","false",error));
+    NX_EXPECT(!doc.addNode(2,"time:delay",0,0,error));
+    NX_EXPECT(doc.serialize(bytes,error));BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error));
+    NX_EXPECT(compileBlueprint(copy,source,error));
+    NX_EXPECT(source.find("bp_tick_deferred(dt)")!=std::string::npos&&source.find("bp_deferred_0_3_resume(dt)")!=std::string::npos);
 }
