@@ -2289,3 +2289,32 @@ NX_TEST(nativeActorHierarchySpawnsAndDestroysChildren)
     world.destroyEntity(root);r.step(3);
     NX_EXPECT(!world.findNamed("Root")&&!world.findNamed("Component1")&&!world.findNamed("Component2"));
 }
+
+NX_TEST(nativeActorComponentsReceiveIndependentBlueprintBehaviours)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    BlueprintDocument doc;doc.create();std::string error,id,source;
+    const bool ok=doc.createVisualAsset("actor",id,error)&&doc.addBehaviour("Movement",error)&&
+        doc.appendVisualActorComponent(id,0,"sphere","0,1,0",error)&&
+        doc.setVisualActorProperty(id,1,"behaviour","Movement",error)&&
+        doc.setVisualActorProperty(id,1,"place","0,2,0",error)&&
+        doc.placeVisualActor("Screen",id,"0,0,0",error)&&doc.placeVisualActor("Screen",id,"5,0,0",error)&&
+        compileBlueprint(doc,source,error);
+    NX_EXPECT(ok);if(!ok)return;
+    r.platform.files["showcase/main/screen.json"]="{\"title\":\"Actor behaviours\"}";
+    r.platform.files["showcase/main/main.as"]=source;
+    if(!r.screens.init(r.services,"showcase","main")){NX_EXPECT(false);return;}
+    r.step(3);NX_EXPECT(!r.screens.failed());
+    if(!r.services.world){NX_EXPECT(false);return;}
+    auto& world=*r.services.world;
+    std::vector<asIScriptObject*> attached;
+    world.eachEntity([&](u32 id,const World::Entity& entity)
+    {
+        if(strcmp(entity.name,"Component1")!=0)return;
+        if(auto* behaviour=world.behaviour(id))attached.push_back(behaviour);
+        const auto* spatial=world.space().getSpatial(id);
+        NX_EXPECT(spatial&&fabsf(spatial->place.y-2)<0.01f);
+    });
+    NX_EXPECT(attached.size()==2);
+    if(attached.size()==2)NX_EXPECT(attached[0]!=attached[1]);
+}

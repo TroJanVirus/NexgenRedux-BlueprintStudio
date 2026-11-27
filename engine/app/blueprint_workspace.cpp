@@ -572,6 +572,7 @@ namespace nx
                 else if(ch==13)
                 {
                     if(m_visualInput==1&&!m_document.renameVisualAsset(m_visualSelection,m_visualText,m_status))break;
+                    if(m_visualInput==3&&!m_document.setVisualActorProperty(m_visualSelection,m_visualComponent,m_visualProperty,m_visualText,m_status))break;
                     m_visualInput=0;input.setTyping(false);m_status="Text applied.";break;
                 }
                 else if(ch>=32)appendCharacter(m_visualText,ch,128);
@@ -611,7 +612,7 @@ namespace nx
             std::string id;
             if(m_document.createVisualAsset(x<440?"actor":"widget",id,m_status))
             {
-                m_visualSelection=id;m_visualComponent=m_visualComponentFirst=0;m_visualText.clear();m_visualFirst=m_document.visualAssets().size()>9?m_document.visualAssets().size()-9:0;
+                m_visualSelection=id;m_visualComponent=m_visualComponentFirst=0;m_visualInspector=false;m_visualText.clear();m_visualFirst=m_document.visualAssets().size()>9?m_document.visualAssets().size()-9:0;
                 m_status="Created reusable definition. Ctrl+S saves the project.";
             }
             return;
@@ -619,7 +620,7 @@ namespace nx
         if(in(x,y,280,198,610,522))
         {
             const size_t row=m_visualFirst+static_cast<size_t>((y-198)/36);
-            if(row<assets.size()){m_visualSelection=assets[row].id;m_visualComponent=m_visualComponentFirst=0;m_visualText.clear();m_status="Selected "+assets[row].title;}
+            if(row<assets.size()){m_visualSelection=assets[row].id;m_visualComponent=m_visualComponentFirst=0;m_visualInspector=false;m_visualText.clear();m_status="Selected "+assets[row].title;}
             return;
         }
         const auto* selected=m_document.visualAsset(m_visualSelection);
@@ -634,6 +635,39 @@ namespace nx
         }
         if(selected->kind=="actor")
         {
+            if(in(x,y,630,232,1000,266)){m_visualInspector=!m_visualInspector;return;}
+            if(m_visualInspector)
+            {
+                const char* prop=nullptr;
+                if(in(x,y,630,277,810,310))prop="name";
+                else if(in(x,y,820,277,1000,310))prop="place";
+                else if(in(x,y,630,318,810,351))prop="angles";
+                else if(in(x,y,820,318,1000,351))prop="size";
+                else if(in(x,y,630,359,810,392))prop="model";
+                else if(in(x,y,820,359,1000,392))prop="behaviour";
+                if(!prop)return;
+                JsonTree tree;if(!tree.parse(selected->source.data(),selected->source.size()))return;
+                const auto item=tree.root()["entities"][static_cast<u32>(m_visualComponent)];
+                if(!item.exists()){m_status="Select a component.";return;}
+                const auto v=item[prop];m_visualProperty=prop;
+                if(m_visualProperty=="place"||m_visualProperty=="angles"||m_visualProperty=="size")
+                {
+                    const float fallback=m_visualProperty=="size"?1.f:0.f;
+                    m_visualText="";
+                    for(u32 axis=0;axis<3;++axis)
+                    {
+                        const float n=v.isArray()?v[axis].number(fallback):v.isNumber()?(m_visualProperty=="angles"?(axis==1?v.number():0.f):v.number()):fallback;
+                        if(axis)m_visualText+=",";
+                        m_visualText+=std::to_string(n);
+                    }
+                }
+                else
+                {
+                    m_visualText=v.text();
+                    if(m_visualProperty=="behaviour"&&m_visualText.rfind("BP_Behaviour_",0)==0)m_visualText.erase(0,13);
+                }
+                m_visualInput=3;input.setTyping(true);m_status="Edit property; Enter applies, Escape cancels.";return;
+            }
             const char* shape=nullptr;
             if(in(x,y,630,277,810,310))shape="box";
             else if(in(x,y,820,277,1000,310))shape="sphere";
@@ -736,7 +770,36 @@ namespace nx
             }
             else
             {
-                c.text(*m_font,"Actor hierarchy / selected component shape",630,244,text);
+                button(630,232,370,m_visualInspector?"Back to component hierarchy":"Edit selected component properties");
+                if(m_visualInspector)
+                {
+                    button(630,277,180,"Name");button(820,277,180,"Position XYZ");
+                    button(630,318,180,"Rotation XYZ");button(820,318,180,"Size XYZ");
+                    button(630,359,180,"Model");button(820,359,180,"Behaviour");
+                    JsonTree tree;
+                    if(tree.parse(selected->source.data(),selected->source.size()))
+                    {
+                        const auto item=tree.root()["entities"][static_cast<u32>(m_visualComponent)];
+                        c.clip(630,401,370,28);c.text(*m_font,(std::string("Component: ")+item["name"].text()).c_str(),630,404,accent);c.noClip();
+                        const auto vec=[&](const char* prop,float fallback)
+                        {
+                            const auto v=item[prop];std::string value;
+                            for(u32 i=0;i<3;++i){if(i)value+=", ";value+=std::to_string(v.isArray()?v[i].number(fallback):v.isNumber()?(std::string(prop)=="angles"?(i==1?v.number():0.f):v.number()):fallback);}
+                            return std::string(prop)+": "+value;
+                        };
+                        for(u32 i=0;i<3;++i)
+                        {
+                            const auto value=vec(i==0?"place":i==1?"angles":"size",i==2?1.f:0.f);
+                            c.clip(630,435+25*i,370,25);c.text(*m_font,value.c_str(),630,437+25*i,muted);c.noClip();
+                        }
+                        const auto model=std::string("Model: ")+item["model"].text("(none)");
+                        const auto behaviour=std::string("Behaviour: ")+item["behaviour"].text("(none)");
+                        c.clip(630,510,370,25);c.text(*m_font,model.c_str(),630,512,muted);c.noClip();
+                        c.clip(630,535,370,25);c.text(*m_font,behaviour.c_str(),630,537,muted);c.noClip();
+                    }
+                }
+                else
+                {
                 button(630,277,180,"Box");button(820,277,180,"Sphere");
                 button(630,318,180,"Capsule");button(820,318,180,"Plane");
                 JsonTree tree;
@@ -755,6 +818,7 @@ namespace nx
                 }
                 button(630,505,370,"Add child to selected component");
                 button(630,548,370,"Add linked actor to screen");
+                }
             }
         }
         else c.text(*m_font,"Select a definition to edit.",630,210,muted);
@@ -762,7 +826,7 @@ namespace nx
         if(m_visualInput)
         {
             c.roundRect(420,286,440,130,6,{0.08f,0.12f,0.18f,1});
-            c.text(*m_font,m_visualInput==1?"RENAME ASSET":"NEXT WIDGET TEXT",440,300,accent);
+            c.text(*m_font,m_visualInput==1?"RENAME ASSET":m_visualInput==3?m_visualProperty.c_str():"NEXT WIDGET TEXT",440,300,accent);
             c.clip(440,330,400,34);c.text(*m_font,m_visualText.c_str(),440,336,text);c.noClip();
             c.text(*m_font,"Enter applies; Escape cancels.",440,379,muted);
         }

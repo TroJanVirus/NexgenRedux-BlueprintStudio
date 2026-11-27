@@ -727,10 +727,91 @@ namespace nx
         }
         error="Actor not found.";return false;
     }
+    bool BlueprintDocument::visualActorForOwner(const std::string& id,const std::string& owner,std::string& json,std::string& error)const
+    {
+        std::string source;if(!visualActorSource(id,source,error))return false;
+        JsonTree tree;if(!tree.parse(source.data(),source.size()))return false;
+        for(auto item=tree.root()["entities"].first();item.exists();item=item.next())
+        {
+            const auto ref=item["behaviour"];
+            if(!ref.exists())continue;
+            const std::string name=ref.text();
+            if(!ref.isString()||name.rfind("BP_Behaviour_",0)!=0||!canAttach(owner,name.substr(13)))
+            {error="Actor references missing or out-of-scope Blueprint Behaviour: "+name;return false;}
+        }
+        json.swap(source);error.clear();return true;
+    }
+    bool BlueprintDocument::setVisualActorProperty(const std::string& id,size_t component,const std::string& property,const std::string& value,std::string& error)
+    {
+        std::string source;if(!visualActorSource(id,source,error))return false;
+        auto assets=m_visualAssets;
+        for(auto& a:assets)if(a.id==id)
+        {
+            JsonValue root;if(!root.parse(source.data(),source.size(),error))return false;
+            auto* entities=root.find("entities");
+            if(component>=entities->count()){error="Select a component.";return false;}
+            auto* item=entities->at(static_cast<unsigned>(component));
+            if(property=="place"||property=="angles"||property=="size")
+            {
+                std::vector<std::string> xyz;
+                if(!blueprintInputComponents("Vec3",value,xyz)){error="Enter three finite numbers separated by commas.";return false;}
+                double values[3]={};
+                for(size_t i=0;i<3;++i)
+                {
+                    values[i]=std::strtod(xyz[i].c_str(),nullptr);
+                    if(!std::isfinite(values[i])||std::abs(values[i])>1000000||(property=="size"&&values[i]<=0))
+                    {error="Transform outside supported range; size must be positive.";return false;}
+                }
+                auto* field=item->put(property);if(!field)return false;field->setArray();
+                for(double n:values){auto* v=field->add();if(!v)return false;v->setNumber(n);}
+            }
+            else if(property=="name")
+            {
+                if(value.empty()||value.size()>23||std::any_of(value.begin(),value.end(),[](unsigned char ch){return ch<32||ch==127;}))
+                {error="Use a nonempty component name of at most 23 UTF-8 bytes.";return false;}
+                if(!text(*item,"name",value))return false;
+            }
+            else if(property=="behaviour")
+            {
+                if(value.empty())item->remove("behaviour");
+                else
+                {
+                    const auto names=behaviours();
+                    if(std::find(names.begin(),names.end(),value)==names.end()||!moduleForOwner("behaviour:"+value).empty())
+                    {error="Select a shared Blueprint Behaviour by name; screen-local Behaviours cannot be reused.";return false;}
+                    if(!text(*item,"behaviour","BP_Behaviour_"+value))return false;
+                }
+            }
+            else if(property=="model")
+            {
+                if(value.empty())item->remove("model");
+                else
+                {
+                    size_t at=value.rfind("asset:",0)==0?6:value.rfind("global:",0)==0?7:0;
+                    if(!at||at>=value.size()||value.size()>128){error="Use asset: or global: followed by a portable model path.";return false;}
+                    while(at<value.size())
+                    {
+                        const auto slash=value.find('/',at);
+                        const auto part=value.substr(at,slash==std::string::npos?slash:slash-at);
+                        if(!blueprintAssetName(part,slash!=std::string::npos)){error="Invalid model asset path.";return false;}
+                        if(slash==std::string::npos)break;
+                        at=slash+1;if(at==value.size()){error="Invalid model asset path.";return false;}
+                    }
+                    if(!text(*item,"model",value))return false;
+                    item->remove("shape");
+                }
+            }
+            else {error="Unsupported actor property.";return false;}
+            const auto changed=root.write(true);
+            if(changed==a.source){error.clear();return true;}
+            a.source=changed;return replaceVisualAssets(assets,error);
+        }
+        error="Actor not found.";return false;
+    }
     bool BlueprintDocument::placeVisualActor(const std::string& owner,const std::string& id,const std::string& place,std::string& error)
     {
         std::string json;std::vector<std::string> components;
-        if(!visualActorSource(id,json,error))return false;
+        if(!visualActorForOwner(id,owner,json,error))return false;
         if(!blueprintInputComponents("Vec3",place,components)){error="Enter a valid XYZ position.";return false;}
         size_t enter=static_cast<size_t>(-1),draw=enter;
         for(size_t i=0;i<graphs.size();++i)if(graphs[i].owner==owner)
@@ -1930,6 +2011,14 @@ namespace nx
         {error="Unknown behaviour.";return false;}
         for(const auto& g:graphs)for(const auto& n:g.nodes)
             if((n.kind=="attach:behaviour"||n.kind=="attach:direct"||n.kind=="level:attach")&&n.ref==behaviourName){error="Remove attachment nodes referencing "+behaviourName+" first.";return false;}
+        for(const auto& asset:m_visualAssets)if(asset.kind=="actor")
+        {
+            JsonTree tree;
+            if(tree.parse(asset.source.data(),asset.source.size()))
+                for(auto item=tree.root()["entities"].first();item.exists();item=item.next())
+                    if(std::string(item["behaviour"].text())=="BP_Behaviour_"+behaviourName)
+                    {error="Remove actor component assignments referencing "+behaviourName+" first.";return false;}
+        }
         recordGraphList();
         graphs.erase(std::remove_if(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==owner;}),graphs.end());
         error.clear();return true;

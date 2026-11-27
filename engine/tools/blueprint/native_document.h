@@ -85,6 +85,9 @@ namespace nx
         bool visualActorSource(const std::string& id,std::string& json,std::string& error)const;
         bool setVisualActorShape(const std::string& id,const std::string& shape,std::string& error,size_t component=0);
         bool appendVisualActorComponent(const std::string& id,size_t parent,const std::string& shape,const std::string& place,std::string& error);
+        // Inspector properties use the native entity loader's names and units.
+        bool setVisualActorProperty(const std::string& id,size_t component,const std::string& property,const std::string& value,std::string& error);
+        bool visualActorForOwner(const std::string& id,const std::string& owner,std::string& json,std::string& error)const;
         bool placeVisualActor(const std::string& owner,const std::string& id,const std::string& place,std::string& error);
         void create();
         bool load(const char* data,size_t size,std::string& error);

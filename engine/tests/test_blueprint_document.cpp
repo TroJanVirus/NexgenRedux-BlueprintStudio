@@ -1341,3 +1341,26 @@ NX_TEST(nativeActorComponentHierarchyPreservesLinksAndUndo)
     NX_EXPECT(copy.replaceVisualAssets(assets,error));
     NX_EXPECT(!copy.visualActorSource(id,source,error));
 }
+
+NX_TEST(nativeActorInspectorEditsSharedComponentProperties)
+{
+    BlueprintDocument doc;doc.create();std::string error,id,source,bytes;
+    NX_EXPECT(doc.createVisualAsset("actor",id,error)&&doc.addBehaviour("Movement",error));
+    NX_EXPECT(doc.appendVisualActorComponent(id,0,"box","0,1,0",error));
+    NX_EXPECT(doc.setVisualActorProperty(id,1,"name","Body",error));
+    NX_EXPECT(doc.setVisualActorProperty(id,1,"place","1,2,3",error));
+    NX_EXPECT(doc.setVisualActorProperty(id,1,"angles","0,90,0",error));
+    NX_EXPECT(doc.setVisualActorProperty(id,1,"size","2,1,1",error));
+    NX_EXPECT(doc.setVisualActorProperty(id,1,"behaviour","Movement",error));
+    NX_EXPECT(!doc.removeBehaviour("Movement",error));
+    NX_EXPECT(doc.setVisualActorProperty(id,1,"model","global:models/body.glb",error));
+    NX_EXPECT(!doc.setVisualActorProperty(id,1,"model","asset:../bad.glb",error));
+    NX_EXPECT(!doc.setVisualActorProperty(id,1,"size","0,1,1",error));
+    NX_EXPECT(!doc.setVisualActorProperty(id,1,"behaviour","Missing",error));
+    NX_EXPECT(doc.placeVisualActor("Screen",id,"0,0,0",error)&&compileBlueprint(doc,source,error));
+    NX_EXPECT(source.find("BP_Behaviour_Movement")!=std::string::npos&&source.find("global:models/body.glb")!=std::string::npos);
+    NX_EXPECT(doc.serialize(bytes,error));
+    BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error));
+    NX_EXPECT(copy.setVisualActorProperty(id,1,"behaviour","",error)&&copy.removeBehaviour("Movement",error));
+    NX_EXPECT(copy.undo()&&copy.undo()&&!copy.removeBehaviour("Movement",error));
+}
