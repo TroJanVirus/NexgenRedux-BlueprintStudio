@@ -448,6 +448,86 @@ namespace nx
         auto next=assets;
         recordGraphList();m_visualAssets=std::move(next);return true;
     }
+    bool BlueprintDocument::createVisualAsset(const std::string& kind,std::string& id,std::string& error)
+    {
+        if(kind!="actor"&&kind!="widget"){error="Unknown visual asset kind.";return false;}
+        if(m_visualAssets.size()>=128){error="Visual asset limit reached.";return false;}
+        // The ID is independent of the user-facing name. At this stage there
+        // are no external scene-instance references; dependency links are checked.
+        std::string next;
+        for(unsigned i=1;i<=129;++i)
+        {
+            next=kind+"-"+std::to_string(i);
+            if(!visualAsset(next))break;
+        }
+        auto assets=m_visualAssets;
+        assets.push_back({next,kind,kind=="actor"?"New Actor":"New Widget",
+            kind=="actor"?"{\"entities\":[{\"name\":\"Root\",\"shape\":\"box\",\"size\":[1,1,1]}]}":"[]",{}});
+        if(!replaceVisualAssets(assets,error))return false;
+        id=next;return true;
+    }
+    bool BlueprintDocument::renameVisualAsset(const std::string& id,const std::string& title,std::string& error)
+    {
+        auto next=m_visualAssets;
+        for(auto& a:next)if(a.id==id)
+        {
+            if(a.title==title){error.clear();return true;}
+            a.title=title;return replaceVisualAssets(next,error);
+        }
+        error="Visual asset not found.";return false;
+    }
+    bool BlueprintDocument::removeVisualAsset(const std::string& id,std::string& error)
+    {
+        auto next=m_visualAssets;
+        const auto at=std::find_if(next.begin(),next.end(),[&](const VisualAsset& a){return a.id==id;});
+        if(at==next.end()){error="Visual asset not found.";return false;}
+        next.erase(at);return replaceVisualAssets(next,error);
+    }
+    bool BlueprintDocument::appendVisualWidget(const std::string& id,const std::string& kind,const std::string& label,std::string& error)
+    {
+        if(kind!="label"&&kind!="button"&&kind!="progress"&&kind!="toggle")
+        {error="Unsupported palette widget.";return false;}
+        if(label.size()>128||std::any_of(label.begin(),label.end(),[](unsigned char c){return c<32||c==127;}))
+        {error="Widget text is too long or contains control characters.";return false;}
+        auto next=m_visualAssets;
+        for(auto& a:next)if(a.id==id&&a.kind=="widget")
+        {
+            JsonTree tree;
+            if(!tree.parse(a.source.data(),a.source.size())||!tree.root().isArray()||tree.root().count()>=64)
+            {error="Invalid or full widget page.";return false;}
+            // Preserve unknown properties, exact numbers and nested imported widgets.
+            // Only insert a new native widget at the end of the existing root array.
+            const size_t end=a.source.find_last_not_of(" \t\r\n");
+            if(end==std::string::npos||a.source[end]!=']')
+            {error="Page must end with its root array; trailing comments are not edited.";return false;}
+            std::unordered_set<std::string> ids;
+            const auto walk=[&](auto&& self,JsonTree::Value v)->void
+            {
+                if(v.isObject()&&v["id"].isString())ids.emplace(v["id"].text());
+                if(v.isArray()||v.isObject())for(auto child=v.first();child.exists();child=child.next())self(self,child);
+            };
+            walk(walk,tree.root());
+            std::string widgetId;
+            for(unsigned i=1;i<=4096;++i)
+            {
+                widgetId="item-"+std::to_string(i);
+                if(!ids.count(widgetId))break;
+            }
+            if(ids.count(widgetId)){error="No free widget ID.";return false;}
+            JsonValue item;
+            if(!text(item,"id",widgetId)){error="Cannot create widget.";return false;}
+            if(kind=="progress")
+            {
+                if(!number(item,"progress",0.75)||!number(item,"low",0)||!number(item,"high",1))
+                {error="Cannot create progress bar.";return false;}
+            }
+            else if(!text(item,kind.c_str(),label.empty()?(kind=="label"?"Text":kind=="button"?"Button":"Toggle"):label))
+            {error="Cannot create widget.";return false;}
+            a.source.insert(end,std::string(tree.root().count()?",\n":"\n")+item.write(true)+"\n");
+            return replaceVisualAssets(next,error);
+        }
+        error="Select a widget page first.";return false;
+    }
     void BlueprintDocument::create()
     {
         *this=BlueprintDocument{};

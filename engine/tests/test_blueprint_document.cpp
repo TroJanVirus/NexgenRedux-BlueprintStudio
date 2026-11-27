@@ -1151,3 +1151,31 @@ NX_TEST(nativeReusableVisualAssetsRoundTripAndUndo)
     NX_EXPECT(!doc.replaceVisualAssets(chain,error));
     NX_EXPECT(doc.visualAssets().size()==2);
 }
+
+NX_TEST(nativeVisualAssetPaletteProducesNativeWidgetJson)
+{
+    BlueprintDocument doc;doc.create();std::string error,widget,actor,bytes;
+    NX_EXPECT(doc.createVisualAsset("widget",widget,error));
+    NX_EXPECT(doc.createVisualAsset("actor",actor,error)&&actor!=widget);
+    NX_EXPECT(doc.renameVisualAsset(widget,"Player HUD",error));
+    NX_EXPECT(doc.appendVisualWidget(widget,"label","Health",error));
+    NX_EXPECT(doc.appendVisualWidget(widget,"button","Play",error));
+    NX_EXPECT(doc.appendVisualWidget(widget,"progress","",error));
+    if(const auto* page=doc.visualAsset(widget))
+    {
+        NX_EXPECT(page->source.find("Health")!=std::string::npos);
+        NX_EXPECT(page->source.find("item-3")!=std::string::npos);
+        NX_EXPECT(page->source.find("0.75")!=std::string::npos);
+    }
+    const auto revision=doc.revision();
+    NX_EXPECT(!doc.appendVisualWidget(actor,"label","Wrong",error)&&doc.revision()==revision);
+    NX_EXPECT(doc.removeVisualAsset(widget,error)&&!doc.visualAsset(widget));
+    NX_EXPECT(doc.undo()&&doc.visualAsset(widget));
+    NX_EXPECT(doc.serialize(bytes,error));
+    BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error));
+    if(const auto* page=copy.visualAsset(widget))NX_EXPECT(page->title=="Player HUD");
+    auto assets=copy.visualAssets();
+    for(auto& a:assets)if(a.id==actor)a.dependencies={widget};
+    NX_EXPECT(copy.replaceVisualAssets(assets,error));
+    NX_EXPECT(!copy.removeVisualAsset(widget,error));
+}

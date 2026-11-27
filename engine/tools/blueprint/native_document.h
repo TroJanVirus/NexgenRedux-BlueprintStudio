@@ -75,6 +75,10 @@ namespace nx
         const VisualAsset* visualAsset(const std::string& id)const;
         // Atomic replacement validates all references, including forward references.
         bool replaceVisualAssets(const std::vector<VisualAsset>& assets,std::string& error);
+        bool createVisualAsset(const std::string& kind,std::string& id,std::string& error);
+        bool renameVisualAsset(const std::string& id,const std::string& title,std::string& error);
+        bool removeVisualAsset(const std::string& id,std::string& error);
+        bool appendVisualWidget(const std::string& id,const std::string& kind,const std::string& label,std::string& error);
         void create();
         bool load(const char* data,size_t size,std::string& error);
         bool serialize(std::string& result,std::string& error) const;

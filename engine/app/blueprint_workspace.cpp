@@ -8,6 +8,7 @@
 #include "bindings/bindings.h"
 #include "assets/assets.h"
 #include "base/log.h"
+#include "base/json_tree.h"
 #include "canvas/canvas.h"
 #include "input/input.h"
 #include "platform/platform.h"
@@ -530,8 +531,167 @@ namespace nx
         {m_status="Save as a named project before importing assets.";return;}
         if(!blueprintEnsureAssetFolder(*s.platform,m_document.assetRoot,screen,m_status)||
             !blueprintListAssets(*s.platform,m_document.assetRoot,screen,m_assetFiles,m_status))return;
-        m_assetBrowser=true;m_assetFirst=0;clearWire();cancelDrag();
+        m_assetBrowser=true;m_assetLibrary=false;m_assetFirst=0;m_visualInput=0;clearWire();cancelDrag();
         m_status="Drop a native asset or scene JSON into this window.";
+    }
+    bool BlueprintWorkspace::publishVisualWidget(Services& s)
+    {
+        const auto* page=m_document.visualAsset(m_visualSelection);
+        const auto screen=assetScreen();
+        if(!page||page->kind!="widget"||screen.empty()||m_document.assetRoot.empty())
+        {m_status="Select a widget page and a named screen.";return false;}
+        if(!blueprintEnsureAssetFolder(*s.platform,m_document.assetRoot,screen,m_status))return false;
+        const auto filename="ui_"+page->id+".json";
+        const auto path="own/"+m_document.assetRoot+"/"+screen+"/asset/"+filename;
+        if(s.platform->fileTime(path.c_str()))
+        {
+            FileData old;
+            if(!s.platform->readFile(path.c_str(),old,MemTag::General)||old.size!=page->source.size()||
+                std::memcmp(old.data,page->source.data(),old.size)!=0)
+            {m_status="Page already exists with different contents. Existing file preserved.";return false;}
+        }
+        else if(!writeVerified(s,path,page->source))return false;
+        if(!blueprintListAssets(*s.platform,m_document.assetRoot,screen,m_assetFiles,m_status))return false;
+        m_status="Copied asset:"+filename+". Use Ui::load and Ui::draw in your graph.";
+        return true;
+    }
+    void BlueprintWorkspace::updateVisualLibrary(Services& s,float x,float y,bool click,unsigned pressed)
+    {
+        auto& input=*s.input;
+        if(m_visualInput)
+        {
+            for(u32 i=0;i<input.typedCount();++i)
+            {
+                const auto ch=input.typed(i);
+                if(ch==8&&!m_visualText.empty())
+                {
+                    size_t end=m_visualText.size()-1;
+                    while(end&&(static_cast<unsigned char>(m_visualText[end])&0xc0)==0x80)--end;
+                    m_visualText.resize(end);
+                }
+                else if(ch==13)
+                {
+                    if(m_visualInput==1&&!m_document.renameVisualAsset(m_visualSelection,m_visualText,m_status))break;
+                    m_visualInput=0;input.setTyping(false);m_status="Text applied.";break;
+                }
+                else if(ch>=32)appendCharacter(m_visualText,ch,128);
+            }
+            return;
+        }
+        if(pressed&1u){saveCurrent(s);return;}
+        if(pressed&2u){if(m_document.undo())m_status="Library edit undone.";return;}
+        if(pressed&4u){if(m_document.redo())m_status="Library edit redone.";return;}
+        const auto& assets=m_document.visualAssets();
+        if(m_visualFirst>=assets.size())m_visualFirst=assets.empty()?0:assets.size()-1;
+        if(in(x,y,280,198,610,535))
+        {
+            if(input.wheel()<0&&m_visualFirst+9<assets.size())++m_visualFirst;
+            if(input.wheel()>0&&m_visualFirst)--m_visualFirst;
+        }
+        if(!click)return;
+        if(in(x,y,860,116,1000,150)){m_assetBrowser=false;return;}
+        if(in(x,y,704,116,850,150)){m_assetLibrary=false;return;}
+        if(in(x,y,280,156,439,189)||in(x,y,449,156,610,189))
+        {
+            std::string id;
+            if(m_document.createVisualAsset(x<440?"actor":"widget",id,m_status))
+            {
+                m_visualSelection=id;m_visualText.clear();m_visualFirst=m_document.visualAssets().size()>9?m_document.visualAssets().size()-9:0;
+                m_status="Created reusable definition. Ctrl+S saves the project.";
+            }
+            return;
+        }
+        if(in(x,y,280,198,610,522))
+        {
+            const size_t row=m_visualFirst+static_cast<size_t>((y-198)/36);
+            if(row<assets.size()){m_visualSelection=assets[row].id;m_visualText.clear();m_status="Selected "+assets[row].title;}
+            return;
+        }
+        const auto* selected=m_document.visualAsset(m_visualSelection);
+        if(!selected)return;
+        if(in(x,y,630,156,805,189))
+        {m_visualText=selected->title;m_visualInput=1;input.setTyping(true);m_status="Edit name, then Enter.";return;}
+        if(in(x,y,815,156,1000,189))
+        {
+            if(m_document.removeVisualAsset(m_visualSelection,m_status))
+            {m_visualSelection.clear();m_visualText.clear();m_status="Removed definition. Ctrl+Z restores it.";}
+            return;
+        }
+        if(selected->kind!="widget")return;
+        if(in(x,y,630,232,1000,266))
+        {m_visualInput=2;input.setTyping(true);m_status="Enter the next widget label, then press Enter.";return;}
+        const char* kind=nullptr;
+        if(in(x,y,630,277,810,310))kind="label";
+        else if(in(x,y,820,277,1000,310))kind="button";
+        else if(in(x,y,630,318,810,351))kind="progress";
+        else if(in(x,y,820,318,1000,351))kind="toggle";
+        if(kind)
+        {
+            if(m_document.appendVisualWidget(m_visualSelection,kind,m_visualText,m_status))
+            {m_visualText.clear();m_status="Added native widget. Ctrl+Z restores the previous page.";}
+        }
+        else if(in(x,y,630,548,1000,581))publishVisualWidget(s);
+    }
+    void BlueprintWorkspace::drawVisualLibrary(Canvas& c)
+    {
+        c.roundRect(260,100,760,525,9,{0.12f,0.16f,0.22f,1});
+        const auto button=[&](float x,float y,float w,const char* label)
+        {c.roundRect(x,y,w,33,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,label,x+w*0.5f,y+7,text,Align::Center);};
+        c.text(*m_font,"CONTENT / PROJECT LIBRARY",280,122,accent);
+        button(704,116,146,"Media");button(860,116,140,"Close");
+        button(280,156,159,"New actor");button(449,156,161,"New widget");
+        const auto& assets=m_document.visualAssets();
+        for(size_t i=0;i<9&&m_visualFirst+i<assets.size();++i)
+        {
+            const auto& a=assets[m_visualFirst+i];const float y=198+36*static_cast<float>(i);
+            c.rect(280,y,330,33,a.id==m_visualSelection?Color{0.19f,0.33f,0.50f,1}:Color{0.17f,0.22f,0.30f,1});
+            c.clip(287,y,316,33);c.text(*m_font,((a.kind=="actor"?"ACTOR  ":"UI  ")+a.title).c_str(),290,y+8,text);c.noClip();
+        }
+        if(assets.empty())c.text(*m_font,"Create a reusable asset.",290,210,muted);
+        const auto* selected=m_document.visualAsset(m_visualSelection);
+        if(selected)
+        {
+            button(630,156,175,"Rename");button(815,156,185,"Remove");
+            c.clip(630,195,370,32);c.text(*m_font,(selected->id+" / "+selected->title).c_str(),630,201,accent);c.noClip();
+            if(selected->kind=="widget")
+            {
+                c.rect(630,232,370,34,{0.07f,0.10f,0.15f,1});
+                c.clip(636,232,358,34);c.text(*m_font,m_visualText.empty()?"Next widget text (optional)":m_visualText.c_str(),638,239,muted);c.noClip();
+                button(630,277,180,"Add text");button(820,277,180,"Add button");
+                button(630,318,180,"Add progress");button(820,318,180,"Add toggle");
+                c.text(*m_font,"Page structure (not live preview)",630,363,muted);
+                JsonTree tree;
+                if(tree.parse(selected->source.data(),selected->source.size()))
+                {
+                    size_t index=0;
+                    for(auto item=tree.root().first();item.exists()&&index<5;item=item.next(),++index)
+                    {
+                        const float row=387+28*static_cast<float>(index);
+                        const char* kind=item["label"].exists()?"label":item["button"].exists()?"button":item["progress"].exists()?"progress":item["toggle"].exists()?"toggle":"widget";
+                        const std::string label=std::string(kind)+"  "+item[kind].text()+"  "+item["id"].text();
+                        c.rect(630,row,370,25,{0.17f,0.22f,0.30f,1});
+                        c.clip(635,row,360,25);c.text(*m_font,label.c_str(),638,row+4,text);c.noClip();
+                    }
+                    if(tree.root().count()>5)c.text(*m_font,("+"+std::to_string(tree.root().count()-5)+" more widgets").c_str(),630,528,muted);
+                }
+                button(630,548,370,"Copy native page to screen");
+            }
+            else
+            {
+                c.text(*m_font,"Native actor definition",630,244,text);
+                c.text(*m_font,"Root: box (starter primitive)",630,278,muted);
+                c.text(*m_font,"Scene placement is not yet available.",630,310,muted);
+            }
+        }
+        else c.text(*m_font,"Select a definition to edit.",630,210,muted);
+        c.clip(280,591,720,26);c.text(*m_font,m_status.c_str(),280,595,text);c.noClip();
+        if(m_visualInput)
+        {
+            c.roundRect(420,286,440,130,6,{0.08f,0.12f,0.18f,1});
+            c.text(*m_font,m_visualInput==1?"RENAME ASSET":"NEXT WIDGET TEXT",440,300,accent);
+            c.clip(440,330,400,34);c.text(*m_font,m_visualText.c_str(),440,336,text);c.noClip();
+            c.text(*m_font,"Enter applies; Escape cancels.",440,379,muted);
+        }
     }
     void BlueprintWorkspace::launchSceneEditor(Services& s)
     {
@@ -1141,7 +1301,7 @@ namespace nx
         auto& input = *s.input;
         if (input.pressed(Action::Menu))
         {
-            if(m_assetBrowser){m_assetBrowser=false;m_status="Asset browser closed.";return;}
+            if(m_assetBrowser){if(m_visualInput){m_visualInput=0;m_visualText.clear();input.setTyping(false);m_status="Input cancelled.";return;}m_assetBrowser=false;m_status="Asset browser closed.";return;}
             if(m_browsing){m_browsing=false;m_status="Open cancelled.";return;}
             if(m_focus){m_focus=0;input.setTyping(false);m_status="Input cancelled.";return;}
             if(m_layoutDragging||m_layoutMenu){m_layoutDragging=m_layoutMenu=false;m_status="Layout action cancelled.";return;}
@@ -1154,7 +1314,8 @@ namespace nx
         std::string dropped;
         if (!m_drag && !m_layoutDragging && !m_layoutMenu && !m_pinMenu && !m_pinDrag && !m_quickDrag && !m_quickMenu && !m_focus && !m_browsing && s.platform->takeDropped(dropped))
         {
-            if(m_assetBrowser)importAsset(s,dropped);
+            if(m_assetBrowser&&m_assetLibrary)m_status="Switch to Media before importing files.";
+            else if(m_assetBrowser)importAsset(s,dropped);
             else if(blueprintFileName(dropped))openFile(s,dropped,false);
             else if(dropped.ends_with(".as"))importSource(s,dropped);
             else m_status="Open Assets before dropping a scene or media file.";
@@ -1329,6 +1490,8 @@ namespace nx
         }
         if(m_assetBrowser)
         {
+            if(m_assetLibrary){updateVisualLibrary(s,x,y,click,pressed);m_left=left;return;}
+            if(click&&in(x,y,384,116,524,150)){m_assetLibrary=true;m_visualInput=0;m_visualText.clear();m_visualFirst=0;m_status="Project-wide reusable actors and widget pages.";m_left=left;return;}
             if(input.wheel()<0&&m_assetFirst+10<m_assetFiles.size())++m_assetFirst;
             if(input.wheel()>0&&m_assetFirst)--m_assetFirst;
             if(click&&in(x,y,860,116,1000,150))m_assetBrowser=false;
@@ -2118,10 +2281,12 @@ namespace nx
         if(m_assetBrowser||m_browsing||m_focus==5||m_focus==6||m_focus==9||m_focus==10||m_focus==11||m_focus==12||m_focus==13||m_focus==14||m_focus==15)
         {
             c.rect(0,0,kWidth,kHeight,{0,0,0,0.70f});
-            if(m_assetBrowser)
+            if(m_assetBrowser&&m_assetLibrary)drawVisualLibrary(c);
+            else if(m_assetBrowser)
             {
                 c.roundRect(260,100,760,525,9,{0.12f,0.16f,0.22f,1});
-                c.text(*m_font,("ASSETS / "+assetScreen()).c_str(),280,122,accent);
+                c.clip(280,116,100,34);c.text(*m_font,"ASSETS",280,122,accent);c.noClip();
+                c.roundRect(384,116,140,34,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Content",454,123,text,Align::Center);
                 c.roundRect(534,116,160,34,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Scene editor",614,123,text,Align::Center);
                 c.roundRect(704,116,146,34,4,{0.22f,0.31f,0.43f,1});c.text(*m_font,"Refresh",777,123,text,Align::Center);
                 c.roundRect(860,116,140,34,4,{0.22f,0.31f,0.43f,1});c.text(*m_font,"Close",930,123,text,Align::Center);

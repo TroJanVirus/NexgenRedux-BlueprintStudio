@@ -341,6 +341,37 @@ with menu_log.open("wb") as out:
         wait_for(lambda: "preview stopped" in menu_log.read_text(errors="replace"),
                  "stop freshly authored graph", process)
         assert "Preview error:" not in menu_log.read_text(errors="replace")
+        # Author reusable assets through the native Content Browser and persist
+        # a native UI page without touching the previously generated graph.
+        click(1027, 18, window)
+        click(454, 133, window)
+        click(528, 172, window)
+        click(810, 249, window)
+        enter_text("Health")
+        click(720, 293, window)
+        click(910, 293, window)
+        click(720, 334, window)
+        click(815, 564, window)
+        click(360, 172, window)
+        click(930, 133, window)
+        click(800, 53, window)
+        def saved_library():
+            try:
+                return json.loads(copy.read_text(encoding="utf-8")).get("visualAssets", [])
+            except (OSError, ValueError):
+                return []
+        wait_for(lambda: len(saved_library()) == 2, "native visual library save", process)
+        library = saved_library()
+        widget = next(a for a in library if a["kind"] == "widget")
+        actor = next(a for a in library if a["kind"] == "actor")
+        page = json.loads(widget["source"])
+        assert page[0]["label"] == "Health" and page[1]["button"] == "Button"
+        assert page[2]["progress"] == 0.75
+        assert json.loads(actor["source"])["entities"][0]["shape"] == "box"
+        saved_root = json.loads(copy.read_text(encoding="utf-8"))["assetRoot"]
+        published = authored_own / saved_root / "Screen" / "asset" / ("ui_" + widget["id"] + ".json")
+        assert published.read_text(encoding="utf-8") == widget["source"]
+        print("Native Content Browser: actor and UI asset creation, palette and native page copy passed.", flush=True)
         click(1200, 53, window)
         request_close(window)
         assert process.wait(timeout=20) == 0

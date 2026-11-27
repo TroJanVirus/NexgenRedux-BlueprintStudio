@@ -50,7 +50,13 @@ namespace nx
         bool m_sceneEditor=false,m_sceneExit=false;
         void importAsset(Services& services,const std::string& file);
         std::string assetScreen() const;
-        bool m_assetBrowser=false;
+        bool m_assetBrowser=false,m_assetLibrary=false;
+        size_t m_visualFirst=0;
+        std::string m_visualSelection,m_visualText;
+        int m_visualInput=0; // 1 rename asset, 2 palette label
+        void updateVisualLibrary(Services& services,float x,float y,bool click,unsigned pressed);
+        void drawVisualLibrary(Canvas& canvas);
+        bool publishVisualWidget(Services& services);
         std::vector<std::string> m_assetFiles;
         size_t m_assetFirst=0;
         bool saveCurrent(Services& services);
