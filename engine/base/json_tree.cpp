@@ -266,7 +266,6 @@ namespace nx
         {
             char* end = nullptr;
             m_nodes[index].type = Type::Number;
-            m_nodes[index].text = static_cast<u32>(m_at - m_text);
             m_nodes[index].number = strtod(m_at, &end);
             if (end == m_at)
             {

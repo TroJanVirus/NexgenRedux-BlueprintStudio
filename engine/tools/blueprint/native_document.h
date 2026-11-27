@@ -1,50 +1,54 @@
 #pragma once
-#include "base/json_tree.h"
-
+#include <cstddef>
 #include <string>
 #include <vector>
 
 namespace nx
 {
-    // Editable layout projection. Original JSON is retained; only changed coordinate tokens are replaced.
+    struct BlueprintPin { std::string name, type; };
+    struct BlueprintNodeSpec
+    {
+        std::string id, title, category;
+        std::vector<BlueprintPin> inputs, outputs;
+    };
+    const std::vector<BlueprintNodeSpec>& blueprintCatalogue();
+    const BlueprintNodeSpec* blueprintSpec(const std::string& kind);
+
+    // Native version 2: one canonical model. Node indices are internal; persisted links use stable IDs.
+    // The pre-release browser format is deliberately not supported.
     struct BlueprintDocument
     {
-        struct Node
-        {
-            std::string id, kind, ref;
-            float x = 0, y = 0;
-            float originalX = 0, originalY = 0;
-            size_t xOffset = 0, yOffset = 0;
-        };
-        struct Link
-        {
-            size_t from = 0, to = 0;
-            std::string output, input;
-        };
+        struct Node { std::string id, kind, ref; float x=0,y=0; };
+        struct Link { size_t from=0,to=0; std::string output,input; };
         struct Graph
         {
-            std::string owner, name, kind;
+            std::string owner,name,kind;
             std::vector<Node> nodes;
             std::vector<Link> links;
         };
         std::string name;
         std::vector<Graph> graphs;
-        // Failure leaves the currently open document untouched.
-        bool load(const char* data, size_t size, std::string& error);
-        bool move(size_t graph, size_t node, float x, float y);
+        void create();
+        bool load(const char* data,size_t size,std::string& error);
+        bool serialize(std::string& result,std::string& error) const;
+        bool move(size_t graph,size_t node,float x,float y);
+        bool addNode(size_t graph,const std::string& kind,float x,float y,std::string& error);
+        bool deleteNode(size_t graph,size_t node,std::string& error);
+        bool connect(size_t graph,size_t from,const std::string& output,size_t to,const std::string& input,std::string& error);
+        bool disconnect(size_t graph,size_t node,const std::string& pin,bool output);
+        bool setLiteral(size_t graph,size_t node,const std::string& value,std::string& error);
         bool undo();
         bool redo();
-        bool dirty() const { return m_revision != m_savedRevision; }
-        bool canUndo() const { return !m_undo.empty(); }
-        bool canRedo() const { return !m_redo.empty(); }
-        bool isProject() const { return m_project; }
-        void markSaved() { m_savedRevision = m_revision; }
-        bool serialize(std::string& result, std::string& error) const;
+        bool dirty()const{return m_revision!=m_savedRevision;}
+        bool canUndo()const{return !m_undo.empty();}
+        bool canRedo()const{return !m_redo.empty();}
+        bool isProject()const{return true;}
+        void markSaved(){m_savedRevision=m_revision;}
     private:
-        struct Edit { size_t graph, node; float x1, y1, x2, y2; size_t before, after; };
-        std::string m_source;
-        std::vector<Edit> m_undo, m_redo;
-        size_t m_revision = 0, m_savedRevision = 0, m_nextRevision = 0;
-        bool m_project = false;
+        struct Edit { size_t graph; Graph state; size_t revision; };
+        void record(size_t graph);
+        std::vector<Edit> m_undo,m_redo;
+        size_t m_revision=0,m_savedRevision=0,m_nextRevision=0;
+        unsigned m_nextId=0;
     };
 }
