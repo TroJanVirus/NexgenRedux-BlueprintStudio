@@ -601,10 +601,46 @@ namespace nx
             WidgetMatch match;findVisualWidget(root,widget,match);
             if(match.matches!=1){error="Select a widget with a unique ID.";return false;}
             auto& item=*match.item;
-            const std::string allowed="|text|style|width|height|gap|grow|padding|value|align|justify|self|visible|enabled|checked|";
+            const std::string allowed="|text|style|width|height|gap|grow|padding|value|align|justify|self|visible|enabled|checked|anchor|offset|";
             if(property.empty()||property.find('|')!=std::string::npos||allowed.find("|"+property+"|")==std::string::npos)
             {error="Unsupported widget property.";return false;}
-            if(value.empty()&&property!="text")item.remove(property.c_str());
+            if(property=="anchor"||property=="offset")
+            {
+                const auto isStackParent=[&](auto&& self,JsonValue& node)->bool
+                {
+                    if(node.find("stack")==match.siblings&&match.siblings)return true;
+                    if(node.type()==JsonValue::Type::Array||node.type()==JsonValue::Type::Object)
+                        for(u32 n=0;n<node.count();++n)if(self(self,*node.at(n)))return true;
+                    return false;
+                };
+                if(!value.empty()&&!isStackParent(isStackParent,root)){error="Anchors and offsets require a Stack parent.";return false;}
+                if(value.empty())
+                {
+                    item.remove(property.c_str());
+                    if(property=="anchor")item.remove("offset");
+                }
+                else if(property=="anchor")
+                {
+                    const std::string names="|top-left|top-center|top-right|middle-left|center|middle-right|bottom-left|bottom-center|bottom-right|";
+                    if(value.find('|')!=std::string::npos||names.find("|"+value+"|")==std::string::npos)
+                    {error="Choose one of the nine named anchors.";return false;}
+                    if(!text(item,"anchor",value))return false;
+                }
+                else
+                {
+                    if(!item.find("anchor")){error="Choose an anchor first.";return false;}
+                    std::vector<std::string> xy;
+                    if(!blueprintInputComponents("Vec2",value,xy)){error="Enter X,Y offset.";return false;}
+                    auto* field=item.put("offset");if(!field)return false;field->setArray();
+                    for(const auto& axis:xy)
+                    {
+                        const double n=std::strtod(axis.c_str(),nullptr);
+                        if(!std::isfinite(n)||std::abs(n)>100000){error="Offset outside supported range.";return false;}
+                        auto* part=field->add();if(!part)return false;part->setNumber(n);
+                    }
+                }
+            }
+            else if(value.empty()&&property!="text")item.remove(property.c_str());
             else if(property=="text"||property=="style")
             {
                 if(value.size()>128||std::any_of(value.begin(),value.end(),[](unsigned char ch){return ch<32||ch==127;}))
@@ -644,14 +680,16 @@ namespace nx
             JsonValue root;if(!root.parse(page.source.data(),page.source.size(),error)||root.type()!=JsonValue::Type::Array)return false;
             WidgetMatch from;findVisualWidget(root,widget,from);
             if(from.matches!=1||!from.siblings){error="Select a unique widget inside a container.";return false;}
-            JsonValue* dest=&root;
+            JsonValue* dest=&root;bool stack=false;
             if(!parent.empty())
             {
                 WidgetMatch to,descendant;findVisualWidget(root,parent,to);findVisualWidget(*from.item,parent,descendant);
                 if(descendant.matches||to.matches!=1||!(dest=widgetChildren(*to.item)))
                 {error="Drop onto a container outside the selected widget's subtree.";return false;}
+                stack=to.item->find("stack")!=nullptr;
             }
             if(dest==from.siblings){error.clear();return true;}
+            if(!stack&&from.item->find("anchor")){error="Clear the widget anchor before moving outside a Stack.";return false;}
             if(dest->count()>=64){error="Destination container is full.";return false;}
             auto* copy=dest->add();
             if(!copy||!copy->setCopy(*from.item)){error="Widget hierarchy nesting limit reached.";return false;}

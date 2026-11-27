@@ -4,6 +4,7 @@
 #include <angelscript.h>
 
 #include <stdio.h>
+#include <cmath>
 #include <string.h>
 
 // Pages, themes and words from files. A name that means nothing is an error with its line.
@@ -342,6 +343,22 @@ namespace nx
             else if (strcmp(key, "columns") == 0) w->columns = static_cast<u32>(p.number());
             else if (strcmp(key, "limit") == 0) w->limit = static_cast<u32>(p.number());
             else if (strcmp(key, "tag") == 0) w->tag = static_cast<int>(p.number());
+            else if (strcmp(key, "anchor") == 0)
+            {
+                const char* const names[]={"top-left","top-center","top-right","middle-left","center","middle-right","bottom-left","bottom-center","bottom-right"};
+                int anchor=-1;
+                for(int i=0;i<9;++i)if(strcmp(p.text(),names[i])==0){anchor=i;break;}
+                if(into.kind!=WidgetKind::Stack||anchor<0)
+                {fail(file,p.line(),"requires a stack parent and a valid anchor",p.text());return nullptr;}
+                w->anchor=anchor;
+            }
+            else if (strcmp(key, "offset") == 0)
+            {
+                if(into.kind!=WidgetKind::Stack||!p.isArray()||p.count()!=2||!p[0u].isNumber()||!p[1u].isNumber()||
+                    !std::isfinite(p[0u].exact())||!std::isfinite(p[1u].exact())||std::abs(p[0u].exact())>100000||std::abs(p[1u].exact())>100000)
+                {fail(file,p.line(),"requires a stack parent and two finite offsets","offset");return nullptr;}
+                w->offsetX=p[0u].number();w->offsetY=p[1u].number();
+            }
             else if (strcmp(key, "padding") == 0)
             {
                 for (u32 i = 0; i < 4; i++)
@@ -355,6 +372,7 @@ namespace nx
                 return nullptr;
             }
         }
+        if(v["offset"].exists()&&w->anchor<0){fail(file,v.line(),"requires an anchor","offset");return nullptr;}
         touch();
         return w;
     }

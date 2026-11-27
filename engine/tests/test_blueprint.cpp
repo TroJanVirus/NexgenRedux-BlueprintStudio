@@ -2392,3 +2392,27 @@ NX_TEST(nativeWidgetButtonEventGraphExecutesThroughReduxUi)
     r.step(3);NX_EXPECT(!r.screens.failed());
     NX_EXPECT(strcmp(r.save.get("widget_clicked","missing"),"yes")==0);
 }
+
+NX_TEST(nativeStackAnchorsAdaptToAspectRatio)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    BlueprintDocument doc;doc.create();std::string id,error,source;
+    const bool ok=doc.createVisualAsset("widget",id,error)&&doc.appendVisualWidget(id,"stack","",error)&&
+        doc.setVisualWidgetProperty(id,"item-1","grow","1",error)&&doc.appendVisualWidget(id,"label","HUD",error,"item-1")&&
+        doc.setVisualWidgetProperty(id,"item-2","width","100",error)&&doc.setVisualWidgetProperty(id,"item-2","height","40",error)&&
+        doc.setVisualWidgetProperty(id,"item-2","anchor","bottom-right",error)&&doc.setVisualWidgetProperty(id,"item-2","offset","-24,-24",error)&&
+        doc.connectVisualWidget("Screen",id,error)&&compileBlueprint(doc,source,error);
+    NX_EXPECT(ok);if(!ok)return;
+    r.platform.files["showcase/main/screen.json"]="{\"title\":\"Anchored HUD\"}";
+    r.platform.files["showcase/main/main.as"]=source;
+    if(!r.screens.init(r.services,"showcase","main")){NX_EXPECT(false);return;}
+    r.step(3);NX_EXPECT(!r.screens.failed());if(!r.services.ui)return;
+    auto& view=*r.services.ui;auto* stack=view.find("item-1");auto* label=view.find("item-2");
+    NX_EXPECT(stack&&label);if(!stack||!label)return;
+    view.drawDesign(r.canvas,0,0,1280,720);
+    const float wideX=label->x;
+    NX_EXPECT(fabsf(label->x-(stack->w-stack->pad(2)-label->w-24))<0.01f);
+    NX_EXPECT(fabsf(label->y-(stack->h-stack->pad(3)-label->h-24))<0.01f);
+    view.drawDesign(r.canvas,0,0,960,720);
+    NX_EXPECT(fabsf(wideX-label->x-320)<0.01f);
+}

@@ -1461,3 +1461,22 @@ NX_TEST(nativeWidgetHierarchyReparentIsTransactional)
     NX_EXPECT(copy.undo()&&copy.serialize(bytes,error));
     NX_EXPECT(copy.visualAsset(id)->source==doc.visualAsset(id)->source);
 }
+
+NX_TEST(nativeWidgetStackAnchorsPersistAndProtectReparent)
+{
+    BlueprintDocument doc;doc.create();std::string id,error,bytes,source;
+    NX_EXPECT(doc.createVisualAsset("widget",id,error));
+    NX_EXPECT(doc.appendVisualWidget(id,"stack","",error));
+    NX_EXPECT(doc.appendVisualWidget(id,"label","HUD",error,"item-1"));
+    NX_EXPECT(!doc.setVisualWidgetProperty(id,"item-1","anchor","bottom-right",error));
+    NX_EXPECT(doc.setVisualWidgetProperty(id,"item-2","anchor","bottom-right",error));
+    NX_EXPECT(doc.setVisualWidgetProperty(id,"item-2","offset","-24,-24",error));
+    NX_EXPECT(!doc.reparentVisualWidget(id,"item-2","",error));
+    NX_EXPECT(doc.connectVisualWidget("Screen",id,error)&&compileBlueprint(doc,source,error));
+    NX_EXPECT(source.find("bottom-right")!=std::string::npos);
+    NX_EXPECT(doc.serialize(bytes,error));
+    BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error));
+    NX_EXPECT(copy.setVisualWidgetProperty(id,"item-2","anchor","",error));
+    NX_EXPECT(copy.reparentVisualWidget(id,"item-2","",error));
+    NX_EXPECT(copy.undo()&&copy.undo()&&!copy.reparentVisualWidget(id,"item-2","",error));
+}

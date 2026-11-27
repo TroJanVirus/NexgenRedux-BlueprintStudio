@@ -54,6 +54,8 @@ namespace nx
         float padding[4] = { -1, -1, -1, -1 };
         UiPlace align = UiPlace::Inherit;    // of what is in it, across
         UiPlace justify = UiPlace::Start;    // and along
+        int anchor = -1;           // stack child: 3x3 anchor, -1 uses ordinary layout
+        float offsetX = 0, offsetY = 0;
         UiPlace self = UiPlace::Inherit;     // of itself, across what it is in
         u32 columns = 0;             // of a grid or a list; 0: as many as fit
         float columnWidth = 0;

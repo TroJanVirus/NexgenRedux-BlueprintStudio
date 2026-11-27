@@ -102,3 +102,7 @@ The designer Events tab creates or opens typed native screen function graphs for
 ## Widget hierarchy drag
 
 Drag a uniquely identified widget onto a container or Page Root to reparent it. Cycles, noncontainers, full containers and depth violations are rejected transactionally. The preview uses the same native layout immediately after edits. Undo/redo and document round-trip tests cover reparenting. Direct free-position dragging, responsive anchors and theme/animation editing are outstanding.
+
+## Responsive stack anchors
+
+Native Stack children support one of nine anchors and signed XY design-unit offsets, respecting parent padding and available size. A growing Stack supports responsive screen-relative HUD positioning. Unanchored layouts are unchanged. The designer provides anchor presets and offset entry; reparenting anchored children outside Stack is refused. Tests cover persistence, reset, undo and runtime layout at 1280x720 and 960x720. Direct free-position dragging on the preview, stretch anchors, theme and animation authoring remain outstanding.

@@ -191,7 +191,7 @@ namespace nx
         }
         for (Widget* child : w.children)
         {
-            const bool stretch = across(w, *child) == UiPlace::Stretch && child->width <= 0;
+            const bool stretch = across(w, *child) == UiPlace::Stretch && child->width <= 0 && !(w.kind==WidgetKind::Stack&&child->anchor>=0);
             float give = stretch ? cell : smaller(child->naturalW, cell);
             give = child->maxWidth > 0 ? smaller(give, child->maxWidth) : give;
             giveWidth(*child, child->visible ? give : 0);
@@ -355,9 +355,19 @@ namespace nx
             for (Widget* child : w.children)
             {
                 const UiPlace place = across(w, *child);
-                const float tall = place == UiPlace::Stretch && child->height <= 0 ? innerH : smaller(child->naturalH, innerH);
-                child->x = left + (place == UiPlace::Center ? (innerW - child->w) * 0.5f : place == UiPlace::End ? innerW - child->w : 0);
-                child->y = top + (place == UiPlace::Center ? (innerH - tall) * 0.5f : place == UiPlace::End ? innerH - tall : 0);
+                const bool anchored=child->anchor>=0&&child->anchor<9;
+                const float tall = !anchored&&place == UiPlace::Stretch && child->height <= 0 ? innerH : smaller(child->naturalH, innerH);
+                if(anchored)
+                {
+                    const float ax=static_cast<float>(child->anchor%3)*0.5f,ay=static_cast<float>(child->anchor/3)*0.5f;
+                    child->x=left+(innerW-child->w)*ax+child->offsetX;
+                    child->y=top+(innerH-tall)*ay+child->offsetY;
+                }
+                else
+                {
+                    child->x = left + (place == UiPlace::Center ? (innerW - child->w) * 0.5f : place == UiPlace::End ? innerW - child->w : 0);
+                    child->y = top + (place == UiPlace::Center ? (innerH - tall) * 0.5f : place == UiPlace::End ? innerH - tall : 0);
+                }
                 giveHeight(*child, tall);
             }
         }

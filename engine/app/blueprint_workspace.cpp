@@ -766,7 +766,30 @@ namespace nx
         {if(m_document.moveVisualWidget(m_visualSelection,m_widgetSelection,-1,m_status))m_status="Moved widget up.";return;}
         if(!m_widgetSelection.empty()&&in(x,y,450,548,610,581))
         {if(m_document.moveVisualWidget(m_visualSelection,m_widgetSelection,1,m_status))m_status="Moved widget down.";return;}
-        if(in(x,y,630,420,1000,438)){m_widgetEvents=!m_widgetEvents;m_widgetUnbind=false;return;}
+        if(in(x,y,280,524,610,545)){m_widgetAnchors=!m_widgetAnchors;m_widgetEvents=false;return;}
+        if(in(x,y,630,420,1000,438)){m_widgetAnchors=false;m_widgetEvents=!m_widgetEvents;m_widgetUnbind=false;return;}
+        if(m_widgetAnchors)
+        {
+            if(m_widgetSelection.empty())return;
+            const char* const anchors[]={"top-left","top-center","top-right","middle-left","center","middle-right","bottom-left","bottom-center","bottom-right"};
+            if(in(x,y,630,439,1000,547))
+            {
+                const auto index=static_cast<size_t>((y-439)/36)*3+static_cast<size_t>((x-630)/123.34f);
+                if(index<9&&m_document.setVisualWidgetProperty(m_visualSelection,m_widgetSelection,"anchor",anchors[index],m_status))m_status="Anchor updated.";
+                return;
+            }
+            if(in(x,y,630,548,810,581))
+            {
+                if(m_document.setVisualWidgetProperty(m_visualSelection,m_widgetSelection,"anchor","",m_status))m_status="Anchor cleared.";
+                return;
+            }
+            if(in(x,y,820,548,1000,581))
+            {
+                m_visualProperty="offset";m_visualText="";m_visualInput=4;s.input->setTyping(true);
+                m_status="Enter signed X,Y offset from anchor.";return;
+            }
+            return;
+        }
         if(m_widgetEvents)
         {
             if(in(x,y,630,520,1000,553)){m_widgetUnbind=!m_widgetUnbind;return;}
@@ -827,7 +850,7 @@ namespace nx
             c.clip(286,y,318,36);c.text(*m_font,label.c_str(),290,y+9,text);c.noClip();
         }
         button(280,548,160,"Move up");button(450,548,160,"Move down");
-        c.text(*m_font,"Drag widget onto its new container.",280,525,muted);
+        c.rect(280,524,330,21,{0.19f,0.33f,0.50f,1});c.text(*m_font,m_widgetAnchors?"Back to properties":"Anchors / offset",445,525,text,Align::Center);
         const float width=m_widgetFourThree?960.f:1280.f,scale=208.f/720.f,screenWidth=width*scale;
         const float px=815-screenWidth*0.5f,py=207;
         c.rect(630,202,370,219,{0.055f,0.075f,0.105f,1});
@@ -847,8 +870,14 @@ namespace nx
             c.clip(636,207,358,208);c.text(*m_font,m_designPreviewError.empty()?"Native preview":m_designPreviewError.c_str(),640,225,muted);c.noClip();
         }
         c.rect(630,420,370,18,{0.19f,0.33f,0.50f,1});
-        c.text(*m_font,m_widgetEvents?"EVENTS  /  click to show properties":"PROPERTIES  /  click to show events",630,420,text);
-        if(m_widgetEvents)
+        c.text(*m_font,m_widgetAnchors?"ANCHORS / Stack children":m_widgetEvents?"EVENTS  /  click to show properties":"PROPERTIES  /  click to show events",630,420,text);
+        if(m_widgetAnchors)
+        {
+            const char* const labels[]={"Top left","Top center","Top right","Middle left","Center","Middle right","Bottom left","Bottom center","Bottom right"};
+            for(size_t i=0;i<9;++i)button(630+123.34f*static_cast<float>(i%3),439+36*static_cast<float>(i/3),119,labels[i]);
+            button(630,548,180,"Clear anchor");button(820,548,180,"Set XY offset");
+        }
+        else if(m_widgetEvents)
         {
             for(size_t i=0;i<sizeof(designEvents)/sizeof(designEvents[0]);++i)
                 button(630+123.34f*static_cast<float>(i%3),439+36*static_cast<float>(i/3),119,designEvents[i]);
@@ -1032,7 +1061,7 @@ namespace nx
             return;
         }
         if(selected->kind!="widget")return;
-        if(in(x,y,280,548,610,581)){m_widgetDesigner=true;m_widgetPalette=false;m_widgetEvents=m_widgetUnbind=m_widgetDragging=false;m_widgetSelection.clear();m_widgetFirst=0;return;}
+        if(in(x,y,280,548,610,581)){m_widgetDesigner=true;m_widgetPalette=false;m_widgetEvents=m_widgetUnbind=m_widgetDragging=m_widgetAnchors=false;m_widgetSelection.clear();m_widgetFirst=0;return;}
         if(in(x,y,630,232,1000,266))
         {m_visualInput=2;input.setTyping(true);m_status="Enter the next widget label, then press Enter.";return;}
         const char* kind=nullptr;
