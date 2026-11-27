@@ -78,3 +78,19 @@ NX_TEST(nativeBlueprintPreservesNestedComponentsAndProjectAssets)
     duplicate.replace(duplicate.find("\"x\":20"),6,"\"x\":20,\"x\":21");
     NX_EXPECT(!doc.load(duplicate.data(),duplicate.size(),error) && doc.dirty());
 }
+
+NX_TEST(nativeBlueprintSelectionDoesNotRoundOriginalCoordinates)
+{
+    std::string original=graph;
+    original.replace(original.find("\"x\":20"),6,"\"x\":20.0001234567");
+    BlueprintDocument doc;
+    std::string error,result;
+    NX_EXPECT(doc.load(original.data(),original.size(),error));
+    if(doc.graphs.empty()||doc.graphs[0].nodes.empty())return;
+    const auto x=doc.graphs[0].nodes[0].x;
+    NX_EXPECT(!doc.move(0,0,x,40) && !doc.dirty());
+    NX_EXPECT(doc.move(0,0,x,80));
+    std::string expected=original;
+    expected.replace(expected.find("\"y\":40"),6,"\"y\":80");
+    NX_EXPECT(doc.serialize(result,error)&&result==expected);
+}

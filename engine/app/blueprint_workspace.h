@@ -28,8 +28,9 @@ namespace nx
         size_t m_graph = 0, m_selection = static_cast<size_t>(-1), m_first = 0;
         float m_x = 0, m_y = 0, m_zoom = 1, m_lastX = 0, m_lastY = 0;
         bool m_left = false, m_pan = false, m_wantedPointer = false;
-        bool m_drag = false;
+        bool m_drag = false, m_dragMoved = false;
         float m_dragX = 0, m_dragY = 0, m_grabX = 0, m_grabY = 0;
+        float m_pressX = 0, m_pressY = 0;
         unsigned m_shortcuts = 0;
     };
 }

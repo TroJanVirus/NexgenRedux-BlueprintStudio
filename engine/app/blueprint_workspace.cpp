@@ -16,6 +16,8 @@ namespace nx
     {
         constexpr float kWidth = 1280, kHeight = 720, kLeft = 248, kRight = 1012, kTop = 76, kBottom = 674;
         constexpr float kNodeWidth = 196, kNodeHeight = 72;
+        // The current renderer shows connected pins only; the full typed catalog will follow.
+        constexpr float kPinStart=38, kPinStep=22;
         constexpr size_t kRows = 19;
         constexpr Color text = {0.88f, 0.91f, 0.96f, 1};
         constexpr Color muted = {0.57f, 0.65f, 0.76f, 1};
@@ -35,6 +37,25 @@ namespace nx
                 }
             }
             return node.kind;
+        }
+        struct PinRows
+        {
+            std::vector<std::string> inputs,outputs;
+            static size_t add(std::vector<std::string>& rows,const std::string& pin)
+            {
+                const auto at=std::find(rows.begin(),rows.end(),pin);
+                if(at!=rows.end())return static_cast<size_t>(at-rows.begin());
+                rows.push_back(pin);return rows.size()-1;
+            }
+            static float y(const std::vector<std::string>& rows,const std::string& pin)
+            {return kPinStart+static_cast<float>(std::find(rows.begin(),rows.end(),pin)-rows.begin())*kPinStep;}
+            float height()const{return std::max(kNodeHeight,kPinStart+kPinStep*static_cast<float>(std::max(inputs.size(),outputs.size()))+8);}
+        };
+        std::vector<PinRows> pinRows(const BlueprintDocument::Graph& g)
+        {
+            std::vector<PinRows> rows(g.nodes.size());
+            for(const auto& l:g.links){PinRows::add(rows[l.from].outputs,l.output);PinRows::add(rows[l.to].inputs,l.input);}
+            return rows;
         }
         std::string shorten(const std::string& s, size_t length)
         {
@@ -100,13 +121,14 @@ namespace nx
     {
         m_zoom=1; m_x=m_y=0;
         if(m_graph>=m_document.graphs.size())return;
-        const auto& nodes=m_document.graphs[m_graph].nodes;
+        const auto& graph=m_document.graphs[m_graph];const auto& nodes=graph.nodes;
         if(nodes.empty())return;
+        const auto rows=pinRows(graph);
         float left=nodes.front().x,top=nodes.front().y,right=left+kNodeWidth,bottom=top+kNodeHeight;
-        for(const auto& n:nodes)
+        for(size_t i=0;i<nodes.size();++i)
         {
-            left=std::min(left,n.x);top=std::min(top,n.y);
-            right=std::max(right,n.x+kNodeWidth);bottom=std::max(bottom,n.y+kNodeHeight);
+            const auto& n=nodes[i];left=std::min(left,n.x);top=std::min(top,n.y);
+            right=std::max(right,n.x+kNodeWidth);bottom=std::max(bottom,n.y+rows[i].height());
         }
         m_zoom=std::clamp(std::min((kRight-kLeft-48)/(right-left),(kBottom-kTop-48)/(bottom-top)),0.25f,1.0f);
         m_x=24-left*m_zoom;m_y=24-top*m_zoom;
@@ -149,7 +171,7 @@ namespace nx
         auto& input = *s.input;
         if (input.pressed(Action::Menu))
         {
-            if(m_drag){cancelDrag();m_status="Drag cancelled.";return;}
+            if(m_drag){cancelDrag();m_left=input.raw().mouseButtons[0];m_status="Drag cancelled.";return;}
             close(s);return;
         }
         std::string dropped;
@@ -171,7 +193,6 @@ namespace nx
                 }
             }
         }
-        if (m_document.graphs.empty()) return;
         auto& canvas = *s.canvas;
         const auto& raw = input.raw();
         // Canvas design is the same fixed 1280x720 fit used by draw().
@@ -189,11 +210,12 @@ namespace nx
         const bool click=left&&!m_left;
         if(!m_drag)
         {
+            if(click&&in(x,y,1134,39,1266,69)){close(s);return;}
+            if(m_document.graphs.empty()){m_left=left;return;}
             if((pressed&1u)||(click&&in(x,y,748,39,858,69)))saveCopy(s);
             if(((pressed&2u)||(click&&in(x,y,864,39,948,69)))&&m_document.undo())m_status="Undid layout change.";
             if(((pressed&4u)||(click&&in(x,y,954,39,1038,69)))&&m_document.redo())m_status="Redid layout change.";
             if(click&&in(x,y,1044,39,1128,69))fitGraph();
-            if(click&&in(x,y,1134,39,1266,69)){close(s);return;}
         }
         if (left && !m_left && in(x,y,0,kTop,kLeft,kBottom))
         {
@@ -202,17 +224,18 @@ namespace nx
         }
         if (left && !m_left && over)
         {
-            const auto& nodes = m_document.graphs[m_graph].nodes;
+            const auto& graph=m_document.graphs[m_graph];const auto& nodes=graph.nodes;
+            const auto rows=pinRows(graph);
             m_selection = static_cast<size_t>(-1);
             for (size_t i = nodes.size(); i > 0; --i)
             {
                 const auto& n = nodes[i-1];
                 const float nx = kLeft+m_x+n.x*m_zoom, ny = kTop+m_y+n.y*m_zoom;
-                if (in(x,y,nx,ny,nx+kNodeWidth*m_zoom,ny+kNodeHeight*m_zoom))
+                if (in(x,y,nx,ny,nx+kNodeWidth*m_zoom,ny+rows[i-1].height()*m_zoom))
                 {
                     m_selection=i-1;
-                    m_drag=true;m_dragX=n.x;m_dragY=n.y;
-                    m_grabX=(x-nx)/m_zoom;m_grabY=(y-ny)/m_zoom;
+                    m_drag=true;m_dragMoved=false;m_dragX=n.x;m_dragY=n.y;
+                    m_pressX=x;m_pressY=y;m_grabX=n.x;m_grabY=n.y;
                     break;
                 }
             }
@@ -221,12 +244,17 @@ namespace nx
         {
             if(left)
             {
-                m_dragX=std::clamp((x-kLeft-m_x)/m_zoom-m_grabX,-1000000.0f,1000000.0f);
-                m_dragY=std::clamp((y-kTop-m_y)/m_zoom-m_grabY,-1000000.0f,1000000.0f);
+                // Selecting a node must never round or move it. Begin dragging only after a small threshold.
+                if(std::abs(x-m_pressX)>3||std::abs(y-m_pressY)>3)m_dragMoved=true;
+                if(m_dragMoved)
+                {
+                    m_dragX=std::clamp(m_grabX+(x-m_pressX)/m_zoom,-1000000.0f,1000000.0f);
+                    m_dragY=std::clamp(m_grabY+(y-m_pressY)/m_zoom,-1000000.0f,1000000.0f);
+                }
             }
             else
             {
-                if(m_document.move(m_graph,m_selection,m_dragX,m_dragY))m_status="Layout changed. Ctrl+S saves a new copy.";
+                if(m_dragMoved&&m_document.move(m_graph,m_selection,m_dragX,m_dragY))m_status="Layout changed. Ctrl+S saves a new copy.";
                 cancelDrag();
             }
             m_pan=false;m_left=left;m_lastX=x;m_lastY=y;
@@ -287,12 +315,13 @@ namespace nx
         else
         {
             const auto& graph=m_document.graphs[m_graph];
+            const auto rows=pinRows(graph);
             const auto nodeX=[&](size_t i){return m_drag&&i==m_selection?m_dragX:graph.nodes[i].x;};
             const auto nodeY=[&](size_t i){return m_drag&&i==m_selection?m_dragY:graph.nodes[i].y;};
             for(const auto& l:graph.links)
             {
-                const float x1=kLeft+m_x+(nodeX(l.from)+kNodeWidth)*m_zoom,y1=kTop+m_y+(nodeY(l.from)+38)*m_zoom;
-                const float x2=kLeft+m_x+nodeX(l.to)*m_zoom,y2=kTop+m_y+(nodeY(l.to)+38)*m_zoom;
+                const float x1=kLeft+m_x+(nodeX(l.from)+kNodeWidth)*m_zoom,y1=kTop+m_y+(nodeY(l.from)+PinRows::y(rows[l.from].outputs,l.output))*m_zoom;
+                const float x2=kLeft+m_x+nodeX(l.to)*m_zoom,y2=kTop+m_y+(nodeY(l.to)+PinRows::y(rows[l.to].inputs,l.input))*m_zoom;
                 if(std::max(x1,x2)<kLeft||std::min(x1,x2)>kRight||std::max(y1,y2)<kTop||std::min(y1,y2)>kBottom)continue;
                 const float mid=(x1+x2)*0.5f;
                 const Color color=l.output=="then"||l.input=="in"?text:accent;
@@ -301,19 +330,24 @@ namespace nx
             for(size_t i=0;i<graph.nodes.size();++i)
             {
                 const auto& n=graph.nodes[i];
-                const float x=kLeft+m_x+nodeX(i)*m_zoom,y=kTop+m_y+nodeY(i)*m_zoom,w=kNodeWidth*m_zoom,h=kNodeHeight*m_zoom;
+                const float x=kLeft+m_x+nodeX(i)*m_zoom,y=kTop+m_y+nodeY(i)*m_zoom,w=kNodeWidth*m_zoom,h=rows[i].height()*m_zoom;
                 if(x+w<kLeft||x>kRight||y+h<kTop||y>kBottom) continue;
                 c.roundRect(x,y,w,h,5,{0.15f,0.20f,0.27f,1});
                 c.rect(x,y,w,24*m_zoom,n.kind=="entry"?Color{0.54f,0.20f,0.25f,1}:Color{0.19f,0.35f,0.53f,1});
                 if(i==m_selection)c.roundLine(x,y,w,h,5,2,accent);
-                c.circle(x,y+38*m_zoom,4*m_zoom,accent); c.circle(x+w,y+38*m_zoom,4*m_zoom,accent);
+                for(const auto& pin:rows[i].inputs)c.circle(x,y+PinRows::y(rows[i].inputs,pin)*m_zoom,4*m_zoom,pin=="in"?text:accent);
+                for(const auto& pin:rows[i].outputs)c.circle(x+w,y+PinRows::y(rows[i].outputs,pin)*m_zoom,4*m_zoom,pin=="then"?text:accent);
                 if(m_zoom>=0.65f)
                 {
-                    c.clip(x+2,y+1,w-4,h-2);
-                    c.text(*m_font,shorten(title(n),24).c_str(),x+8,y+3,text);
-                    c.text(*m_font,shorten(n.ref.empty()?n.id:n.ref,24).c_str(),x+8,y+31,muted);
-                    c.noClip();
-                    c.clip(kLeft,kTop,kRight-kLeft,kBottom-kTop);
+                    c.push();c.clip(x+2,y+1,w-4,24*m_zoom);
+                    c.text(*m_font,shorten(title(n),24).c_str(),x+8,y+3,text);c.pop();
+                    // Clip each column separately to prevent long pin names overlapping.
+                    c.push();c.clip(x+6,y+24*m_zoom,w*0.5f-8,h-24*m_zoom);
+                    for(const auto& pin:rows[i].inputs)c.text(*m_font,shorten(pin,12).c_str(),x+8,y+PinRows::y(rows[i].inputs,pin)*m_zoom-8,muted);
+                    c.pop();
+                    c.push();c.clip(x+w*0.5f,y+24*m_zoom,w*0.5f-6,h-24*m_zoom);
+                    for(const auto& pin:rows[i].outputs)c.text(*m_font,shorten(pin,12).c_str(),x+w-8,y+PinRows::y(rows[i].outputs,pin)*m_zoom-8,muted,Align::Right);
+                    c.pop();
                 }
             }
         }

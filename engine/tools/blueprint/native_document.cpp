@@ -135,9 +135,10 @@ namespace nx
     {
         if (graph >= graphs.size() || node >= graphs[graph].nodes.size() ||
             !std::isfinite(x) || !std::isfinite(y) || std::abs(x)>1000000 || std::abs(y)>1000000) return false;
-        x=static_cast<float>(std::round(static_cast<double>(x)*1000)/1000);
-        y=static_cast<float>(std::round(static_cast<double>(y)*1000)/1000);
         auto& n = graphs[graph].nodes[node];
+        // Preserve untouched axes, including sub-millipixel values from old projects.
+        if(x!=n.x)x=static_cast<float>(std::round(static_cast<double>(x)*1000)/1000);
+        if(y!=n.y)y=static_cast<float>(std::round(static_cast<double>(y)*1000)/1000);
         if (n.x==x && n.y==y) return false;
         // One entry per completed drag, not per mouse update.
         if (m_undo.size()>=512) m_undo.erase(m_undo.begin());
