@@ -28,6 +28,7 @@ namespace nx
         // Each native pin is provided by the generated catalogue.
         constexpr float kPinStart=38, kPinStep=22;
         constexpr size_t kRows = 12;
+        constexpr const char* variableTypes[]={"bool","int","uint","float","double","string"};
         constexpr Color text = {0.88f, 0.91f, 0.96f, 1};
         constexpr Color muted = {0.57f, 0.65f, 0.76f, 1};
         constexpr Color accent = {0.27f, 0.65f, 0.98f, 1};
@@ -864,6 +865,24 @@ namespace nx
         checkpoint(s,true);
     }
 
+    std::vector<BlueprintWorkspace::VariableRow> BlueprintWorkspace::variableRows() const
+    {
+        std::vector<VariableRow> rows;
+        const auto& owner=m_document.graphs[m_graph].owner;
+        for(const auto& g:m_document.graphs)if(g.owner==owner)for(const auto& f:g.fields)rows.push_back({f,false,true});
+        std::vector<BlueprintPin> inferred;std::string error;
+        if(m_document.variables(inferred,error,owner))for(const auto& v:inferred)
+            if(blueprintLiteralType(v.type)&&std::none_of(rows.begin(),rows.end(),[&](const VariableRow& r){return r.field.name==v.name;}))
+                rows.push_back({{v.name,v.type,"",false},false,false});
+        for(const auto& f:m_document.moduleGlobals(owner))rows.push_back({f,true,true});
+        std::sort(rows.begin(),rows.end(),[](const VariableRow& a,const VariableRow& b){return a.global!=b.global?a.global<b.global:a.field.name<b.field.name;});
+        return rows;
+    }
+    void BlueprintWorkspace::resetVariableEditor(bool global)
+    {
+        m_variableOld.clear();m_variableName.clear();m_variableType="int";m_variableValue.clear();
+        m_variableGlobal=global;m_variableInitialized=false;m_variableTypes=false;m_variableInput=1;
+    }
     void BlueprintWorkspace::update(Services& s)
     {
         auto& input = *s.input;
@@ -926,6 +945,65 @@ namespace nx
             }
             m_left=left;return;
         }
+        if(m_focus==10)
+        {
+            const auto rows=variableRows();const auto owner=m_document.graphs[m_graph].owner;
+            const bool canGlobal=!m_document.moduleForOwner(owner).empty();
+            auto apply=[&]()
+            {
+                if(m_variableName.empty()){m_status="Enter a variable name.";return;}
+                if(m_variableOld.empty()&&std::any_of(rows.begin(),rows.end(),[&](const VariableRow& r){return r.global==m_variableGlobal&&r.field.name==m_variableName;}))
+                {m_status="Name already exists. Select that variable to edit it.";return;}
+                const std::string command=std::string(m_variableGlobal?"global ":"field ")+(m_variableOld.empty()||m_variableOld==m_variableName?"":m_variableOld+">")+m_variableName+":"+m_variableType+(m_variableInitialized?"="+m_variableValue:"");
+                if(m_document.editVariableDeclaration(owner,command,m_status))
+                {m_variableOld=m_variableName;clearWire();rebuildPins();filterCatalogue();m_diagnostic={};m_status="Variable saved. Undo is available after closing.";}
+            };
+            if(in(x,y,170,190,620,550))
+            {
+                if(input.wheel()<0&&m_variableFirst+10<rows.size())++m_variableFirst;
+                if(input.wheel()>0&&m_variableFirst)--m_variableFirst;
+            }
+            for(u32 i=0;i<input.typedCount();++i)
+            {
+                const auto ch=input.typed(i);
+                if(ch==13){apply();break;}
+                if(!m_variableInput)continue;
+                auto& value=m_variableInput==1?m_variableName:m_variableValue;
+                if(ch==8&&!value.empty()){size_t end=value.size()-1;while(end&&(static_cast<unsigned char>(value[end])&0xc0)==0x80)--end;value.resize(end);}
+                else if(ch>=32&&(m_variableInput==2||(ch>='a'&&ch<='z')||(ch>='A'&&ch<='Z')||(ch>='0'&&ch<='9')||ch=='_'))appendCharacter(value,ch,m_variableInput==1?64u:4096u);
+            }
+            if(click)
+            {
+                if(m_variableTypes&&in(x,y,650,302,1100,302+6*28))
+                {m_variableType=variableTypes[static_cast<size_t>((y-302)/28)];m_variableTypes=false;}
+                else if(m_variableTypes){m_variableTypes=false;}
+                else if(in(x,y,974,116,1110,150)){m_focus=0;input.setTyping(false);m_status="Variables closed.";}
+                else if(in(x,y,170,156,370,186)){resetVariableEditor(false);m_status="New instance variable.";}
+                else if(in(x,y,380,156,620,186)&&canGlobal){resetVariableEditor(true);m_status="New module variable.";}
+                else if(in(x,y,170,190,620,550))
+                {
+                    const auto index=m_variableFirst+static_cast<size_t>((y-190)/36);
+                    if(index<rows.size())
+                    {
+                        const auto& r=rows[index];m_variableOld=m_variableName=r.field.name;m_variableType=r.field.type;m_variableValue=r.field.value;
+                        m_variableGlobal=r.global;m_variableInitialized=r.field.initialized;m_variableInput=0;
+                        m_status=r.explicitField?"Edit selected declaration.":"Inferred field: Apply creates an explicit declaration.";
+                    }
+                }
+                else if(in(x,y,650,222,1100,258))m_variableInput=1;
+                else if(in(x,y,650,266,1100,302)){m_variableTypes=true;m_variableInput=0;}
+                else if(in(x,y,650,322,1100,354)){m_variableInitialized=!m_variableInitialized;m_variableInput=m_variableInitialized?2:0;}
+                else if(in(x,y,650,370,1100,406)&&m_variableInitialized)m_variableInput=2;
+                else if(in(x,y,650,464,860,500))apply();
+                else if(in(x,y,870,464,1100,500)&&!m_variableOld.empty())
+                {
+                    if(m_document.editVariableDeclaration(owner,std::string(m_variableGlobal?"global -":"field -")+m_variableOld,m_status))
+                    {resetVariableEditor(m_variableGlobal);clearWire();rebuildPins();filterCatalogue();m_diagnostic={};m_status="Declaration removed.";}
+                }
+            }
+            const auto count=variableRows().size();m_variableFirst=std::min(m_variableFirst,count>10?count-10:0);
+            m_left=left;return;
+        }
         if(m_focus)
         {
             const int focus=m_focus;
@@ -947,11 +1025,6 @@ namespace nx
                     {
                         if(!m_document.setReference(m_graph,m_selection,m_edit,m_status))break;
                         clearWire();rebuildPins();
-                    }
-                    if(focus==10)
-                    {
-                        if(!m_document.editVariableDeclaration(m_document.graphs[m_graph].owner,m_edit,m_status))break;
-                        clearWire();rebuildPins();filterCatalogue();
                     }
                     if(focus==9)
                     {
@@ -1065,7 +1138,7 @@ namespace nx
         }
         if(click&&in(x,y,8,kBottom-225,kLeft-8,kBottom-193))
         {
-            m_edit="field ";m_focus=10;input.setTyping(true);m_status="Enter a declaration command.";m_left=left;return;
+            m_variableFirst=0;resetVariableEditor();m_focus=10;input.setTyping(true);m_status="Select a variable or create a new one.";m_left=left;return;
         }
         if(click&&in(x,y,8,kBottom-188,kLeft-8,kBottom-156))
         {
@@ -1440,23 +1513,35 @@ namespace nx
             {
                 c.roundRect(150,100,980,525,9,{0.12f,0.16f,0.22f,1});
                 const auto owner=m_document.graphs[m_graph].owner;
+                const auto rows=variableRows();
+                auto button=[&](float x,float y,float w,const char* label,bool enabled=true)
+                {c.roundRect(x,y,w,34,4,enabled?Color{0.19f,0.33f,0.50f,1}:Color{0.16f,0.20f,0.26f,1});c.text(*m_font,label,x+w*0.5f,y+7,enabled?text:muted,Align::Center);};
                 c.text(*m_font,("VARIABLES / "+owner).c_str(),170,122,accent);
-                c.roundRect(170,160,940,36,4,{0.24f,0.35f,0.48f,1});
-                c.clip(174,160,932,36);c.text(*m_font,m_edit.c_str(),180,168,text);c.noClip();
-                c.paragraph(*m_font,"Create or set: field score:int=10 | global count:int=2 | Omit =value for default initialization. String values are plain text.",170,207,940,muted);
-                c.paragraph(*m_font,"Rename: field score>points:int=10 | Remove: field -points (only when unused). Use global instead of field for module variables.",170,256,940,muted);
-                c.text(*m_font,"DECLARED VARIABLES",170,313,accent);
-                size_t row=0;
-                auto show=[&](const char* prefix,const BlueprintDocument::Field& f)
+                button(974,116,136,"Close");button(170,156,200,"+ Instance field");button(380,156,240,"+ Module variable",!m_document.moduleForOwner(owner).empty());
+                for(size_t i=0;i<10&&m_variableFirst+i<rows.size();++i)
                 {
-                    if(row<8){const float y=343+25*static_cast<float>(row);c.clip(170,y,940,25);c.text(*m_font,(std::string(prefix)+f.name+":"+f.type+(f.initialized?"="+f.value:"")).c_str(),170,y,text);c.noClip();}++row;
-                };
-                for(const auto& g:m_document.graphs)if(g.owner==owner)for(const auto& f:g.fields)show("field ",f);
-                for(const auto& f:m_document.moduleGlobals(owner))show("global ",f);
-                if(row>8)c.text(*m_font,("Showing first 8 of "+std::to_string(row)+" declarations. Commands can edit any name.").c_str(),170,548,muted);
-                if(!row)c.text(*m_font,"No explicit declarations. Existing inferred fields can be declared by name.",170,343,muted);
+                    const auto& r=rows[m_variableFirst+i];const float y=190+36*static_cast<float>(i);
+                    const bool selected=r.global==m_variableGlobal&&r.field.name==m_variableOld;
+                    c.rect(170,y,450,33,selected?Color{0.19f,0.33f,0.50f,1}:Color{0.17f,0.22f,0.30f,1});
+                    const auto label=std::string(r.global?"Global / ":"Field / ")+r.field.name+" : "+r.field.type+(r.explicitField?"":" (inferred)");
+                    c.clip(178,y,434,33);c.text(*m_font,label.c_str(),180,y+7,text);c.noClip();
+                }
+                if(rows.empty())c.text(*m_font,"No primitive variables yet.",180,208,muted);
+                c.text(*m_font,(std::to_string(rows.size())+" variables | wheel to scroll").c_str(),170,556,muted);
+                c.text(*m_font,m_variableGlobal?"MODULE VARIABLE":"INSTANCE FIELD",650,192,accent);
+                const auto field=[&](float y,const std::string& value,bool focused)
+                {c.roundRect(650,y,450,36,4,focused?Color{0.24f,0.35f,0.48f,1}:Color{0.17f,0.22f,0.30f,1});c.clip(658,y,434,36);c.text(*m_font,value.c_str(),660,y+8,text);c.noClip();};
+                field(222,m_variableName.empty()?"Name":m_variableName,m_variableInput==1);
+                field(266,"Type: "+m_variableType+"  v",m_variableTypes);
+                button(650,322,450,m_variableInitialized?"Initial value: enabled":"Initial value: default");
+                if(m_variableInitialized)field(370,m_variableValue.empty()?"":m_variableValue,m_variableInput==2);
+                else c.text(*m_font,"Uses the native default for this type.",650,380,muted);
+                c.text(*m_font,"String values are entered without quotes.",650,420,muted);
+                button(650,464,210,"Apply");button(870,464,230,"Delete",!m_variableOld.empty());
+                if(m_variableTypes)for(size_t i=0;i<6;++i)
+                {const float y=302+28*static_cast<float>(i);c.rect(650,y,450,28,{0.24f,0.35f,0.48f,1});c.text(*m_font,variableTypes[i],660,y+3,text);}
                 c.clip(170,576,940,25);c.text(*m_font,m_status.c_str(),170,576,text);c.noClip();
-                c.text(*m_font,"Enter applies | Escape cancels",640,601,text,Align::Center);
+                c.text(*m_font,"Enter applies | Escape closes",640,601,muted,Align::Center);
             }
             else if(m_focus==9)
             {

@@ -2000,3 +2000,27 @@ NX_TEST(nativeImportedMultiScreenGlobalsRunInSeparateModules)
     r.step(5);NX_EXPECT(strcmp(r.save.get("main_count","missing"),"ok")==0&&strcmp(r.save.get("level_count","missing"),"missing")==0);
     r.screens.push("level");r.step(5);NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("level_count","missing"),"ok")==0);
 }
+
+#ifdef NX_DESKTOP_BLUEPRINT
+NX_TEST(nativeWorkspaceGraphicalVariableEditorCreatesAndRemovesDeclarations)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    r.platform.workspaceFiles=true;
+    r.platform.files["showcase/main/screen.json"]="{\"title\":\"Home\"}";r.platform.files["showcase/main/main.as"]="class Home : Screen {}";
+    if(!r.screens.init(r.services,"showcase","main")){NX_EXPECT(false);return;}
+    r.step(3);r.screens.setDevelopmentPaused(true);
+    BlueprintWorkspace studio;studio.open(r.services);if(!studio.active()){NX_EXPECT(false);return;}
+    auto& state=r.platform.state;state.hasMouse=true;
+    auto frame=[&](){r.assets.finish();r.input.update(state,1.0f/60);r.platform.now+=1.0/60;studio.update(r.services);studio.checkpoint(r.services);r.device->beginFrame({});r.canvas.begin();studio.draw(r.canvas);r.canvas.end();r.device->endFrame();};
+    auto click=[&](float x,float y){state.mouseX=x;state.mouseY=y;state.mouseButtons[0]=true;frame();state.mouseButtons[0]=false;frame();};
+    auto type=[&](const char* s){for(;*s;++s){state.typed[state.typedCount%InputState::kTyped]=static_cast<u32>(*s);++state.typedCount;}frame();};
+    frame();click(120,464);click(260,170);type("score");click(800,339);type("12");click(750,481);click(1040,132);studio.checkpoint(r.services,true);
+    const std::string recovery="own/blueprint-recovery.bp.json";std::string error;
+    BlueprintDocument doc;auto bytes=r.platform.files[recovery];
+    NX_EXPECT(doc.load(bytes.data(),bytes.size(),error)&&doc.graphs[0].fields.size()==1);
+    if(!doc.graphs.empty()&&!doc.graphs[0].fields.empty())NX_EXPECT(doc.graphs[0].fields[0].name=="score"&&doc.graphs[0].fields[0].value=="12");
+    click(120,464);click(300,205);click(980,481);click(1040,132);studio.checkpoint(r.services,true);
+    bytes=r.platform.files[recovery];NX_EXPECT(doc.load(bytes.data(),bytes.size(),error)&&doc.graphs[0].fields.empty());
+    studio.close(r.services);
+}
+#endif
