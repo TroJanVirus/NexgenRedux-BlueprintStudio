@@ -1,0 +1,74 @@
+/* Rename safely, mark useful nodes and keep a local recovery copy. */
+(function(root){'use strict';
+const copy=x=>JSON.parse(JSON.stringify(x));
+function rename(B,original,kind,oldName,newName,graphName){
+ if(!B.ident(newName))throw Error('Use a valid name with letters, numbers or underscores.');
+ const d=copy(original),g=d.graphs.find(g=>g.name===graphName);
+ const list=kind==='variable'?d.variables:kind==='local'?g?.locals:d.graphs;
+ const item=list?.find(x=>x.name===oldName&&(kind!=='graph'||['function','macro'].includes(x.kind)));
+ if(!item)throw Error('Choose a local variable, function or macro.');
+ if(oldName===newName)return d;
+ if(kind==='graph'&&B.parentGraph(d,item))throw Error('Rename the original parent function instead.');
+ if(kind==='graph'&&B.interfaceRegistry(d).size&&[...B.interfaceRegistry(d).values()].some(i=>i.methods.some(m=>m.name===oldName)))throw Error('This name belongs to an interface. Change the contract first.');
+ if(kind==='local'?list.some(x=>x.name===newName):[...B.members(d,'variables'),...B.members(d,'graphs'),...(d.dispatchers||[])].some(x=>x.name===newName)||Object.hasOwn(B.events[d.kind],newName)||newName===d.name||newName==='entity'&&d.kind==='Behaviour')throw Error('That name is already in use.');
+ item.name=newName;
+ for(const graph of kind==='local'?[g]:d.graphs)for(const n of graph.nodes){
+  if(n.ref===oldName&&(kind==='variable'&&['get','set'].includes(n.kind)||kind==='local'&&['getLocal','setLocal'].includes(n.kind)||kind==='graph'&&['call','macroCall'].includes(n.kind)))n.ref=newName;
+  if(kind==='graph'&&['bind','unbind'].includes(n.kind)&&n.handler===oldName)n.handler=newName;
+ }
+ // A rename may fix an unfinished graph; don't demand a successful build before editing.
+ // If the old graph compiled, the new graph must compile as well.
+ if(B.compile(original).ok){const r=B.compile(d);if(!r.ok)throw Error(r.diagnostics.find(x=>x.severity!=='warning')?.message||'Rename would break the graph.');}
+ return d;
+}
+function recoveryRecord(doc,graphId,project,active){return {version:1,doc:copy(doc),graphId,project:project?copy(project):null,active:active||null};}
+function checkRecovery(r){if(!r||r.version!==1||!r.doc||r.doc.version!==1||!['Screen','Behaviour'].includes(r.doc.kind)||!Array.isArray(r.doc.variables)||!Array.isArray(r.doc.graphs)||!r.doc.graphs.length||!r.doc.graphs.every(g=>Array.isArray(g.nodes)&&Array.isArray(g.links)))throw Error('This recovery copy is damaged.');if(r.project&&(!Array.isArray(r.project.screens)||r.project.kind!=='BlueprintProject'||r.active&&!r.project.screens.some(s=>s.id===r.active)))throw Error('This project recovery copy is damaged.');return r;}
+function routePoints(link){return Array.isArray(link.route)?link.route.slice(0,16).filter(p=>p&&Number.isFinite(p.x)&&Number.isFinite(p.y)&&Math.abs(p.x)<=100000&&Math.abs(p.y)<=100000):[];}
+function routePath(link,a,b,fallback){const points=routePoints(link);return points.length?'M '+a.x+' '+a.y+points.map(p=>' L '+(a.x+p.x)+' '+(a.y+p.y)).join('')+' L '+b.x+' '+b.y:fallback(a,b);}
+const api={rename,recoveryRecord,checkRecovery,routePoints,routePath};if(typeof module!=='undefined'){module.exports=api;return;}root.NexgenPolish=api;
+const bar=document.querySelector('.graphbar>div'),vp=$('viewport');
+const oldDetails=renderDetails,oldRenderGraph=renderGraph;
+function renameItem(kind,old){modal('Rename '+(kind==='graph'?'function or macro':'variable'),[{name:'name',label:'New name',value:old}],v=>{if(debugSession)throw Error('Detach the debugger before renaming.');const name=v.name.trim();if(name===old)return;const next=rename(B,doc,kind,old,name,graphId);remember();doc=next;if(kind==='graph'&&graphId===old)graphId=name;selected=kind==='variable'?{variable:name}:kind==='local'?{local:name}:null;render();});}
+function mark(n){remember();if(n.bookmark)delete n.bookmark;else n.bookmark=true;render();}
+let lastWireSelection=null,routeDrag=null;
+function changeRoute(l,fn){remember();l.route=routePoints(l).map(p=>({...p}));fn(l.route);if(!l.route.length)delete l.route;render();}
+renderDetails=()=>{oldDetails();const d=$('details'),n=graph().nodes.find(n=>n.id===selected?.node);if(selected?.variable)action(d,'Rename variable',()=>renameItem('variable',selected.variable));if(selected?.local)action(d,'Rename local',()=>renameItem('local',selected.local));if(n){action(d,n.bookmark?'Remove bookmark':'Bookmark node',()=>mark(n));if(n.kind==='entry'&&graph().kind!=='event')action(d,'Rename '+graph().kind,()=>renameItem('graph',graphId));}const l=selected?.link;if(l&&graph().links.includes(l)){const a=pinPos(l.from,'out'),b=pinPos(l.to,'in');d.append(el('h3','','WIRE ROUTE'),el('p','','Add a bend, then drag its handle. Bends move with the output pin.'));if(a&&b&&routePoints(l).length<16)action(d,'Add bend',()=>changeRoute(l,points=>{const prev=points.at(-1)||{x:0,y:0};points.push({x:Math.round((prev.x+b.x-a.x)/2),y:Math.round((prev.y+b.y-a.y)/2)});}));if(routePoints(l).length){action(d,'Remove last bend',()=>changeRoute(l,p=>p.pop()));action(d,'Reset wire route',()=>changeRoute(l,p=>p.splice(0)));}}if(lastWireSelection!==l||l){lastWireSelection=l;drawWires();}};
+const routeOverlay=svg('svg',{id:'routeOverlay'});routeOverlay.style.cssText='position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible;pointer-events:none;z-index:3';$('world').append(routeOverlay);
+const priorWires=drawWires;
+drawWires=pointer=>{priorWires(pointer);routeOverlay.replaceChildren();const l=selected?.link;if(!l||!graph().links.includes(l))return;const a=pinPos(l.from,'out');if(!a)return;const points=routePoints(l);points.forEach((p,i)=>{const h=svg('circle',{cx:a.x+p.x,cy:a.y+p.y,r:7/view.z,class:'routeHandle',fill:'#80b9ff',stroke:'#17202b','stroke-width':1.5/view.z});h.style.pointerEvents='all';h.style.cursor='move';h.onpointerdown=e=>{if(e.button!==0)return;e.preventDefault();e.stopPropagation();remember();l.route=points.map(p=>({...p}));routeDrag={link:l,index:i,graph:graph()};};routeOverlay.append(h);});};
+window.addEventListener('pointermove',e=>{if(!routeDrag||routeDrag.graph!==graph())return;const {link,index}=routeDrag,a=pinPos(link.from,'out');if(!a)return;const p=worldPoint(e.clientX,e.clientY),clamp=x=>Math.max(-100000,Math.min(100000,Math.round(x)));link.route[index]={x:clamp(p.x-a.x),y:clamp(p.y-a.y)};drawWires();});
+window.addEventListener('pointerup',()=>{routeDrag=null;});window.addEventListener('pointercancel',()=>{routeDrag=null;});window.addEventListener('blur',()=>{routeDrag=null;});
+const bookmarks=el('dialog');bookmarks.id='bookmarkDialog';document.body.append(bookmarks);
+function openBookmarks(){bookmarks.replaceChildren();bookmarks.append(el('h2','','Bookmarks'));let count=0;for(const g of doc.graphs)for(const n of g.nodes)if(n.bookmark){count++;action(bookmarks,g.name+' / '+(n.appearance?.title||B.describe(doc,g,n)?.title||n.kind),()=>{bookmarks.close();selectGraph(g.name);selected={node:n.id};render();const e=$('node-'+n.id);view.x=vp.clientWidth/2-((n.x||0)+(e?.offsetWidth||218)/2)*view.z;view.y=vp.clientHeight/2-((n.y||0)+(e?.offsetHeight||100)/2)*view.z;transform();});}if(!count)bookmarks.append(el('p','','Select a node and choose Bookmark node in Details.'));action(bookmarks,'Close',()=>bookmarks.close());bookmarks.showModal();}
+action(bar,'Bookmarks',openBookmarks);
+renderGraph=()=>{oldRenderGraph();for(const n of graph().nodes)if(n.bookmark){const h=$('node-'+n.id)?.querySelector('.nodeheader');if(h){const flag=el('span','bookmarkFlag','★');flag.title='Bookmarked';h.append(flag);}}};
+// Keep frequently used nodes at the top of the library, without changing their definitions.
+const favKey='nexgen-blueprint-favourites-v1';let favourites=[];try{const a=JSON.parse(localStorage.getItem(favKey)||'[]');if(Array.isArray(a))favourites=a.filter(x=>typeof x==='string').slice(0,200);}catch{}
+const key=n=>JSON.stringify(n);
+fillPalette=(target,q,port,choose)=>{
+ const items=allPalette(q,port);target.replaceChildren();let category='';
+ const ordered=[...items.filter(x=>favourites.includes(key(x.n))),...items.filter(x=>!favourites.includes(key(x.n)))];
+ for(const x of ordered){const k=key(x.n),fav=favourites.includes(k),cat=fav?'Favourites':x.d.category;if(cat!==category){category=cat;target.append(el('div','category',cat));}
+ const r=item(x.d.title,()=>choose(x),x.d.inputs.filter(p=>p.type!=='exec').map(p=>p.type).join(', '));r.title=x.d.description||x.d.title;r.draggable=target===$('palette');r.ondragstart=e=>e.dataTransfer.setData('application/x-nexgen-node',JSON.stringify(x.n));
+ const star=el('button','favouriteStar',fav?'★':'☆');star.title=fav?'Remove favourite':'Add favourite';star.setAttribute('aria-label',star.title+' '+x.d.title);star.draggable=false;star.onpointerdown=e=>e.stopPropagation();star.onclick=e=>{e.stopPropagation();if(fav)favourites=favourites.filter(v=>v!==k);else if(favourites.length<200)favourites.push(k);try{localStorage.setItem(favKey,JSON.stringify(favourites));}catch{}fillPalette(target,q,port,choose);};r.append(star);target.append(r);}
+ if(!items.length)target.append(el('div','empty','No matching nodes'));return items.length;
+};
+const style=el('style');style.textContent='.bookmarkFlag{float:right;color:#eabf58;font-size:13px;margin-left:4px}.favouriteStar{padding:0 3px!important;font-size:13px!important;flex-shrink:0;border:0!important;background:transparent!important;color:#eabf58!important}.favouriteStar:focus-visible{outline:2px solid var(--accent)}#bookmarkDialog button,#recoveryDialog .recoveryRow button{margin:3px}#bookmarkDialog button{display:block;white-space:normal;text-align:left}#recoveryDialog{width:min(620px,92vw)}.recoveryRow{border-top:1px solid var(--line);padding:9px 0}.recoveryRow small{display:block;margin:3px 0}.recoveryRow button{font-size:12px}';document.head.append(style);
+// IndexedDB works with larger project assets than localStorage. Each tab owns its copy.
+const recovery=el('dialog');recovery.id='recoveryDialog';document.body.append(recovery);let storage=null,storageError='',busy=false,session=uid(),lastState='',hadCopy=false;
+const recoveryButton=action(document.querySelector('.toolbar'),'Recovery',openRecovery);recoveryButton.title='Open local recovery copies';
+function db(){if(storage)return storage;storage=new Promise((resolve,reject)=>{const req=indexedDB.open('NexgenBlueprintRecovery',1);req.onupgradeneeded=()=>req.result.createObjectStore('drafts',{keyPath:'id'});req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);req.onblocked=()=>reject(Error('Recovery database is blocked.'));});return storage;}
+async function request(mode,fn){const database=await db();return new Promise((resolve,reject)=>{const tx=database.transaction('drafts',mode),r=fn(tx.objectStore('drafts'));tx.oncomplete=()=>resolve(r.result);tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||Error('Recovery write cancelled.'));});}
+function signalError(e){storageError=e?.message||'Local storage is unavailable.';recoveryButton.textContent='Recovery !';recoveryButton.title=storageError;}
+async function saveRecovery(){if(busy)return;busy=true;try{if(projectActive)captureProject();if(!dirty&&!projectDirty)return;const r=recoveryRecord(doc,graphId,project,projectActive),s=JSON.stringify(r);if(s===lastState)return;if(s.length>105*1024*1024)throw Error('Project is too large for recovery. Save a project file.');await request('readwrite',o=>o.put({id:session,when:Date.now(),name:project?.name||doc.name,state:r}));lastState=s;hadCopy=true;storageError='';recoveryButton.textContent='Recovery ✓';recoveryButton.title='Local recovery copy saved';}catch(e){signalError(e);}finally{busy=false;}}
+// A manual save leaves the last recovery copy available until the user removes it.
+// Starting a different document starts another recovery record instead of overwriting the old one.
+const oldBefore=projectBeforeDocumentChange;projectBeforeDocumentChange=()=>{if(hadCopy){session=uid();lastState='';hadCopy=false;}oldBefore();};
+async function openRecovery(){recovery.replaceChildren();recovery.append(el('h2','','Recover unsaved work'),el('p','','Local copies are saved every two seconds while you edit. They stay in this browser; save a graph or project file for a permanent backup.'));if(storageError)recovery.append(el('p','',storageError));action(recovery,'Save recovery now',async()=>{await saveRecovery();recovery.close();openRecovery();});action(recovery,'Close',()=>recovery.close());recovery.showModal();try{const rows=await request('readonly',o=>o.getAll());if(!recovery.open)return;if(!rows.length)recovery.append(el('p','','No recovery copies yet.'));for(const row of rows.sort((a,b)=>b.when-a.when)){const line=el('div','recoveryRow');line.append(el('strong','',row.name),el('small','',new Date(row.when).toLocaleString()));action(line,'Restore',()=>{try{if(debugSession)throw Error('Detach the debugger first.');const r=checkRecovery(row.state);if((dirty||projectDirty)&&!confirm('Replace the current unsaved work with this copy?'))return;doc=copy(r.doc);project=copy(r.project);projectActive=r.active;projectDirty=!!project;history=[];future=[];last=null;dirty=true;session=uid();lastState='';hadCopy=false;recovery.close();selectGraph(doc.graphs.some(g=>g.name===r.graphId)?r.graphId:doc.graphs[0].name);render();}catch(e){alert(e.message);}});action(line,'Export copy',()=>{const r=copy(checkRecovery(row.state));if(r.project&&r.active){const s=r.project.screens.find(s=>s.id===r.active);s.blueprint=r.doc;}download(row.name+(r.project?'.bp.project.json':'.bp.json'),JSON.stringify(r.project||r.doc,null,2),'application/json');});if(row.state.project&&!row.state.active)action(line,'Export detached graph',()=>download(row.state.doc.name+'.bp.json',JSON.stringify(row.state.doc,null,2),'application/json'));action(line,'Delete',async()=>{if(!confirm('Delete this local recovery copy?'))return;try{await request('readwrite',o=>o.delete(row.id));if(row.id===session)lastState='';line.remove();}catch(e){alert(e.message);}});recovery.append(line);}}catch(e){signalError(e);recovery.append(el('p','',storageError));}}
+// Save the whole project when a project screen is open. Export just the graph from the Project menu.
+const originalSave=$('save').onclick,oldStatus=updateStatus;
+updateStatus=()=>{oldStatus();$('save').textContent=projectActive?'Save project':'Save graph';if(dirty||projectDirty)$('status').textContent=(last?.ok?'Compiled · ':last?'Compile failed · ':'')+'Unsaved changes';};
+$('save').onclick=()=>{if(!projectActive)return originalSave();try{captureProject();projectDownload(screenId(project.name)+'.bp.project.json',JSON.stringify(project,null,2),'application/json');dirty=false;projectDirty=false;updateStatus();}catch(e){alert(e.message);}};
+setInterval(saveRecovery,2000);document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')saveRecovery();});
+render();
+})(globalThis);

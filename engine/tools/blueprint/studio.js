@@ -160,7 +160,7 @@ function drawWires(pointer = null) { const s = $('wires'); s.replaceChildren(); 
     if (!a || !b)
         continue;
     const t = portElements.get(portKey(l.from.node, 'out', l.from.pin)).data.type;
-    const p = svg('path', { d: curve(a, b), stroke: color(t), class: 'wire' });
+    const p = svg('path', { d: typeof NexgenPolish!=='undefined'?NexgenPolish.routePath(l,a,b,curve):curve(a,b), stroke: color(t), class: 'wire' });
     p.onclick = e => { e.stopPropagation(); selected = { link: l }; renderDetails(); };
     p.oncontextmenu = e => { e.preventDefault(); e.stopPropagation(); remember(); graph().links = graph().links.filter(x => x !== l); render(); };
     s.append(p);
@@ -575,7 +575,7 @@ window.addEventListener('pointerup', e => { if (!drag)
         renderGraph();
     }
 } });
-window.addEventListener('keydown', e => { if (e.target.matches('input,textarea,select') || $('dialog').open)
+window.addEventListener('keydown', e => { if (e.target.matches('input,textarea,select,[contenteditable=true]') || document.querySelector('dialog[open]'))
     return; if (e.code === 'Space') {
     space = true;
     e.preventDefault();

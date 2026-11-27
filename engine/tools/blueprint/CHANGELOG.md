@@ -1,5 +1,13 @@
 # Changes
 
+## Everyday editing
+
+- Rename variables, local variables, functions and macros without breaking their existing references.
+- Bookmark nodes, keep favourites in the node library, and add draggable bends to wires.
+- Save the whole project from the main Save button or Ctrl+S.
+- Keep local recovery copies of unsaved graphs and projects. Recovery UI tested with simulated browser storage; restart persistence still needs testing.
+- Prevent graph shortcuts from acting behind open dialogs.
+
 ## Workspace
 
 - Search across graphs, switch between open tabs, and use the minimap to navigate.
