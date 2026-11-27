@@ -13,6 +13,7 @@ on:
     branches: [ "main" ]
     paths: [ "engine/**", "NexgenRedux-Media", ".github/workflows/engine.yml" ]
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
@@ -366,7 +367,7 @@ jobs:
   release:
     name: Release
     needs: [ desktop, cook, variants, xboxog, uwp, vscode ]
-    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    if: (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))) || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     permissions:
       contents: write

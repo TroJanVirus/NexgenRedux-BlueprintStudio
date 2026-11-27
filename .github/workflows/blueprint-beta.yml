@@ -1,0 +1,102 @@
+name: Blueprint Studio beta
+on:
+  push:
+    branches: ["blueprint/beta-*"]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: blueprint-beta-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  native-verification:
+    if: startsWith(github.ref, 'refs/heads/blueprint/beta-')
+    uses: ./.github/workflows/blueprint-native.yml
+    permissions:
+      contents: read
+
+  platform-packages:
+    if: startsWith(github.ref, 'refs/heads/blueprint/beta-')
+    uses: ./.github/workflows/engine.yml
+    permissions:
+      contents: write
+
+  publish:
+    needs: [native-verification, platform-packages]
+    if: github.repository == 'TroJanVirus/NexgenRedux-BlueprintStudio' && startsWith(github.ref, 'refs/heads/blueprint/beta-')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: Nexgen-*
+          path: dist
+          merge-multiple: true
+      - name: Verify complete platform matrix and calculate checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist
+          expected=(
+            Nexgen-windows-x64.zip
+            Nexgen-windows-arm64.zip
+            Nexgen-linux-x64.tar.gz
+            Nexgen-macos-arm64.zip
+            Nexgen-macos-x64.zip
+            Nexgen-xbox-og.zip
+            Nexgen-xbox-og.iso
+            Nexgen-uwp-x64.zip
+            Nexgen-cook-windows-x64.zip
+            Nexgen-cook-windows-arm64.zip
+            Nexgen-cook-linux-x64.tar.gz
+            Nexgen-cook-linux-arm64.tar.gz
+            Nexgen-cook-macos-arm64.zip
+            Nexgen-cook-macos-x64.zip
+            Nexgen-vscode.vsix
+          )
+          for asset in "${expected[@]}"; do
+            test -s "$asset" || { echo "Missing or empty: $asset"; exit 1; }
+            case "$asset" in
+              *.zip|*.vsix) unzip -tq "$asset" ;;
+              *.tar.gz) tar -tzf "$asset" >/dev/null ;;
+            esac
+          done
+          sha256sum "${expected[@]}" > SHA256SUMS.txt
+      - name: Publish prerelease from this exact verified commit
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          suffix="${GITHUB_REF_NAME#blueprint/beta-}"
+          [[ "$suffix" =~ ^[0-9]+$ ]] || { echo "Invalid beta branch number"; exit 1; }
+          tag="blueprint-studio-beta.$suffix"
+          # Never overwrite an existing beta or move its tag.
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release already exists: $tag"; exit 1
+          fi
+          if gh api "repos/$GH_REPO/git/ref/tags/$tag" >/dev/null 2>&1; then
+            echo "Tag already exists: $tag"; exit 1
+          fi
+          cat > notes.md <<'EOF'
+          First public beta of the integrated native Blueprint Studio for Nexgen Redux.
+          Open Blueprint Studio from the desktop engine menu, or start nexgen with --blueprint-studio.
+
+          Desktop editor: Windows x64/ARM64, Linux x64, macOS Intel/Apple Silicon.
+          Console runtime packages: original Xbox (XBE folder and XISO) and UWP x64 (Windows/Xbox Developer Mode).
+          The native graphical editor is desktop-only; console packages run compatible exported AngelScript games.
+          Cook tools are provided for all six supported host architectures, plus the VS Code debugging extension.
+          Windows desktop binaries are not Authenticode signed; macOS applications are ad-hoc signed, not notarized.
+          UWP uses the bundled self-signed certificate; install only after verifying the source and checksum.
+
+          This is a beta, not a stable release. Native reverse import does not cover arbitrary AngelScript,
+          and console hardware behavior is not certified by CI. Keep backups of projects.
+          The Linux suite exercises real native GUI authoring, camera orbits, save/recovery and preview.
+          Desktop and console build coverage does not imply identical interactive testing on every platform.
+          EOF
+          printf '\nBuilt from commit %s.\n' "$GITHUB_SHA" >> notes.md
+          printf '\nVerification: %s/%s/actions/runs/%s\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> notes.md
+          gh release create "$tag" dist/* --target "$GITHUB_SHA" --title "Blueprint Studio Beta $suffix" --notes-file notes.md --prerelease --latest=false
