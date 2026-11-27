@@ -630,6 +630,24 @@ namespace nx
         }
         record(graph);g.nodes.push_back({id,kind,value,x,y});error.clear();return true;
     }
+    bool BlueprintDocument::addConnectedNode(size_t graph,size_t from,const std::string& output,const std::string& kind,float x,float y,std::string& error)
+    {
+        if(graph>=graphs.size()||from>=graphs[graph].nodes.size()){error="Invalid source pin.";return false;}
+        BlueprintDocument staged;staged.name=name;staged.assetRoot=assetRoot;staged.graphs=graphs;staged.manifests=manifests;staged.m_nextId=m_nextId;
+        BlueprintNodeSpec sourceSpec,targetSpec;
+        if(!staged.nodeSpec(staged.graphs[graph],staged.graphs[graph].nodes[from],sourceSpec)){error="Invalid source node.";return false;}
+        const auto* pin=findPin(sourceSpec.outputs,output);
+        if(!pin){error="Invalid source pin.";return false;}
+        if(!staged.addNode(graph,kind,x,y,error))return false;
+        const auto to=staged.graphs[graph].nodes.size()-1;
+        if(!staged.nodeSpec(staged.graphs[graph],staged.graphs[graph].nodes[to],targetSpec)){error="Invalid destination node.";return false;}
+        for(const auto& input:targetSpec.inputs)if(input.type==pin->type)
+        {
+            if(!staged.connect(graph,from,output,to,input.name,error))return false;
+            record(graph);graphs[graph]=std::move(staged.graphs[graph]);m_nextId=staged.m_nextId;error.clear();return true;
+        }
+        error="No compatible input on this node.";return false;
+    }
     bool BlueprintDocument::addVariableNode(size_t graph,const std::string& name,bool global,bool setter,float x,float y,std::string& error)
     {
         if(graph>=graphs.size()||!identifier(name)||!coordinate(x)||!coordinate(y)||graphs[graph].nodes.size()>=kMaxNodes)

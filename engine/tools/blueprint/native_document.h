@@ -59,6 +59,7 @@ namespace nx
         bool serialize(std::string& result,std::string& error) const;
         bool move(size_t graph,size_t node,float x,float y);
         bool addNode(size_t graph,const std::string& kind,float x,float y,std::string& error);
+        bool addConnectedNode(size_t graph,size_t from,const std::string& output,const std::string& kind,float x,float y,std::string& error);
         bool addVariableNode(size_t graph,const std::string& name,bool global,bool setter,float x,float y,std::string& error);
         bool deleteNode(size_t graph,size_t node,std::string& error);
         bool connect(size_t graph,size_t from,const std::string& output,size_t to,const std::string& input,std::string& error);

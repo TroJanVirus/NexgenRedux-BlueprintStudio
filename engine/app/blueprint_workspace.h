@@ -35,7 +35,9 @@ namespace nx
         void fitGraph();
         void rebuildPins();
         void filterCatalogue();
-        void clearWire(){m_pending=static_cast<size_t>(-1);m_pendingPin.clear();}
+        void clearWire(){m_pending=static_cast<size_t>(-1);m_pendingPin.clear();m_pinDrag=false;}
+        void openPinMenu(float x,float y);
+        void closePinMenu(Services& services);
         bool saveNamed(Services& services,const std::string& name);
         bool openFile(Services& services,const std::string& file,bool managed);
         bool importSource(Services& services,const std::string& file);
@@ -100,6 +102,9 @@ namespace nx
         size_t m_quickVariableFirst=0;
         VariableRow m_quickVariable{};
         bool m_quickDrag=false,m_quickMenu=false;
+        bool m_pinDrag=false,m_pinMenu=false;
+        float m_pinStartX=0,m_pinStartY=0,m_pinX=0,m_pinY=0,m_pinMenuX=0,m_pinMenuY=0;
+        std::string m_pinQuery,m_pinType;
         float m_quickX=0,m_quickY=0,m_quickMenuX=0,m_quickMenuY=0;
         std::string m_filePath,m_fileBaseline;
         std::vector<std::string> m_files;

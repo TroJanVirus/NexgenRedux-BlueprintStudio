@@ -930,3 +930,15 @@ NX_TEST(nativeNamedVariablePlacementUsesExactReferenceAndSingleUndo)
     NX_EXPECT(doc.undo()&&doc.serialize(after,error)&&after==before);
     NX_EXPECT(!doc.addVariableNode(0,"missing",false,false,200,100,error)&&doc.serialize(after,error)&&after==before);
 }
+
+NX_TEST(nativeContextPlacementConnectsAtomicallyAndRejectsIncompatiblePins)
+{
+    BlueprintDocument doc;doc.create();std::string error,before,after;
+    NX_EXPECT(doc.serialize(before,error));
+    NX_EXPECT(doc.addConnectedNode(0,0,"then","branch",200,100,error));
+    NX_EXPECT(doc.graphs[0].nodes.size()==2&&doc.graphs[0].links.size()==1&&doc.graphs[0].links[0].input=="in");
+    NX_EXPECT(doc.undo()&&doc.serialize(after,error)&&after==before);
+    NX_EXPECT(!doc.addConnectedNode(0,0,"then","literal:int",200,100,error)&&doc.serialize(after,error)&&after==before);
+    NX_EXPECT(doc.addConnectedNode(0,0,"then","branch",200,100,error)&&doc.serialize(before,error));
+    NX_EXPECT(!doc.addConnectedNode(0,0,"then","branch",400,100,error)&&doc.serialize(after,error)&&after==before);
+}
