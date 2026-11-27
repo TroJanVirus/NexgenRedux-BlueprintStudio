@@ -705,8 +705,11 @@ namespace nx
                 if(!graph)
                 {
                     if(!create){error="Missing widget callback "+functionName+" on "+owner;return false;}
-                    if(!doc.addFunction(functionName,error,owner)||
-                        !doc.setFunctionSignature(doc.graphs.size()-1,widgetEventParameters(handler.event),"void",error))return false;
+                    // This is a newly created graph in the transaction. Initialize
+                    // its signature before publishing; the normal edit guard
+                    // intentionally refuses signature changes to linked handlers.
+                    if(!doc.addFunction(functionName,error,owner))return false;
+                    doc.graphs.back().parameters=widgetEventParameters(handler.event);
                 }
                 else if(!handlerSignature(*graph,handler.event))
                 {error="Incompatible widget callback signature: "+functionName;return false;}
