@@ -2763,3 +2763,33 @@ NX_TEST(nativeDeferredTimeExecutesOnRealScreenUpdates)
     NX_EXPECT(strcmp(r.save.get("delay_done","missing"),"yes")==0&&strcmp(r.save.get("timer_done","missing"),"yes")==0);
     NX_EXPECT(strcmp(r.save.get("cancelled","missing"),"missing")==0);
 }
+
+NX_TEST(nativeDeferredActorInheritanceAndCallableEvents)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    BlueprintDocument doc;doc.create();std::string base,child,parent,derived,error,source;
+    bool ok=doc.createVisualAsset("actor",base,error)&&doc.createVisualActorChild(base,child,error)&&
+        doc.ensureActorBehaviour(child,derived,error)&&doc.ensureActorBehaviour(base,parent,error)&&
+        doc.addFunction("Later",error,derived);
+    if(!ok){NX_ERROR("Deferred actors: %s",error.c_str());NX_EXPECT(false);return;}
+    auto graph=[&](const std::string& owner,const char* label)
+    {for(size_t i=0;i<doc.graphs.size();++i)if(doc.graphs[i].owner==owner&&doc.graphs[i].name==label)return i;return doc.graphs.size();};
+    auto delayed=[&](size_t g,const char* key)
+    {
+        ok=ok&&doc.addNode(g,"time:delay",0,0,error)&&doc.connect(g,0,"then",1,"in",error)&&
+            doc.setInputValue(g,1,"seconds","0.05",error)&&
+            doc.addNode(g,"api:Save:Save::set:string,string",0,0,error)&&doc.connect(g,1,"completed",2,"in",error)&&
+            doc.setInputValue(g,2,"key",key,error)&&doc.setInputValue(g,2,"value","yes",error);
+    };
+    delayed(graph(parent,"start"),"parent_delayed");
+    delayed(graph(derived,"Later"),"child_delayed");
+    const auto g=graph(derived,"update");
+    ok=ok&&doc.addNode(g,"flow:do-once",0,0,error)&&doc.connect(g,0,"then",1,"in",error)&&
+        doc.addNode(g,"call:function",0,0,error,"Later")&&doc.connect(g,1,"body",2,"in",error)&&
+        doc.placeVisualActor("Screen",child,"0,0,0",error);
+    if(!ok||!compileBlueprint(doc,source,error)){NX_ERROR("Deferred actor compile: %s",error.c_str());NX_EXPECT(false);return;}
+    r.platform.files["project/main/screen.json"]="{\"title\":\"Deferred actors\"}";r.platform.files["project/main/main.as"]=source;
+    if(!r.screens.init(r.services,"project","main")){NX_EXPECT(false);return;}
+    r.step(15);NX_EXPECT(!r.screens.failed());
+    NX_EXPECT(strcmp(r.save.get("parent_delayed","missing"),"yes")==0&&strcmp(r.save.get("child_delayed","missing"),"yes")==0);
+}

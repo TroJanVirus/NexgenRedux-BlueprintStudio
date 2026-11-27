@@ -9,7 +9,7 @@
 using namespace nx;
 NX_TEST(nativeCatalogueContainsReferenceAPI)
 {
-    NX_EXPECT(blueprintCatalogue().size()==1196);
+    NX_EXPECT(blueprintCatalogue().size()==1197);
     const auto* save=blueprintSpec("api:Save:Save::set:string,string");
     NX_EXPECT(save&&save->inputs.size()==3&&save->outputs.size()==1);
     if(save&&save->inputs.size()==3)NX_EXPECT(save->inputs[0].type=="exec"&&save->inputs[2].type=="string");
@@ -1756,4 +1756,17 @@ NX_TEST(nativeDeferredTimeRoundTripAndScope)
     NX_EXPECT(doc.serialize(bytes,error));BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error));
     NX_EXPECT(compileBlueprint(copy,source,error));
     NX_EXPECT(source.find("bp_tick_deferred(dt)")!=std::string::npos&&source.find("bp_deferred_0_3_resume(dt)")!=std::string::npos);
+}
+
+NX_TEST(nativeDeferredFunctionsRejectOriginalArguments)
+{
+    BlueprintDocument doc;doc.create();std::string error,source;
+    NX_EXPECT(doc.addFunction("Later",error,"Screen"));
+    const auto* fn=doc.function("Screen","Later");if(!fn){NX_EXPECT(false);return;}
+    const auto g=static_cast<size_t>(fn-doc.graphs.data());
+    NX_EXPECT(doc.editFunctionSignature(g,"void(message:string)",error));
+    NX_EXPECT(doc.addNode(g,"time:delay",0,0,error)&&doc.connect(g,0,"then",1,"in",error));
+    NX_EXPECT(doc.addNode(g,"api:Save:Save::set:string,string",0,0,error)&&doc.connect(g,1,"completed",2,"in",error));
+    NX_EXPECT(doc.setInputValue(g,2,"key","later",error)&&doc.connect(g,0,"arg_message",2,"value",error));
+    NX_EXPECT(!compileBlueprint(doc,source,error)&&error.find("original function parameters")!=std::string::npos);
 }

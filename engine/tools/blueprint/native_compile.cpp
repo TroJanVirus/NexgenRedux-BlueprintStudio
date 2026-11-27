@@ -24,6 +24,14 @@ namespace nx
         {return kind=="time:delay"||kind=="time:retrigger-delay"||kind=="time:timer";}
         std::string deferredKey(size_t graph,size_t node)
         {return "bp_deferred_"+std::to_string(graph)+"_"+std::to_string(node);}
+        std::string deferredTick(const std::string& owner)
+        {return owner.rfind("behaviour:",0)==0?"bp_tick_deferred_"+owner.substr(10):"bp_tick_deferred";}
+        bool hasDeferred(const BlueprintDocument& document,const std::string& owner)
+        {
+            for(const auto& g:document.graphs)if(g.owner==owner)
+                for(const auto& n:g.nodes)if(deferredTime(n.kind))return true;
+            return false;
+        }
         struct ByteSpan { size_t begin,end; BlueprintLocation location; };
         struct Emitter
         {
@@ -36,6 +44,7 @@ namespace nx
             BlueprintLocation* location;
             std::vector<ByteSpan>& spans;
             size_t budget=8192;
+            bool resuming=false;
             void mark(size_t start,size_t node)
             {
                 if(source.size()>start)spans.push_back({start,source.size(),{graphIndex,node}});
@@ -139,6 +148,7 @@ namespace nx
                 if(!spec)return fail(node,"Unknown node.");
                 if(n.kind=="entry"&&graph.kind=="function"&&pin.rfind("arg_",0)==0)
                 {
+                    if(resuming)return fail(node,"Deferred continuations cannot read original function parameters; store them in instance fields first.");
                     for(const auto& p:graph.parameters)if(pin=="arg_"+p.name){result="bp_arg_"+p.name;return true;}
                 }
                 if(n.kind.rfind("capture:",0)==0&&pin=="result")
@@ -264,12 +274,26 @@ namespace nx
                 const auto& n=graph.nodes[to];const auto* spec=blueprintSpec(n.kind);
                 const std::string pad(indent*4,' ');
                 const size_t start=source.size();
+                if(n.kind=="time:cancel-all")
+                {
+                    if(graph.inlineMacro)return fail(to,"Timer cancellation is not supported in inline macros.");
+                    for(auto owner=graph.owner;!owner.empty();owner=document.parentBehaviour(owner))
+                        for(size_t gi=0;gi<document.graphs.size();++gi)
+                        {
+                            const auto& g=document.graphs[gi];if(g.owner!=owner)continue;
+                            for(size_t ni=0;ni<g.nodes.size();++ni)if(deferredTime(g.nodes[ni].kind))
+                                source+=pad+deferredKey(gi,ni)+"_active = false;\n";
+                        }
+                    mark(start,to);return flow(to,"then",indent,depth+1);
+                }
                 if(deferredTime(n.kind))
                 {
                     const auto key=deferredKey(graphIndex,to);
                     if(cancelTime){source+=pad+key+"_active = false;\n";mark(start,to);return true;}
-                    if(graph.kind!="event"||graph.owner.rfind("behaviour:",0)==0||(graph.name!="onEnter"&&graph.name!="update"))
-                        return fail(to,"Deferred time nodes currently require Screen On Enter or Update.");
+                    const bool actor=graph.owner.rfind("behaviour:",0)==0;
+                    if(graph.inlineMacro||graph.returnType!="void"||graph.name=="Construction"||
+                        (graph.kind=="event"&&graph.name!="update"&&graph.name!=(actor?"start":"onEnter")))
+                        return fail(to,"Deferred time requires Start, On Enter, Update or a callable void graph.");
                     std::string seconds,loop="false";
                     if(!value(to,"seconds",seconds,0)||(n.kind=="time:timer"&&!value(to,"loop",loop,0)))return false;
                     if(n.kind=="time:delay")source+=pad+"if (!"+key+"_active)\n"+pad+"{\n";
@@ -793,11 +817,17 @@ namespace nx
                     result+="    int bp_flow_state_"+std::to_string(gi)+"_"+std::to_string(ni)+" = 0;\n";
             }
         }
+        std::vector<std::string> ticking;
+        for(auto at=classOwner;!at.empty();at=document.parentBehaviour(at))
+            if(hasDeferred(document,at))ticking.push_back(at);
+        std::reverse(ticking.begin(),ticking.end());
         for(size_t graphIndex=0;graphIndex<document.graphs.size();++graphIndex)
         {
             const auto& graph=document.graphs[graphIndex];
             if(graph.owner!=classOwner)continue;
-            if(!parent.empty()&&graph.kind=="event"&&graph.nodes.size()==1)continue;
+            const bool inheritedEmpty=!parent.empty()&&graph.kind=="event"&&graph.nodes.size()==1;
+            const bool timerWrapper=inheritedEmpty&&graph.name=="update"&&!deferred.empty();
+            if(inheritedEmpty&&!timerWrapper)continue;
             if(graph.inlineMacro)
             {
                 // Validate even unused macro bodies, without emitting a callable method.
@@ -827,12 +857,26 @@ namespace nx
                 if(touch)result+="        @bp_level.onTouch = LevelTouch(this.onLevelTouch);\n";
                 if(agent)result+="        @bp_level.onAgent = LevelAgent(this.onLevelAgent);\n";
             }
-            if(graph.kind=="event"&&graph.name=="update"&&!deferred.empty())result+="        bp_tick_deferred(dt);\n";
+            if(graph.kind=="event"&&graph.name=="update")
+            {
+                if(timerWrapper)
+                {
+                    result+="        BP_Behaviour_"+parent.substr(10)+"::update(dt);\n";
+                    result+="        if (entity is null || !entity.alive) return;\n";
+                    result+="        "+deferredTick(classOwner)+"(dt);\n";
+                }
+                else for(const auto& at:ticking)
+                {
+                    result+="        "+deferredTick(at)+"(dt);\n";
+                    if(behaviour)result+="        if (entity is null || !entity.alive) return;\n";
+                }
+            }
             // Break the Level -> delegate -> Screen reference cycle on exit.
             if(!behaviour&&graph.name=="onExit")
             {
                 if(touch)result+="        @bp_level.onTouch = null;\n";
                 if(agent)result+="        @bp_level.onAgent = null;\n";
+                for(const auto& item:deferred)result+="        "+deferredKey(item.first,item.second)+"_active = false;\n";
             }
             spans.push_back({start,result.size(),{graphIndex,index}});
             Emitter e{document,graph,result,error,std::vector<bool>(graph.nodes.size(),false),std::vector<bool>(graph.nodes.size(),false),graphIndex,location,spans};
@@ -843,7 +887,7 @@ namespace nx
         }
         if(!deferred.empty())
         {
-            result+="    void bp_tick_deferred(float dt)\n    {\n";
+            result+="    void "+deferredTick(classOwner)+"(float dt)\n    {\n";
             // Snapshot/decrement first so a callback cannot make a new timer fire in the same tick.
             for(const auto& item:deferred)
             {
@@ -857,7 +901,9 @@ namespace nx
                 result+="        if ("+key+"_due && "+key+"_active && "+key+"_remaining <= 0)\n        {\n";
                 result+="            "+key+"_active = "+key+"_loop;\n";
                 result+="            "+key+"_remaining = "+key+"_period;\n";
-                result+="            "+key+"_resume(dt);\n        }\n";
+                result+="            "+key+"_resume(dt);\n";
+                if(behaviour)result+="            if (entity is null || !entity.alive) return;\n";
+                result+="        }\n";
             }
             result+="    }\n";
             for(const auto& item:deferred)
@@ -865,6 +911,7 @@ namespace nx
                 const auto& g=document.graphs[item.first];
                 result+="    void "+deferredKey(item.first,item.second)+"_resume(float dt)\n    {\n";
                 Emitter e{document,g,result,error,std::vector<bool>(g.nodes.size(),false),std::vector<bool>(g.nodes.size(),false),item.first,location,spans};
+                e.resuming=true;
                 if(!e.flow(item.second,"completed",2,0))return false;
                 result+="    }\n";
                 if(result.size()>1024*1024){error="Generated source exceeds the size limit.";return false;}

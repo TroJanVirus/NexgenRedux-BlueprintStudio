@@ -31,6 +31,7 @@ namespace nx
             {"math:cos","Cosine (radians)","Math","a:float","result:float","cos","","","pure","float","","in:a"},
             {"time:delay","Delay","Time / Async","in:exec|cancel:exec|seconds:float","completed:exec","","","","","void","","","seconds:float(1)"},
             {"time:retrigger-delay","Retriggerable Delay","Time / Async","in:exec|cancel:exec|seconds:float","completed:exec","","","","","void","","","seconds:float(1)"},
+            {"time:cancel-all","Cancel all pending timers","Time / Async","in:exec","then:exec"},
             {"time:timer","Set Timer","Time / Async","in:exec|cancel:exec|seconds:float|loop:bool","completed:exec|then:exec","","","","","void","","","seconds:float(1)|loop:true"},
             {"time:timeline","Timeline (0 to 1)","Time / Animation","in:exec|dt:float|duration:float|loop:bool|reset:bool","then:exec|progress:float|elapsed:float|finished:bool","","","","","void","","","dt:dt|duration:float(1)|loop:false|reset:false"},
             {"camera:orbit-timed","Orbit camera around entity (timed)","Space / Camera","in:exec|name:string|radius:float|height:float|duration:float|turns:float|angle:float|loop:bool|reset:bool|dt:float","then:exec|progress:float|elapsed:float|finished:bool|found:bool","","","","","void","","","name:\"Target\"|radius:float(6)|height:float(2)|duration:float(8)|turns:float(1)|angle:float(60)|loop:false|reset:false|dt:dt"},
@@ -180,7 +181,7 @@ namespace nx
         bool context(const std::string& event,const std::string& kind,const std::string& owner)
         {
             const bool behaviour=behaviourOwner(owner);
-            if(kind=="time:delay"||kind=="time:retrigger-delay"||kind=="time:timer")return !behaviour&&(event=="onEnter"||event=="update");
+            if(kind=="time:delay"||kind=="time:retrigger-delay"||kind=="time:timer")return event=="update"||(behaviour?event=="start":event=="onEnter")||(!ownerEvent(owner,event)&&event!="Construction");
             return ((kind!="time:timeline"&&kind!="camera:orbit-timed")||event=="update")&&(kind!="render:space"||(!behaviour&&event=="draw"))&&(kind!="ui:load-asset"||(!behaviour&&event=="onEnter"))&&(kind!="event:delta"||event=="update")&&(kind!="event:canvas"||(!behaviour&&event=="draw"))&&
                 (kind!="event:entity"||behaviour)&&(kind!="event:other"||(behaviour&&(event=="onHit"||event=="onLeave")))&&
                 (kind!="event:levelName"||(!behaviour&&(event=="onLevelTouch"||event=="onLevelAgent")))&&
@@ -1367,7 +1368,7 @@ namespace nx
                 if(!g||!checked.insert(g).second)return true;
                 for(const auto& node:g->nodes)
                 {
-                    if(node.kind=="actor:spawn-asset"){error="Construction graphs cannot spawn linked actors; use Start instead.";return false;}
+                    if(node.kind=="actor:spawn-asset"||node.kind=="time:delay"||node.kind=="time:retrigger-delay"||node.kind=="time:timer"){error="Construction graphs cannot spawn linked actors or schedule deferred work; use Start instead.";return false;}
                     if(node.kind=="call:function"&&!self(self,function(owner,node.ref)))return false;
                     if(node.kind=="call:parent"&&!self(self,function(parentBehaviour(g->owner),g->name)))return false;
                 }
