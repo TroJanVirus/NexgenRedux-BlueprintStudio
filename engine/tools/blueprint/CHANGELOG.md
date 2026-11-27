@@ -1,5 +1,9 @@
 # Changes
 
+## Import AngelScript
+
+- Review supported handwritten Screen and Behaviour scripts as editable graphs, keep the original source, and refuse unsupported syntax without changing the current graph. Optionally compile both scripts with Nexgen.
+
 ## Native API coverage and safer connections
 
 - Add 84 existing platform APIs from the Nexgen reference, including availability checks and console information.

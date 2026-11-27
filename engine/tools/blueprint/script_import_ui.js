@@ -1,0 +1,25 @@
+/* Import is a review step. The original file remains untouched. */
+(function(){'use strict';
+const I=NexgenScriptImport,dlg=el('dialog');dlg.id='scriptImportDialog';dlg.style.width='min(840px,94vw)';document.body.append(dlg);
+let generation=0;
+function openImport(){
+ const saved=doc.importedScript,valid=saved?.version===1&&typeof saved.filename==='string'&&typeof saved.source==='string'&&saved.source.length<=256*1024;
+ let candidate=null,filename=valid?saved.filename:'main.as',originalText=valid?saved.source:null;
+ dlg.replaceChildren(el('h2','','Import AngelScript'),el('p','','Convert a supported Screen or Behaviour into ordinary editable graphs. Review the result before opening it. Unsupported code is not removed or replaced. Keep your original project and its assets.'));
+ const file=el('input');file.type='file';file.accept='.as';file.id='scriptImportFile';dlg.append(file);
+ const source=el('textarea');source.id='scriptImportSource';source.setAttribute('aria-label','Original AngelScript');source.style.cssText='width:100%;height:190px;font-family:monospace;resize:vertical';source.value=valid?saved.source:'';source.placeholder='Choose an .as file or paste a Screen / Behaviour class…';dlg.append(source);
+ const result=el('p','empty','Read a script to begin.');result.id='scriptImportStatus';dlg.append(result);
+ const preview=el('pre');preview.id='scriptImportPreview';preview.style.cssText='max-height:220px;overflow:auto;white-space:pre-wrap';preview.hidden=true;dlg.append(preview);
+ const controls=el('div','row');controls.style.flexWrap='wrap';dlg.append(controls);
+ function invalidate(){generation++;candidate=null;apply.disabled=true;native.disabled=true;preview.hidden=true;preview.textContent='';result.textContent='Review the source before converting.';}
+ const check=action(controls,'Review conversion',()=>{invalidate();try{candidate=I.read(originalText??source.value,filename);result.textContent=`${candidate.graphs} graphs, ${candidate.nodes} nodes. Graph compiler passed. Compare the generated script below; test the game before replacing working code.`;preview.textContent=candidate.source;preview.hidden=false;apply.disabled=false;native.disabled=!window.NEXGEN_DEBUG_TOKEN;}catch(e){result.textContent=e.message+' — no graph was changed.';}});check.id='scriptImportReview';
+ const native=action(controls,'Check with Nexgen',async()=>{if(!candidate||!window.NEXGEN_DEBUG_TOKEN)return;const review=candidate,version=++generation;let passed=false;native.disabled=true;apply.disabled=true;try{for(const [label,script] of [['Original',review.doc.importedScript.source],['Converted',review.source]]){const response=await fetch('/debug',{method:'POST',headers:{'Content-Type':'application/json','X-Nexgen-Token':window.NEXGEN_DEBUG_TOKEN},body:JSON.stringify({action:'validate',source:script,kind:review.doc.kind})});const data=await response.json();if(!response.ok||!data.ok)throw Error(label+' script: '+(data.output||data.error||'native compile failed'));}passed=true;if(generation===version)result.textContent='Original and converted scripts both compile in Nexgen. This is not a gameplay equivalence test.';}catch(e){if(generation===version)result.textContent=e.message;}finally{if(generation===version){native.disabled=false;apply.disabled=!passed;}}});native.id='scriptImportNative';native.disabled=true;
+ const apply=action(controls,'Open converted graph',()=>{if(!candidate)return;if(debugSession)return alert('Detach the debugger before opening another Blueprint.');if(dirty&&!confirm('Replace the current unsaved graph?'))return;try{projectBeforeDocumentChange();remember();doc=clone(candidate.doc);selected=null;armed=null;dlg.close();selectGraph(doc.graphs[0].name);compile();}catch(e){result.textContent=e.message;}},'accent');apply.id='scriptImportApply';apply.disabled=true;
+ action(controls,'Save original source',()=>{if(originalText??source.value)download(filename.replace(/[^A-Za-z0-9_.-]/g,'_')||'main.as',originalText??source.value);});
+ action(controls,'Close',()=>dlg.close());source.oninput=()=>{originalText=null;invalidate();check.disabled=false;};
+ file.onchange=async()=>{const f=file.files[0];if(!f)return;invalidate();originalText=null;source.value='';filename=f.name;check.disabled=true;const version=generation;try{if(f.size>256*1024)throw Error('Script exceeds 256 KiB');const s=new TextDecoder('utf-8',{fatal:true,ignoreBOM:true}).decode(await f.arrayBuffer());if(generation!==version||!dlg.open)return;filename=f.name;originalText=s;source.value=s;result.textContent='Source loaded. Review the conversion when ready.';}catch(e){if(generation===version)result.textContent=e.message;}finally{if(generation===version)check.disabled=false;}};
+ generation++;dlg.showModal();
+}
+const button=action(document.querySelector('header .toolbar'),'Import AngelScript',openImport);button.id='importScript';
+const details=renderDetails;renderDetails=()=>{details();const n=graph().nodes.find(n=>n.id===selected?.node);if(doc.importedScript?.version===1&&Number.isInteger(n?.sourceLine))action($('details'),'Original script · line '+n.sourceLine,openImport);};
+})();

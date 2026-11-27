@@ -5,8 +5,8 @@ if(!toolbar||!graphbar||typeof HTMLElement.prototype.showPopover!=='function'){w
 const original=new Map([[toolbar,[...toolbar.children]],[graphbar,[...graphbar.children]]]);
 const groups=[];let expanded=false;
 const style=el('style');style.textContent=`
-.commandCompact header .toolbar{flex-wrap:nowrap;justify-content:flex-start;overflow:auto;min-width:0;scrollbar-width:thin}
-.commandCompact header .toolbar button{flex-shrink:0}
+.layoutStyled header .toolbar{flex-wrap:nowrap;justify-content:flex-start;overflow:auto;min-width:0;scrollbar-width:thin}
+.layoutStyled header .toolbar button{flex-shrink:0}
 .commandCompact .graphbar{overflow:auto;scrollbar-width:thin}
 .commandCompact .graphbar #graphName{min-width:72px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .commandCompact .graphbar>div{flex-shrink:0}
@@ -27,7 +27,7 @@ function menu(parent,name,keys){const buttons=keys.map(k=>original.get(parent).f
  popup.addEventListener('keydown',e=>{const bs=[...popup.querySelectorAll('button:not(:disabled):not([hidden])')];if(e.key==='Escape'){e.preventDefault();popup.hidePopover();trigger.focus();}else if(['ArrowDown','ArrowUp','Home','End'].includes(e.key)&&bs.length){e.preventDefault();const i=bs.indexOf(document.activeElement);bs[e.key==='Home'?0:e.key==='End'?bs.length-1:e.key==='ArrowDown'?(i+1)%bs.length:(i<0?bs.length-1:(i+bs.length-1)%bs.length)].focus();}});
  return entry;
 }
-const file=menu(toolbar,'File',['#new','#open','#examplesButton','#export','#exportProject']);
+const file=menu(toolbar,'File',['#new','#open','#importScript','#examplesButton','#export','#exportProject']);
 menu(toolbar,'Game',['#projectManager','#sceneEditorButton','#uiDesignerButton','#sharedBehavioursButton','Assets','Check project']);
 menu(toolbar,'Development',['#debugTabButton','#recoveryButton']);
 menu(graphbar,'View',['Focus','Layout','Graph image','Bookmarks']);

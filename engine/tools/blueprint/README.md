@@ -117,7 +117,7 @@ For a quick test of the Arcade example, export the script as `media/showcase/blu
 {"title":"Blueprint Arcade","description":"Arcade example","category":"Blueprints","order":1000}
 ```
 
-Run `nexgen --screen blueprint_arcade`. Add `--dev` to use Nexgen's script reload support. On Xbox, copy the screen folder into the same media location. Keep the editable graph on your computer. An existing `.as` script cannot be converted back into a graph automatically.
+Run `nexgen --screen blueprint_arcade`. Add `--dev` to use Nexgen's script reload support. On Xbox, copy the screen folder into the same media location. Keep the editable graph on your computer. Use File → Import AngelScript to review and convert supported handwritten scripts into graphs.
 
 Most scripts work with the existing engine. Interface messages use the new `Entity.behaviourAt(uint)` binding; rebuild Nexgen from this branch before running them.
 
@@ -138,6 +138,14 @@ The launcher and script updates have been tested with a real local child process
 ### Profile scripts
 
 The Debug panel uses Nexgen's built-in script profiler. Install the normal exported `.as` (without node tracing), start Nexgen with its debugger enabled, then use **Attach for profiling**. Click **Start profile**, play the game, then **Stop profile**. The report shows the native sample counts for functions and script lines. Where the reported function belongs to the open Blueprint, click it to open its graph. Save the native report as JSON. These counts are script samples, not GPU timing or total CPU usage. Profiling is also available while graph debugging, but trace logging adds overhead.
+
+## Import existing AngelScript
+
+Open **File → Import AngelScript**. Choose a UTF-8 `.as` file (up to 256 KiB), or paste a script, and choose **Review conversion**. Studio shows the generated script and graph/node counts. If the local debug bridge has a native validator, **Check with Nexgen** compiles both the original and converted scripts. Open the converted graph only when you are happy with the result. The original source is retained in the saved Blueprint and can be downloaded from the import window. Keep your original game files as well.
+
+This first importer supports one Screen or Behaviour class with scalar fields, normal event signatures, typed functions, simple assignments, scalar local variables in functions, arithmetic, comparisons, braced `if`/`else` blocks, returns and native calls with exact argument types. It uses the existing node catalogue and graph compiler. Names and source-line references are retained; the original text retains comments and formatting. A function call that has side effects is only supported as a standalone action. The importer refuses unsupported syntax, unknown or ambiguous calls, implicit type conversions, constructors, includes, extra classes, loops, reference parameters and other unsupported features. It does not guess at missing logic or drop unsupported functions. A rejected conversion leaves the open graph unchanged. It does not import a complete folder or assets, or execute user code.
+
+This is a reviewed conversion, not lossless round-trip editing or proof of equal gameplay. The regenerated script has a new layout and may differ in internal variables and debug information. Keep the original script and test the game before replacing it. Source-line references refer to the original import, not later graph edits. Full AngelScript parsing and mixed code/graph projects are not supported yet.
 
 ## Other tools
 
@@ -180,6 +188,7 @@ node test_shared_media.js
 node test_scene_viewport.js
 node test_native_scene.js
 node test_node_library.js
+node test_script_import.js
 ```
 
 No npm packages are needed. To run the optional browser tests, install Python Playwright and Chromium, then run `python test_browser.py` and `python test_layout_browser.py` and `python test_workspace_browser.py` and `python test_polish_browser.py` and `python test_organise_browser.py` and `python test_game_tools_browser.py` and `python test_playtest_browser.py`, `python test_ui_design_browser.py` , `python test_shared_behaviours_browser.py` and `python test_shared_media_browser.py`, `python test_scene_viewport_browser.py` and `python test_native_scene_browser.py` and `python test_profile_browser.py`, `python test_node_library_browser.py` and `python test_graph_performance_browser.py` and `python test_command_bar_browser.py`. Set `CHROMIUM_PATH` if Chromium is installed outside Playwright's usual location. The recovery test uses real browser storage by default; `BLUEPRINT_MOCK_STORAGE=1` checks its UI with a simulated storage backend on restricted test hosts. Actual storage across a browser restart has not been verified on this branch.
