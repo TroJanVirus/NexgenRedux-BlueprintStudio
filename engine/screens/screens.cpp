@@ -148,7 +148,7 @@ namespace nx
         return valid;
     }
 
-    bool Screens::startProjectPreview(const std::vector<PreviewScreen>& screens,const std::string& start,std::string& error)
+    bool Screens::startProjectPreview(const std::vector<PreviewScreen>& screens,const std::string& start,std::string& error,const std::string& assetRoot)
     {
         const auto selected=std::find_if(screens.begin(),screens.end(),[&](const PreviewScreen& s){return start==s.info.id;});
         if (!m_services || m_depth != 1 || !m_menuOpen || previewing() || screens.empty() ||
@@ -157,6 +157,8 @@ namespace nx
             error = "Preview requires the home screen and a valid generated script.";
             return false;
         }
+        if(!assetRoot.empty()&&(assetRoot.size()>32||assetRoot.rfind("bpa-",0)!=0||assetRoot.find_first_not_of("0123456789-",4)!=std::string::npos))
+        {error="Invalid preview asset root.";return false;}
         for(size_t i=0;i<screens.size();++i)
         {
             const auto& p=screens[i];
@@ -179,8 +181,10 @@ namespace nx
         m_previewRandom = m_services->random;
         m_previewDevelopment = m_services->development;
         m_previewScreens=screens;m_previewNavigation=true;
+        m_previewRoot=assetRoot.empty()?"__blueprint_preview":"own/"+assetRoot;
         m_services->save = m_previewSave;
         m_services->development = false;
+        m_services->previewAssets = true;
         m_change = Change::None;
         // Home must already be paused by the workspace. Do not run its suspend/resume
         // callbacks against the temporary save or generated module.
@@ -210,9 +214,10 @@ namespace nx
         m_originalSave = nullptr;
         m_services->random = m_previewRandom;
         m_services->development = m_previewDevelopment;
+        m_services->previewAssets = false;
         destroy(m_previewSave);
         m_previewSave = nullptr;
-        m_previewScreens.clear();m_previewNavigation=false;
+        m_previewScreens.clear();m_previewRoot.clear();m_previewNavigation=false;
         if (m_depth) enter(m_stack[m_depth-1]);
         m_menuOpen = false;
         setMenu(true); // The workspace is visible again; keep the home screen paused.
@@ -360,7 +365,7 @@ namespace nx
         char folder[160];
         const char* root=m_folder;
 #ifdef NX_DESKTOP_BLUEPRINT
-        if(previewing())root="__blueprint_preview";
+        if(previewing())root=m_previewRoot.c_str();
 #endif
         snprintf(folder, sizeof(folder), "%s/%s", root, entry.info.id);
         entry.ui = create<Ui>(MemTag::UI, *m_services->canvas, *m_services->assets, *m_services->audio, *m_services->input, host, *m_services->platform, folder);
@@ -563,7 +568,7 @@ namespace nx
     {
         const char* root=m_folder;
 #ifdef NX_DESKTOP_BLUEPRINT
-        if(previewing())root="__blueprint_preview";
+        if(previewing())root=m_previewRoot.c_str();
 #endif
         snprintf(m_services->folder, sizeof(m_services->folder), "%s/%s", root, entry.info.id);
         m_services->world = entry.world;

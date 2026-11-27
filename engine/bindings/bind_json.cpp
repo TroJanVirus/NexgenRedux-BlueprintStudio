@@ -313,7 +313,7 @@ namespace nx
     {
         std::string kept;
         char path[192];
-        if (!s.development && keptName(s, name, kept) && s.platform->loadSave(kept.c_str(), out))
+        if (!s.development && !s.previewAssets && keptName(s, name, kept) && s.platform->loadSave(kept.c_str(), out))
         {
             return true;
         }

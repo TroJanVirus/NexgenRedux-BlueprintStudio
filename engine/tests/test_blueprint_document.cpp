@@ -341,3 +341,15 @@ NX_TEST(nativeFunctionBranchContinuationRequiresReturnsOnAllPaths)
     NX_EXPECT(location.graph==6&&location.node==1&&error.find("unreachable")!=std::string::npos);
     NX_EXPECT(doc.undo()&&compileBlueprint(doc,source,error));
 }
+
+NX_TEST(nativeAssetRootsAndNamesAreConfined)
+{
+    BlueprintDocument doc;doc.create();std::string error,saved;
+    NX_EXPECT(blueprintAssetRoot("bpa-12345-1")&&!blueprintAssetRoot("bpa-../bad")&&!blueprintAssetRoot("own/bpa-1"));
+    NX_EXPECT(blueprintAssetName("level.json")&&blueprintAssetName("textures",true));
+    for(const char* name:{"../level.json","a/b.png","a\\b.png","con.json","file.new","bad.","A.png"})
+        NX_EXPECT(!blueprintAssetName(name));
+    doc.assetRoot="bpa-12345-1";NX_EXPECT(doc.serialize(saved,error));
+    BlueprintDocument copy;NX_EXPECT(copy.load(saved.data(),saved.size(),error)&&copy.assetRoot==doc.assetRoot);
+    doc.assetRoot="../external";NX_EXPECT(!doc.serialize(saved,error));
+}

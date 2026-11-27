@@ -68,7 +68,7 @@ namespace nx
         // Desktop authoring only: transient screen, no files staged or replaced.
         struct PreviewScreen { ScreenInfo info; std::string source; };
         bool startPreview(const std::string& source, std::string& error);
-        bool startProjectPreview(const std::vector<PreviewScreen>& screens,const std::string& start,std::string& error);
+        bool startProjectPreview(const std::vector<PreviewScreen>& screens,const std::string& start,std::string& error,const std::string& assetRoot="");
         void stopPreview();
         bool previewing() const { return m_previewSave != nullptr; }
 #endif
@@ -144,6 +144,7 @@ namespace nx
         std::vector<std::string> m_included;
 #ifdef NX_DESKTOP_BLUEPRINT
         std::vector<PreviewScreen> m_previewScreens;
+        std::string m_previewRoot;
         bool m_previewNavigation=false;
         Save* m_previewSave = nullptr;
         Save* m_previewSettings = nullptr;

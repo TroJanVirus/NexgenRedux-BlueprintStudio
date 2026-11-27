@@ -26,6 +26,7 @@ namespace nx::test
         std::string saved, nothing;
         std::map<std::string, std::string> kept;  // other saves, by name
         std::string written;                       // the last file
+        std::set<std::string> ownFolders;
         bool workspaceFiles=false;                 // opt-in writable virtual own/ filesystem
         double now = 0;
         std::string extraPath, extraText;
@@ -105,7 +106,7 @@ namespace nx::test
 
         u64 fileTime(const char* path) override
         {
-            if(workspaceFiles&&strncmp(path,"own/",4)==0)return files.count(path)?time:0;
+            if(workspaceFiles&&strncmp(path,"own/",4)==0)return files.count(path)||ownFolders.count(path)?time:0;
             return time;
         }
 
@@ -130,6 +131,9 @@ namespace nx::test
         }
 
         void removeSave(const char* name) override { kept.erase(name); }
+
+        bool createOwnFolder(const char* name) override
+        {return workspaceFiles&&ownFolders.insert(std::string("own/")+name).second;}
 
         bool writeFile(const char* path, const void* data, size_t size) override
         {

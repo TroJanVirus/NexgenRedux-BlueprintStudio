@@ -23,6 +23,8 @@ namespace nx
     // Managed authoring files are direct children of Redux's own folder.
     bool blueprintFileName(const std::string& file);
     bool blueprintManagedName(const std::string& name,std::string& file);
+    bool blueprintAssetRoot(const std::string& root);
+    bool blueprintAssetName(const std::string& name,bool folder=false);
 
     // Native version 2: one canonical model. Node indices are internal; persisted links use stable IDs.
     // The pre-release browser format is deliberately not supported.
@@ -40,6 +42,7 @@ namespace nx
             std::string returnType="void";
         };
         std::string name;
+        std::string assetRoot; // external project directory, separate from graph history
         std::vector<Graph> graphs;
         void create();
         bool load(const char* data,size_t size,std::string& error);

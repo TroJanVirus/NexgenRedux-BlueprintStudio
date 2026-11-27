@@ -166,6 +166,21 @@ namespace nx
             file.front()!='.'&&file.find("..") == std::string::npos&&file.find_first_of("/\\:") == std::string::npos&&
             std::none_of(file.begin(),file.end(),[](unsigned char c){return c<32||c==127;});
     }
+    bool blueprintAssetRoot(const std::string& root)
+    {
+        return root.size()>4&&root.size()<=32&&root.rfind("bpa-",0)==0&&
+            root[4]>='0'&&root[4]<='9'&&root.back()>='0'&&root.back()<='9'&&
+            root.find_first_not_of("0123456789-",4)==std::string::npos;
+    }
+    bool blueprintAssetName(const std::string& name,bool folder)
+    {
+        if(name.empty()||name.size()>64||name.front()=='.'||name.back()=='.'||name.find("..")!=std::string::npos||name.ends_with(".new"))return false;
+        for(char c:name)if(!((c>='a'&&c<='z')||(c>='0'&&c<='9')||c=='_'||c=='-'||(!folder&&c=='.')))return false;
+        const auto stem=name.substr(0,name.find('.'));
+        if(stem=="con"||stem=="prn"||stem=="aux"||stem=="nul"||
+            (stem.size()==4&&(stem.rfind("com",0)==0||stem.rfind("lpt",0)==0)&&stem[3]>='0'&&stem[3]<='9'))return false;
+        return true;
+    }
     bool blueprintManagedName(const std::string& name,std::string& file)
     {
         if(name.empty()||name.size()>64||name.front()==' '||name.back()==' ')return false;
@@ -246,6 +261,8 @@ namespace nx
             !validText(root["name"])||!gs.isArray()||!gs.count()||gs.count()>kMaxGraphs)
         {error="Expected native Blueprint version 2. Browser prototypes are not supported.";return false;}
         BlueprintDocument candidate;candidate.name=root["name"].text();
+        candidate.assetRoot=root["assetRoot"].text();
+        if(!candidate.assetRoot.empty()&&!blueprintAssetRoot(candidate.assetRoot)){error="Invalid project asset directory.";return false;}
         std::unordered_set<std::string> graphNames;
         // Load every graph header first so forward function references resolve consistently.
         for(auto value=gs.first();value.exists();value=value.next())
@@ -345,7 +362,7 @@ namespace nx
         if(graphs.empty()){error="No Blueprint open.";return false;}
         auto fail=[&](){error="Not enough memory to serialize Blueprint.";return false;};
         JsonValue root;
-        if(!number(root,"version",2)||!text(root,"kind","NativeBlueprint")||!text(root,"name",name))return fail();
+        if(!number(root,"version",2)||!text(root,"kind","NativeBlueprint")||!text(root,"name",name)||!text(root,"assetRoot",assetRoot))return fail();
         auto* gs=root.put("graphs");if(!gs)return fail();gs->setArray();
         for(const auto& g:graphs)
         {
