@@ -37,7 +37,7 @@ Blueprint Studio is a development tool for the desktop Nexgen application, not j
 | Animation and waiting | Sprite/model animation, Tween, coroutines | Native API nodes and visual state/curve graphs. Prefer native Tween for simple animation. Existing graph Delay and Timeline have their own continuation and multi-track semantics; keep old graphs compatible and use native helpers wherever equivalent. |
 | Menus and HUD | Native widgets, JSON pages and themes | Visual authoring of the same files and links to graph handlers, not a new widget runtime. Browser previews are approximate. |
 | Media | Native asset paths, loader, cache and Nexgen Cook | Project file library and reference checks. Use the existing cook tool to convert assets, not another converter. |
-| Play testing | Native engine and dev reload | Multi-screen in-process preview uses the original screen stack, isolated screen registry and transient Save. Project asset staging and full deployment remain separate work. |
+| Play testing | Native engine and dev reload | Multi-screen in-process preview uses the original screen stack, isolated screen registry and transient Save. Project-relative native asset directories are used in preview and copied during export; full deployment remains separate work. |
 | Debugging and profiling | Native TCP debugger, VS Code extension, native sampling profiler | Node breakpoints and graph navigation; display the native profile and report without writing a second profiler. VS Code remains supported. |
 | Multiplayer | Room, Message and native shared entities | Expose existing API nodes. Do not add a second transport or entity sync system. |
 

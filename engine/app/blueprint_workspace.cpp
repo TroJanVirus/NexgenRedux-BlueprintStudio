@@ -1,5 +1,6 @@
 #include "app/blueprint_workspace.h"
 #include "tools/blueprint/native_compile.h"
+#include "tools/blueprint/native_assets.h"
 #include "script/script_host.h"
 #include "screens/screens.h"
 #include "bindings/bindings.h"
@@ -96,7 +97,7 @@ namespace nx
         s.input->consume();
         m_left = m_pan = m_drag = false;
         m_shortcuts = 0;
-        m_previousTyping=s.input->typing();m_focus=0;m_browsing=false;s.input->setTyping(false);
+        m_previousTyping=s.input->typing();m_focus=0;m_browsing=false;m_assetBrowser=false;s.input->setTyping(false);
         if(m_document.graphs.empty())
         {
             FileData recovery;
@@ -121,7 +122,7 @@ namespace nx
         if (!active()) return;
         stopPreview(s);
         checkpoint(s,true);
-        cancelDrag();clearWire();m_focus=0;m_browsing=false;s.input->setTyping(m_previousTyping);
+        cancelDrag();clearWire();m_focus=0;m_browsing=false;m_assetBrowser=false;s.input->setTyping(m_previousTyping);
         s.assets->release(m_font);
         m_font = nullptr;
         s.input->setWantsPointer(m_wantedPointer);
@@ -246,6 +247,32 @@ namespace nx
         m_files.erase(std::unique(m_files.begin(),m_files.end()),m_files.end());
         m_browsing=true;clearWire();cancelDrag();
     }
+    std::string BlueprintWorkspace::assetScreen() const
+    {
+        if(m_graph>=m_document.graphs.size())return "";
+        const auto& owner=m_document.graphs[m_graph].owner;
+        return owner.rfind("behaviour:",0)==0?"":owner;
+    }
+    void BlueprintWorkspace::browseAssets(Services& s)
+    {
+        const auto screen=assetScreen();
+        if(screen.empty()){m_status="Select a screen graph to manage its assets.";return;}
+        if(m_filePath.empty()||m_document.assetRoot.empty())
+        {m_status="Save as a named project before importing assets.";return;}
+        if(!blueprintEnsureAssetFolder(*s.platform,m_document.assetRoot,screen,m_status)||
+            !blueprintListAssets(*s.platform,m_document.assetRoot,screen,m_assetFiles,m_status))return;
+        m_assetBrowser=true;m_assetFirst=0;clearWire();cancelDrag();
+        m_status="Drop a native asset or scene JSON into this window.";
+    }
+    void BlueprintWorkspace::importAsset(Services& s,const std::string& file)
+    {
+        const auto screen=assetScreen();
+        if(screen.empty()||m_filePath.empty()||m_document.assetRoot.empty())
+        {m_status="Save as a named project and select a screen before importing assets.";return;}
+        if(!blueprintImportAsset(*s.platform,m_document.assetRoot,screen,file,m_status))return;
+        if(!blueprintListAssets(*s.platform,m_document.assetRoot,screen,m_assetFiles,m_status))return;
+        m_status="Imported asset:"+file;
+    }
     bool BlueprintWorkspace::saveNamed(Services& s,const std::string& name)
     {
         std::string file;
@@ -255,11 +282,15 @@ namespace nx
         if(s.platform->fileTime(path.c_str()))
         {m_status="Name already exists. Choose a different name.";return false;}
         // Title is file metadata, not a graph edit. Restore it if writing fails.
-        const std::string old=m_document.name;
-        m_document.name=name;
+        const std::string old=m_document.name,oldRoot=m_document.assetRoot;
+        std::string newRoot;
+        if(!blueprintCreateAssetRoot(*s.platform,newRoot,m_status))return false;
+        for(const auto& screen:m_document.screens())
+            if(!blueprintCopyAssets(*s.platform,oldRoot,newRoot,screen,m_status))return false;
+        m_document.name=name;m_document.assetRoot=newRoot;
         std::string bytes;
         if(!m_document.serialize(bytes,m_status)||!writeVerified(s,path,bytes))
-        {m_document.name=old;return false;}
+        {m_document.name=old;m_document.assetRoot=oldRoot;return false;}
         m_filePath=path;m_fileBaseline=std::move(bytes);
         m_document.markSaved();checkpoint(s,true);
         m_status="Saved "+file;return true;
@@ -339,6 +370,9 @@ namespace nx
             {m_status="Incomplete project export. Do not install own/"+root;return false;}
         }
         for(const auto& screen:screens)
+            if(!blueprintCopyAssets(*s.platform,m_document.assetRoot,root,screen.id,m_status))
+            {m_status="Incomplete export: "+m_status;return false;}
+        for(const auto& screen:screens)
             if(!writeVerified(s,"own/"+root+"/"+screen.id+"/screen.json",screen.manifest))
             {m_status="Incomplete project export. Do not install own/"+root;return false;}
         m_status="Exported own/"+root+" | Copy screen folders to media/showcase.";
@@ -413,6 +447,7 @@ namespace nx
         auto& input = *s.input;
         if (input.pressed(Action::Menu))
         {
+            if(m_assetBrowser){m_assetBrowser=false;m_status="Asset browser closed.";return;}
             if(m_browsing){m_browsing=false;m_status="Open cancelled.";return;}
             if(m_focus){m_focus=0;input.setTyping(false);m_status="Input cancelled.";return;}
             if(m_pending!=static_cast<size_t>(-1)){clearWire();m_status="Connection cancelled.";return;}
@@ -421,7 +456,11 @@ namespace nx
         }
         std::string dropped;
         if (!m_drag && !m_focus && !m_browsing && s.platform->takeDropped(dropped))
-            openFile(s,dropped,false); // Never overwrite a dropped source file.
+        {
+            if(m_assetBrowser)importAsset(s,dropped);
+            else if(blueprintFileName(dropped))openFile(s,dropped,false);
+            else m_status="Open Assets before dropping a scene or media file.";
+        }
         auto& canvas = *s.canvas;
         const auto& raw = input.raw();
         // Canvas design is the same fixed 1280x720 fit used by draw().
@@ -437,6 +476,14 @@ namespace nx
             (control&&(held(Key::Y)||(held(Key::Z)&&held(Key::Shift)))?4u:0u);
         const unsigned pressed=keys&~m_shortcuts;m_shortcuts=keys;
         const bool click=left&&!m_left;
+        if(m_assetBrowser)
+        {
+            if(input.wheel()<0&&m_assetFirst+10<m_assetFiles.size())++m_assetFirst;
+            if(input.wheel()>0&&m_assetFirst)--m_assetFirst;
+            if(click&&in(x,y,860,116,1000,150))m_assetBrowser=false;
+            if(click&&in(x,y,704,116,850,150))browseAssets(s);
+            m_left=left;return;
+        }
         if(m_browsing)
         {
             if(input.wheel()<0&&m_fileFirst+12<m_files.size())++m_fileFirst;
@@ -515,6 +562,7 @@ namespace nx
             if(click&&in(x,y,566,5,734,33)){m_edit.clear();m_focus=8;input.setTyping(true);m_status="Type a behaviour name, then Enter.";m_left=left;return;}
             if(click&&in(x,y,740,5,850,33)){browseFiles(s);m_left=left;return;}
             if(click&&in(x,y,856,5,966,33)){m_edit.clear();m_focus=5;input.setTyping(true);m_status="Type a new Blueprint name and press Enter.";m_left=left;return;}
+            if(click&&in(x,y,972,5,1082,33)){browseAssets(s);m_left=left;return;}
             if(m_document.graphs.empty()){m_left=left;return;}
             if(click&&in(x,y,504,39,604,69))
             {
@@ -533,7 +581,9 @@ namespace nx
                     }
                     const auto selected=m_document.graphs[m_graph].owner;
                     const auto owner=selected.rfind("behaviour:",0)==0?m_document.screens().front():selected;
-                    if(s.screens->startProjectPreview(screens,owner,m_status))
+                    if(!m_document.assetRoot.empty()&&!s.platform->fileTime(("own/"+m_document.assetRoot).c_str()))
+                        m_status="Project asset folder is missing. Restore it before play testing.";
+                    else if(s.screens->startProjectPreview(screens,owner,m_status,m_document.assetRoot))
                     {m_playing=true;clearWire();m_status="Playing "+owner+". Escape returns to Studio.";}
                     else
                     {
@@ -730,6 +780,7 @@ namespace nx
         c.clip(566,5,168,28);c.text(*m_font,m_focus==8?(m_edit.empty()?"Type name...":m_edit.c_str()):"New behaviour",650,9,text,Align::Center);c.noClip();
         c.roundRect(740,5,110,28,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Open",795,9,text,Align::Center);
         c.roundRect(856,5,110,28,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Save as",911,9,text,Align::Center);
+        c.roundRect(972,5,110,28,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Assets",1027,9,text,Align::Center);
         const std::string titleText=(m_document.name.empty()?"No document open":m_document.name)+(m_document.dirty()?" *":"");
         c.clip(12,38,480,34);c.text(*m_font,shorten(titleText,65).c_str(),18,43,accent);c.noClip();
         const auto button=[&](float x,float width,const char* label,bool enabled){
@@ -863,10 +914,27 @@ namespace nx
         c.rect(0,kBottom,kWidth,kHeight-kBottom,{0.12f,0.16f,0.22f,1});
         c.text(*m_font,shorten(m_status,110).c_str(),12,kBottom+6,text);
         c.text(*m_font,"Click output then input: connect | Click input: value | Ctrl+click: disconnect | Ctrl+S: save",12,kBottom+26,muted);
-        if(m_browsing||m_focus==5||m_focus==6||m_focus==9)
+        if(m_assetBrowser||m_browsing||m_focus==5||m_focus==6||m_focus==9)
         {
             c.rect(0,0,kWidth,kHeight,{0,0,0,0.70f});
-            if(m_browsing)
+            if(m_assetBrowser)
+            {
+                c.roundRect(260,100,760,525,9,{0.12f,0.16f,0.22f,1});
+                c.text(*m_font,("ASSETS / "+assetScreen()).c_str(),280,122,accent);
+                c.roundRect(704,116,146,34,4,{0.22f,0.31f,0.43f,1});c.text(*m_font,"Refresh",777,123,text,Align::Center);
+                c.roundRect(860,116,140,34,4,{0.22f,0.31f,0.43f,1});c.text(*m_font,"Close",930,123,text,Align::Center);
+                c.clip(280,155,720,26);c.text(*m_font,("own/"+m_document.assetRoot+"/"+assetScreen()+"/asset").c_str(),280,160,muted);c.noClip();
+                for(size_t i=0;i<10&&m_assetFirst+i<m_assetFiles.size();++i)
+                {
+                    const float y=190+36*static_cast<float>(i);
+                    c.rect(280,y,720,33,{0.17f,0.22f,0.30f,1});
+                    c.clip(286,y,708,33);c.text(*m_font,("asset:"+m_assetFiles[m_assetFirst+i]).c_str(),290,y+8,text);c.noClip();
+                }
+                if(m_assetFiles.empty())c.text(*m_font,"Drop a file here to import it.",640,330,muted,Align::Center);
+                c.text(*m_font,"Native scene files, models, textures, sounds and UI JSON",640,565,muted,Align::Center);
+                c.clip(280,591,720,26);c.text(*m_font,m_status.c_str(),280,595,text);c.noClip();
+            }
+            else if(m_browsing)
             {
                 c.roundRect(260,100,760,525,9,{0.12f,0.16f,0.22f,1});
                 c.text(*m_font,"OPEN BLUEPRINT",280,122,accent);

@@ -5,6 +5,7 @@
 #include "tools/blueprint/native_compile.h"
 #ifdef NX_DESKTOP_BLUEPRINT
 #include "app/blueprint_workspace.h"
+#include "tools/blueprint/native_assets.h"
 #endif
 
 #include <math.h>
@@ -843,3 +844,55 @@ NX_TEST(nativeFunctionEarlyReturnAndBranchContinuationExecuteCorrectly)
     NX_EXPECT(strcmp(r.save.get("branch_true","missing"),"yes")==0);
     NX_EXPECT(strcmp(r.save.get("branch_false","missing"),"yes")==0);
 }
+
+#ifdef NX_DESKTOP_BLUEPRINT
+NX_TEST(nativeProjectAssetsAreCopiedWithoutChangingOriginals)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    r.platform.workspaceFiles=true;
+    std::string root,clone,error;
+    NX_EXPECT(blueprintCreateAssetRoot(r.platform,root,error));
+    NX_EXPECT(blueprintCreateAssetRoot(r.platform,clone,error));
+    r.platform.files["own/scene.json"]="{\"scene\":[]}";
+    NX_EXPECT(blueprintImportAsset(r.platform,root,"Screen","scene.json",error));
+    NX_EXPECT(!blueprintImportAsset(r.platform,root,"Screen","scene.json",error));
+    NX_EXPECT(!blueprintImportAsset(r.platform,root,"Screen","../scene.json",error));
+    const auto base="own/"+root+"/Screen/asset/";
+    const std::string binary("a\0b",3);
+    r.platform.files[base+"model/mesh.glb"]=binary;
+    std::vector<std::string> files;
+    NX_EXPECT(blueprintListAssets(r.platform,root,"Screen",files,error)&&files.size()==2);
+    NX_EXPECT(blueprintCopyAssets(r.platform,root,clone,"Screen",error));
+    NX_EXPECT(r.platform.files["own/"+clone+"/Screen/asset/model/mesh.glb"]==binary);
+    NX_EXPECT(r.platform.files["own/"+clone+"/Screen/asset/scene.json"]=="{\"scene\":[]}");
+    NX_EXPECT(r.platform.files["own/scene.json"]=="{\"scene\":[]}");
+    NX_EXPECT(!blueprintCopyAssets(r.platform,root,clone,"Screen",error));
+}
+NX_TEST(nativeProjectPreviewReadsItsOwnAssetsNotSavedHostOverlays)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    r.platform.workspaceFiles=true;
+    r.platform.files["showcase/main/screen.json"]="{\"title\":\"Home\"}";
+    r.platform.files["showcase/main/main.as"]="class Home : Screen {}";
+    if(!r.screens.init(r.services,"showcase","main")){NX_EXPECT(false);return;}
+    r.step(3);r.screens.setDevelopmentPaused(true);
+    std::string root,error;
+    NX_EXPECT(blueprintCreateAssetRoot(r.platform,root,error));
+    r.platform.files["own/"+root+"/Screen/asset/level.json"]="project";
+    r.platform.kept["Screen.level"]="stale-host";
+    Screens::PreviewScreen p;
+    snprintf(p.info.id,sizeof(p.info.id),"Screen");
+    p.source=R"(class Preview : Screen { void onEnter() {
+        Save::set("asset_value", Assets::read("asset:level.json"));
+        Assets::write("asset:level.json", "changed");
+    } })";
+    NX_EXPECT(r.screens.startProjectPreview({p},"Screen",error,root));
+    if(!r.screens.previewing())return;
+    r.step(3);
+    NX_EXPECT(!r.screens.failed()&&strcmp(r.services.save->get("asset_value","missing"),"project")==0);
+    NX_EXPECT(r.platform.files["own/"+root+"/Screen/asset/level.json"]=="project");
+    NX_EXPECT(r.platform.kept["Screen.level"]=="stale-host");
+    r.screens.stopPreview();
+    NX_EXPECT(!r.services.previewAssets&&r.services.save==&r.save);
+}
+#endif

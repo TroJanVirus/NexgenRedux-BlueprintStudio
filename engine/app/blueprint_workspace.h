@@ -30,6 +30,12 @@ namespace nx
         bool saveNamed(Services& services,const std::string& name);
         bool openFile(Services& services,const std::string& file,bool managed);
         void browseFiles(Services& services);
+        void browseAssets(Services& services);
+        void importAsset(Services& services,const std::string& file);
+        std::string assetScreen() const;
+        bool m_assetBrowser=false;
+        std::vector<std::string> m_assetFiles;
+        size_t m_assetFirst=0;
         bool saveCurrent(Services& services);
         bool writeVerified(Services& services,const std::string& path,const std::string& bytes);
         bool compileAndExport(Services& services);
