@@ -353,3 +353,25 @@ NX_TEST(blueprintHierarchySpawnsNative2DAnd3DParentsAndBehaviours)
     r.host.release(object);
     r.services.world = nullptr;
 }
+
+#include "blueprint_ui_fixture.h"
+#include "ui/ui.h"
+
+NX_TEST(blueprintDesignedMenuUsesNativeWidgets)
+{
+    Rig r;
+    NX_EXPECT(r.ok);
+    r.platform.files["showcase/main/screen.json"] = "{\"title\":\"Blueprint Menu\"}";
+    r.platform.files["showcase/main/main.as"] = blueprint_ui::script;
+    r.platform.files["showcase/main/asset/ui/menu.json"] = blueprint_ui::page;
+    r.platform.files["showcase/main/asset/ui/theme.json"] = blueprint_ui::theme;
+    if (!r.screens.init(r.services, "showcase", "main")) { NX_EXPECT(false); return; }
+    r.step(3);
+    NX_EXPECT(!r.screens.failed());
+    if (!r.services.ui) { NX_EXPECT(false); return; }
+    NX_EXPECT(r.services.ui->find("play") != nullptr);
+    NX_EXPECT(r.services.ui->find("volume") != nullptr);
+    r.press(Action::Accept);
+    NX_EXPECT(!r.screens.failed());
+    NX_EXPECT(strcmp(r.save.get("ui_clicked", "missing"), "yes") == 0);
+}

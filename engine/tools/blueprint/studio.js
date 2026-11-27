@@ -7,16 +7,18 @@ let doc = clone(NexgenExample), graphId = doc.graphs[0].name, selected = null, v
 const graph = () => doc.graphs.find(g => g.name === graphId) || doc.graphs[0];
 function uid() { return 'n' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 function freshGraph(kind, name, params = [], returns = 'void') { return { kind, name, params, returns, nodes: [{ id: uid(), kind: 'entry', x: 40, y: 60 }], links: [] }; }
-function snapshot() { return JSON.stringify({ doc, graphId }); }
-function remember() { history.push(snapshot()); if (history.length > 80)
+function snapshot(extra = {}) { return JSON.stringify({ doc, graphId, ...extra }); }
+function remember(extra) { history.push(snapshot(extra)); if (history.length > 80)
     history.shift(); future = []; dirty = true; last = null; $('diagnostics').replaceChildren(el('div', 'empty', 'Graph changed — compile to refresh results.')); $('source').textContent = ''; updateStatus(); }
-function restore(s) { const a = JSON.parse(s); doc = a.doc; graphId = a.graphId; selected = null; armed = null; last = null; dirty = true; render(); }
+function restore(s) { const a = JSON.parse(s); if(a.uiFiles)globalThis.NexgenUiHistory?.restore(a.uiFiles); doc = a.doc; graphId = a.graphId; selected = null; armed = null; last = null; dirty = true; render(); }
 function undo() { if (history.length) {
-    future.push(snapshot());
+    const target=history.at(-1),files=JSON.parse(target).uiFiles;
+    future.push(snapshot(files?{uiFiles:globalThis.NexgenUiHistory.capture(files.paths)}:{}));
     restore(history.pop());
 } }
 function redo() { if (future.length) {
-    history.push(snapshot());
+    const target=future.at(-1),files=JSON.parse(target).uiFiles;
+    history.push(snapshot(files?{uiFiles:globalThis.NexgenUiHistory.capture(files.paths)}:{}));
     restore(future.pop());
 } }
 function updateStatus() { $('status').textContent = last ? (last.ok ? 'Compiled' : 'Compile failed') : (dirty ? 'Unsaved changes' : 'Ready'); $('undo').disabled = !history.length; $('redo').disabled = !future.length; }

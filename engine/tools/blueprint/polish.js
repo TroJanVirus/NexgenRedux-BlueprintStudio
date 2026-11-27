@@ -28,7 +28,7 @@ function routePath(link,a,b,fallback){const points=routePoints(link);return poin
 const api={rename,recoveryRecord,checkRecovery,routePoints,routePath};if(typeof module!=='undefined'){module.exports=api;return;}root.NexgenPolish=api;
 const bar=document.querySelector('.graphbar>div'),vp=$('viewport');
 const oldDetails=renderDetails,oldRenderGraph=renderGraph;
-function renameItem(kind,old){modal('Rename '+(kind==='graph'?'function or macro':'variable'),[{name:'name',label:'New name',value:old}],v=>{if(debugSession)throw Error('Detach the debugger before renaming.');const name=v.name.trim();if(name===old)return;const next=rename(B,doc,kind,old,name,graphId);remember();doc=next;if(kind==='graph'&&graphId===old)graphId=name;selected=kind==='variable'?{variable:name}:kind==='local'?{local:name}:null;render();});}
+function renameItem(kind,old){modal('Rename '+(kind==='graph'?'function or macro':'variable'),[{name:'name',label:'New name',value:old}],v=>{if(debugSession)throw Error('Detach the debugger before renaming.');const name=v.name.trim();if(name===old)return;const next=rename(B,doc,kind,old,name,graphId);const ui=kind==='graph'?globalThis.NexgenUiHistory?.rename(old,name):null;remember(ui?{uiFiles:ui.before}:undefined);if(ui){project=ui.next;projectDirty=true;}doc=next;if(kind==='graph'&&graphId===old)graphId=name;selected=kind==='variable'?{variable:name}:kind==='local'?{local:name}:null;render();});}
 function mark(n){remember();if(n.bookmark)delete n.bookmark;else n.bookmark=true;render();}
 let lastWireSelection=null,routeDrag=null;
 function changeRoute(l,fn){remember();l.route=routePoints(l).map(p=>({...p}));fn(l.route);if(!l.route.length)delete l.route;render();}

@@ -52,7 +52,7 @@ Select the entry node of a function and choose **Edit function inputs**. Add, re
 
 Select one node to set its display title, header and body colours, title colour and width. Its real function and pins remain the same. Keep custom titles meaningful so other developers can understand the graph. Reset a node's style to use the Blueprint defaults again.
 
-Graph positions, groups, folders and appearance are saved with the `.bp.json` file. Changing those settings does not change the generated gameplay script. Focus and panel visibility are editor controls, not game settings. Layout currently applies to the whole Blueprint, with per-node overrides; it is not a game UI or material editor.
+Graph positions, groups, folders and appearance are saved with the `.bp.json` file. Changing those settings does not change the generated gameplay script. Focus and panel visibility are editor controls, not game settings. Layout controls the Blueprint editor. Use UI Designer to change the appearance of a game menu or HUD.
 
 ## Editing and recovery
 
@@ -69,6 +69,21 @@ Open a screen's Behaviour Components list and double-click a behaviour to edit i
 Use **Assets** to import files or folders into the current screen. Search by name or folder, preview images, audio and text, copy the asset path or export a file. For an unconnected string input, open **Use a project asset** in Details to choose a file without typing its path. The editor prevents duplicate or unsafe file paths and asks before replacing files. Model files can be stored and exported but are not rendered in the browser.
 
 **Check project** checks the graphs in every screen and lists any errors before packaging. Projects with unfinished graphs can be saved and reopened; only packaging requires every screen to compile. Checking a project does not run the game or prove that assets are valid for Nexgen or the Xbox.
+
+## Design a menu or HUD
+
+Open **UI Designer** while working on a Screen. The starter menu is ready to edit, or choose **Example HUD**, **New blank page** or open a native widget JSON asset from the project. Select a widget in the preview or tree. Add children to a container, drag a widget to another container or use Move up/down to change the order. Edit its text, ID, size, padding, alignment and other properties. The preview offers widescreen and 4:3 shapes; it is an approximation, not the actual Nexgen renderer.
+
+Use **Game theme** to edit colours, named styles, text sizes, borders, padding and appearances for focus, hover and other states. A widget can use a built-in style or one you create. More native properties, fonts, images and sounds can be set in the advanced JSON fields. Import images through Assets first, then select them in the widget's image field. The designer works with the same native JSON that Nexgen reads, so the layout and themes need no extra runtime.
+
+For a button, choose a click function or create one from **Widget events**. The function receives the actual Widget reference; wire its pins into normal Blueprint nodes. Save and open the function to edit it. Toggles, sliders, fields and choices can use change functions; custom widgets and lists can use native draw and row functions. List contents and custom drawings are not simulated by the browser. Use `Ui::find` with a widget ID and the Widget nodes to change text, progress, visibility and other properties from your gameplay graphs.
+
+- **Save page** saves native JSON and any new functions with the project. It can save a draft even if a function is unfinished.
+- **Save + connect to screen** adds native theme/load nodes to On Enter and a draw node to Draw if needed. It appends to simple action chains. If an event branches, or has disconnected matching nodes, save the page and connect those nodes yourself. The automatic command does not remove or replace existing gameplay logic.
+- Save the project with Ctrl+S. The normal game package includes the page and theme in the screen's assets. Undo and redo UI Designer saves and handler renames restore both graph and UI files. Renaming a function updates registered pages; unlink a handler before deleting it or changing its required types.
+- Check project reports missing page/theme files, missing local image/font/sound paths, and invalid widget handlers or theme properties. It cannot check every dynamic asset path or guarantee how a screen will look. To remove a registered page or theme, first remove the matching load/theme node, then remove the asset in Assets.
+
+Use Play test to see the actual game interface in a desktop Nexgen build. The null-GPU native tests load a generated page and theme and verify that gamepad Accept executes the connected function. Full rendering, custom fonts and on-console UI performance have not yet been verified.
 
 ## Run a game
 
@@ -133,6 +148,7 @@ node test_polish.js
 node test_organise.js
 node test_game_tools.js
 node test_playtest.js
+node test_ui_design.js
 ```
 
 No npm packages are needed. To run the optional browser tests, install Python Playwright and Chromium, then run `python test_browser.py` and `python test_layout_browser.py` and `python test_workspace_browser.py` and `python test_polish_browser.py` and `python test_organise_browser.py` and `python test_game_tools_browser.py` and `python test_playtest_browser.py`. Set `CHROMIUM_PATH` if Chromium is installed outside Playwright's usual location. The recovery test uses real browser storage by default; `BLUEPRINT_MOCK_STORAGE=1` checks its UI with a simulated storage backend on restricted test hosts. Actual storage across a browser restart has not been verified on this branch.

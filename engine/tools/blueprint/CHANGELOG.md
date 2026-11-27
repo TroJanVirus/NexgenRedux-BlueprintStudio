@@ -1,5 +1,12 @@
 # Changes
 
+## Game UI designer
+
+- Build menus and HUDs with Nexgen widgets. Edit layout, colours, named styles and widget states; preview 16:9 and 4:3.
+- Create Blueprint functions for widget events and add the native load and draw nodes to simple screen graphs.
+- Save native pages and themes with the project. Undo/redo keeps those files and functions together; handler renaming updates connected pages.
+- Check for missing UI files, assets and handlers before packaging. Added browser tests and a native gamepad callback test. The browser preview is approximate; actual rendering and Xbox testing remain outstanding.
+
 ## Play testing
 
 - Run and stop a desktop game from Studio through the local bridge.

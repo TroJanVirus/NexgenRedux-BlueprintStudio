@@ -1,0 +1,24 @@
+from pathlib import Path
+from playwright.sync_api import sync_playwright
+import json, os, subprocess, tempfile
+root=Path(__file__).resolve().parent
+with tempfile.TemporaryDirectory() as tmp:
+    html=Path(tmp)/'studio.html'; subprocess.run(['node',str(root/'bundle.js'),str(html)],check=True)
+    with sync_playwright() as pw:
+        browser=pw.chromium.launch(executable_path=os.environ.get('CHROMIUM_PATH'),args=['--no-sandbox','--disable-dev-shm-usage']);page=browser.new_page(viewport={'width':1700,'height':1000},accept_downloads=True);page.set_default_timeout(5000);errors=[]
+        page.on('pageerror',lambda e:errors.append(str(e)));page.on('dialog',lambda d:d.accept('OnPlay' if d.type=='prompt' else ''))
+        page.set_content(html.read_text());page.evaluate('doc={version:1,name:"BP_Menu",kind:"Screen",variables:[],graphs:[freshGraph("event","onEnter")]};selectGraph("onEnter");render()')
+        page.locator('#uiDesignerButton').click();ui=page.locator('#uiDesigner');ui.locator('.uiDesignTree button').filter(has_text='play · button').click();assert ui.locator('.uiGameWidget.selected').inner_text()=='Play'
+        ui.locator('.uiDesignDetails label').filter(has_text='Text').locator('xpath=following-sibling::input[1]').fill('Start game');ui.locator('.uiDesignDetails label').filter(has_text='Text').locator('xpath=following-sibling::input[1]').press('Tab');assert 'Start game' in ui.locator('.uiGamePage').inner_text()
+        ui.get_by_role('button',name='Create click function',exact=True).click();assert ui.locator('.uiDesignDetails select').filter(has=page.locator('option[value="OnPlay"]')).count()==2
+        ui.locator('.uiDesignTree button').filter(has_text='menu · column').click();ui.locator('.uiDesignTree select').select_option('slider');ui.get_by_role('button',name='Add to selection',exact=True).click();assert ui.locator('.uiGameWidget[data-kind="slider"]').count()==1
+        ui.locator('.uiDesignTree button').filter(has_text='menu · column').click();ui.locator('.uiDesignTree select').select_option('row');ui.get_by_role('button',name='Add to selection',exact=True).click();ui.locator('.uiDesignTree button').filter(has_text='slider1 · slider').drag_to(ui.locator('.uiDesignTree button').filter(has_text='row1 · row'));assert ui.locator('.uiGameWidget[data-kind="row"] .uiGameWidget[data-kind="slider"]').count()==1
+        ui.locator('summary').filter(has_text='Game theme').click();ui.locator('label').filter(has_text='accent').locator('xpath=following-sibling::input[1]').fill('#8844ff');ui.locator('label').filter(has_text='accent').locator('xpath=following-sibling::input[1]').dispatch_event('change');assert ui.locator('.uiGamePage').is_visible()
+        ui.get_by_role('button',name='Save + connect to screen',exact=True).click();assert not ui.is_visible();assert page.evaluate('B.compile(doc).ok');assert page.evaluate('doc.graphs.some(g=>g.name==="OnPlay"&&g.params[0].type==="Widget@")');assert page.evaluate('(captureProject(),P.checkProject(project)[0].ok)');assert page.evaluate('project.screens[0].assets.length')==2
+        page.locator('#undo').click();assert page.evaluate('project.screens[0].assets.length')==0;assert not page.evaluate('doc.graphs.some(g=>g.name==="OnPlay")');page.locator('#redo').click();assert page.evaluate('project.screens[0].assets.length')==2;assert page.evaluate('(captureProject(),P.checkProject(project)[0].ok)')
+        page.evaluate('selectGraph("OnPlay");selected={node:graph().nodes[0].id};render()');page.get_by_role('button',name='Rename function',exact=True).click();page.locator('#dialogBody input').fill('StartGame');page.locator('#dialogOK').click();assert page.evaluate('(captureProject(),P.checkProject(project)[0].ok)');assert page.evaluate('JSON.parse(new TextDecoder().decode(P.decode(project.screens[0].assets.find(a=>a.path==="ui/menu.json").data)))[0].column[1].click')=='StartGame';page.locator('#undo').click();assert page.evaluate('(captureProject(),P.checkProject(project)[0].ok)');page.locator('#redo').click();assert page.evaluate('(captureProject(),P.checkProject(project)[0].ok)')
+        page.locator('#uiDesignerButton').click();ui.locator('.uiDesignBar select').first.select_option('ui/menu.json');assert 'Start game' in ui.locator('.uiGamePage').inner_text();assert ui.locator('.uiGameWidget[data-kind="row"] .uiGameWidget[data-kind="slider"]').count()==1;ui.locator('.uiDesignBar select').nth(1).select_option('ui/theme.json');assert ui.locator('.uiGamePage').is_visible()
+        if os.environ.get('UI_DESIGN_SCREENSHOT'):page.screenshot(path=os.environ['UI_DESIGN_SCREENSHOT'])
+        ui.get_by_role('button',name='Close',exact=True).click();assert not errors,errors
+        print('PASS widget editing, drag into container, theme edits, function creation and rename, project undo/redo, page save and reopen')
+        browser.close()
