@@ -1313,3 +1313,29 @@ NX_TEST(nativeImportedMutableLocalsAndHandleReassignmentMatchOriginal)
         NX_EXPECT(strcmp(r.save.get("first",""),"first")==0&&strcmp(r.save.get("second",""),"second")==0);
     }
 }
+
+NX_TEST(nativeImportedBoundedLoopsMatchOriginalExecution)
+{
+    const std::string original=R"(class Example : Screen {
+        void onEnter() {
+            int sum = 0;
+            for(int i=0; i<3; ++i) {
+                for(int j=0; j<2; j++) { sum += i+j; }
+            }
+            for(int k=0; k<0; ++k) { sum = 999; }
+            if(sum == 9) { Save::set("loops", "correct"); }
+        }
+    })";
+    BlueprintDocument doc;std::string error,generated;
+    const bool imported=importBlueprintScreen(original,doc,error);
+    if(!imported)NX_ERROR("Import diagnostic: %s",error.c_str());
+    NX_EXPECT(imported&&compileBlueprint(doc,generated,error));if(generated.empty())return;
+    for(const std::string* source:std::vector<const std::string*>{&original,&generated})
+    {
+        Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+        r.platform.files["showcase/imported/screen.json"]="{\"title\":\"Import\"}";
+        r.platform.files["showcase/imported/main.as"]=*source;
+        if(!r.screens.init(r.services,"showcase","imported")){NX_EXPECT(false);return;}
+        r.step(3);NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("loops",""),"correct")==0);
+    }
+}

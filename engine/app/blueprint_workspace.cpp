@@ -56,6 +56,7 @@ namespace nx
         float pinY(size_t row){return kPinStart+static_cast<float>(row)*kPinStep;}
         Color pinColor(const std::string& type)
         {
+            if(type.rfind("local:",0)==0)return {0.95f,0.68f,0.35f,1};
             if(type=="exec")return text;
             if(type=="bool")return {0.95f,0.39f,0.45f,1};
             if(type=="string")return {0.84f,0.47f,0.90f,1};

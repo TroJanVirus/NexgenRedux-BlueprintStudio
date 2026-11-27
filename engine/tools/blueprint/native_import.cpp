@@ -358,6 +358,34 @@ namespace nx
                         if(g.returnType!="void"&&!bind(n,"value",result))return false;
                         chain(flow,n);terminal=true;continue;
                     }
+                    if(take("for"))
+                    {
+                        // Only the exact, statically bounded zero-based idiom has the same
+                        // semantics as Repeat. Never clamp an imported dynamic loop silently.
+                        std::string index,condition,increment;
+                        if(!expect("(")||!expect("int")||!name(index)||!expect("=")||!expect("0")||
+                            !expect(";")||!name(condition)||condition!=index||!expect("<"))
+                            return fail("Use a zero-based int loop with a constant upper bound.");
+                        if(peek().kind!=Kind::Number)return fail("Loop limit must be a decimal integer constant.");
+                        const auto limit=peek().text;
+                        if(limit.empty()||limit.size()>5||limit.find_first_not_of("0123456789")!=std::string::npos||
+                            (limit.size()>1&&limit[0]=='0'))return fail("Invalid decimal loop limit.");
+                        unsigned count=0;for(char c:limit)count=count*10+static_cast<unsigned>(c-'0');
+                        if(count>10000)return fail("Loop limit exceeds the native Repeat maximum of 10000.");
+                        ++at;
+                        if(!expect(";"))return false;
+                        if(take("++")){if(!name(increment))return false;}
+                        else if(!name(increment)||!expect("++"))return false;
+                        if(increment!=index||!expect(")"))return fail("Loop increment must advance its own index.");
+                        const auto& params=doc.graphs[graph].parameters;
+                        if(locals.count(index)||fields.count(index)||index==eventArg||
+                            std::any_of(params.begin(),params.end(),[&](const BlueprintPin& p){return p.name==index;}))
+                            return fail("Loop index shadowing is not supported.");
+                        size_t n;if(!add("repeat",n)||!bind(n,"count",Value{"int",limit,"",static_cast<size_t>(-1)}))return false;
+                        chain(flow,n);locals.emplace(index,Value{"int","","index",n});
+                        if(!block({n,"body"},depth+1))return false;
+                        locals.erase(index);continue;
+                    }
                     if(take("if"))
                     {
                         Value condition;if(!expect("(")||!expression(condition)||!expect(")"))return false;
@@ -421,6 +449,7 @@ namespace nx
                             if(local!=locals.end())
                             {
                                 const auto& ref=local->second;
+                                if(ref.pin=="index")return fail("The imported loop index cannot be reassigned.");
                                 if(handleAssignment!=(ref.type=="Entity@"))return fail("Entity handle reassignment requires explicit @; scalar assignment must not use @.");
                                 size_t n;if(!add("local:set:"+ref.type,n)||!bind(n,"local",Value{"local:"+ref.type,"","local",ref.node})||!bind(n,"value",v))return false;
                                 chain(flow,n);continue;

@@ -541,3 +541,34 @@ NX_TEST(nativeMutableLocalReferencesAreTypedAndRequireExecutedDeclaration)
     NX_EXPECT(doc.disconnect(0,2,"in",false)&&doc.connect(0,0,"then",1,"in",error)&&doc.connect(0,1,"then",2,"in",error));
     NX_EXPECT(compileBlueprint(doc,code,error)&&code.find("bp_local_captured_1 = int(2);")!=std::string::npos);
 }
+
+NX_TEST(nativeSourceImportBoundedLoopsPreserveNestedLocalScope)
+{
+    BlueprintDocument doc;std::string error,code,saved;
+    const auto* original=R"(class Example : Screen {
+        int score;
+        void onEnter() {
+            int sum = 0;
+            for(int i=0; i<3; ++i) {
+                for(int j=0; j<2; j++) { sum += i + j; }
+            }
+            score = sum;
+        }
+    })";
+    const bool imported=importBlueprintScreen(original,doc,error);
+    if(!imported)NX_ERROR("Import diagnostic: %s",error.c_str());
+    NX_EXPECT(imported&&compileBlueprint(doc,code,error));
+    NX_EXPECT(code.find("for (int bp_index_")!=std::string::npos);
+    NX_EXPECT(doc.serialize(saved,error));
+    for(const char* invalid:{
+        "class Bad : Screen { void onEnter(){ for(int i=0;i<10001;++i) {} } }",
+        "class Bad : Screen { void onEnter(){ for(int i=1;i<3;++i) {} } }",
+        "class Bad : Screen { void onEnter(){ for(int i=0;i<3;++i) { i++; } } }",
+        "class Bad : Screen { int score; void onEnter(){ for(int i=0;i<3;++i) {} score=i; } }",
+        "class Bad : Screen { int limit; void onEnter(){ for(int i=0;i<limit;++i) {} } }",
+        "class Bad : Screen { void onEnter(){ for(int i=0;i<3;++i) { break; } } }"})
+    {
+        NX_EXPECT(!importBlueprintScreen(invalid,doc,error)&&!error.empty());
+        std::string after;NX_EXPECT(doc.serialize(after,error)&&after==saved);
+    }
+}
