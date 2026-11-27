@@ -630,6 +630,25 @@ namespace nx
         }
         record(graph);g.nodes.push_back({id,kind,value,x,y});error.clear();return true;
     }
+    bool BlueprintDocument::addVariableNode(size_t graph,const std::string& name,bool global,bool setter,float x,float y,std::string& error)
+    {
+        if(graph>=graphs.size()||!identifier(name)||!coordinate(x)||!coordinate(y)||graphs[graph].nodes.size()>=kMaxNodes)
+        {error="Cannot place variable node.";return false;}
+        auto& g=graphs[graph];std::string type;
+        if(global)
+        {
+            for(const auto& f:moduleGlobals(g.owner))if(f.name==name){type=f.type;break;}
+        }
+        else
+        {
+            std::vector<BlueprintPin> vars;if(!variables(vars,error,g.owner))return false;
+            for(const auto& f:vars)if(f.name==name){type=f.type;break;}
+        }
+        const auto kind=std::string(global?"global:":"var:")+(setter?"set:":"get:")+type;
+        if(type.empty()||!blueprintSpec(kind)||!context(g.name,kind,g.owner)){error="Variable is not available in this graph.";return false;}
+        std::string id;do{id="n"+std::to_string(++m_nextId);}while(std::any_of(g.nodes.begin(),g.nodes.end(),[&](const Node& n){return n.id==id;}));
+        record(graph);g.nodes.push_back({id,kind,name,x,y});error.clear();return true;
+    }
     bool BlueprintDocument::deleteNode(size_t graph,size_t node,std::string& error)
     {
         if(graph>=graphs.size()||node>=graphs[graph].nodes.size()||graphs[graph].nodes[node].kind=="entry")

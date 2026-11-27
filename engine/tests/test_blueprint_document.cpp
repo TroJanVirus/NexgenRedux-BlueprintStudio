@@ -917,3 +917,16 @@ NX_TEST(nativeVariableDeclarationEditorRenamesReferencesTransactionally)
     NX_EXPECT(doc.editVariableDeclaration("Screen","field label:string=hello world",error)&&doc.editVariableDeclaration("Screen","field -label",error));
     NX_EXPECT(doc.serialize(checked,error)&&checked==after);
 }
+
+NX_TEST(nativeNamedVariablePlacementUsesExactReferenceAndSingleUndo)
+{
+    BlueprintDocument doc;std::string error,before,after;
+    NX_EXPECT(importBlueprintScreen("int count=2; class Example : Screen {int score=1;}",doc,error)&&doc.serialize(before,error));
+    NX_EXPECT(doc.addVariableNode(0,"score",false,false,200,100,error));
+    NX_EXPECT(doc.graphs[0].nodes.back().kind=="var:get:int"&&doc.graphs[0].nodes.back().ref=="score");
+    NX_EXPECT(doc.undo()&&doc.serialize(after,error)&&after==before);
+    NX_EXPECT(doc.addVariableNode(0,"count",true,true,200,100,error));
+    NX_EXPECT(doc.graphs[0].nodes.back().kind=="global:set:int"&&doc.graphs[0].nodes.back().ref=="count");
+    NX_EXPECT(doc.undo()&&doc.serialize(after,error)&&after==before);
+    NX_EXPECT(!doc.addVariableNode(0,"missing",false,false,200,100,error)&&doc.serialize(after,error)&&after==before);
+}

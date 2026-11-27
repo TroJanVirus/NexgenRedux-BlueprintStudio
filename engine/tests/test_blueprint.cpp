@@ -2019,6 +2019,12 @@ NX_TEST(nativeWorkspaceGraphicalVariableEditorCreatesAndRemovesDeclarations)
     BlueprintDocument doc;auto bytes=r.platform.files[recovery];
     NX_EXPECT(doc.load(bytes.data(),bytes.size(),error)&&doc.graphs[0].fields.size()==1);
     if(!doc.graphs.empty()&&!doc.graphs[0].fields.empty())NX_EXPECT(doc.graphs[0].fields[0].name=="score"&&doc.graphs[0].fields[0].value=="12");
+    // Drag the declared field from My Blueprint, choose Get, then undo just that placement.
+    state.mouseX=120;state.mouseY=365;state.mouseButtons[0]=true;frame();state.mouseX=500;state.mouseY=280;frame();state.mouseButtons[0]=false;frame();
+    click(560,320);studio.checkpoint(r.services,true);
+    bytes=r.platform.files[recovery];NX_EXPECT(doc.load(bytes.data(),bytes.size(),error)&&doc.graphs[0].nodes.size()==2);
+    if(!doc.graphs.empty()&&doc.graphs[0].nodes.size()==2)NX_EXPECT(doc.graphs[0].nodes[1].kind=="var:get:int"&&doc.graphs[0].nodes[1].ref=="score");
+    click(900,53);
     click(120,464);click(300,205);click(980,481);click(1040,132);studio.checkpoint(r.services,true);
     bytes=r.platform.files[recovery];NX_EXPECT(doc.load(bytes.data(),bytes.size(),error)&&doc.graphs[0].fields.empty());
     studio.close(r.services);

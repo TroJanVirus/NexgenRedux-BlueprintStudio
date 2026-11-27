@@ -27,7 +27,9 @@ namespace nx
         constexpr float kNodeWidth = 196, kNodeHeight = 72;
         // Each native pin is provided by the generated catalogue.
         constexpr float kPinStart=38, kPinStep=22;
-        constexpr size_t kRows = 12;
+        constexpr size_t kRows = 8;
+        constexpr float kVariableTop=350,kVariableBottom=443;
+        constexpr size_t kVariableRows=3;
         constexpr const char* variableTypes[]={"bool","int","uint","float","double","string"};
         constexpr Color text = {0.88f, 0.91f, 0.96f, 1};
         constexpr Color muted = {0.57f, 0.65f, 0.76f, 1};
@@ -143,7 +145,7 @@ namespace nx
         if (!active()) return;
         stopPreview(s);
         checkpoint(s,true);
-        cancelDrag();clearWire();m_focus=0;m_browsing=false;m_assetBrowser=false;s.input->setTyping(m_previousTyping);
+        cancelDrag();clearWire();m_quickDrag=m_quickMenu=false;m_focus=0;m_browsing=false;m_assetBrowser=false;s.input->setTyping(m_previousTyping);
         s.assets->release(m_font);
         m_font = nullptr;
         s.platform->releaseBlueprintLease();
@@ -155,6 +157,7 @@ namespace nx
     {
         if (index >= m_document.graphs.size()) return;
         cancelDrag();clearWire();m_diagnostic={};
+        m_quickDrag=m_quickMenu=false;m_quickVariableFirst=0;
         m_graph = index; m_selection = static_cast<size_t>(-1);
         rebuildPins();fitGraph();filterCatalogue();
         if (index < m_first) m_first = index;
@@ -891,12 +894,13 @@ namespace nx
             if(m_assetBrowser){m_assetBrowser=false;m_status="Asset browser closed.";return;}
             if(m_browsing){m_browsing=false;m_status="Open cancelled.";return;}
             if(m_focus){m_focus=0;input.setTyping(false);m_status="Input cancelled.";return;}
+            if(m_quickDrag||m_quickMenu){m_quickDrag=m_quickMenu=false;m_status="Variable placement cancelled.";return;}
             if(m_pending!=static_cast<size_t>(-1)){clearWire();m_status="Connection cancelled.";return;}
             if(m_drag){cancelDrag();m_left=input.raw().mouseButtons[0];m_status="Drag cancelled.";return;}
             returnToRedux(s);return;
         }
         std::string dropped;
-        if (!m_drag && !m_focus && !m_browsing && s.platform->takeDropped(dropped))
+        if (!m_drag && !m_quickDrag && !m_quickMenu && !m_focus && !m_browsing && s.platform->takeDropped(dropped))
         {
             if(m_assetBrowser)importAsset(s,dropped);
             else if(blueprintFileName(dropped))openFile(s,dropped,false);
@@ -918,6 +922,36 @@ namespace nx
             (control&&(held(Key::Y)||(held(Key::Z)&&held(Key::Shift)))?4u:0u);
         const unsigned pressed=keys&~m_shortcuts;m_shortcuts=keys;
         const bool click=left&&!m_left;
+        if(m_quickMenu)
+        {
+            if(click)
+            {
+                const bool get=in(x,y,m_quickMenuX,m_quickMenuY+28,m_quickMenuX+210,m_quickMenuY+58);
+                const bool set=in(x,y,m_quickMenuX,m_quickMenuY+58,m_quickMenuX+210,m_quickMenuY+88);
+                if(get||set)
+                {
+                    if(m_document.addVariableNode(m_graph,m_quickVariable.field.name,m_quickVariable.global,set,(m_quickX-kLeft-m_x)/m_zoom,(m_quickY-kTop-m_y)/m_zoom,m_status))
+                    {m_diagnostic={};clearWire();rebuildPins();m_selection=m_document.graphs[m_graph].nodes.size()-1;m_status=std::string(set?"Set ":"Get ")+m_quickVariable.field.name+" added.";}
+                }
+                m_quickMenu=false;
+            }
+            m_left=left;return;
+        }
+        if(m_quickDrag)
+        {
+            m_quickX=x;m_quickY=y;
+            if(!left)
+            {
+                m_quickDrag=false;
+                if(over)
+                {
+                    m_quickMenu=true;m_quickMenuX=std::clamp(x,kLeft+4,kRight-214);m_quickMenuY=std::clamp(y,kTop+4,kBottom-92);
+                    m_status="Choose Get or Set for "+m_quickVariable.field.name+".";
+                }
+                else m_status="Drag a variable onto the graph to place it.";
+            }
+            m_left=left;return;
+        }
         if(m_assetBrowser)
         {
             if(input.wheel()<0&&m_assetFirst+10<m_assetFiles.size())++m_assetFirst;
@@ -1106,7 +1140,8 @@ namespace nx
                         item.source=output.source;item.manifest=output.manifest;screens.push_back(std::move(item));
                     }
                     const auto selected=m_document.graphs[m_graph].owner;
-                    const auto owner=selected.rfind("behaviour:",0)==0?m_document.screens().front():selected;
+                    const auto scope=m_document.moduleForOwner(selected);
+                    const auto owner=scope.empty()?m_document.screens().front():scope;
                     if(!m_document.assetRoot.empty()&&!s.platform->fileTime(("own/"+m_document.assetRoot).c_str()))
                         m_status="Project asset folder is missing. Restore it before play testing.";
                     else if(startTrace(s))
@@ -1211,7 +1246,20 @@ namespace nx
             }
             m_left=left;return;
         }
-        if (left && !m_left && in(x,y,0,kTop,kLeft,kBottom))
+        if(in(x,y,0,kVariableTop,kLeft,kVariableBottom))
+        {
+            const auto vars=variableRows();
+            m_quickVariableFirst=std::min(m_quickVariableFirst,vars.size()>kVariableRows?vars.size()-kVariableRows:0);
+            if(input.wheel()<0&&m_quickVariableFirst+kVariableRows<vars.size())++m_quickVariableFirst;
+            if(input.wheel()>0&&m_quickVariableFirst)--m_quickVariableFirst;
+            if(click)
+            {
+                const size_t row=m_quickVariableFirst+static_cast<size_t>((y-kVariableTop)/31);
+                if(row<vars.size()){m_quickVariable=vars[row];m_quickDrag=true;m_quickX=x;m_quickY=y;clearWire();m_status="Drag "+m_quickVariable.field.name+" into the graph.";}
+            }
+            m_left=left;return;
+        }
+        if (left && !m_left && in(x,y,0,kTop,kLeft,kTop+kRows*31))
         {
             const size_t row = static_cast<size_t>((y-kTop)/31);
             if (row < kRows) selectGraph(m_first + row);
@@ -1295,7 +1343,7 @@ namespace nx
             m_x = x-kLeft-(x-kLeft-m_x)*m_zoom/previous;
             m_y = y-kTop-(y-kTop-m_y)*m_zoom/previous;
         }
-        else if (in(x,y,0,kTop,kLeft,kBottom) && wheel != 0)
+        else if (in(x,y,0,kTop,kLeft,kTop+kRows*31) && wheel != 0)
         {
             if (wheel < 0 && m_first+kRows < m_document.graphs.size()) ++m_first;
             if (wheel > 0 && m_first) --m_first;
@@ -1417,6 +1465,16 @@ namespace nx
             c.clip(5,y,kLeft-10,31);
             c.text(*m_font,shorten(g.owner+" / "+g.name,32).c_str(),12,y+6,text);c.noClip();
         }
+        c.text(*m_font,"MY BLUEPRINT / VARIABLES",10,330,accent);
+        const auto quickRows=variableRows();
+        const auto quickFirst=std::min(m_quickVariableFirst,quickRows.size()>kVariableRows?quickRows.size()-kVariableRows:0);
+        for(size_t i=0;i<kVariableRows&&quickFirst+i<quickRows.size();++i)
+        {
+            const auto& r=quickRows[quickFirst+i];const float y=kVariableTop+31*static_cast<float>(i);
+            c.rect(5,y+2,kLeft-10,28,{0.17f,0.22f,0.30f,1});c.circle(14,y+16,4,pinColor(r.field.type));
+            c.clip(24,y,kLeft-30,31);c.text(*m_font,shorten(std::string(r.global?"Global / ":"")+r.field.name+" : "+r.field.type,28).c_str(),24,y+6,text);c.noClip();
+        }
+        if(quickRows.empty())c.text(*m_font,"Create variables below.",12,kVariableTop+8,muted);
         c.roundRect(8,kBottom-225,kLeft-16,32,5,{0.19f,0.33f,0.50f,1});
         c.text(*m_font,"Variables",kLeft*0.5f,kBottom-219,text,Align::Center);
         c.roundRect(8,kBottom-188,kLeft-16,32,5,{0.19f,0.33f,0.50f,1});
@@ -1471,6 +1529,19 @@ namespace nx
             c.noClip();
             const char* state=!m_document.dirty()?"Saved / clean":recoveryProtected()?"Recovery protected":"Recovery pending";
             c.text(*m_font,state,kWidth-12,kBottom+26,recoveryProtected()?muted:Color{1.f,0.72f,0.22f,1.f},Align::Right);
+        }
+        if(m_quickDrag)
+        {
+            const float x=std::clamp(m_quickX+12,0.f,kWidth-210),y=std::clamp(m_quickY+12,0.f,kHeight-32);
+            c.roundRect(x,y,210,32,4,{0.19f,0.33f,0.50f,1});c.clip(x+6,y,198,32);c.text(*m_font,m_quickVariable.field.name.c_str(),x+8,y+7,text);c.noClip();
+        }
+        if(m_quickMenu)
+        {
+            const float x=m_quickMenuX,y=m_quickMenuY;
+            c.roundRect(x,y,210,90,5,{0.12f,0.16f,0.22f,1});
+            c.clip(x+6,y,198,28);c.text(*m_font,m_quickVariable.field.name.c_str(),x+8,y+5,accent);c.noClip();
+            c.rect(x+4,y+28,202,29,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Get variable",x+10,y+34,text);
+            c.rect(x+4,y+58,202,29,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Set variable",x+10,y+64,text);
         }
         if(m_assetBrowser||m_browsing||m_focus==5||m_focus==6||m_focus==9||m_focus==10)
         {

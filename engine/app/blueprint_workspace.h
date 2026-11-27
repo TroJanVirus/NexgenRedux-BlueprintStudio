@@ -97,6 +97,10 @@ namespace nx
         std::string m_variableOld,m_variableName,m_variableType="int",m_variableValue;
         bool m_variableGlobal=false,m_variableInitialized=false,m_variableTypes=false;
         int m_variableInput=0; // 1 name, 2 initial value
+        size_t m_quickVariableFirst=0;
+        VariableRow m_quickVariable{};
+        bool m_quickDrag=false,m_quickMenu=false;
+        float m_quickX=0,m_quickY=0,m_quickMenuX=0,m_quickMenuY=0;
         std::string m_filePath,m_fileBaseline;
         std::vector<std::string> m_files;
         size_t m_fileFirst=0;
