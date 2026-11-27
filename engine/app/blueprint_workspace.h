@@ -37,6 +37,13 @@ namespace nx
         void recoveryWarning(const std::string& message);
         void selectGraph(size_t index);
         void fitGraph();
+        void resizeWorkspace(const Canvas& canvas);
+        bool modalOpen() const;
+        float modalX() const {return (kWidth-1280.f)*0.5f;}
+        float modalY() const {return (kHeight-720.f)*0.5f;}
+        float kWidth=1280,kHeight=720,kRight=1012,kBottom=674;
+        float kVariableTop=350,kVariableBottom=443,kPaletteExtra=0;
+        size_t kRows=8,kVariableRows=3,kPaletteRows=10;
         void rebuildPins();
         void filterCatalogue();
         void clearWire(){m_pending=static_cast<size_t>(-1);m_pendingPin.clear();m_pinDrag=false;m_pendingOutput=true;}

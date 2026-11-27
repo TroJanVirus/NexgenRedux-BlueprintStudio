@@ -86,3 +86,7 @@ Cast Actor to Class now exposes a typed Behaviour handle as well as the Entity r
 ## Custom type and dispatcher integration hardening (CI pending)
 
 Switch on enum derives execution outputs from declared members plus Default/Then. Enum values default to the first member, reject unknown names and cannot be fed arbitrary runtime strings. Structures can include other declared enum/structure types, with dependency-cycle validation. Listener names are validated against compatible local handlers; inherited signals retain the original declaring class's listener fields and broadcast helper. Editing listener/enum declarations cannot silently invalidate existing saved references. Added native runtime tests for nested structure fields, assignment and enum switches. Actor casts, library packages and all new data features remain subject to full desktop CI verification.
+
+## Compact native desktop workspace and Cook release gate
+
+The editor now derives its logical canvas from the desktop client size above 1280×720, rather than enlarging a fixed game-sized canvas. Small-window compatibility is retained. The graph and palette gain working space and additional visible rows; centered modal hit testing shares the render transform, including the native 3D placement viewport. Default typography is smaller and chrome uses neutral grey panels. Windows Cook release packaging now requires Defender verification and records executable hashes and source commit. Native verification pending.

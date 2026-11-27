@@ -28,13 +28,11 @@ namespace nx
 {
     namespace
     {
-        constexpr float kWidth = 1280, kHeight = 720, kLeft = 248, kRight = 1012, kTop = 76, kBottom = 674;
+        constexpr float kLeft = 248, kTop = 76;
+        constexpr float kBaseWidth=1280,kBaseHeight=720;
         constexpr float kNodeWidth = 196, kNodeHeight = 72;
         // Each native pin is provided by the generated catalogue.
         constexpr float kPinStart=38, kPinStep=22;
-        constexpr size_t kRows = 8;
-        constexpr float kVariableTop=350,kVariableBottom=443;
-        constexpr size_t kVariableRows=3;
         constexpr const char* variableTypes[]={"bool","int","uint","float","double","string","Playlist@","WebSocket@","Widget@","array<int>","array<uint>","array<float>","array<bool>","array<string>","array<Vec2>","array<Color>","BP_MapInt","BP_MapString","BP_SetInt","BP_SetString"};
         constexpr Color text = {0.88f, 0.91f, 0.96f, 1};
         constexpr Color muted = {0.57f, 0.65f, 0.76f, 1};
@@ -108,7 +106,7 @@ namespace nx
             m_status="Cannot open Blueprint Studio: save directory is busy or unavailable.";
             NX_ERROR("Blueprint Studio: %s",m_status.c_str());return;
         }
-        m_font = s.assets->font("global/freesans.sfn", 18);
+        m_font = s.assets->font("global/freesans.sfn", 16);
         if (!m_font || m_font->failed)
         {
             if (m_font) s.assets->release(m_font);
@@ -124,6 +122,7 @@ namespace nx
         m_left = m_pan = m_drag = false;
         m_shortcuts = 0;
         m_previousTyping=s.input->typing();m_focus=0;m_browsing=false;m_assetBrowser=false;s.input->setTyping(false);
+        resizeWorkspace(*s.canvas);
         if(m_document.graphs.empty())
         {
             FileData recovery;
@@ -164,6 +163,28 @@ namespace nx
         s.input->consume();
     }
 
+    void BlueprintWorkspace::resizeWorkspace(const Canvas& c)
+    {
+        const float w=c.pixelWidth(),h=c.pixelHeight();
+        const float density=std::max(1.f,std::min(w/1920.f,h/1200.f));
+        const float width=w>=1280&&h>=720?w/density:kBaseWidth;
+        const float height=w>=1280&&h>=720?h/density:kBaseHeight;
+        if(std::abs(width-kWidth)>0.5f||std::abs(height-kHeight)>0.5f)
+        {
+            cancelDrag();clearWire();m_layoutDragging=m_quickDrag=m_quickMenu=m_pan=false;
+            cancelVisualPlacement();m_widgetPreviewDrag=m_widgetDragging=false;m_placementReady=false;
+        }
+        kWidth=width;kHeight=height;kRight=kWidth-268;kBottom=kHeight-46;
+        const float extra=std::max(0.f,kHeight-kBaseHeight);
+        kRows=8+static_cast<size_t>(extra/62.f);
+        kVariableTop=350+31.f*static_cast<float>(kRows-8);
+        kVariableRows=3+static_cast<size_t>(std::max(0.f,extra-(kVariableTop-350))/31.f);
+        kVariableBottom=kVariableTop+31.f*static_cast<float>(kVariableRows);
+        kPaletteRows=10+static_cast<size_t>(extra/26.f);kPaletteExtra=26.f*static_cast<float>(kPaletteRows-10);
+        if(m_graph<m_document.graphs.size()&&m_graph>=m_first+kRows)m_first=m_graph-kRows+1;
+    }
+    bool BlueprintWorkspace::modalOpen() const
+    {return m_assetBrowser||m_browsing||m_focus==5||m_focus==6||m_focus==9||m_focus==10||m_focus==11||m_focus==12||m_focus==13||m_focus==14||m_focus==15;}
     void BlueprintWorkspace::selectGraph(size_t index)
     {
         if (index >= m_document.graphs.size()) return;
@@ -661,7 +682,7 @@ namespace nx
         if(!m_placement3D){wx=std::round((x-planCenterX)/planScale);wz=std::round((y-planCenterY)/planScale);return true;}
         if(!m_placementWorld||!m_placementReady)return false;
         const auto& space=m_placementWorld->space();
-        const auto ray=space.rayThrough({x,y}),eye=space.cameraPlace();
+        const auto ray=space.rayThrough({x+modalX(),y+modalY()}),eye=space.cameraPlace();
         if(std::abs(ray.y)<0.00001f)return false;
         const float t=(height-eye.y)/ray.y;
         if(!(t>0&&t<10000))return false;
@@ -673,7 +694,7 @@ namespace nx
         if(!m_placement3D){x=planCenterX+wx*planScale;y=planCenterY+wz*planScale;return true;}
         if(!m_placementReady||!m_placementWorld)return false;
         Vec2 p;if(!m_placementWorld->space().toScreen({wx,wy,wz},p))return false;
-        x=p.x;y=p.y;return std::isfinite(x)&&std::isfinite(y);
+        x=p.x-modalX();y=p.y-modalY();return std::isfinite(x)&&std::isfinite(y);
     }
     bool BlueprintWorkspace::gizmoAxis(float wx,float wy,float wz,unsigned axis,float& x,float& y,float& dx,float& dy)const
     {
@@ -839,7 +860,7 @@ namespace nx
             auto& space=m_placementWorld->space();
             const float d=m_placementDistance;
             space.setCamera({std::sin(m_placementYaw)*d,d*0.65f+m_placementHeight,std::cos(m_placementYaw)*d},{0,m_placementHeight,0},55);
-            space.draw(c,planLeft,planTop,planRight-planLeft,planBottom-planTop);
+            space.draw(c,planLeft+modalX(),planTop+modalY(),planRight-planLeft,planBottom-planTop);
             m_placementReady=true;
         }
         c.clip(planLeft,planTop,planRight-planLeft,planBottom-planTop);
@@ -1221,7 +1242,7 @@ namespace nx
             const size_t at=i+m_widgetFirst;const float y=202+40*static_cast<float>(i);
             const auto id=m_widgetPalette||!at?"":rows[at-1].id;
             const auto label=m_widgetPalette?std::string(designPalette[at]):!at?"PAGE ROOT":std::string(rows[at-1].depth*2,' ')+rows[at-1].kind+" / "+id+" "+rows[at-1].label;
-            c.rect(280,y,330,36,!m_widgetPalette&&id==m_widgetSelection?Color{0.19f,0.33f,0.50f,1}:Color{0.17f,0.22f,0.30f,1});
+            c.rect(280,y,330,36,!m_widgetPalette&&id==m_widgetSelection?Color{0.19f,0.33f,0.50f,1}:Color{0.22f,0.22f,0.24f,1});
             c.clip(286,y,318,36);c.text(*m_font,label.c_str(),290,y+9,text);c.noClip();
         }
         if(m_widgetAnchors){button(280,548,106,"Fill X");button(390,548,106,"Fill Y");button(500,548,110,"Fill both");}
@@ -1569,7 +1590,7 @@ namespace nx
     }
     void BlueprintWorkspace::drawVisualLibrary(Canvas& c)
     {
-        c.roundRect(260,100,760,525,9,{0.12f,0.16f,0.22f,1});
+        c.roundRect(260,100,760,525,9,{0.16f,0.16f,0.17f,1});
         const auto button=[&](float x,float y,float w,const char* label)
         {c.roundRect(x,y,w,33,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,label,x+w*0.5f,y+7,text,Align::Center);};
         c.text(*m_font,"CONTENT / PROJECT LIBRARY",280,122,accent);
@@ -1585,7 +1606,7 @@ namespace nx
             for(size_t i=0;i<8&&m_placementFirst+i<markers.size();++i)
             {
                 const auto& marker=markers[m_placementFirst+i];const float y=198+36*static_cast<float>(i);
-                c.rect(280,y,330,33,marker.id==m_placementSelectedId?Color{0.28f,0.40f,0.52f,1}:Color{0.17f,0.22f,0.30f,1});
+                c.rect(280,y,330,33,marker.id==m_placementSelectedId?Color{0.28f,0.40f,0.52f,1}:Color{0.22f,0.22f,0.24f,1});
                 c.clip(287,y,316,33);c.text(*m_font,(marker.label+" / "+marker.id).c_str(),290,y+8,text);c.noClip();
             }
             if(markers.empty())c.text(*m_font,"No constant linked actors.",290,210,muted);
@@ -1599,7 +1620,7 @@ namespace nx
         for(size_t i=0;i<9&&m_visualFirst+i<assets.size();++i)
         {
             const auto& a=assets[m_visualFirst+i];const float y=198+36*static_cast<float>(i);
-            c.rect(280,y,330,33,a.id==m_visualSelection?Color{0.19f,0.33f,0.50f,1}:Color{0.17f,0.22f,0.30f,1});
+            c.rect(280,y,330,33,a.id==m_visualSelection?Color{0.19f,0.33f,0.50f,1}:Color{0.22f,0.22f,0.24f,1});
             c.clip(287,y,316,33);c.text(*m_font,((a.kind=="actor"?"ACTOR  ":a.kind=="theme"?"THEME  ":"UI  ")+a.title).c_str(),290,y+8,text);c.noClip();
         }
         if(assets.empty())c.text(*m_font,"Create a reusable asset.",290,210,muted);
@@ -1639,7 +1660,7 @@ namespace nx
                         const float row=387+28*static_cast<float>(index);
                         const char* kind=item["label"].exists()?"label":item["button"].exists()?"button":item["progress"].exists()?"progress":item["toggle"].exists()?"toggle":"widget";
                         const std::string label=std::string(kind)+"  "+item[kind].text()+"  "+item["id"].text();
-                        c.rect(630,row,370,25,{0.17f,0.22f,0.30f,1});
+                        c.rect(630,row,370,25,{0.22f,0.22f,0.24f,1});
                         c.clip(635,row,360,25);c.text(*m_font,label.c_str(),638,row+4,text);c.noClip();
                     }
                     if(tree.root().count()>5)c.text(*m_font,("+"+std::to_string(tree.root().count()-5)+" more widgets").c_str(),630,528,muted);
@@ -1708,7 +1729,7 @@ namespace nx
                         const auto item=entries[index];const float yy=366+33*static_cast<float>(i);
                         const auto label=std::to_string(index)+"  "+item["name"].text("Component")+" / "+item["shape"].text(item["camera"].exists()?"camera":"custom")+
                             (index?"  (parent "+std::to_string(static_cast<int>(parents[index].number()))+")":"  (root)");
-                        c.rect(630,yy,370,31,index==m_visualComponent?Color{0.19f,0.33f,0.50f,1}:Color{0.17f,0.22f,0.30f,1});
+                        c.rect(630,yy,370,31,index==m_visualComponent?Color{0.19f,0.33f,0.50f,1}:Color{0.22f,0.22f,0.24f,1});
                         c.clip(635,yy,360,31);c.text(*m_font,label.c_str(),638,yy+6,text);c.noClip();
                     }
                 }
@@ -1749,7 +1770,7 @@ namespace nx
             c.clip(440,305,400,30);c.text(*m_font,m_visualText.empty()?"Default / enter asset: or global: path":m_visualText.c_str(),440,305,text);c.noClip();
             for(size_t i=0;i<5&&m_themeMediaFirst+i<m_themeMediaFiles.size();++i)
             {
-                const float y=345+30.f*static_cast<float>(i);c.rect(440,y,400,28,{0.17f,0.22f,0.30f,1});
+                const float y=345+30.f*static_cast<float>(i);c.rect(440,y,400,28,{0.22f,0.22f,0.24f,1});
                 c.clip(446,y,388,28);c.text(*m_font,m_themeMediaFiles[m_themeMediaFirst+i].c_str(),446,y+4,text);c.noClip();
             }
             if(m_themeMediaFiles.empty())c.text(*m_font,"No matching imported media on this screen.",440,365,muted);
@@ -2006,9 +2027,9 @@ namespace nx
             if(m_sceneExit)
             {
                 const auto& canvas=*s.canvas;
-                const float scale=std::min(canvas.pixelWidth()/kWidth,canvas.pixelHeight()/kHeight);
-                const float x=scale>0?(raw.mouseX-(canvas.pixelWidth()-kWidth*scale)*0.5f)/scale:0;
-                const float y=scale>0?(raw.mouseY-(canvas.pixelHeight()-kHeight*scale)*0.5f)/scale:0;
+                const float scale=std::min(canvas.pixelWidth()/kBaseWidth,canvas.pixelHeight()/kBaseHeight);
+                const float x=scale>0?(raw.mouseX-(canvas.pixelWidth()-kBaseWidth*scale)*0.5f)/scale:0;
+                const float y=scale>0?(raw.mouseY-(canvas.pixelHeight()-kBaseHeight*scale)*0.5f)/scale:0;
                 if(input.pressed(Action::Accept)||(click&&in(x,y,650,392,960,442)))
                 {stopPreview(s);return;}
                 if(input.pressed(Action::Menu)||input.pressed(Action::Cancel)||(click&&in(x,y,320,392,630,442)))
@@ -2027,9 +2048,9 @@ namespace nx
             if(m_tracePaused)
             {
                 const bool left=raw.mouseButtons[0],click=left&&!m_left;m_left=left;
-                const auto& canvas=*s.canvas;const float scale=std::min(canvas.pixelWidth()/kWidth,canvas.pixelHeight()/kHeight);
-                const float x=scale>0?(raw.mouseX-(canvas.pixelWidth()-kWidth*scale)*0.5f)/scale:0;
-                const float y=scale>0?(raw.mouseY-(canvas.pixelHeight()-kHeight*scale)*0.5f)/scale:0;
+                const auto& canvas=*s.canvas;const float scale=std::min(canvas.pixelWidth()/kBaseWidth,canvas.pixelHeight()/kBaseHeight);
+                const float x=scale>0?(raw.mouseX-(canvas.pixelWidth()-kBaseWidth*scale)*0.5f)/scale:0;
+                const float y=scale>0?(raw.mouseY-(canvas.pixelHeight()-kBaseHeight*scale)*0.5f)/scale:0;
                 const float wheel=s.input->wheel();
                 if(in(x,y,24,415,604,600))
                 {
@@ -2074,7 +2095,7 @@ namespace nx
     {
         if(tracePaused()&&m_font)
         {
-            c.design(kWidth,kHeight);c.noClip();
+            c.design(kBaseWidth,kBaseHeight);c.noClip();
             c.roundRect(12,348,1256,324,8,{0.10f,0.14f,0.20f,0.98f});
             c.text(*m_font,"EXECUTION TRACE / FRAME-BOUNDARY PAUSE",24,358,accent);
             c.text(*m_font,"Historical samples, not live VM state",24,386,muted);
@@ -2101,9 +2122,9 @@ namespace nx
             return;
         }
         if(!m_sceneEditor||!m_sceneExit||!m_font)return;
-        c.design(kWidth,kHeight);c.noClip();
-        c.rect(0,0,kWidth,kHeight,{0,0,0,0.72f});
-        c.roundRect(300,250,680,220,9,{0.12f,0.16f,0.22f,1});
+        c.design(kBaseWidth,kBaseHeight);c.noClip();
+        c.rect(0,0,kBaseWidth,kBaseHeight,{0,0,0,0.72f});
+        c.roundRect(300,250,680,220,9,{0.16f,0.16f,0.17f,1});
         c.text(*m_font,"Return to Blueprint Studio?",640,276,text,Align::Center);
         c.paragraph(*m_font,"Only scenes saved using the original editor's Save button are kept. Unsaved scene edits will be discarded.",320,316,640,muted);
         c.roundRect(320,392,310,50,6,{0.19f,0.33f,0.50f,1});
@@ -2390,6 +2411,7 @@ namespace nx
     void BlueprintWorkspace::update(Services& s)
     {
         auto& input = *s.input;
+        resizeWorkspace(*s.canvas);
         refreshWidgetPreview(s);refreshPlacementPreview(s);
         if (input.pressed(Action::Menu))
         {
@@ -2414,11 +2436,11 @@ namespace nx
         }
         auto& canvas = *s.canvas;
         const auto& raw = input.raw();
-        // Canvas design is the same fixed 1280x720 fit used by draw().
+        // Match draw()'s adaptive canvas and modal transform.
         const float scale = std::min(canvas.pixelWidth()/kWidth, canvas.pixelHeight()/kHeight);
         if (!(scale > 0)) return;
-        const float x = (raw.mouseX - (canvas.pixelWidth()-kWidth*scale)*0.5f)/scale;
-        const float y = (raw.mouseY - (canvas.pixelHeight()-kHeight*scale)*0.5f)/scale;
+        float x = (raw.mouseX - (canvas.pixelWidth()-kWidth*scale)*0.5f)/scale;
+        float y = (raw.mouseY - (canvas.pixelHeight()-kHeight*scale)*0.5f)/scale;
         const bool over = in(x,y,kLeft,kTop,kRight,kBottom);
         const bool left = raw.mouseButtons[0], pan = raw.mouseButtons[1] || raw.mouseButtons[2];
         const auto held=[&](Key key){return raw.keys[static_cast<size_t>(key)];};
@@ -2428,6 +2450,7 @@ namespace nx
         const unsigned pressed=keys&~m_shortcuts;m_shortcuts=keys;
         const bool click=left&&!m_left;
         const bool right=raw.mouseButtons[1];
+        if(modalOpen()){x-=modalX();y-=modalY();}
         if(m_layoutDragging)
         {
             m_layoutX=x;m_layoutY=y;
@@ -2938,10 +2961,10 @@ namespace nx
         }
         if(!m_drag&&in(x,y,kRight,kTop,kWidth,kBottom))
         {
-            if(input.wheel()<0&&m_paletteFirst+10<m_palette.size())++m_paletteFirst;
+            if(input.wheel()<0&&m_paletteFirst+kPaletteRows<m_palette.size())++m_paletteFirst;
             if(input.wheel()>0&&m_paletteFirst)--m_paletteFirst;
             if(click&&in(x,y,kRight+8,kTop+38,kWidth-8,kTop+68)){m_focus=1;input.setTyping(true);m_left=left;return;}
-            if(click&&in(x,y,kRight+8,kTop+80,kWidth-8,kTop+340))
+            if(click&&in(x,y,kRight+8,kTop+80,kWidth-8,kTop+340+kPaletteExtra))
             {
                 const size_t row=m_paletteFirst+static_cast<size_t>((y-kTop-80)/26);
                 if(row<m_palette.size())
@@ -2975,9 +2998,9 @@ namespace nx
             if(click&&m_selection<m_document.graphs[m_graph].nodes.size())
             {
                 const auto& n=m_document.graphs[m_graph].nodes[m_selection];
-                if(in(x,y,kRight+8,kTop+456,kWidth-8,kTop+486)&&(n.kind.rfind("literal:",0)==0||n.kind.rfind("var:",0)==0||n.kind.rfind("global:",0)==0||n.kind.rfind("capture:",0)==0||blueprintNamedCall(n.kind)||blueprintBehaviourReference(n.kind)||n.kind.rfind("data:",0)==0||n.kind.rfind("typed:",0)==0))
+                if(in(x,y,kRight+8,kTop+456+kPaletteExtra,kWidth-8,kTop+486+kPaletteExtra)&&(n.kind.rfind("literal:",0)==0||n.kind.rfind("var:",0)==0||n.kind.rfind("global:",0)==0||n.kind.rfind("capture:",0)==0||blueprintNamedCall(n.kind)||blueprintBehaviourReference(n.kind)||n.kind.rfind("data:",0)==0||n.kind.rfind("typed:",0)==0))
                 {m_edit=n.ref;m_focus=n.kind.rfind("literal:",0)==0?2:3;input.setTyping(true);}
-                else if(in(x,y,kRight+8,kTop+520,kWidth-8,kTop+552)&&!inputDetails(m_selection).empty())
+                else if(in(x,y,kRight+8,kTop+520+kPaletteExtra,kWidth-8,kTop+552+kPaletteExtra)&&!inputDetails(m_selection).empty())
                 {m_inspectorFirst=0;m_focus=15;input.setTyping(false);m_status="Inspect all input values, including defaults and wires.";}
                 else if(in(x,y,kRight+8,kBottom-40,kWidth-8,kBottom-8)&&m_document.deleteNode(m_graph,m_selection,m_status)){m_diagnostic={};clearWire();m_selection=static_cast<size_t>(-1);rebuildPins();m_selectedNodes.clear();m_status="Deleted node.";}
             }
@@ -3152,10 +3175,12 @@ namespace nx
     void BlueprintWorkspace::draw(Canvas& c)
     {
         if (!active()) return;
+        resizeWorkspace(c);
         c.design(kWidth,kHeight);
-        c.rect(0,0,kWidth,kHeight,{0.06f,0.08f,0.12f,1});
-        c.rect(0,0,kWidth,kTop,{0.12f,0.16f,0.22f,1});
+        c.rect(0,0,kWidth,kHeight,{0.10f,0.10f,0.11f,1});
+        c.rect(0,0,kWidth,kTop,{0.16f,0.16f,0.17f,1});
         c.text(*m_font,"NEXGEN  /  BLUEPRINT STUDIO",18,13,text);
+        if(kWidth>1530)c.text(*m_font,"EVENT GRAPH / NATIVE EDITOR",kWidth-18,13,muted,Align::Right);
         c.roundRect(300,5,104,28,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Layout",352,9,text,Align::Center);
         c.roundRect(1088,5,86,28,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Watch",1131,9,text,Align::Center);
         c.roundRect(1180,5,88,28,4,m_traceEnabled?Color{0.23f,0.48f,0.29f,1}:Color{0.19f,0.33f,0.50f,1});
@@ -3178,14 +3203,14 @@ namespace nx
         button(504,100,"Play test",!m_document.graphs.empty());
         button(610,132,"Export project",!m_document.graphs.empty());button(748,110,"Save",!m_document.graphs.empty());button(864,84,"Undo",m_document.canUndo());
         button(954,84,"Redo",m_document.canRedo());button(1044,84,"Fit",!m_document.graphs.empty());button(1134,132,"Return",true);
-        c.rect(0,kTop,kLeft,kBottom-kTop,{0.10f,0.13f,0.18f,1});
-        c.rect(kRight,kTop,kWidth-kRight,kBottom-kTop,{0.10f,0.13f,0.18f,1});
+        c.rect(0,kTop,kLeft,kBottom-kTop,{0.17f,0.17f,0.18f,1});
+        c.rect(kRight,kTop,kWidth-kRight,kBottom-kTop,{0.17f,0.17f,0.18f,1});
         c.clip(kLeft,kTop,kRight-kLeft,kBottom-kTop);
         const float step=32*m_zoom;
         for(float gx=kLeft+std::fmod(m_x,step);gx<kRight;gx+=step)
-            c.line(gx,kTop,gx,kBottom,1,{0.12f,0.15f,0.20f,1});
+            c.line(gx,kTop,gx,kBottom,1,{0.14f,0.14f,0.15f,1});
         for(float gy=kTop+std::fmod(m_y,step);gy<kBottom;gy+=step)
-            c.line(kLeft,gy,kRight,gy,1,{0.12f,0.15f,0.20f,1});
+            c.line(kLeft,gy,kRight,gy,1,{0.14f,0.14f,0.15f,1});
         if (m_document.graphs.empty())
         {
             c.text(*m_font,"Drop a Blueprint JSON or supported .as source file",630,330,text,Align::Center);
@@ -3299,13 +3324,13 @@ namespace nx
             c.clip(5,y,kLeft-10,31);
             c.text(*m_font,shorten(g.owner+" / "+(g.sharedLibrary?"[L] ":"")+(g.inlineMacro?"[M] ":"")+(g.dataRole.empty()?"":"["+g.dataRole+"] ")+g.name,32).c_str(),12,y+6,text);c.noClip();
         }
-        c.text(*m_font,"MY BLUEPRINT / VARIABLES",10,330,accent);
+        c.text(*m_font,"MY BLUEPRINT / VARIABLES",10,kVariableTop-20,accent);
         const auto quickRows=variableRows();
         const auto quickFirst=std::min(m_quickVariableFirst,quickRows.size()>kVariableRows?quickRows.size()-kVariableRows:0);
         for(size_t i=0;i<kVariableRows&&quickFirst+i<quickRows.size();++i)
         {
             const auto& r=quickRows[quickFirst+i];const float y=kVariableTop+31*static_cast<float>(i);
-            c.rect(5,y+2,kLeft-10,28,{0.17f,0.22f,0.30f,1});c.circle(14,y+16,4,pinColor(r.field.type));
+            c.rect(5,y+2,kLeft-10,28,{0.22f,0.22f,0.24f,1});c.circle(14,y+16,4,pinColor(r.field.type));
             c.clip(24,y,kLeft-30,31);c.text(*m_font,shorten(std::string(r.global?"Global / ":"")+r.field.name+" : "+r.field.type,28).c_str(),24,y+6,text);c.noClip();
         }
         if(quickRows.empty())c.text(*m_font,"Create variables below.",12,kVariableTop+8,muted);
@@ -3327,34 +3352,34 @@ namespace nx
         c.roundRect(kRight+8,kTop+38,kWidth-kRight-16,30,4,m_focus==1?Color{0.24f,0.35f,0.48f,1}:Color{0.16f,0.21f,0.28f,1});
         c.clip(kRight+12,kTop+38,kWidth-kRight-24,30);
         c.text(*m_font,m_query.empty()?"Search nodes...":m_query.c_str(),kRight+14,kTop+43,text);c.noClip();
-        for(size_t row=0;row<10&&m_paletteFirst+row<m_palette.size();++row)
+        for(size_t row=0;row<kPaletteRows&&m_paletteFirst+row<m_palette.size();++row)
         {
             const auto* n=m_palette[m_paletteFirst+row];const float y=kTop+80+26*static_cast<float>(row);
             c.rect(kRight+8,y,kWidth-kRight-16,24,{0.15f,0.20f,0.27f,1});
             c.clip(kRight+12,y,kWidth-kRight-24,24);
             c.text(*m_font,shorten(n->category+" / "+n->title,34).c_str(),kRight+14,y+2,text);c.noClip();
         }
-        c.text(*m_font,(std::to_string(m_palette.size())+" results | wheel to scroll").c_str(),kRight+12,kTop+346,muted);
-        c.text(*m_font,"DETAILS",kRight+12,kTop+378,accent);
+        c.text(*m_font,(std::to_string(m_palette.size())+" results | wheel to scroll").c_str(),kRight+12,kTop+346+kPaletteExtra,muted);
+        c.text(*m_font,"DETAILS",kRight+12,kTop+378+kPaletteExtra,accent);
         if(!m_document.graphs.empty()&&m_selection<m_document.graphs[m_graph].nodes.size())
         {
             const auto& n=m_document.graphs[m_graph].nodes[m_selection];
             const auto* spec=blueprintSpec(n.kind);
-            c.clip(kRight+8,kTop+404,kWidth-kRight-16,44);
-            c.paragraph(*m_font,spec?spec->title.c_str():n.kind.c_str(),kRight+12,kTop+408,244,text);c.noClip();
+            c.clip(kRight+8,kTop+404+kPaletteExtra,kWidth-kRight-16,44);
+            c.paragraph(*m_font,spec?spec->title.c_str():n.kind.c_str(),kRight+12,kTop+408+kPaletteExtra,244,text);c.noClip();
             if(n.kind.rfind("literal:",0)==0||n.kind.rfind("var:",0)==0||n.kind.rfind("global:",0)==0||n.kind.rfind("capture:",0)==0||blueprintNamedCall(n.kind)||blueprintBehaviourReference(n.kind)||n.kind.rfind("data:",0)==0||n.kind.rfind("typed:",0)==0)
             {
-                c.roundRect(kRight+8,kTop+456,kWidth-kRight-16,30,4,(m_focus==2||m_focus==3)?Color{0.24f,0.35f,0.48f,1}:Color{0.16f,0.21f,0.28f,1});
-                c.clip(kRight+12,kTop+456,kWidth-kRight-24,30);
-                c.text(*m_font,((m_focus==2||m_focus==3)?m_edit:n.ref).c_str(),kRight+14,kTop+461,text);c.noClip();
-                c.text(*m_font,"Click to edit, Enter confirms",kRight+12,kTop+490,muted);
+                c.roundRect(kRight+8,kTop+456+kPaletteExtra,kWidth-kRight-16,30,4,(m_focus==2||m_focus==3)?Color{0.24f,0.35f,0.48f,1}:Color{0.16f,0.21f,0.28f,1});
+                c.clip(kRight+12,kTop+456+kPaletteExtra,kWidth-kRight-24,30);
+                c.text(*m_font,((m_focus==2||m_focus==3)?m_edit:n.ref).c_str(),kRight+14,kTop+461+kPaletteExtra,text);c.noClip();
+                c.text(*m_font,"Click to edit, Enter confirms",kRight+12,kTop+490+kPaletteExtra,muted);
             }
             if(!inputDetails(m_selection).empty())
-            {c.roundRect(kRight+8,kTop+520,kWidth-kRight-16,32,5,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Inspect inputs", (kWidth+kRight)*0.5f,kTop+526,text,Align::Center);}
+            {c.roundRect(kRight+8,kTop+520+kPaletteExtra,kWidth-kRight-16,32,5,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Inspect inputs", (kWidth+kRight)*0.5f,kTop+526+kPaletteExtra,text,Align::Center);}
             c.roundRect(kRight+8,kBottom-40,kWidth-kRight-16,32,5,{0.38f,0.19f,0.23f,1});
             c.text(*m_font,"Delete selected", (kWidth+kRight)*0.5f,kBottom-34,text,Align::Center);
         }
-        c.rect(0,kBottom,kWidth,kHeight-kBottom,{0.12f,0.16f,0.22f,1});
+        c.rect(0,kBottom,kWidth,kHeight-kBottom,{0.16f,0.16f,0.17f,1});
         c.text(*m_font,shorten(m_status,110).c_str(),12,kBottom+6,text);
         if(!m_recoveryWarning.empty())
             c.text(*m_font,shorten(m_recoveryWarning,105).c_str(),12,kBottom+26,{1.f,0.72f,0.22f,1.f});
@@ -3368,7 +3393,7 @@ namespace nx
         }
         if(m_layoutMenu)
         {
-            c.roundRect(300,35,250,360,5,{0.12f,0.16f,0.22f,1});
+            c.roundRect(300,35,250,360,5,{0.16f,0.16f,0.17f,1});
             const char* labels[]={"Arrange graph","Align selected left","Align selected top","Comment selection","Collapse to function","Rename function","Duplicate function","Open selected function","Back to caller",m_document.graphs[m_graph].inlineMacro?"Convert to function":"Convert to inline macro",m_document.graphs[m_graph].sharedLibrary?"Make library graph local":"Publish to project library","Export project library"};
             const auto& activeGraph=m_document.graphs[m_graph];
             const bool hasSelection=m_selection<activeGraph.nodes.size()||!m_selectedNodes.empty();
@@ -3376,17 +3401,17 @@ namespace nx
             {
                 const bool enabled=i==0||i==11||(i<=2&&m_selectedNodes.size()>=2)||((i==3||i==4)&&hasSelection)||((i==5||i==6)&&activeGraph.kind=="function")||
                     (i==7&&m_selection<activeGraph.nodes.size()&&(activeGraph.nodes[m_selection].kind=="call:function"||activeGraph.nodes[m_selection].kind=="call:library"))||(i==8&&!m_graphBack.empty())||((i==9||i==10)&&activeGraph.kind=="function");
-                const float yy=35+30*static_cast<float>(i);c.rect(304,yy+2,242,26,enabled?Color{0.19f,0.33f,0.50f,1}:Color{0.17f,0.22f,0.30f,1});c.text(*m_font,labels[i],312,yy+5,enabled?text:muted);
+                const float yy=35+30*static_cast<float>(i);c.rect(304,yy+2,242,26,enabled?Color{0.19f,0.33f,0.50f,1}:Color{0.22f,0.22f,0.24f,1});c.text(*m_font,labels[i],312,yy+5,enabled?text:muted);
             }
         }
         if(m_pinMenu)
         {
             const float x=m_pinMenuX,y=m_pinMenuY;
-            c.roundRect(x,y,300,320,6,{0.12f,0.16f,0.22f,1});
+            c.roundRect(x,y,300,320,6,{0.16f,0.16f,0.17f,1});
             c.clip(x+6,y,288,28);c.text(*m_font,(m_pinType.empty()?"ADD NODE":"COMPATIBLE / "+m_pinType).c_str(),x+8,y+5,accent);c.noClip();
             c.rect(x+6,y+28,288,30,{0.24f,0.35f,0.48f,1});c.clip(x+8,y+28,284,30);c.text(*m_font,m_pinQuery.empty()?"Search nodes...":m_pinQuery.c_str(),x+10,y+33,text);c.noClip();
             for(size_t i=0;i<8&&m_paletteFirst+i<m_contextResults.size();++i)
-            {const float ry=y+64+30*static_cast<float>(i);c.rect(x+6,ry,288,28,{0.17f,0.22f,0.30f,1});c.clip(x+8,ry,284,28);c.text(*m_font,m_contextResults[m_paletteFirst+i].title.c_str(),x+10,ry+5,text);c.noClip();}
+            {const float ry=y+64+30*static_cast<float>(i);c.rect(x+6,ry,288,28,{0.22f,0.22f,0.24f,1});c.clip(x+8,ry,284,28);c.text(*m_font,m_contextResults[m_paletteFirst+i].title.c_str(),x+10,ry+5,text);c.noClip();}
             if(m_contextResults.empty())c.text(*m_font,"No compatible results.",x+10,y+75,muted);
             c.clip(x+6,y+304,288,16);c.text(*m_font,(std::to_string(m_contextResults.size())+" results | Enter to add").c_str(),x+8,y+304,muted);c.noClip();
         }
@@ -3398,18 +3423,19 @@ namespace nx
         if(m_quickMenu)
         {
             const float x=m_quickMenuX,y=m_quickMenuY;
-            c.roundRect(x,y,210,90,5,{0.12f,0.16f,0.22f,1});
+            c.roundRect(x,y,210,90,5,{0.16f,0.16f,0.17f,1});
             c.clip(x+6,y,198,28);c.text(*m_font,m_quickVariable.field.name.c_str(),x+8,y+5,accent);c.noClip();
             c.rect(x+4,y+28,202,29,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Get variable",x+10,y+34,text);
             c.rect(x+4,y+58,202,29,{0.19f,0.33f,0.50f,1});c.text(*m_font,blueprintArrayElement(m_quickVariable.field.type).empty()?"Set variable":"Use array operations",x+10,y+64,blueprintArrayElement(m_quickVariable.field.type).empty()?text:muted);
         }
-        if(m_assetBrowser||m_browsing||m_focus==5||m_focus==6||m_focus==9||m_focus==10||m_focus==11||m_focus==12||m_focus==13||m_focus==14||m_focus==15)
+        if(modalOpen())
         {
             c.rect(0,0,kWidth,kHeight,{0,0,0,0.70f});
+            c.push();c.translate(modalX(),modalY());
             if(m_assetBrowser&&m_assetLibrary)drawVisualLibrary(c);
             else if(m_assetBrowser)
             {
-                c.roundRect(260,100,760,525,9,{0.12f,0.16f,0.22f,1});
+                c.roundRect(260,100,760,525,9,{0.16f,0.16f,0.17f,1});
                 c.clip(280,116,100,34);c.text(*m_font,"ASSETS",280,122,accent);c.noClip();
                 c.roundRect(384,116,140,34,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Content",454,123,text,Align::Center);
                 c.roundRect(534,116,160,34,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Scene editor",614,123,text,Align::Center);
@@ -3419,7 +3445,7 @@ namespace nx
                 for(size_t i=0;i<10&&m_assetFirst+i<m_assetFiles.size();++i)
                 {
                     const float y=190+36*static_cast<float>(i);
-                    c.rect(280,y,720,33,{0.17f,0.22f,0.30f,1});
+                    c.rect(280,y,720,33,{0.22f,0.22f,0.24f,1});
                     c.clip(286,y,708,33);c.text(*m_font,("asset:"+m_assetFiles[m_assetFirst+i]).c_str(),290,y+8,text);c.noClip();
                 }
                 if(m_assetFiles.empty())c.text(*m_font,"Drop a file here to import it.",640,330,muted,Align::Center);
@@ -3428,13 +3454,13 @@ namespace nx
             }
             else if(m_browsing)
             {
-                c.roundRect(260,100,760,525,9,{0.12f,0.16f,0.22f,1});
+                c.roundRect(260,100,760,525,9,{0.16f,0.16f,0.17f,1});
                 c.text(*m_font,"OPEN / IMPORT BLUEPRINT",280,122,accent);
                 c.roundRect(860,116,140,34,4,{0.22f,0.31f,0.43f,1});c.text(*m_font,"Cancel",930,123,text,Align::Center);
                 for(size_t i=0;i<12&&m_fileFirst+i<m_files.size();++i)
                 {
                     const float y=166+36*static_cast<float>(i);
-                    c.rect(280,y,720,33,{0.17f,0.22f,0.30f,1});
+                    c.rect(280,y,720,33,{0.22f,0.22f,0.24f,1});
                     const auto& file=m_files[m_fileFirst+i];
                     const std::string label=(recoveryArchiveName(file)?"RECOVERY  /  ":standaloneSourceName(file)?"SOURCE  /  ":projectFolderName(file)?"PROJECT FOLDER  /  ":"")+file;
                     c.clip(286,y,708,33);c.text(*m_font,label.c_str(),290,y+8,text);c.noClip();
@@ -3444,7 +3470,7 @@ namespace nx
             }
             else if(m_focus==10)
             {
-                c.roundRect(150,100,980,525,9,{0.12f,0.16f,0.22f,1});
+                c.roundRect(150,100,980,525,9,{0.16f,0.16f,0.17f,1});
                 const auto owner=m_document.graphs[m_graph].owner;
                 const auto rows=variableRows();
                 auto variableButton=[&](float x,float y,float w,const char* label,bool enabled=true)
@@ -3455,7 +3481,7 @@ namespace nx
                 {
                     const auto& r=rows[m_variableFirst+i];const float y=190+36*static_cast<float>(i);
                     const bool selected=r.global==m_variableGlobal&&r.field.name==m_variableOld;
-                    c.rect(170,y,450,33,selected?Color{0.19f,0.33f,0.50f,1}:Color{0.17f,0.22f,0.30f,1});
+                    c.rect(170,y,450,33,selected?Color{0.19f,0.33f,0.50f,1}:Color{0.22f,0.22f,0.24f,1});
                     const auto label=std::string(r.global?"Global / ":"Field / ")+r.field.name+" : "+r.field.type+(r.inherited?" (inherited)":r.explicitField?"":" (inferred)")+(r.field.exposed?" [spawn]":"");
                     c.clip(178,y,434,33);c.text(*m_font,label.c_str(),180,y+7,text);c.noClip();
                 }
@@ -3463,7 +3489,7 @@ namespace nx
                 c.text(*m_font,(std::to_string(rows.size())+" variables | wheel to scroll").c_str(),170,556,muted);
                 c.text(*m_font,m_variableGlobal?"MODULE VARIABLE":"INSTANCE FIELD",650,192,accent);
                 const auto field=[&](float y,const std::string& value,bool focused)
-                {c.roundRect(650,y,450,36,4,focused?Color{0.24f,0.35f,0.48f,1}:Color{0.17f,0.22f,0.30f,1});c.clip(658,y,434,36);c.text(*m_font,value.c_str(),660,y+8,text);c.noClip();};
+                {c.roundRect(650,y,450,36,4,focused?Color{0.24f,0.35f,0.48f,1}:Color{0.22f,0.22f,0.24f,1});c.clip(658,y,434,36);c.text(*m_font,value.c_str(),660,y+8,text);c.noClip();};
                 field(222,m_variableName.empty()?"Name":m_variableName,m_variableInput==1);
                 field(266,"Type: "+m_variableType+"  v",m_variableTypes);
                 variableButton(650,322,450,m_variableInitialized?"Initial value: enabled":"Initial value: default",blueprintLiteralType(m_variableType));
@@ -3489,7 +3515,7 @@ namespace nx
             }
             else if(m_focus==15)
             {
-                c.roundRect(160,68,980,584,8,{0.12f,0.16f,0.22f,1});
+                c.roundRect(160,68,980,584,8,{0.16f,0.16f,0.17f,1});
                 const auto& selected=m_document.graphs[m_graph].nodes[m_selection];
                 c.push();c.clip(180,82,820,34);c.text(*m_font,("INPUTS / "+title(selected)).c_str(),180,88,accent);c.pop();
                 c.roundRect(1020,82,100,32,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Close",1070,88,text,Align::Center);
@@ -3508,19 +3534,19 @@ namespace nx
             }
             else if(m_focus>=12&&m_focus<=14)
             {
-                c.roundRect(260,230,760,220,8,{0.12f,0.16f,0.22f,1});c.text(*m_font,m_focus==12?"COLLAPSE TO FUNCTION":m_focus==13?"RENAME FUNCTION":"DUPLICATE FUNCTION",280,250,accent);
+                c.roundRect(260,230,760,220,8,{0.16f,0.16f,0.17f,1});c.text(*m_font,m_focus==12?"COLLAPSE TO FUNCTION":m_focus==13?"RENAME FUNCTION":"DUPLICATE FUNCTION",280,250,accent);
                 c.rect(280,290,720,36,{0.24f,0.35f,0.48f,1});c.clip(286,290,708,36);c.text(*m_font,m_edit.c_str(),290,297,text);c.noClip();
                 c.paragraph(*m_font,m_status.c_str(),280,340,720,muted);c.text(*m_font,"Enter confirms | Escape cancels",640,415,text,Align::Center);
             }
             else if(m_focus==11)
             {
-                c.roundRect(260,230,760,220,8,{0.12f,0.16f,0.22f,1});c.text(*m_font,"COMMENT TITLE",280,250,accent);
+                c.roundRect(260,230,760,220,8,{0.16f,0.16f,0.17f,1});c.text(*m_font,"COMMENT TITLE",280,250,accent);
                 c.rect(280,290,720,36,{0.24f,0.35f,0.48f,1});c.clip(286,290,708,36);c.text(*m_font,m_edit.c_str(),290,297,text);c.noClip();
                 c.paragraph(*m_font,m_status.c_str(),280,340,720,muted);c.text(*m_font,"Enter confirms | Escape cancels",640,415,text,Align::Center);
             }
             else if(m_focus==9)
             {
-                c.roundRect(200,226,880,240,9,{0.12f,0.16f,0.22f,1});
+                c.roundRect(200,226,880,240,9,{0.16f,0.16f,0.17f,1});
                 c.text(*m_font,"FUNCTION SIGNATURE",220,245,accent);
                 c.roundRect(220,285,840,36,4,{0.24f,0.35f,0.48f,1});
                 c.clip(224,285,832,36);c.text(*m_font,m_edit.c_str(),230,293,text);c.noClip();
@@ -3530,7 +3556,7 @@ namespace nx
             }
             else if(m_focus==6)
             {
-                c.roundRect(340,226,600,224,9,{0.12f,0.16f,0.22f,1});
+                c.roundRect(340,226,600,224,9,{0.16f,0.16f,0.17f,1});
                 c.text(*m_font,("INPUT: "+m_editPin+" ("+m_editType+")").c_str(),360,245,accent);
                 if(m_inputComponents.empty())
                 {
@@ -3553,7 +3579,7 @@ namespace nx
                 c.text(*m_font,"Enter confirms | Escape cancels",730,400,text,Align::Center);
                 if(!m_inputChoices.empty())
                 {
-                    c.roundRect(340,450,600,178,8,{0.12f,0.16f,0.22f,1});c.text(*m_font,"Known named entities (scroll to choose)",360,451,accent);
+                    c.roundRect(340,450,600,178,8,{0.16f,0.16f,0.17f,1});c.text(*m_font,"Known named entities (scroll to choose)",360,451,accent);
                     for(size_t i=m_inputChoiceFirst;i<std::min(m_inputChoiceFirst+5,m_inputChoices.size());++i)
                     {
                         const float yy=472+28*static_cast<float>(i-m_inputChoiceFirst);c.rect(360,yy,560,26,m_edit==m_inputChoices[i]?Color{0.24f,0.35f,0.48f,1}:Color{0.17f,0.23f,0.31f,1});
@@ -3563,13 +3589,14 @@ namespace nx
             }
             else
             {
-                c.roundRect(340,240,600,205,9,{0.12f,0.16f,0.22f,1});
+                c.roundRect(340,240,600,205,9,{0.16f,0.16f,0.17f,1});
                 c.text(*m_font,"SAVE BLUEPRINT AS",360,260,accent);
                 c.roundRect(360,300,560,36,4,{0.24f,0.35f,0.48f,1});
                 c.clip(364,300,552,36);c.text(*m_font,m_edit.empty()?"Type a new name...":m_edit.c_str(),370,308,text);c.noClip();
                 c.paragraph(*m_font,m_status.c_str(),360,351,560,muted);
                 c.text(*m_font,"Enter saves | Escape cancels",640,412,text,Align::Center);
             }
+            c.pop();
         }
     }
 }
