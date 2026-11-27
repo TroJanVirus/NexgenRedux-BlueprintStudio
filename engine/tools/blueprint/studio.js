@@ -156,6 +156,7 @@ function pinPos(p, dir) { const e = portElements.get(portKey(p.node, dir, p.pin)
     return null; const r = e.getBoundingClientRect(); return worldPoint(r.left + r.width / 2, r.top + r.height / 2); }
 function curve(a, b) { const bend = Math.max(42, Math.abs(b.x - a.x) * .48); return `M ${a.x} ${a.y} C ${a.x + bend} ${a.y}, ${b.x - bend} ${b.y}, ${b.x} ${b.y}`; }
 function drawWires(pointer = null) { const s = $('wires'); s.replaceChildren(); for (const l of graph()?.links || []) {
+    if(globalThis.NexgenOrganise?.sameFold(l))continue;
     const a = pinPos(l.from, 'out'), b = pinPos(l.to, 'in');
     if (!a || !b)
         continue;

@@ -15,7 +15,7 @@ with tempfile.TemporaryDirectory() as tmp:
         assert page.locator('.node.selected').count()==2
         page.locator('#details button').filter(has_text='Group').click();assert page.locator('.layoutFrame').count()==1
         page.locator('#details button').filter(has_text='Align top').click();assert page.evaluate('graph().nodes.find(n=>n.id==="name").y===graph().nodes.find(n=>n.id==="spawn").y')
-        page.locator('.layoutFrame button').click();assert page.locator('.node.selected').count()==2
+        page.locator('.layoutFrame button').first.click();assert page.locator('.node.selected').count()==2
         a=page.locator('#node-spawn .nodeheader').bounding_box();old=page.evaluate('graph().nodes.find(n=>n.id==="spawn").x');page.mouse.move(a['x']+10,a['y']+10);page.mouse.down();page.mouse.move(a['x']+45,a['y']+40,steps=5);page.mouse.up();assert page.evaluate('graph().nodes.find(n=>n.id==="spawn").x')!=old
         page.locator('#node-rect .nodeheader').click();page.locator('#details input').filter(has_text='').count()
         page.locator('#details label').filter(has_text='Display title').locator('xpath=following-sibling::input[1]').fill('Player shape');page.locator('#details label').filter(has_text='Display title').locator('xpath=following-sibling::input[1]').press('Tab');assert 'Player shape' in page.locator('#node-rect').inner_text()

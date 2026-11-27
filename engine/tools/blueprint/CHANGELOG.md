@@ -1,5 +1,12 @@
 # Changes
 
+## Organising graphs
+
+- Fold nested groups into blocks with working external pins. Expand them to edit their contents.
+- Edit function inputs and return types without losing compatible wires.
+- Export the visible graph as an SVG image and choose a panel arrangement.
+- Added tests for folded groups, function inputs and image export.
+
 ## Everyday editing
 
 - Rename variables, local variables, functions and macros without breaking their existing references.
