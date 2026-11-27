@@ -7,7 +7,23 @@ import subprocess
 import sys
 import time
 
-from Xlib import X, display, protocol
+from Xlib import X, display, protocol, error
+
+# Keep an X client connected for the entire suite, including gaps between
+# application processes. Do not retry an application that has actually crashed.
+def connect_display():
+    deadline = time.monotonic() + 15
+    while True:
+        try:
+            connection = display.Display()
+            connection.sync()
+            return connection
+        except (error.DisplayConnectionError, OSError):
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(0.2)
+
+display_guard = connect_display()
 
 binary = pathlib.Path(sys.argv[1]).resolve()
 root = pathlib.Path(sys.argv[2]).resolve()
@@ -45,7 +61,7 @@ def wait_for(predicate, label, process, timeout=25):
 
 def xdo(*args):
     return subprocess.check_output(["xdotool", *map(str, args)], text=True,
-                                   stderr=subprocess.DEVNULL).strip()
+                                   stderr=subprocess.DEVNULL, timeout=10).strip()
 
 
 def click(x, y):
@@ -227,3 +243,4 @@ assert "workspace ready (Recovered unsaved Blueprint" in timings
 assert "ms a frame:" in timings
 assert json.loads(large_path.read_text(encoding="utf-8")) == large
 print("Actual desktop renderer benchmark: 1,002 nodes in active graph.", flush=True)
+display_guard.close()

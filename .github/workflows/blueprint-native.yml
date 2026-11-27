@@ -53,18 +53,22 @@ jobs:
         run: build/showcase/nexgen --blueprint-studio --null --frames 180 --saves "$RUNNER_TEMP/bp-null-saves"
       - name: Start editor with native desktop renderer
         if: ${{ !cancelled() }}
-        run: xvfb-run -a -s "-screen 0 1280x720x24" build/showcase/nexgen --blueprint-studio --hidden --frames 600 --saves "$RUNNER_TEMP/bp-desktop-saves"
+        run: xvfb-run -a -s "-screen 0 1280x720x24 -noreset" build/showcase/nexgen --blueprint-studio --hidden --frames 600 --saves "$RUNNER_TEMP/bp-desktop-saves"
       - name: Reopen native editor with existing save directory
         if: ${{ !cancelled() }}
-        run: xvfb-run -a -s "-screen 0 1280x720x24" build/showcase/nexgen --blueprint-studio --hidden --frames 120 --saves "$RUNNER_TEMP/bp-desktop-saves"
+        run: xvfb-run -a -s "-screen 0 1280x720x24 -noreset" build/showcase/nexgen --blueprint-studio --hidden --frames 120 --saves "$RUNNER_TEMP/bp-desktop-saves"
       - name: Exercise real X11 input, crash recovery, save, play, export and large graph
-        run: xvfb-run -a -s "-screen 0 1280x720x24" /usr/bin/python3 engine/tools/blueprint/test_native_desktop.py build/showcase/nexgen "$RUNNER_TEMP/bp-desktop-operational"
+        run: xvfb-run -a -s "-screen 0 1280x720x24 -noreset" /usr/bin/python3 engine/tools/blueprint/test_native_desktop.py build/showcase/nexgen "$RUNNER_TEMP/bp-desktop-operational"
+      - name: Verify native process contention and crash release
+        run: python3 engine/tools/blueprint/test_native_lease.py build/showcase/nexgen "$RUNNER_TEMP/bp-linux-lease"
       - name: Retain operational test logs
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: native-desktop-operational-logs
-          path: ${{ runner.temp }}/bp-desktop-operational/*.log
+          path: |
+            ${{ runner.temp }}/bp-desktop-operational/*.log
+            ${{ runner.temp }}/bp-linux-lease/*.log
           if-no-files-found: ignore
 
   portable-desktop:
@@ -96,7 +100,7 @@ jobs:
         run: python3 engine/tools/blueprint/test_native_lease.py "${{ matrix.binary }}" "$RUNNER_TEMP/bp-portable-lease"
       - name: Retain native process logs
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: native-lease-${{ matrix.name }}
           path: ${{ runner.temp }}/bp-portable-lease/*.log
