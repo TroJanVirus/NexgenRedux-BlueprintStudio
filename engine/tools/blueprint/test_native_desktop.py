@@ -64,8 +64,16 @@ def xdo(*args):
                                    stderr=subprocess.DEVNULL, timeout=10).strip()
 
 
-def click(x, y):
-    xdo("mousemove", x, y)
+def click(x, y, window_id=None):
+    if window_id is None:
+        xdo("mousemove", x, y)
+    else:
+        # Studio letterboxes its 1280x720 design in the actual client area.
+        geo = display_guard.create_resource_object("window", window_id).get_geometry()
+        scale = min(geo.width / 1280, geo.height / 720)
+        px = round(x * scale + (geo.width - 1280 * scale) / 2)
+        py = round(y * scale + (geo.height - 720 * scale) / 2)
+        xdo("mousemove", "--window", window_id, px, py)
     time.sleep(0.15)
     xdo("mousedown", 1)
     time.sleep(0.20)
@@ -177,10 +185,16 @@ def run_session(index):
             if index == 2:
                 # Make a real edit and wait for the atomic on-disk checkpoint, then
                 # kill the process without invoking any normal shutdown hooks.
-                click(1100, 130)
+                # Non-16:9 client area exercises letterboxed input mapping and resize.
+                xdo("windowsize", "--sync", window, 1000, 650)
+                wait_for(lambda: (lambda g: (g.width, g.height) == (1000, 650))(
+                    display_guard.create_resource_object("window", window).get_geometry()),
+                    "resized native window", process)
+                time.sleep(0.5)
+                click(1100, 130, window)
                 xdo("type", "--delay", 100, "literal:int")
                 key("Return")
-                click(1100, 167)
+                click(1100, 167, window)
 
                 def checkpoint_has_edit():
                     try:
@@ -193,6 +207,14 @@ def run_session(index):
                 wait_for(checkpoint_has_edit, "on-disk checkpoint for actual graph edit", process)
                 draft = json.loads(recovery.read_text(encoding="utf-8"))
                 assert draft["graphs"][0]["links"] == graphs[0]["links"]
+                # Undo to the exact saved revision and verify the recovery tombstone.
+                click(906, 53, window)
+                wait_for(lambda: recovery.is_file() and recovery.stat().st_size == 0,
+                         "undo clears saved-state checkpoint", process)
+                assert project.read_bytes() == baseline
+                click(995, 53, window)
+                wait_for(checkpoint_has_edit, "redo recreates checkpoint", process)
+                assert json.loads(recovery.read_text(encoding="utf-8"))["graphs"] == draft["graphs"]
                 process.kill()
                 assert process.wait(timeout=20) < 0
                 return draft["graphs"]
@@ -217,7 +239,53 @@ run_session(3)
 assert project.read_bytes() == baseline
 assert asset.read_bytes() == payload
 assert len(exports()) == 3
-print("Real native desktop recovery/save/export/preview/reopen/forced-crash recovery passed.", flush=True)
+print("Real native desktop recovery/save/export/preview/reopen/resize/undo/redo/forced-crash recovery passed.", flush=True)
+
+# Exercise the ordinary Redux entry point, not just --blueprint-studio.
+menu_root = root / "menu-launch"
+menu_root.mkdir()
+menu_log = root / "menu-launch.log"
+with menu_log.open("wb") as out:
+    process = subprocess.Popen([str(binary), "--silent", "--size", "1280", "720",
+                                "--saves", str(menu_root)], stdout=out, stderr=subprocess.STDOUT)
+    try:
+        def menu_window():
+            try:
+                return int(xdo("search", "--onlyvisible", "--name", "^Nexgen$").splitlines()[0])
+            except (subprocess.CalledProcessError, IndexError, ValueError):
+                return None
+
+        wait_for(menu_window, "ordinary Redux window", process)
+        window = menu_window()
+        xdo("windowfocus", "--sync", window)
+        wait_for(lambda: "AngelScript" in menu_log.read_text(errors="replace"),
+                 "normal engine initialization", process)
+        time.sleep(2)
+
+        def launch_from_menu():
+            key("Escape")
+            key("Down")
+            key("Down")
+            key("Return")
+
+        def count_launches():
+            return menu_log.read_text(errors="replace").count("workspace ready")
+
+        launch_from_menu()
+        wait_for(lambda: count_launches() == 1, "Studio opened from Redux menu", process)
+        click(1200, 53, window)
+        time.sleep(0.5)
+        launch_from_menu()
+        wait_for(lambda: count_launches() == 2, "Studio reopened from Redux menu", process)
+        click(1200, 53, window)
+        request_close(window)
+        assert process.wait(timeout=20) == 0
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait(timeout=15)
+        print(menu_log.read_text(errors="replace"), flush=True)
+print("Ordinary Redux menu launch, return and reopen passed.", flush=True)
 
 # Benchmark the actual editor and GPU with a near-limit graph. Record timings
 # rather than claiming a hardware-independent FPS target on shared CI runners.

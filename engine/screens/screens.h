@@ -61,6 +61,8 @@ namespace nx
         void setCanQuit(bool can) { m_canQuit = can; }
         // Native desktop host may supply an optional development-tool action.
         void setBlueprintLauncher(bool (*launch)()) { m_blueprintLauncher = launch; }
+        // A deferred native workspace launch can fail after the menu has closed.
+        void blueprintLaunchFailed() { setMenu(true); m_blueprintError = true; }
         // The desktop workspace takes input while the home screen stays paused.
         void setDevelopmentPaused(bool paused) { setMenu(paused); }
 

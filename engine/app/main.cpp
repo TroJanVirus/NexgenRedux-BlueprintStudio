@@ -691,6 +691,7 @@ namespace
                                 studioRequested = false;
                                 studio.open(services);
                                 if (studio.active()) screens.setDevelopmentPaused(true);
+                                else screens.blueprintLaunchFailed();
                             }
 #endif
                         }
