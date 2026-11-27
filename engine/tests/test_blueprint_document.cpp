@@ -1,4 +1,5 @@
 #include "test.h"
+#include "base/json_tree.h"
 #include "tools/blueprint/native_document.h"
 #include "tools/blueprint/native_compile.h"
 #include "tools/blueprint/native_import.h"
