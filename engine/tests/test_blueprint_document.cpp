@@ -8,7 +8,7 @@
 using namespace nx;
 NX_TEST(nativeCatalogueContainsReferenceAPI)
 {
-    NX_EXPECT(blueprintCatalogue().size()==1033);
+    NX_EXPECT(blueprintCatalogue().size()==1094);
     const auto* save=blueprintSpec("api:Save:Save::set:string,string");
     NX_EXPECT(save&&save->inputs.size()==3&&save->outputs.size()==1);
     if(save&&save->inputs.size()==3)NX_EXPECT(save->inputs[0].type=="exec"&&save->inputs[2].type=="string");
