@@ -33,7 +33,9 @@ namespace nx
     {
         struct InputValue { std::string pin,value; };
         struct Node { std::string id, kind, ref; float x=0,y=0; std::vector<InputValue> values{}; bool watch=false; };
-        struct Link { size_t from=0,to=0; std::string output,input; };
+        struct Point { float x=0,y=0; };
+        struct Link { size_t from=0,to=0; std::string output,input; std::vector<Point> route{}; };
+        struct Comment { std::string title; std::vector<std::string> members; };
         struct Field { std::string name,type,value; bool initialized=false; };
         struct Graph
         {
@@ -45,6 +47,7 @@ namespace nx
             // Explicit imported fields live on the owner lifecycle entry graph.
             std::vector<Field> fields{};
             std::vector<Field> globals{};
+            std::vector<Comment> comments{};
             std::string moduleOwner{}; // optional screen scope on Behaviour start graph
         };
         std::string name;
@@ -59,6 +62,15 @@ namespace nx
         bool load(const char* data,size_t size,std::string& error);
         bool serialize(std::string& result,std::string& error) const;
         bool move(size_t graph,size_t node,float x,float y);
+        bool moveNodes(size_t graph,const std::vector<size_t>& nodes,float dx,float dy);
+        bool arrange(size_t graph,std::string& error);
+        bool alignNodes(size_t graph,const std::vector<size_t>& nodes,bool horizontal,std::string& error);
+        bool addComment(size_t graph,const std::vector<size_t>& nodes,const std::string& title,std::string& error);
+        bool renameComment(size_t graph,size_t comment,const std::string& title,std::string& error);
+        bool deleteComment(size_t graph,size_t comment);
+        bool insertRoutePoint(size_t graph,size_t link,size_t point,float x,float y);
+        bool moveRoutePoint(size_t graph,size_t link,size_t point,float x,float y);
+        bool deleteRoutePoint(size_t graph,size_t link,size_t point);
         bool addNode(size_t graph,const std::string& kind,float x,float y,std::string& error,const std::string& functionTarget="");
         bool placeContextNode(size_t graph,size_t existing,const std::string& pin,bool output,const std::string& kind,const std::string& reference,const std::string& otherPin,float x,float y,std::string& error);
         bool connectCompatible(size_t graph,size_t from,const std::string& output,size_t to,const std::string& input,std::string& error);

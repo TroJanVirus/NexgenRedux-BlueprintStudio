@@ -145,7 +145,7 @@ namespace nx
         if (!active()) return;
         stopPreview(s);
         checkpoint(s,true);
-        cancelDrag();clearWire();m_quickDrag=m_quickMenu=m_pinMenu=m_rightDown=false;m_focus=0;m_browsing=false;m_assetBrowser=false;s.input->setTyping(m_previousTyping);
+        cancelDrag();clearWire();m_quickDrag=m_quickMenu=m_pinMenu=m_rightDown=false;m_layoutMenu=m_layoutDragging=false;m_focus=0;m_browsing=false;m_assetBrowser=false;s.input->setTyping(m_previousTyping);
         s.assets->release(m_font);
         m_font = nullptr;
         s.platform->releaseBlueprintLease();
@@ -158,6 +158,7 @@ namespace nx
         if (index >= m_document.graphs.size()) return;
         cancelDrag();clearWire();m_diagnostic={};
         m_quickDrag=m_quickMenu=m_pinMenu=m_rightDown=false;m_quickVariableFirst=0;
+        m_layoutMenu=m_layoutDragging=false;m_layoutComment=m_layoutLink=static_cast<size_t>(-1);m_selectedNodes.clear();
         m_graph = index; m_selection = static_cast<size_t>(-1);
         rebuildPins();fitGraph();filterCatalogue();
         if (index < m_first) m_first = index;
@@ -288,6 +289,8 @@ namespace nx
             const auto& n=nodes[i];left=std::min(left,n.x);top=std::min(top,n.y);
             right=std::max(right,n.x+kNodeWidth);bottom=std::max(bottom,n.y+rows[i].height);
         }
+        for(const auto& l:graph.links)for(const auto& p:l.route){left=std::min(left,p.x-6);top=std::min(top,p.y-6);right=std::max(right,p.x+6);bottom=std::max(bottom,p.y+6);}
+        if(!graph.comments.empty()){left-=18;top-=44;right+=18;bottom+=18;}
         m_zoom=std::clamp(std::min((kRight-kLeft-48)/(right-left),(kBottom-kTop-48)/(bottom-top)),0.25f,1.0f);
         m_x=24-left*m_zoom;m_y=24-top*m_zoom;
     }
@@ -945,6 +948,54 @@ namespace nx
         m_variableOld.clear();m_variableName.clear();m_variableType="int";m_variableValue.clear();
         m_variableGlobal=global;m_variableInitialized=false;m_variableTypes=false;m_variableInput=1;
     }
+    std::vector<size_t> BlueprintWorkspace::commentMembers(size_t comment) const
+    {
+        std::vector<size_t> result;const auto& g=m_document.graphs[m_graph];
+        if(comment>=g.comments.size())return result;
+        for(size_t i=0;i<g.nodes.size();++i)if(std::find(g.comments[comment].members.begin(),g.comments[comment].members.end(),g.nodes[i].id)!=g.comments[comment].members.end())result.push_back(i);
+        return result;
+    }
+    BlueprintDocument::Point BlueprintWorkspace::nodeLayoutPosition(size_t node) const
+    {
+        const auto& n=m_document.graphs[m_graph].nodes[node];
+        if(m_drag&&node==m_selection)return {m_dragX,m_dragY};
+        if(m_layoutDragging&&m_layoutMoved&&m_layoutLink==static_cast<size_t>(-1)&&std::binary_search(m_layoutMembers.begin(),m_layoutMembers.end(),node))
+            return {n.x+(m_layoutX-m_layoutStartX)/m_zoom,n.y+(m_layoutY-m_layoutStartY)/m_zoom};
+        return {n.x,n.y};
+    }
+    BlueprintDocument::Point BlueprintWorkspace::routeLayoutPosition(size_t wire,size_t point) const
+    {
+        const auto& l=m_document.graphs[m_graph].links[wire];const auto& p=l.route[point];
+        if(m_layoutDragging&&m_layoutMoved)
+        {
+            if(m_layoutLink==wire&&m_layoutPoint==point)return {(m_layoutX-kLeft-m_x)/m_zoom,(m_layoutY-kTop-m_y)/m_zoom};
+            if(m_layoutLink==static_cast<size_t>(-1)&&std::binary_search(m_layoutMembers.begin(),m_layoutMembers.end(),l.from)&&std::binary_search(m_layoutMembers.begin(),m_layoutMembers.end(),l.to))
+                return {p.x+(m_layoutX-m_layoutStartX)/m_zoom,p.y+(m_layoutY-m_layoutStartY)/m_zoom};
+        }
+        return p;
+    }
+    bool BlueprintWorkspace::commentBounds(size_t comment,float& x,float& y,float& w,float& h) const
+    {
+        const auto members=commentMembers(comment);if(members.empty())return false;
+        float left=1000000.f,top=1000000.f,right=-1000000.f,bottom=-1000000.f;
+        for(const auto i:members)
+        {
+            const auto n=nodeLayoutPosition(i);left=std::min(left,n.x);top=std::min(top,n.y);
+            right=std::max(right,n.x+kNodeWidth);bottom=std::max(bottom,n.y+m_rows[i].height);
+        }
+        x=kLeft+m_x+(left-18)*m_zoom;y=kTop+m_y+(top-44)*m_zoom;w=(right-left+36)*m_zoom;h=(bottom-top+62)*m_zoom;return true;
+    }
+    std::vector<BlueprintDocument::Point> BlueprintWorkspace::wireRoute(size_t link) const
+    {
+        const auto& g=m_document.graphs[m_graph];const auto& l=g.links[link];const auto& pins=m_wirePins[link];
+        const auto from=nodeLayoutPosition(l.from),to=nodeLayoutPosition(l.to);
+        const float x1=kLeft+m_x+(from.x+kNodeWidth)*m_zoom,y1=kTop+m_y+(from.y+pinY(pins.output))*m_zoom;
+        const float x2=kLeft+m_x+to.x*m_zoom,y2=kTop+m_y+(to.y+pinY(pins.input))*m_zoom;
+        std::vector<BlueprintDocument::Point> points{{x1,y1}};
+        if(l.route.empty()){const float mid=(x1+x2)*0.5f;points.push_back({mid,y1});points.push_back({mid,y2});}
+        else for(size_t i=0;i<l.route.size();++i){const auto p=routeLayoutPosition(link,i);points.push_back({kLeft+m_x+p.x*m_zoom,kTop+m_y+p.y*m_zoom});}
+        points.push_back({x2,y2});return points;
+    }
     void BlueprintWorkspace::update(Services& s)
     {
         auto& input = *s.input;
@@ -953,6 +1004,7 @@ namespace nx
             if(m_assetBrowser){m_assetBrowser=false;m_status="Asset browser closed.";return;}
             if(m_browsing){m_browsing=false;m_status="Open cancelled.";return;}
             if(m_focus){m_focus=0;input.setTyping(false);m_status="Input cancelled.";return;}
+            if(m_layoutDragging||m_layoutMenu){m_layoutDragging=m_layoutMenu=false;m_status="Layout action cancelled.";return;}
             if(m_quickDrag||m_quickMenu){m_quickDrag=m_quickMenu=false;m_status="Variable placement cancelled.";return;}
             if(m_pinMenu){closePinMenu(s);m_status="Node search cancelled.";return;}
             if(m_pending!=static_cast<size_t>(-1)){clearWire();m_status="Connection cancelled.";return;}
@@ -960,7 +1012,7 @@ namespace nx
             returnToRedux(s);return;
         }
         std::string dropped;
-        if (!m_drag && !m_pinMenu && !m_pinDrag && !m_quickDrag && !m_quickMenu && !m_focus && !m_browsing && s.platform->takeDropped(dropped))
+        if (!m_drag && !m_layoutDragging && !m_layoutMenu && !m_pinMenu && !m_pinDrag && !m_quickDrag && !m_quickMenu && !m_focus && !m_browsing && s.platform->takeDropped(dropped))
         {
             if(m_assetBrowser)importAsset(s,dropped);
             else if(blueprintFileName(dropped))openFile(s,dropped,false);
@@ -983,6 +1035,46 @@ namespace nx
         const unsigned pressed=keys&~m_shortcuts;m_shortcuts=keys;
         const bool click=left&&!m_left;
         const bool right=raw.mouseButtons[1];
+        if(m_layoutDragging)
+        {
+            m_layoutX=x;m_layoutY=y;
+            if(std::abs(x-m_layoutStartX)>3||std::abs(y-m_layoutStartY)>3)m_layoutMoved=true;
+            if(!left)
+            {
+                m_layoutDragging=false;
+                if(m_layoutLink!=static_cast<size_t>(-1))
+                {
+                    if(m_layoutMoved)m_document.moveRoutePoint(m_graph,m_layoutLink,m_layoutPoint,(x-kLeft-m_x)/m_zoom,(y-kTop-m_y)/m_zoom);
+                    m_layoutLink=static_cast<size_t>(-1);
+                }
+                else if(m_layoutComment!=static_cast<size_t>(-1))
+                {
+                    if(m_layoutMoved)m_document.moveNodes(m_graph,m_layoutMembers,(x-m_layoutStartX)/m_zoom,(y-m_layoutStartY)/m_zoom);
+                    else {m_edit=m_document.graphs[m_graph].comments[m_layoutComment].title;m_focus=11;input.setTyping(true);m_status="Edit comment title.";}
+                }
+            }
+            m_left=left;return;
+        }
+        if(m_layoutMenu)
+        {
+            if(click)
+            {
+                const auto nodes=m_selectedNodes.empty()&&m_selection<m_document.graphs[m_graph].nodes.size()?std::vector<size_t>{m_selection}:m_selectedNodes;
+                if(in(x,y,300,35,550,65))
+                {if(m_document.arrange(m_graph,m_status)){fitGraph();m_status="Arranged graph; manual routes reset. Undo restores layout.";}}
+                else if(in(x,y,300,65,550,95))
+                {if(m_document.alignNodes(m_graph,nodes,false,m_status))m_status="Aligned selected nodes left.";}
+                else if(in(x,y,300,95,550,125))
+                {if(m_document.alignNodes(m_graph,nodes,true,m_status))m_status="Aligned selected nodes top.";}
+                else if(in(x,y,300,125,550,155))
+                {
+                    if(m_document.addComment(m_graph,nodes,"Comment",m_status))
+                    {m_layoutComment=m_document.graphs[m_graph].comments.size()-1;m_edit="Comment";m_focus=11;input.setTyping(true);}
+                }
+                m_layoutMenu=false;
+            }
+            m_left=left;return;
+        }
         if(m_pinMenu)
         {
             auto choose=[&](size_t index)
@@ -990,7 +1082,7 @@ namespace nx
                 if(index>=m_contextResults.size())return false;
                 const auto choice=m_contextResults[index];const size_t added=m_document.graphs[m_graph].nodes.size();
                 if(!m_document.placeContextNode(m_graph,m_pending,m_pendingPin,m_pendingOutput,choice.kind,choice.reference,choice.pin,(m_pinX-kLeft-m_x)/m_zoom,(m_pinY-kTop-m_y)/m_zoom,m_status))return false;
-                closePinMenu(s);m_diagnostic={};rebuildPins();m_selection=added;m_status="Added "+choice.title+".";return true;
+                closePinMenu(s);m_diagnostic={};rebuildPins();m_selection=added;m_selectedNodes.clear();m_status="Added "+choice.title+".";return true;
             };
             for(u32 i=0;i<input.typedCount();++i)
             {
@@ -1062,7 +1154,7 @@ namespace nx
                 if(get||set)
                 {
                     if(m_document.addVariableNode(m_graph,m_quickVariable.field.name,m_quickVariable.global,set,(m_quickX-kLeft-m_x)/m_zoom,(m_quickY-kTop-m_y)/m_zoom,m_status))
-                    {m_diagnostic={};clearWire();rebuildPins();m_selection=m_document.graphs[m_graph].nodes.size()-1;m_status=std::string(set?"Set ":"Get ")+m_quickVariable.field.name+" added.";}
+                    {m_diagnostic={};clearWire();rebuildPins();m_selection=m_document.graphs[m_graph].nodes.size()-1;m_selectedNodes.clear();m_status=std::string(set?"Set ":"Get ")+m_quickVariable.field.name+" added.";}
                 }
                 m_quickMenu=false;
             }
@@ -1182,7 +1274,7 @@ namespace nx
                     size_t end=value.size()-1;while(end&&(static_cast<unsigned char>(value[end])&0xc0)==0x80)--end;
                     value.resize(end);changed=true;
                 }
-                else if(ch>=32&&(focus==1||focus==2||focus==6||focus==10||ch<127)&&appendCharacter(value,ch,focus==1?80u:(focus==2||focus==6||focus==10)?4096u:focus==9?1024u:64u))changed=true;
+                else if(ch>=32&&(focus==1||focus==2||focus==6||focus==10||focus==11||ch<127)&&appendCharacter(value,ch,focus==1?80u:(focus==2||focus==6||focus==10)?4096u:focus==9?1024u:focus==11?256u:64u))changed=true;
                 else if(ch==13)
                 {
                     if(focus==2&&!m_document.setLiteral(m_graph,m_selection,m_edit,m_status))break;
@@ -1191,6 +1283,7 @@ namespace nx
                         if(!m_document.setReference(m_graph,m_selection,m_edit,m_status))break;
                         clearWire();rebuildPins();
                     }
+                    if(focus==11&&!m_document.renameComment(m_graph,m_layoutComment,m_edit,m_status))break;
                     if(focus==9)
                     {
                         if(!m_document.editFunctionSignature(m_graph,m_edit,m_status))break;
@@ -1229,6 +1322,7 @@ namespace nx
         }
         if(!m_drag)
         {
+            if(click&&in(x,y,300,5,404,33)){m_layoutMenu=true;clearWire();m_left=left;return;}
             if(click&&in(x,y,1134,39,1266,69)){returnToRedux(s);m_left=left;return;}
             if(click&&in(x,y,410,5,560,33)&&m_graph<m_document.graphs.size()&&m_document.graphs[m_graph].kind=="function")
             {m_edit=m_document.functionSignature(m_graph);m_focus=9;input.setTyping(true);m_status="Edit the typed signature.";m_left=left;return;}
@@ -1361,7 +1455,7 @@ namespace nx
                     }
                     if(m_document.addNode(m_graph,spec->id,px,py,m_status))
                     {
-                        m_diagnostic={};clearWire();rebuildPins();m_selection=m_document.graphs[m_graph].nodes.size()-1;
+                        m_diagnostic={};clearWire();rebuildPins();m_selection=m_document.graphs[m_graph].nodes.size()-1;m_selectedNodes.clear();
                         if(kTop+m_y+py*m_zoom>kBottom-40)m_y=(kBottom-kTop-height*m_zoom)*0.5f-py*m_zoom;
                         m_status="Added "+spec->title;
                     }
@@ -1373,7 +1467,7 @@ namespace nx
                 const auto& n=m_document.graphs[m_graph].nodes[m_selection];
                 if(in(x,y,kRight+8,kTop+456,kWidth-8,kTop+486)&&(n.kind.rfind("literal:",0)==0||n.kind.rfind("var:",0)==0||n.kind.rfind("global:",0)==0||n.kind.rfind("capture:",0)==0||n.kind=="call:function"||n.kind=="attach:behaviour"||n.kind=="attach:direct"||n.kind=="level:attach"))
                 {m_edit=n.ref;m_focus=n.kind.rfind("literal:",0)==0?2:3;input.setTyping(true);}
-                else if(in(x,y,kRight+8,kBottom-40,kWidth-8,kBottom-8)&&m_document.deleteNode(m_graph,m_selection,m_status)){m_diagnostic={};clearWire();m_selection=static_cast<size_t>(-1);rebuildPins();m_status="Deleted node.";}
+                else if(in(x,y,kRight+8,kBottom-40,kWidth-8,kBottom-8)&&m_document.deleteNode(m_graph,m_selection,m_status)){m_diagnostic={};clearWire();m_selection=static_cast<size_t>(-1);rebuildPins();m_selectedNodes.clear();m_status="Deleted node.";}
             }
             m_left=left;return;
         }
@@ -1397,6 +1491,22 @@ namespace nx
         }
         if (left && !m_left && over)
         {
+            const auto& layout=m_document.graphs[m_graph];
+            for(size_t i=0;i<layout.links.size();++i)for(size_t j=0;j<layout.links[i].route.size();++j)
+            {
+                const auto& p=layout.links[i].route[j];
+                if(std::abs(x-(kLeft+m_x+p.x*m_zoom))>8||std::abs(y-(kTop+m_y+p.y*m_zoom))>8)continue;
+                if(control)m_document.deleteRoutePoint(m_graph,i,j);
+                else {m_layoutDragging=true;m_layoutMoved=false;m_layoutLink=i;m_layoutPoint=j;m_layoutStartX=m_layoutX=x;m_layoutStartY=m_layoutY=y;}
+                clearWire();m_left=left;return;
+            }
+            for(size_t i=layout.comments.size();i>0;--i)
+            {
+                float cx,cy,cw,ch;if(!commentBounds(i-1,cx,cy,cw,ch)||!in(x,y,cx,cy,cx+cw,cy+26*m_zoom))continue;
+                if(control){m_document.deleteComment(m_graph,i-1);m_layoutComment=static_cast<size_t>(-1);}
+                else {m_layoutDragging=true;m_layoutMoved=false;m_layoutLink=static_cast<size_t>(-1);m_layoutComment=i-1;m_layoutMembers=commentMembers(i-1);m_layoutStartX=m_layoutX=x;m_layoutStartY=m_layoutY=y;}
+                clearWire();m_left=left;return;
+            }
             const auto& graph=m_document.graphs[m_graph];const auto& nodes=graph.nodes;
             const auto& rows=m_rows;
             // Pin clicks take precedence over node dragging. Ctrl+click removes a connection.
@@ -1411,7 +1521,7 @@ namespace nx
                     for(size_t p=0;p<pins.size();++p)
                     {
                         if(std::abs(x-px)>9||std::abs(y-(ny+pinY(p)*m_zoom))>9)continue;
-                        m_selection=i-1;
+                        m_selection=i-1;m_selectedNodes.clear();
                         if(control){if(m_document.disconnect(m_graph,i-1,pins[p],side!=0)){m_diagnostic={};rebuildPins();m_status="Disconnected pin.";}clearWire();}
                         else if(m_pending!=static_cast<size_t>(-1)&&m_pendingOutput!=(side!=0))
                         {
@@ -1430,6 +1540,7 @@ namespace nx
             if(m_pending!=static_cast<size_t>(-1)&&std::none_of(nodes.begin(),nodes.end(),[&](const BlueprintDocument::Node& n){const auto i=static_cast<size_t>(&n-nodes.data());const float nx=kLeft+m_x+n.x*m_zoom,ny=kTop+m_y+n.y*m_zoom;return in(x,y,nx,ny,nx+kNodeWidth*m_zoom,ny+rows[i].height*m_zoom);}))
             {openPinMenu(x,y);if(m_pinMenu)input.setTyping(true);m_left=left;return;}
             clearWire();m_selection = static_cast<size_t>(-1);
+            if(!held(Key::Shift))m_selectedNodes.clear();
             for (size_t i = nodes.size(); i > 0; --i)
             {
                 const auto& n = nodes[i-1];
@@ -1437,6 +1548,14 @@ namespace nx
                 if (in(x,y,nx,ny,nx+kNodeWidth*m_zoom,ny+rows[i-1].height*m_zoom))
                 {
                     m_selection=i-1;
+                    if(held(Key::Shift))
+                    {
+                        const auto found=std::find(m_selectedNodes.begin(),m_selectedNodes.end(),i-1);
+                        if(found==m_selectedNodes.end())m_selectedNodes.push_back(i-1);else m_selectedNodes.erase(found);
+                        m_selection=m_selectedNodes.empty()?static_cast<size_t>(-1):m_selectedNodes.back();
+                        m_left=left;return;
+                    }
+                    m_selectedNodes.push_back(i-1);
                     m_drag=true;m_dragMoved=false;m_dragX=n.x;m_dragY=n.y;
                     m_pressX=x;m_pressY=y;m_grabX=n.x;m_grabY=n.y;
                     break;
@@ -1471,7 +1590,28 @@ namespace nx
             m_rightDown=false;
             if(!m_rightMoved&&over)
             {
-                clearWire();openPinMenu(x,y);input.setTyping(true);m_pan=false;m_left=left;return;
+                clearWire();
+                if(control)
+                {
+                    float best=9.f;size_t bestLink=static_cast<size_t>(-1),bestPoint=0;
+                    const auto& links=m_document.graphs[m_graph].links;
+                    for(size_t i=0;i<links.size();++i)
+                    {
+                        const auto points=wireRoute(i);
+                        for(size_t j=1;j<points.size();++j)
+                        {
+                            const auto& a=points[j-1];const auto& b=points[j];const float dx=b.x-a.x,dy=b.y-a.y,len=dx*dx+dy*dy;
+                            if(len==0)continue;
+                            const float t=std::clamp(((x-a.x)*dx+(y-a.y)*dy)/len,0.f,1.f);
+                            const float distance=std::hypot(x-a.x-t*dx,y-a.y-t*dy);
+                            if(distance<best){best=distance;bestLink=i;bestPoint=links[i].route.empty()?0:j-1;}
+                        }
+                    }
+                    if(bestLink!=static_cast<size_t>(-1)&&m_document.insertRoutePoint(m_graph,bestLink,bestPoint,(x-kLeft-m_x)/m_zoom,(y-kTop-m_y)/m_zoom))m_status="Reroute added. Drag it, or Ctrl+click to remove.";
+                    else m_status="Ctrl+right-click a wire to add a reroute.";
+                }
+                else {openPinMenu(x,y);input.setTyping(true);}
+                m_pan=false;m_left=left;return;
             }
         }
         if (pan && m_pan && (!right||m_rightMoved||raw.mouseButtons[2])) { m_x += x-m_lastX; m_y += y-m_lastY; }
@@ -1504,6 +1644,7 @@ namespace nx
         c.rect(0,0,kWidth,kHeight,{0.06f,0.08f,0.12f,1});
         c.rect(0,0,kWidth,kTop,{0.12f,0.16f,0.22f,1});
         c.text(*m_font,"NEXGEN  /  BLUEPRINT STUDIO",18,13,text);
+        c.roundRect(300,5,104,28,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Layout",352,9,text,Align::Center);
         c.roundRect(1088,5,86,28,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Watch",1131,9,text,Align::Center);
         c.roundRect(1180,5,88,28,4,m_traceEnabled?Color{0.23f,0.48f,0.29f,1}:Color{0.19f,0.33f,0.50f,1});
         c.text(*m_font,m_traceEnabled?"Trace on":"Trace off",1224,9,text,Align::Center);
@@ -1542,17 +1683,26 @@ namespace nx
         {
             const auto& graph=m_document.graphs[m_graph];
             const auto& rows=m_rows;
-            const auto nodeX=[&](size_t i){return m_drag&&i==m_selection?m_dragX:graph.nodes[i].x;};
-            const auto nodeY=[&](size_t i){return m_drag&&i==m_selection?m_dragY:graph.nodes[i].y;};
+            const auto nodeX=[&](size_t i){return nodeLayoutPosition(i).x;};
+            const auto nodeY=[&](size_t i){return nodeLayoutPosition(i).y;};
+            for(size_t i=0;i<graph.comments.size();++i)
+            {
+                float cx,cy,cw,ch;if(!commentBounds(i,cx,cy,cw,ch))continue;
+                if(cx+cw<kLeft||cx>kRight||cy+ch<kTop||cy>kBottom)continue;
+                c.rect(cx,cy,cw,ch,{0.17f,0.24f,0.29f,0.65f});c.roundLine(cx,cy,cw,ch,5,1,{0.38f,0.49f,0.55f,1});
+                c.rect(cx,cy,cw,26*m_zoom,{0.25f,0.37f,0.42f,1});c.push();c.clip(cx+4,cy,cw-8,26*m_zoom);c.text(*m_font,graph.comments[i].title.c_str(),cx+8,cy+4,text);c.pop();
+            }
             for(size_t wire=0;wire<graph.links.size();++wire)
             {
-                const auto& l=graph.links[wire];const auto& pins=m_wirePins[wire];
-                const float x1=kLeft+m_x+(nodeX(l.from)+kNodeWidth)*m_zoom,y1=kTop+m_y+(nodeY(l.from)+pinY(pins.output))*m_zoom;
-                const float x2=kLeft+m_x+nodeX(l.to)*m_zoom,y2=kTop+m_y+(nodeY(l.to)+pinY(pins.input))*m_zoom;
-                if(std::max(x1,x2)<kLeft||std::min(x1,x2)>kRight||std::max(y1,y2)<kTop||std::min(y1,y2)>kBottom)continue;
-                const float mid=(x1+x2)*0.5f;
+                const auto& l=graph.links[wire];const auto& pins=m_wirePins[wire];const auto points=wireRoute(wire);
                 const Color color=pinColor(rows[l.from].outputTypes[pins.output]);
-                c.line(x1,y1,mid,y1,2,color);c.line(mid,y1,mid,y2,2,color);c.line(mid,y2,x2,y2,2,color);
+                for(size_t j=1;j<points.size();++j)
+                {
+                    const auto& a=points[j-1];const auto& b=points[j];
+                    if(std::max(a.x,b.x)<kLeft||std::min(a.x,b.x)>kRight||std::max(a.y,b.y)<kTop||std::min(a.y,b.y)>kBottom)continue;
+                    c.line(a.x,a.y,b.x,b.y,2,color);
+                }
+                for(size_t j=0;j<l.route.size();++j){const auto p=routeLayoutPosition(wire,j);c.circle(kLeft+m_x+p.x*m_zoom,kTop+m_y+p.y*m_zoom,6,color);}
             }
             if(m_pending<graph.nodes.size())
             {
@@ -1575,7 +1725,7 @@ namespace nx
                 if(n.watch)c.circle(x+w-12*m_zoom,y+12*m_zoom,5*m_zoom,{1,0.72f,0.22f,1});
                 if(tracePaused()&&m_traceLocation.graph==m_graph&&m_traceLocation.node==i)c.roundLine(x,y,w,h,5,3,{1,0.72f,0.22f,1});
                 else if(m_diagnostic.graph==m_graph&&m_diagnostic.node==i)c.roundLine(x,y,w,h,5,3,{0.98f,0.35f,0.38f,1});
-                else if(i==m_selection)c.roundLine(x,y,w,h,5,2,accent);
+                else if(i==m_selection||std::find(m_selectedNodes.begin(),m_selectedNodes.end(),i)!=m_selectedNodes.end())c.roundLine(x,y,w,h,5,2,accent);
                 // Draw only the visible rows of tall nodes.
                 const size_t first=static_cast<size_t>(std::max(0.0f,std::floor(((kTop-y)/m_zoom-kPinStart)/kPinStep)-1));
                 const size_t last=static_cast<size_t>(std::max(0.0f,std::ceil(((kBottom-y)/m_zoom-kPinStart)/kPinStep)+2));
@@ -1672,10 +1822,16 @@ namespace nx
         else
         {
             c.clip(12,kBottom+24,900,22);
-            c.text(*m_font,"Drag either pin: connect | Right-click: add node | Ctrl+click: disconnect | Ctrl+S: save",12,kBottom+26,muted);
+            c.text(*m_font,"Shift+click: select | Layout: arrange/group | Ctrl+right-click wire: reroute",12,kBottom+26,muted);
             c.noClip();
             const char* state=!m_document.dirty()?"Saved / clean":recoveryProtected()?"Recovery protected":"Recovery pending";
             c.text(*m_font,state,kWidth-12,kBottom+26,recoveryProtected()?muted:Color{1.f,0.72f,0.22f,1.f},Align::Right);
+        }
+        if(m_layoutMenu)
+        {
+            c.roundRect(300,35,250,120,5,{0.12f,0.16f,0.22f,1});
+            const char* labels[]={"Arrange graph","Align selected left","Align selected top","Comment selection"};
+            for(size_t i=0;i<4;++i){const float yy=35+30*static_cast<float>(i);c.rect(304,yy+2,242,26,{0.19f,0.33f,0.50f,1});c.text(*m_font,labels[i],312,yy+5,text);}
         }
         if(m_pinMenu)
         {
@@ -1701,7 +1857,7 @@ namespace nx
             c.rect(x+4,y+28,202,29,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Get variable",x+10,y+34,text);
             c.rect(x+4,y+58,202,29,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Set variable",x+10,y+64,text);
         }
-        if(m_assetBrowser||m_browsing||m_focus==5||m_focus==6||m_focus==9||m_focus==10)
+        if(m_assetBrowser||m_browsing||m_focus==5||m_focus==6||m_focus==9||m_focus==10||m_focus==11)
         {
             c.rect(0,0,kWidth,kHeight,{0,0,0,0.70f});
             if(m_assetBrowser)
@@ -1771,6 +1927,12 @@ namespace nx
                 {const float y=302+28*static_cast<float>(i);c.rect(650,y,450,28,{0.24f,0.35f,0.48f,1});c.text(*m_font,variableTypes[i],660,y+3,text);}
                 c.clip(170,576,940,25);c.text(*m_font,m_status.c_str(),170,576,text);c.noClip();
                 c.text(*m_font,"Enter applies | Escape closes",640,601,muted,Align::Center);
+            }
+            else if(m_focus==11)
+            {
+                c.roundRect(260,230,760,220,8,{0.12f,0.16f,0.22f,1});c.text(*m_font,"COMMENT TITLE",280,250,accent);
+                c.rect(280,290,720,36,{0.24f,0.35f,0.48f,1});c.clip(286,290,708,36);c.text(*m_font,m_edit.c_str(),290,297,text);c.noClip();
+                c.paragraph(*m_font,m_status.c_str(),280,340,720,muted);c.text(*m_font,"Enter confirms | Escape cancels",640,415,text,Align::Center);
             }
             else if(m_focus==9)
             {

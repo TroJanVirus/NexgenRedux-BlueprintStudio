@@ -103,6 +103,15 @@ namespace nx
         VariableRow m_quickVariable{};
         bool m_quickDrag=false,m_quickMenu=false;
         bool m_pinDrag=false,m_pinMenu=false,m_pendingOutput=true;
+        bool m_layoutMenu=false,m_layoutDragging=false,m_layoutMoved=false;
+        size_t m_layoutComment=static_cast<size_t>(-1),m_layoutLink=static_cast<size_t>(-1),m_layoutPoint=0;
+        float m_layoutStartX=0,m_layoutStartY=0,m_layoutX=0,m_layoutY=0;
+        std::vector<size_t> m_selectedNodes,m_layoutMembers;
+        BlueprintDocument::Point nodeLayoutPosition(size_t node) const;
+        BlueprintDocument::Point routeLayoutPosition(size_t wire,size_t point) const;
+        std::vector<size_t> commentMembers(size_t comment) const;
+        bool commentBounds(size_t comment,float& x,float& y,float& w,float& h) const;
+        std::vector<BlueprintDocument::Point> wireRoute(size_t link) const;
         bool m_rightDown=false,m_rightMoved=false;
         float m_rightX=0,m_rightY=0;
         struct ContextResult { std::string kind,reference,title,pin; bool conversion=false; };

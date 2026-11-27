@@ -441,7 +441,39 @@ namespace nx
                 auto a=ids.find(l["from"].text()),b=ids.find(l["to"].text());
                 if(a==ids.end()||b==ids.end()||!validWire(candidate,g,a->second,l["output"].text(),b->second,l["input"].text(),error))
                 {if(a==ids.end()||b==ids.end())error="Dangling connection.";return false;}
-                g.links.push_back({a->second,b->second,l["output"].text(),l["input"].text()});
+                Link wire{a->second,b->second,l["output"].text(),l["input"].text()};
+                const auto route=l["route"];
+                if(route.exists())
+                {
+                    if(!route.isArray()||route.count()>16){error="Invalid wire route.";return false;}
+                    for(auto p=route.first();p.exists();p=p.next())
+                    {
+                        const float x=p["x"].number(),y=p["y"].number();
+                        if(!p.isObject()||!p["x"].isNumber()||!p["y"].isNumber()||!coordinate(x)||!coordinate(y)){error="Invalid route point.";return false;}
+                        wire.route.push_back({x,y});
+                    }
+                }
+                g.links.push_back(std::move(wire));
+            }
+            const auto comments=value["comments"];
+            if(comments.exists())
+            {
+                if(!comments.isArray()||comments.count()>128){error="Invalid comment groups.";return false;}
+                std::unordered_set<std::string> claimed;
+                for(auto item=comments.first();item.exists();item=item.next())
+                {
+                    const std::string title=item["title"].text();const auto members=item["members"];
+                    if(!item.isObject()||!item["title"].isString()||title.empty()||title.size()>256||!members.isArray()||!members.count()||members.count()>kMaxNodes)
+                    {error="Invalid comment group.";return false;}
+                    Comment comment{title,{}};
+                    for(auto member=members.first();member.exists();member=member.next())
+                    {
+                        const std::string id=member.text();
+                        if(!member.isString()||!ids.count(id)||!claimed.insert(id).second){error="Unknown or overlapping comment member.";return false;}
+                        comment.members.push_back(id);
+                    }
+                    g.comments.push_back(std::move(comment));
+                }
             }
         }
         for(const auto& owner:candidate.screens())
@@ -563,6 +595,16 @@ namespace nx
                     for(const auto& input:n.values)if(!text(*values,input.pin.c_str(),input.value))return fail();
                 }
             }
+            if(!g.comments.empty())
+            {
+                auto* comments=v->put("comments");if(!comments)return fail();comments->setArray();
+                for(const auto& comment:g.comments)
+                {
+                    auto* item=comments->add();if(!item||!text(*item,"title",comment.title))return fail();
+                    auto* members=item->put("members");if(!members)return fail();members->setArray();
+                    for(const auto& id:comment.members){auto* member=members->add();if(!member)return fail();member->setText(id);}
+                }
+            }
             auto* ls=v->put("links");if(!ls)return fail();ls->setArray();
             for(const auto& l:g.links)
             {
@@ -570,6 +612,11 @@ namespace nx
                 auto* j=ls->add();
                 if(!j||!text(*j,"from",g.nodes[l.from].id)||!text(*j,"to",g.nodes[l.to].id)||
                     !text(*j,"output",l.output)||!text(*j,"input",l.input))return fail();
+                if(!l.route.empty())
+                {
+                    auto* route=j->put("route");if(!route)return fail();route->setArray();
+                    for(const auto& p:l.route){auto* item=route->add();if(!item||!number(*item,"x",p.x)||!number(*item,"y",p.y))return fail();}
+                }
             }
         }
         auto output=root.write(false);BlueprintDocument check;
@@ -586,6 +633,95 @@ namespace nx
         if(graph>=graphs.size()||node>=graphs[graph].nodes.size()||!coordinate(x)||!coordinate(y))return false;
         auto& n=graphs[graph].nodes[node];if(n.x==x&&n.y==y)return false;
         record(graph);n.x=x;n.y=y;return true;
+    }
+    bool BlueprintDocument::moveNodes(size_t graph,const std::vector<size_t>& nodes,float dx,float dy)
+    {
+        if(graph>=graphs.size()||nodes.empty()||(!dx&&!dy)||!std::isfinite(dx)||!std::isfinite(dy))return false;
+        auto& g=graphs[graph];std::unordered_set<size_t> selected(nodes.begin(),nodes.end());
+        for(const auto i:selected)if(i>=g.nodes.size()||!coordinate(g.nodes[i].x+dx)||!coordinate(g.nodes[i].y+dy))return false;
+        for(const auto& l:g.links)if(selected.count(l.from)&&selected.count(l.to))
+            for(const auto& p:l.route)if(!coordinate(p.x+dx)||!coordinate(p.y+dy))return false;
+        record(graph);
+        for(const auto i:selected){g.nodes[i].x+=dx;g.nodes[i].y+=dy;}
+        for(auto& l:g.links)if(selected.count(l.from)&&selected.count(l.to))for(auto& p:l.route){p.x+=dx;p.y+=dy;}
+        return true;
+    }
+    bool BlueprintDocument::arrange(size_t graph,std::string& error)
+    {
+        if(graph>=graphs.size()){error="Unknown graph.";return false;}
+        auto& g=graphs[graph];const size_t count=g.nodes.size();
+        std::vector<size_t> indegree(count,0),rank(count,0),order;
+        std::vector<std::vector<size_t>> outgoing(count);
+        for(const auto& l:g.links)
+        {
+            if(l.from>=count||l.to>=count){error="Invalid graph connection.";return false;}
+            ++indegree[l.to];outgoing[l.from].push_back(l.to);
+        }
+        for(size_t i=0;i<count;++i)if(!indegree[i])order.push_back(i);
+        for(size_t i=0;i<order.size();++i)for(const auto child:outgoing[order[i]])
+        {rank[child]=std::max(rank[child],rank[order[i]]+1);if(!--indegree[child])order.push_back(child);}
+        if(order.size()!=count){error="Cannot arrange cyclic graph.";return false;}
+        std::vector<float> offsets(count+1,60.f);std::vector<Point> positions(count);
+        for(const auto i:order)
+        {
+            BlueprintNodeSpec spec;if(!nodeSpec(g,g.nodes[i],spec)){error="Unknown node.";return false;}
+            positions[i]={24.f+252.f*static_cast<float>(rank[i]),offsets[rank[i]]};
+            offsets[rank[i]]+=std::max(72.f,46.f+22.f*static_cast<float>(std::max(spec.inputs.size(),spec.outputs.size())))+36.f;
+        }
+        bool changed=std::any_of(g.links.begin(),g.links.end(),[](const Link& l){return !l.route.empty();});
+        for(size_t i=0;i<count;++i)changed=changed||g.nodes[i].x!=positions[i].x||g.nodes[i].y!=positions[i].y;
+        if(changed){record(graph);for(size_t i=0;i<count;++i){g.nodes[i].x=positions[i].x;g.nodes[i].y=positions[i].y;}for(auto& l:g.links)l.route.clear();}
+        error.clear();return true;
+    }
+    bool BlueprintDocument::alignNodes(size_t graph,const std::vector<size_t>& nodes,bool horizontal,std::string& error)
+    {
+        if(graph>=graphs.size()||nodes.size()<2){error="Select at least two nodes.";return false;}
+        auto& g=graphs[graph];float position=1000000.f;
+        for(const auto i:nodes){if(i>=g.nodes.size()){error="Invalid node selection.";return false;}position=std::min(position,horizontal?g.nodes[i].y:g.nodes[i].x);}
+        bool changed=false;for(const auto i:nodes)changed=changed||(horizontal?g.nodes[i].y:g.nodes[i].x)!=position;
+        if(changed){record(graph);for(const auto i:nodes){if(horizontal)g.nodes[i].y=position;else g.nodes[i].x=position;}}
+        error.clear();return true;
+    }
+    bool BlueprintDocument::addComment(size_t graph,const std::vector<size_t>& nodes,const std::string& title,std::string& error)
+    {
+        if(graph>=graphs.size()||nodes.empty()||title.empty()||title.size()>256||title.find('\0')!=std::string::npos||graphs[graph].comments.size()>=128){error="Select nodes and enter a comment title.";return false;}
+        auto& g=graphs[graph];Comment comment{title,{}};
+        for(const auto i:nodes)
+        {
+            if(i>=g.nodes.size()){error="Invalid node selection.";return false;}
+            const auto& id=g.nodes[i].id;
+            if(std::find(comment.members.begin(),comment.members.end(),id)!=comment.members.end())continue;
+            for(const auto& other:g.comments)if(std::find(other.members.begin(),other.members.end(),id)!=other.members.end()){error="A selected node already belongs to a comment group.";return false;}
+            comment.members.push_back(id);
+        }
+        record(graph);g.comments.push_back(std::move(comment));error.clear();return true;
+    }
+    bool BlueprintDocument::renameComment(size_t graph,size_t comment,const std::string& title,std::string& error)
+    {
+        if(graph>=graphs.size()||comment>=graphs[graph].comments.size()||title.empty()||title.size()>256||title.find('\0')!=std::string::npos){error="Invalid comment title.";return false;}
+        auto& item=graphs[graph].comments[comment];if(item.title!=title){record(graph);item.title=title;}error.clear();return true;
+    }
+    bool BlueprintDocument::deleteComment(size_t graph,size_t comment)
+    {
+        if(graph>=graphs.size()||comment>=graphs[graph].comments.size())return false;
+        record(graph);auto& items=graphs[graph].comments;items.erase(items.begin()+static_cast<std::ptrdiff_t>(comment));return true;
+    }
+    bool BlueprintDocument::insertRoutePoint(size_t graph,size_t link,size_t point,float x,float y)
+    {
+        if(graph>=graphs.size()||link>=graphs[graph].links.size()||!coordinate(x)||!coordinate(y))return false;
+        auto& route=graphs[graph].links[link].route;if(point>route.size()||route.size()>=16)return false;
+        record(graph);route.insert(route.begin()+static_cast<std::ptrdiff_t>(point),{x,y});return true;
+    }
+    bool BlueprintDocument::moveRoutePoint(size_t graph,size_t link,size_t point,float x,float y)
+    {
+        if(graph>=graphs.size()||link>=graphs[graph].links.size()||point>=graphs[graph].links[link].route.size()||!coordinate(x)||!coordinate(y))return false;
+        auto& p=graphs[graph].links[link].route[point];if(p.x==x&&p.y==y)return false;
+        record(graph);p={x,y};return true;
+    }
+    bool BlueprintDocument::deleteRoutePoint(size_t graph,size_t link,size_t point)
+    {
+        if(graph>=graphs.size()||link>=graphs[graph].links.size()||point>=graphs[graph].links[link].route.size())return false;
+        record(graph);auto& route=graphs[graph].links[link].route;route.erase(route.begin()+static_cast<std::ptrdiff_t>(point));return true;
     }
     bool BlueprintDocument::addNode(size_t graph,const std::string& kind,float x,float y,std::string& error,const std::string& functionTarget)
     {
@@ -721,6 +857,9 @@ namespace nx
         if(graph>=graphs.size()||node>=graphs[graph].nodes.size()||graphs[graph].nodes[node].kind=="entry")
         {error="The event entry cannot be deleted.";return false;}
         auto& g=graphs[graph];record(graph);
+        const auto id=g.nodes[node].id;
+        for(auto& comment:g.comments)comment.members.erase(std::remove(comment.members.begin(),comment.members.end(),id),comment.members.end());
+        g.comments.erase(std::remove_if(g.comments.begin(),g.comments.end(),[](const Comment& item){return item.members.empty();}),g.comments.end());
         g.links.erase(std::remove_if(g.links.begin(),g.links.end(),[&](const Link& l){return l.from==node||l.to==node;}),g.links.end());
         for(auto& l:g.links){if(l.from>node)--l.from;if(l.to>node)--l.to;}
         g.nodes.erase(g.nodes.begin()+static_cast<std::ptrdiff_t>(node));error.clear();return true;

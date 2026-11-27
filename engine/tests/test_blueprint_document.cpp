@@ -964,3 +964,23 @@ NX_TEST(nativeContextSearchSupportsReversePlacementNamedFunctionsAndSafeConversi
     NX_EXPECT(doc.placeContextNode(0,static_cast<size_t>(-1),"",true,"call:function","Pick","",200,100,error));
     NX_EXPECT(doc.graphs[0].nodes.back().ref=="Pick"&&doc.undo());
 }
+
+NX_TEST(nativeLayoutMetadataRoundTripsAndDoesNotChangeGeneratedCode)
+{
+    BlueprintDocument doc;doc.create();std::string error,before,after,source,generated;
+    NX_EXPECT(doc.addNode(0,"branch",300,60,error)&&doc.addNode(0,"literal:bool",100,220,error));
+    NX_EXPECT(doc.connect(0,0,"then",1,"in",error)&&doc.connect(0,2,"value",1,"condition",error));
+    NX_EXPECT(compileBlueprint(doc,source,error)&&doc.serialize(before,error));
+    NX_EXPECT(doc.addComment(0,{1,2},"Decision",error));
+    NX_EXPECT(doc.insertRoutePoint(0,0,0,200,100)&&doc.insertRoutePoint(0,0,1,250,120));
+    NX_EXPECT(doc.moveRoutePoint(0,0,1,260,140)&&doc.moveNodes(0,{1,2},20,40));
+    NX_EXPECT(doc.renameComment(0,0,"Updated",error)&&doc.serialize(after,error));
+    BlueprintDocument restored;NX_EXPECT(restored.load(after.data(),after.size(),error)&&restored.graphs[0].comments.size()==1&&restored.graphs[0].links[0].route.size()==2);
+    NX_EXPECT(compileBlueprint(restored,generated,error)&&source==generated);
+    NX_EXPECT(restored.arrange(0,error)&&restored.graphs[0].links[0].route.empty());
+    NX_EXPECT(restored.undo()&&restored.serialize(generated,error)&&generated==after);
+    NX_EXPECT(restored.alignNodes(0,{1,2},false,error)&&restored.graphs[0].nodes[1].x==restored.graphs[0].nodes[2].x);
+    NX_EXPECT(restored.deleteNode(0,2,error)&&restored.graphs[0].comments[0].members.size()==1);
+    NX_EXPECT(restored.deleteNode(0,1,error)&&restored.graphs[0].comments.empty());
+    NX_EXPECT(!doc.addComment(0,{1},"Overlap",error)&&!doc.insertRoutePoint(0,0,99,0,0));
+}

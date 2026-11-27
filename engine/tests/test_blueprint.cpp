@@ -2058,6 +2058,17 @@ NX_TEST(nativeWorkspaceRightClickSearchPlacesNodeAndUndoRemovesIt)
     drag(600,260,420,380);type("bool");type("\r");studio.checkpoint(r.services,true);
     bytes=r.platform.files[recovery];NX_EXPECT(doc.load(bytes.data(),bytes.size(),error)&&doc.graphs[0].nodes.size()==3&&doc.graphs[0].links.size()==2);
     click(900,53);studio.checkpoint(r.services,true);bytes=r.platform.files[recovery];NX_EXPECT(doc.load(bytes.data(),bytes.size(),error)&&doc.graphs[0].nodes.size()==2&&doc.graphs[0].links.size()==1);
+    state.keys[static_cast<size_t>(Key::Control)]=true;state.mouseX=534;state.mouseY=180;state.mouseButtons[1]=true;frame();state.mouseButtons[1]=false;frame();state.keys[static_cast<size_t>(Key::Control)]=false;frame();
+    studio.checkpoint(r.services,true);bytes=r.platform.files[recovery];NX_EXPECT(doc.load(bytes.data(),bytes.size(),error)&&doc.graphs[0].links.size()==1);
+    if(doc.graphs[0].links.size()==1)NX_EXPECT(doc.graphs[0].links[0].route.size()==1);
+    click(320,115);state.keys[static_cast<size_t>(Key::Shift)]=true;click(650,215);state.keys[static_cast<size_t>(Key::Shift)]=false;frame();
+    click(352,18);click(410,140);type("\r");studio.checkpoint(r.services,true);bytes=r.platform.files[recovery];
+    NX_EXPECT(doc.load(bytes.data(),bytes.size(),error)&&doc.graphs[0].comments.size()==1);
+    if(doc.graphs[0].comments.size()==1)NX_EXPECT(doc.graphs[0].comments[0].members.size()==2);
+    click(352,18);click(410,50);studio.checkpoint(r.services,true);bytes=r.platform.files[recovery];
+    NX_EXPECT(doc.load(bytes.data(),bytes.size(),error)&&doc.graphs[0].links.size()==1&&doc.graphs[0].links[0].route.empty());
+    click(900,53);studio.checkpoint(r.services,true);bytes=r.platform.files[recovery];
+    NX_EXPECT(doc.load(bytes.data(),bytes.size(),error)&&doc.graphs[0].links.size()==1&&doc.graphs[0].links[0].route.size()==1);
     studio.close(r.services);
 }
 #endif
