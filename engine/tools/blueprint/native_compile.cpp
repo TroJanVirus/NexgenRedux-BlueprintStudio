@@ -236,6 +236,17 @@ namespace nx
                     }
                     return flow(to,"then",indent,depth+1);
                 }
+                if(n.kind.rfind("local:set:",0)==0)
+                {
+                    const auto* local=incoming(to,"local");
+                    if(!local||local->output!="local"||graph.nodes[local->from].kind!="capture:"+n.kind.substr(10))
+                        return fail(to,"Connect a matching Capture local reference.");
+                    if(!available[local->from])return fail(to,"Local assignment before declaration or outside its scope.");
+                    std::string v;if(!value(to,"value",v,0))return false;
+                    const auto& declaration=graph.nodes[local->from];
+                    source+=pad+(n.kind.ends_with("@")?"@":"")+"bp_local_"+declaration.ref+"_"+std::to_string(local->from)+" = "+v+";\n";
+                    mark(start,to);return flow(to,"then",indent,depth+1);
+                }
                 if(n.kind.rfind("capture:",0)==0)
                 {
                     std::string v;if(!value(to,"value",v,0))return false;

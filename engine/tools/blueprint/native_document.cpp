@@ -247,8 +247,12 @@ namespace nx
                 BlueprintNodeSpec spec;
                 spec.id="capture:"+type;spec.title="Capture "+type;spec.category="Variables";
                 spec.inputs={{"in","exec"},{"value",type}};
-                spec.outputs={{"then","exec"},{"result",type}};
+                spec.outputs={{"then","exec"},{"result",type},{"local","local:"+type}};
                 spec.result=type;result.push_back(std::move(spec));
+                BlueprintNodeSpec assign;
+                assign.id="local:set:"+type;assign.title="Assign local "+type;assign.category="Variables";
+                assign.inputs={{"in","exec"},{"local","local:"+type},{"value",type}};
+                assign.outputs={{"then","exec"}};result.push_back(std::move(assign));
             }
             operation("and:bool","And","Logic","bool","bool","&&");
             operation("or:bool","Or","Logic","bool","bool","||");

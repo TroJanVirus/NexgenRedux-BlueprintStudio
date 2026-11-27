@@ -70,7 +70,7 @@ namespace nx
                     ++i;tokens.push_back({Kind::String,std::move(value),atLine});continue;
                 }
                 const auto two=source.substr(i,2);
-                if(two=="::"||two=="=="||two=="!="||two=="<="||two==">="||two=="&&"||two=="||")
+                if(two=="::"||two=="=="||two=="!="||two=="<="||two==">="||two=="&&"||two=="||"||two=="+="||two=="-="||two=="*="||two=="/="||two=="%="||two=="++"||two=="--")
                 {tokens.push_back({Kind::Symbol,two,atLine});i+=2;continue;}
                 if(std::string("{}();:,.=@+-*/%<>!").find(c)!=std::string::npos)
                 {tokens.push_back({Kind::Symbol,std::string(1,c),atLine});++i;continue;}
@@ -368,10 +368,11 @@ namespace nx
                         if(take("else")&&!block({branch,"false"},depth+1,&no))return false;
                         terminal=yes&&no;continue;
                     }
+                    const bool handleAssignment=take("@");
                     std::string id;if(!name(id)||!qualified(id))return false;
                     // A local declaration creates an execution-ordered capture, not an instance field.
                     if(id=="Entity"&&take("@"))id+="@";
-                    if(blueprintSpec("capture:"+id)&&peek().kind==Kind::Name)
+                    if(!handleAssignment&&blueprintSpec("capture:"+id)&&peek().kind==Kind::Name)
                     {
                         const auto type=id;std::string local;
                         if(!name(local))return false;
@@ -385,12 +386,46 @@ namespace nx
                     }
                     Value target;const Value* member=nullptr;
                     if(take(".")){if(!field(id,target)||!name(id))return false;member=&target;}
-                    if(take("="))
+                    const bool increment=is("++")||is("--");
+                    const bool compound=is("+=")||is("-=")||is("*=")||is("/=")||is("%=");
+                    if(is("=")||increment||compound)
                     {
-                        Value v;if(!directValue(v,flow)||!expect(";"))return false;
+                        const auto op=peek().text;++at;
+                        Value v;
+                        if(increment||compound)
+                        {
+                            // Compound operations are supported only for plain locals/fields. Do not
+                            // move an effectful getter or receiver across a native action call.
+                            if(member||id.find("::")!=std::string::npos||handleAssignment)
+                                return fail("Compound property or handle assignment is not supported.");
+                            Value before;if(!field(id,before))return false;
+                            if(increment)
+                            {
+                                if(before.type!="int"&&before.type!="uint"&&before.type!="float"&&before.type!="double")
+                                    return fail("Increment requires a numeric local or field.");
+                                v={before.type,"1","",static_cast<size_t>(-1)};
+                            }
+                            else if(!expression(v))return false;
+                            const char* operation=op[0]=='+'?"add":op[0]=='-'?"subtract":op[0]=='*'?"multiply":op[0]=='/'?"divide":"mod";
+                            const auto kind=std::string(operation)+":"+before.type;
+                            const auto* spec=blueprintSpec(kind);
+                            if(!spec||v.type!=before.type||spec->result!=before.type)return fail("Unsupported compound assignment types.");
+                            size_t n;if(!add(kind,n)||!bind(n,"a",before)||!bind(n,"b",v))return false;
+                            v={spec->result,"","result",n};
+                        }
+                        else if(!directValue(v,flow))return false;
+                        if(!expect(";"))return false;
                         if(!member&&id.find("::")==std::string::npos)
                         {
-                            if(locals.count(id))return fail("Reassignment of a captured local is not supported: "+id+".");
+                            const auto local=locals.find(id);
+                            if(local!=locals.end())
+                            {
+                                const auto& ref=local->second;
+                                if(handleAssignment!=(ref.type=="Entity@"))return fail("Entity handle reassignment requires explicit @; scalar assignment must not use @.");
+                                size_t n;if(!add("local:set:"+ref.type,n)||!bind(n,"local",Value{"local:"+ref.type,"","local",ref.node})||!bind(n,"value",v))return false;
+                                chain(flow,n);continue;
+                            }
+                            if(handleAssignment)return fail("Handle assignment requires a declared entity local.");
                             const auto found=fields.find(id);
                             const auto& params=doc.graphs[graph].parameters;
                             if(found==fields.end()||id==eventArg||std::any_of(params.begin(),params.end(),[&](const BlueprintPin& p){return p.name==id;}))
@@ -398,9 +433,14 @@ namespace nx
                             size_t n;if(!add("var:set:"+found->second,n,id)||!bind(n,"value",v))return false;
                             chain(flow,n);
                         }
-                        else {Value unused;if(!api(id,{v},member,false,"set",unused,&flow))return false;}
+                        else
+                        {
+                            if(handleAssignment)return fail("Handle property assignment is not supported.");
+                            Value unused;if(!api(id,{v},member,false,"set",unused,&flow))return false;
+                        }
                         continue;
                     }
+                    if(handleAssignment)return fail("Expected explicit handle reassignment.");
                     std::vector<Value> args;Value unused;
                     if(!arguments(args)||!expect(";"))return false;
                     if(!member&&doc.function("Screen",id))

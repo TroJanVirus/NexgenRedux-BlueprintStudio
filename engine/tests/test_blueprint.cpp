@@ -1280,3 +1280,36 @@ NX_TEST(nativeImportedLocalSnapshotsAndActionResultsMatchOriginal)
         NX_EXPECT(strcmp(r.save.get("actor",""),"imported")==0);
     }
 }
+
+NX_TEST(nativeImportedMutableLocalsAndHandleReassignmentMatchOriginal)
+{
+    const std::string original=R"(class Example : Screen {
+        void onEnter() {
+            int total = 1;
+            if(true) { total += 2; } else { total = 8; }
+            total++;
+            if(total == 4) { Save::set("local", "correct"); }
+            Entity@ actor = Scene::spawn(Vec2(0.0f, 0.0f));
+            actor.name = "first";
+            Entity@ previous = actor;
+            @actor = Scene::spawn(Vec2(10.0f, 0.0f));
+            actor.name = "second";
+            Save::set("first", previous.name);
+            Save::set("second", actor.name);
+        }
+    })";
+    BlueprintDocument doc;std::string error,generated;
+    const bool imported=importBlueprintScreen(original,doc,error);
+    if(!imported)NX_ERROR("Import diagnostic: %s",error.c_str());
+    NX_EXPECT(imported&&compileBlueprint(doc,generated,error));if(generated.empty())return;
+    for(const std::string* source:std::vector<const std::string*>{&original,&generated})
+    {
+        Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+        r.platform.files["showcase/imported/screen.json"]="{\"title\":\"Import\"}";
+        r.platform.files["showcase/imported/main.as"]=*source;
+        if(!r.screens.init(r.services,"showcase","imported")){NX_EXPECT(false);return;}
+        r.step(5);
+        NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("local",""),"correct")==0);
+        NX_EXPECT(strcmp(r.save.get("first",""),"first")==0&&strcmp(r.save.get("second",""),"second")==0);
+    }
+}
