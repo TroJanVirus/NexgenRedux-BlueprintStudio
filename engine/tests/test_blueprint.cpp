@@ -2607,6 +2607,33 @@ NX_TEST(nativeFlowControlsExecuteWithPersistentCounters)
     r.step(10);NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("flow","missing"),"ok")==0);
 }
 
+NX_TEST(nativeActorQueryBindingsReleaseBorrowedEntityHandles)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    World world(r.assets,r.host,"blueprint",64,32);
+    world.space().init(&r.solids,&r.audio);r.services.world=&world;
+    const char* source=R"AS(
+        void queryActor() {
+            Entity@ actor=Space::spawn(Vec3(0,0,0));
+            actor.name="QueryActor";
+            for(uint i=0;i<32;i++) {
+                Space::validEntity(actor);
+                Space::actorComponent(actor,"missing");
+                Space::activateActorCamera(actor,"missing");
+            }
+        }
+    )AS";
+    if(!compile(r.host,source)){NX_EXPECT(false);r.services.world=nullptr;return;}
+    NX_EXPECT(r.host.call(r.host.find("blueprint","void queryActor()")));
+    const auto id=world.findNamed("QueryActor");NX_EXPECT(id!=0);
+    if(id)
+    {
+        auto* handle=world.ref(id);NX_EXPECT(handle!=nullptr);
+        if(handle){NX_EXPECT(handle->refs==1);handle->release();}
+    }
+    r.host.discard("blueprint");r.host.collectAll();r.services.world=nullptr;
+}
+
 NX_TEST(nativeInheritedActorsAndComponentValidityThroughCompiledGraphs)
 {
     Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
