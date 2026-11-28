@@ -172,7 +172,7 @@ namespace nx
     {
         if (!active()) return;
         stopPreview(s);
-        m_device.disconnect();m_deviceAddressEditing=false;m_deployPassword.clear();m_deployField=-1;
+        releaseRemotePreview(s);m_device.disconnect();m_deviceAddressEditing=false;m_deployPassword.clear();m_deployField=-1;
         stopTone(s);m_audioEditor=false;m_toneWav.clear();m_clipSource.clear();m_audioClip=BlueprintAudioClip{};
         s.platform->setEditorChrome(false);
         saveActorTab();cancelActorDrag();m_actorOrbit=false;m_splitter=0;m_actorEditor=false;m_contentDrag.clear();m_contentPanelDrag=false;releaseContentPreviews();
@@ -288,7 +288,7 @@ namespace nx
         return true;
     }
     bool BlueprintWorkspace::modalOpen() const
-    {return m_assetBrowser||m_browsing||m_focus==5||m_focus==6||m_focus==9||m_focus==10||m_focus==11||m_focus==12||m_focus==13||m_focus==14||m_focus==15||m_focus==17||m_focus==18||m_focus==20||m_focus==21||m_focus==22||m_focus==23||m_focus==24||m_focus==25||m_focus==26||m_focus==27||m_focus==28||m_focus==29;}
+    {return m_assetBrowser||m_browsing||m_focus==5||m_focus==6||m_focus==9||m_focus==10||m_focus==11||m_focus==12||m_focus==13||m_focus==14||m_focus==15||m_focus==17||m_focus==18||m_focus==20||m_focus==21||m_focus==22||m_focus==23||m_focus==24||m_focus==25||m_focus==26||m_focus==27||m_focus==28||m_focus==29||m_focus==30;}
     void BlueprintWorkspace::resetGraphTabs()
     {
         releaseContentPreviews();m_graphTabs.clear();m_actorTabs.clear();m_visualTabs.clear();m_activeVisualTab={};m_activeTab={};m_tabFirst=0;
@@ -5154,6 +5154,8 @@ namespace nx
             if(action<5)m_device.control(action);
             return;
         }
+        if(in(x,y,380,480,620,512)&&m_device.ready()&&m_device.previewSupported())
+        {m_focus=30;m_deviceAddressEditing=false;input.setTyping(false);m_remotePreviewOn=false;return;}
         if(in(x,y,630,480,880,512)&&m_device.ready()&&m_device.actorsSupported())
         {m_focus=29;m_deviceAddressEditing=false;input.setTyping(false);m_actorFirst=m_actorPropertyFirst=0;m_actorEditName.clear();m_device.requestActors(0,s.platform->seconds());return;}
         if(in(x,y,900,480,1140,512)){pushLiveSource(s);return;}
@@ -5184,7 +5186,8 @@ namespace nx
         if(rows.empty())c.text(*m_font,m_deviceVariables?"Pause the remote script to inspect its locals.":"No measured telemetry. Older runtimes may not support counters.",140,318,muted);
         for(size_t i=0;i<rows.size()&&i<14;++i)
         {const float x=140+500.f*(i/7),y=314+23.f*(i%7);c.clip(x,y,490,26);c.text(*m_font,rows[i].c_str(),x,y,text);c.noClip();}
-        c.clip(140,480,480,32);c.text(*m_font,(m_device.liveStatus().empty()?"Live Link: "+m_device.liveScreen():m_device.liveStatus()).c_str(),140,490,muted);c.noClip();
+        c.clip(140,480,230,32);c.text(*m_font,(m_device.liveStatus().empty()?"Live Link: "+m_device.liveScreen():m_device.liveStatus()).c_str(),140,490,muted);c.noClip();
+        c.roundRect(380,480,240,32,4,m_device.ready()&&m_device.previewSupported()?Color{0.20f,0.32f,0.45f,1}:Color{0.20f,0.22f,0.25f,1});c.text(*m_font,"Console preview",500,486,text,Align::Center);
         c.roundRect(630,480,250,32,4,m_device.ready()&&m_device.actorsSupported()?Color{0.20f,0.32f,0.45f,1}:Color{0.20f,0.22f,0.25f,1});c.text(*m_font,"Live actors",755,486,text,Align::Center);
         c.roundRect(900,480,240,32,4,canPushLiveSource()?Color{0.20f,0.32f,0.45f,1}:Color{0.20f,0.22f,0.25f,1});
         c.text(*m_font,m_device.liveBusy()?"Updating...":"Push live script",1020,486,canPushLiveSource()?text:muted,Align::Center);
@@ -5196,6 +5199,52 @@ namespace nx
         button(560,600,200,m_deviceVariables?"Show telemetry":"Show locals",true);
         button(770,600,220,"Play on Xbox",m_document.target().xbox());
         button(1000,600,150,"Back",true);
+    }
+    void BlueprintWorkspace::releaseRemotePreview(Services& s)
+    {
+        if(m_remotePreviewTexture)s.assets->release(m_remotePreviewTexture);
+        m_remotePreviewTexture=nullptr;m_remotePreviewOn=false;m_remotePreviewSequence=0;
+    }
+    void BlueprintWorkspace::updateRemotePreview(Services& s,float x,float y,bool click)
+    {
+        const auto now=s.platform->seconds();
+        if(click&&in(x,y,1000,600,1150,638)){releaseRemotePreview(s);m_focus=27;return;}
+        if(!m_device.ready()){releaseRemotePreview(s);return;}
+        if(click&&in(x,y,140,600,350,638)){m_remotePreviewOn=!m_remotePreviewOn;m_remotePreviewNext=now;}
+        if(click&&in(x,y,360,600,570,638)&&now>=m_remotePreviewNext)
+        {if(m_device.requestPreview(now))m_remotePreviewNext=now+1;}
+        if(m_remotePreviewOn&&now>=m_remotePreviewNext&&m_device.requestPreview(now))m_remotePreviewNext=now+1;
+        if(m_remotePreviewSequence!=m_device.previewSequence()&&!m_device.previewPixels().empty())
+        {
+            const auto w=m_device.previewWidth(),h=m_device.previewHeight();
+            if(m_remotePreviewTexture&&(m_remotePreviewTexture->width!=w||m_remotePreviewTexture->height!=h))
+            {s.assets->release(m_remotePreviewTexture);m_remotePreviewTexture=nullptr;}
+            if(!m_remotePreviewTexture)m_remotePreviewTexture=s.assets->dynamicTexture(w,h);
+            if(m_remotePreviewTexture&&s.device->updateTexture(m_remotePreviewTexture->texture,m_device.previewPixels().data()))
+                m_remotePreviewSequence=m_device.previewSequence();
+        }
+    }
+    void BlueprintWorkspace::drawRemotePreview(Canvas& c)
+    {
+        c.roundRect(100,64,1080,594,8,{0.15f,0.17f,0.20f,1});
+        c.text(*m_font,"CONSOLE PREVIEW / LOW BANDWIDTH",120,78,accent);
+        c.text(*m_font,"Opt-in front-buffer thumbnails. Maximum one capture per second; not a video stream.",140,110,muted);
+        c.rect(140,144,1000,420,{0.025f,0.025f,0.03f,1});
+        if(m_remotePreviewTexture)
+        {
+            const float w=static_cast<float>(m_remotePreviewTexture->width),h=static_cast<float>(m_remotePreviewTexture->height);
+            const float scale=std::min(1000.f/w,420.f/h);
+            c.push();c.setFilter(gpu::Filter::Nearest);
+            c.image(*m_remotePreviewTexture,640-w*scale/2,354-h*scale/2,w*scale,h*scale,{1,1,1,1});c.pop();
+        }
+        else c.text(*m_font,"Start preview or capture a single frame.",640,340,muted,Align::Center);
+        const std::string status=m_device.paused()?"Paused: last frame held.":m_device.previewStatus();
+        c.clip(140,570,1000,26);c.text(*m_font,status.c_str(),140,573,muted);c.noClip();
+        const auto button=[&](float x,float w,const char* label,bool enabled)
+        {c.roundRect(x,600,w,38,4,enabled?Color{0.20f,0.32f,0.45f,1}:Color{0.20f,0.22f,0.25f,1});c.text(*m_font,label,x+w/2,608,enabled?text:muted,Align::Center);};
+        button(140,210,m_remotePreviewOn?"Stop preview":"Start preview",m_device.ready());
+        button(360,210,"Capture frame",m_device.ready()&&!m_device.paused()&&!m_device.previewBusy());
+        button(1000,150,"Back",true);
     }
     void BlueprintWorkspace::updateRemoteActors(Services& s,float x,float y,bool click)
     {
@@ -5689,6 +5738,7 @@ namespace nx
             if(m_browsing){if(m_projectCreate){m_projectCreate=0;m_projectName.clear();input.setTyping(false);}else{m_browsing=false;m_status="Project browser closed.";}return;}
             if(m_rgbOpen){m_rgbOpen=false;return;}
             if(m_moveWire!=static_cast<size_t>(-1)){m_moveWire=static_cast<size_t>(-1);m_status="Connection move cancelled.";return;}
+            if(m_focus==30){releaseRemotePreview(s);m_focus=27;return;}
             if(m_focus==29){m_actorEditName.clear();m_actorEditValue.clear();input.setTyping(false);m_focus=27;return;}
             if(m_focus==28){m_deployField=-1;m_deployPassword.clear();input.setTyping(false);m_focus=27;return;}
             if(m_focus==27){m_deviceAddressEditing=false;input.setTyping(false);m_focus=24;return;}
@@ -5894,6 +5944,7 @@ namespace nx
             else if((pressed&128u)||(click&&in(x,y,800,405,930,445))){if(confirmNodeDeletion(input))saveLayout(s);}
             m_left=left;return;
         }
+        if(m_focus==30){updateRemotePreview(s,x,y,click);m_left=left;return;}
         if(m_focus==29){updateRemoteActors(s,x,y,click);m_left=left;return;}
         if(m_focus==28){updateXboxDeploy(s,x,y,click);m_left=left;return;}
         if(m_focus==27){updateDeviceManager(s,x,y,click);m_left=left;return;}
@@ -7483,6 +7534,7 @@ namespace nx
                 c.roundRect(660,405,130,40,4,{0.22f,0.31f,0.43f,1});c.text(*m_font,"Cancel",725,415,text,Align::Center);
                 c.roundRect(800,405,130,40,4,{0.48f,0.21f,0.25f,1});c.text(*m_font,"Delete",865,415,text,Align::Center);
             }
+            else if(m_focus==30)drawRemotePreview(c);
             else if(m_focus==29)drawRemoteActors(c);
             else if(m_focus==28)drawXboxDeploy(c);
             else if(m_focus==27)drawDeviceManager(c);

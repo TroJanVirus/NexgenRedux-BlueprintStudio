@@ -114,6 +114,8 @@ namespace nx
         void stack(int id);
         void variables(int id, const JsonValue& ask);
         void studioPins(int id);
+        void studioPreview(int id);
+        double m_previewAt=-10;
         void evaluate(int id, const JsonValue& ask);
         bool describe(JsonValue& out, const char* name, int typeId, void* address);
         bool child(const Ref& of, const std::string& name, Ref& out);

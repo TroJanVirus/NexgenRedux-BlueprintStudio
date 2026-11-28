@@ -372,6 +372,9 @@ namespace nx::gpu
 
         // Copies the last finished frame as RGBA8 rows, top row first. False if unsupported.
         virtual bool capture(u8* pixels, size_t size) = 0;
+        // Opt-in development thumbnail, directly sampled into caller-owned RGB565.
+        virtual bool previewCaptureSupported() const {return false;}
+        virtual bool capturePreview(u16*,u32,u32){return false;}
 
         virtual Stats stats() const = 0;
 

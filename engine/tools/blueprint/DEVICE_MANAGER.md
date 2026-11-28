@@ -51,3 +51,7 @@ The remote debugger regression fixture now spawns 50 actual engine actors, check
 ## Paused Blueprint pin values
 
 On a source-matched breakpoint or step, Studio requests a bounded snapshot of up to 64 in-scope generated locals. Graph output pins with a known materialized local show its measured value in teal. No pure expression is executed for inspection; value objects are intentionally opaque and handles show null/object. Macro-bearing projects suppress pin annotation until lexical source maps are available. Values disappear on resume, source mismatch, disconnect or graph revision change. This is a paused snapshot, not a sampled value history.
+
+## Console preview
+
+The Xbox D3D8 backend directly samples the last presented front buffer into an RGB565 thumbnail, at most 128x96 (24 KiB raw, 48 KiB hexadecimal wire payload), preserving framebuffer pixel aspect ratio. Device Manager > Console preview offers an explicit capture or opt-in one-frame-per-second preview. No full-sized framebuffer allocation, continuous video encoding or screenshot files. Captures are only at running frame boundaries; paused views hold the last captured frame. The preview texture is released on exit, and no capture is requested when the panel is closed. GPU readback can still stall the console; actual hardware impact, video aspect correction for anamorphic modes and other backends require testing. Do not expose the debugger outside a trusted LAN.

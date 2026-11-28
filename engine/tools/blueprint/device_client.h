@@ -4,6 +4,7 @@
 #include "base/json_value.h"
 #include "script/studio_launch.h"
 #include "script/studio_live_source.h"
+#include "script/studio_preview.h"
 #include <algorithm>
 #include <string>
 #include <vector>
@@ -27,6 +28,18 @@ namespace nx
         const std::vector<PinValue>& pinValues()const{return m_pinValues;}
         bool pinsCapped()const{return m_pinsCapped;}
         bool pinsSupported()const{return m_pinsSupported;}
+        bool previewSupported()const{return m_previewSupported;}
+        bool previewBusy()const{return m_previewBusy;}
+        const std::string& previewStatus()const{return m_previewStatus;}
+        u32 previewWidth()const{return m_previewWidth;}
+        u32 previewHeight()const{return m_previewHeight;}
+        u32 previewSequence()const{return m_previewSequence;}
+        const std::vector<u8>& previewPixels()const{return m_previewPixels;}
+        bool requestPreview(double now)
+        {
+            if(!m_ready||!m_previewSupported||m_previewBusy||m_paused||liveBusy()||actorBusy()||m_out.size()>1024)return false;
+            queue("{\"cmd\":\"studioPreview\",\"id\":15}");m_previewBusy=true;m_previewDeadline=now+5;return true;
+        }
         bool actorsSupported()const{return m_actorsSupported;}
         bool actorBusy()const{return m_actorRequest!=0;}
         const std::vector<Actor>& actors()const{return m_actors;}
@@ -106,6 +119,7 @@ namespace nx
         {
             m_socket.close();if(m_network)netStop();m_network=m_ready=m_paused=m_hello=m_sourceIdentity=m_traceSupported=m_tracing=m_traceOutstanding=m_traceGap=false;m_hits.clear();
             m_in.clear();m_out.clear();m_rows.clear();m_log.clear();m_file.clear();m_fingerprint.clear();m_variables.clear();m_line=0;
+            m_previewSupported=m_previewBusy=false;m_previewPixels.clear();m_previewWidth=m_previewHeight=0;m_previewStatus.clear();++m_previewSequence;
             m_pinsSupported=m_pinsCapped=false;m_pinValues.clear();m_actorsSupported=false;m_actorRequest=0;m_actorEpoch=m_actorOffset=m_actorCount=m_actorSelected=0;m_actors.clear();m_actorProperties.clear();m_actorScreen.clear();m_actorStatus.clear();
             m_status="Disconnected";m_launchId.clear();m_address.clear();m_liveSupported=false;m_liveStage=0;m_liveScreen.clear();m_liveFingerprint.clear();std::string().swap(m_liveBytes);
         }
@@ -137,6 +151,7 @@ namespace nx
             if(!m_ready&&now>m_deadline){fail("Redux debugger handshake timed out.");return;}
             if(state!=TcpState::Open)return;
             if(!m_hello){m_hello=true;queue("{\"cmd\":\"hello\",\"id\":1}");}
+            if(m_previewBusy&&now>m_previewDeadline){fail("Preview response timed out.");return;}
             if(actorBusy()&&now>m_actorDeadline){fail("Actor request timed out; reconnect to refresh.");return;}
             if(liveBusy()&&now>m_liveDeadline){m_liveStatus="Live Link timed out; reconnect to inspect actual running source.";fail("Live Link response timed out.");return;}
             if(m_ready&&!liveBusy()&&now>=m_poll){m_poll=now+1;queue("{\"cmd\":\"telemetry\",\"id\":4}");if(m_liveSupported)queue("{\"cmd\":\"liveInfo\",\"id\":10}");}
@@ -194,7 +209,7 @@ namespace nx
             if(event=="hello"&&id==1&&!m_ready)
             {
                 if(root["version"].exact()!=1){fail("Unsupported debugger protocol.");return;}
-                m_sourceIdentity=root["sourceIdentity"].flag();m_traceSupported=root["remoteTrace"].flag();m_actorsSupported=root["studioActors"].flag();m_pinsSupported=root["studioPins"].flag();m_launchId=root["launchId"].text();if(!studioLaunchIdentity(m_launchId))m_launchId.clear();m_liveSupported=root["liveSource"].flag()&&!m_launchId.empty();m_ready=true;m_poll=now;m_status="Connected; waiting for device telemetry.";
+                m_sourceIdentity=root["sourceIdentity"].flag();m_traceSupported=root["remoteTrace"].flag();m_actorsSupported=root["studioActors"].flag();m_pinsSupported=root["studioPins"].flag();m_previewSupported=root["studioPreview"].flag();m_launchId=root["launchId"].text();if(!studioLaunchIdentity(m_launchId))m_launchId.clear();m_liveSupported=root["liveSource"].flag()&&!m_launchId.empty();m_ready=true;m_poll=now;m_status="Connected; waiting for device telemetry.";
                 queue("{\"cmd\":\"ready\",\"id\":2}");
             }
             else if(event=="stopped"&&m_ready)
@@ -273,6 +288,18 @@ namespace nx
                 m_fingerprint=std::string(top["fingerprint"].text()).substr(0,32);
                 const auto at=top["line"].exact();if(at>0&&at<1000000)m_line=static_cast<unsigned>(at);
             }
+            else if(id==15&&m_previewBusy)
+            {
+                m_previewBusy=false;
+                if(!root["previewOk"].flag()){m_previewStatus=root["message"].text();return;}
+                const auto w=root["width"].exact(),h=root["height"].exact();
+                if(!(w>=1&&w<=kStudioPreviewWidth&&h>=1&&h<=kStudioPreviewHeight)||
+                    w!=static_cast<u32>(w)||h!=static_cast<u32>(h)||
+                    !studioPreviewDecode(root["pixels"].text(),static_cast<u32>(w),static_cast<u32>(h),m_previewPixels))
+                {m_previewStatus="Malformed preview frame rejected.";return;}
+                m_previewWidth=static_cast<u32>(w);m_previewHeight=static_cast<u32>(h);++m_previewSequence;
+                m_previewStatus="Last captured console frame (RGB565).";
+            }
             else if(id==14&&m_paused)
             {
                 m_pinValues.clear();m_pinsCapped=false;
@@ -328,6 +355,11 @@ namespace nx
         bool m_traceSupported=false,m_tracing=false,m_traceOutstanding=false,m_traceGap=false;
         bool m_liveSupported=false,m_actorsSupported=false,m_pinsSupported=false,m_pinsCapped=false;
         std::vector<PinValue> m_pinValues;
+        bool m_previewSupported=false,m_previewBusy=false;
+        double m_previewDeadline=0;
+        u32 m_previewWidth=0,m_previewHeight=0,m_previewSequence=0;
+        std::vector<u8> m_previewPixels;
+        std::string m_previewStatus;
         int m_actorRequest=0;
         double m_actorDeadline=0;
         u32 m_actorEpoch=0,m_actorOffset=0,m_actorCount=0,m_actorSelected=0;

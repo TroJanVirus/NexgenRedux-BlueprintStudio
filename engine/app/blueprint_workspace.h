@@ -389,6 +389,13 @@ namespace nx
         bool m_deviceVariables=false;
         void updateRemoteActors(Services& s,float x,float y,bool click);
         void drawRemoteActors(Canvas& c);
+        void updateRemotePreview(Services& s,float x,float y,bool click);
+        void drawRemotePreview(Canvas& c);
+        void releaseRemotePreview(Services& s);
+        Asset* m_remotePreviewTexture=nullptr;
+        bool m_remotePreviewOn=false;
+        double m_remotePreviewNext=0;
+        u32 m_remotePreviewSequence=0;
         size_t m_actorFirst=0,m_actorPropertyFirst=0;
         std::string m_actorEditName,m_actorEditValue;
         u32 m_actorEditEpoch=0,m_actorEditId=0;

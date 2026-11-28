@@ -3,6 +3,7 @@
 #include "platform/console.h"
 #include "screens/screens.h"
 #include "script/studio_actor_value.h"
+#include "script/studio_preview.h"
 #include "bindings/script_refs.h"
 #include "scene/space.h"
 #include "scene/world.h"
@@ -335,6 +336,8 @@ namespace nx
             reply.put("remoteTrace")->setFlag(true);
             reply.put("studioActors")->setFlag(true);
             reply.put("studioPins")->setFlag(true);
+            const auto* svc=m_host&&m_host->engine()?static_cast<const Services*>(m_host->engine()->GetUserData()):nullptr;
+            reply.put("studioPreview")->setFlag(svc&&svc->development&&svc->device&&svc->device->previewCaptureSupported());
             if(!m_launchId.empty()){putText(reply,"launchId",m_launchId);reply.put("liveSource")->setFlag(true);}
             putText(reply, "angelscript", ScriptHost::version());
             putNumber(reply, "id", id);
@@ -427,6 +430,7 @@ namespace nx
             profile(id, on && on->flag());
         }
         else if(name=="studioPins"){studioPins(id);}
+        else if(name=="studioPreview"){studioPreview(id);}
         else if(name=="studioActors"||name=="studioActor"||name=="studioActorSet")
         {
             studioActors(id,name,ask);
@@ -988,6 +992,34 @@ namespace nx
                 }
             }
         }
+    }
+
+    void ScriptDebugger::studioPreview(int id)
+    {
+        JsonValue reply;putNumber(reply,"id",id);
+        auto* svc=m_host&&m_host->engine()?static_cast<Services*>(m_host->engine()->GetUserData()):nullptr;
+        const auto reject=[&](const char* message){reply.put("previewOk")->setFlag(false);putText(reply,"message",message);send(reply.write(true));};
+        if(!svc||!svc->development||!svc->device||!svc->platform||!svc->device->previewCaptureSupported())
+        {reject("Preview capture unavailable on this runtime.");return;}
+        if(!m_actorFrame||m_paused||m_liveApplying||!m_pendingLaunch.empty()){reject("Preview only at a running frame boundary.");return;}
+        const double now=svc->platform->seconds();
+        if(now-m_previewAt<0.9||m_out.size()>8192){reject("Preview rate limited.");return;}
+        m_previewAt=now;
+        u32 sw=0,sh=0;svc->device->size(sw,sh);
+        if(!sw||!sh||sw>2048||sh>2048){reject("Invalid framebuffer size.");return;}
+        u32 w=kStudioPreviewWidth,h=sh*w/sw;
+        if(h>kStudioPreviewHeight){h=kStudioPreviewHeight;w=sw*h/sh;}
+        if(!studioPreviewSize(w,h)){reject("Invalid preview dimensions.");return;}
+        // 24 KiB maximum pixel buffer, never a full framebuffer allocation.
+        const size_t bytes=static_cast<size_t>(w)*h*sizeof(u16);
+        auto* pixels=static_cast<u16*>(memAlloc(bytes,MemTag::General));
+        if(!pixels){reject("Preview allocation failed.");return;}
+        const bool ok=svc->device->capturePreview(pixels,w,h);
+        const auto encoded=ok?studioPreviewEncode(pixels,w,h):std::string();
+        memFree(pixels);
+        if(encoded.empty()){reject("Front buffer unavailable.");return;}
+        reply.put("previewOk")->setFlag(true);putNumber(reply,"width",w);putNumber(reply,"height",h);
+        putText(reply,"pixels",encoded);send(reply.write(true));
     }
 
     void ScriptDebugger::studioPins(int id)

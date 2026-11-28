@@ -1,4 +1,5 @@
 #include "test.h"
+#include "script/studio_preview.h"
 #include "script/studio_actor_value.h"
 #include "script/studio_live_source.h"
 #include "script/studio_launch.h"
@@ -2460,4 +2461,16 @@ NX_TEST(nativePausedPinLocalMapping)
     NX_EXPECT(blueprintPausedPinLocal(doc,0,999,"result").empty());
     doc.graphs[0].inlineMacro=true;
     NX_EXPECT(blueprintPausedPinLocal(doc,0,1,"result").empty());
+}
+
+NX_TEST(nativeStudioPreviewCodec)
+{
+    const u16 pixels[]={studioRgb565(255,0,0),studioRgb565(0,255,0),studioRgb565(0,0,255)};
+    const auto wire=studioPreviewEncode(pixels,3,1);
+    NX_EXPECT(wire=="f80007e0001f");
+    std::vector<u8> rgba;
+    NX_EXPECT(studioPreviewDecode(wire,3,1,rgba)&&rgba.size()==12);
+    NX_EXPECT(rgba[0]==255&&rgba[1]==0&&rgba[3]==255&&rgba[5]==255&&rgba[10]==255);
+    NX_EXPECT(!studioPreviewDecode("garbage",3,1,rgba)&&rgba.size()==12);
+    NX_EXPECT(!studioPreviewDecode(wire,129,1,rgba));
 }

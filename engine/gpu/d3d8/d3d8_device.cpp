@@ -1684,6 +1684,30 @@ namespace nx::gpu
                 m_last = m_current;
             }
 
+            bool previewCaptureSupported() const override{return true;}
+            bool capturePreview(u16* pixels,u32 width,u32 height) override
+            {
+                if(!pixels||!width||!height||width>128||height>96||m_inFrame||!m_width||!m_height||!m_frameNumber)return false;
+                IDirect3DSurface8* front=nullptr;
+                if(FAILED(m_device->GetBackBuffer(-1,D3DBACKBUFFER_TYPE_MONO,&front))||!front)return false;
+                D3DLOCKED_RECT rect;
+                const bool ok=SUCCEEDED(front->LockRect(&rect,nullptr,D3DLOCK_READONLY));
+                if(ok)
+                {
+                    for(u32 y=0;y<height;++y)
+                    {
+                        const auto* row=static_cast<const u8*>(rect.pBits)+static_cast<size_t>(y*m_height/height)*rect.Pitch;
+                        for(u32 x=0;x<width;++x)
+                        {
+                            const auto* pixel=row+static_cast<size_t>(x*m_width/width)*4;
+                            pixels[y*width+x]=static_cast<u16>(((pixel[2]>>3)<<11)|((pixel[1]>>2)<<5)|(pixel[0]>>3));
+                        }
+                    }
+                    front->UnlockRect();
+                }
+                front->Release();return ok;
+            }
+
             bool capture(u8* pixels, size_t bytes) override
             {
                 if (pixels == nullptr || bytes < static_cast<size_t>(m_width) * m_height * 4 || m_inFrame)
