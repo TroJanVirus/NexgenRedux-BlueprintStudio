@@ -1,0 +1,217 @@
+{
+  "version": 2,
+  "kind": "NativeBlueprint",
+  "name": "Bouncing Sphere",
+  "visualAssets": [
+    {
+      "id": "actor-1",
+      "kind": "actor",
+      "title": "Floor",
+      "source": "{\"entities\":[{\"name\":\"Floor\",\"shape\":\"box\",\"size\":[8,0.5,8],\"color\":[0.24,0.32,0.42,1],\"cube\":[8,0.5,8],\"group\":0,\"hits\":0,\"wall\":true}]}",
+      "dependencies": []
+    },
+    {
+      "id": "actor-2",
+      "kind": "actor",
+      "title": "Bouncing Sphere",
+      "source": "{\"entities\":[{\"name\":\"Ball\",\"shape\":\"sphere\",\"size\":[1,1,1],\"color\":[0.98,0.48,0.12,1],\"sphere\":0.5,\"group\":1,\"hits\":1,\"mass\":1,\"gravity\":1,\"bounce\":0.88,\"drag\":0,\"friction\":0.15}]}",
+      "dependencies": []
+    }
+  ],
+  "graphs": [
+    {
+      "owner": "Screen",
+      "name": "onEnter",
+      "kind": "event",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 24,
+          "y": 60
+        },
+        {
+          "id": "floor",
+          "kind": "actor:spawn-asset",
+          "x": 265,
+          "y": 60,
+          "values": {
+            "id": "actor-1",
+            "place": "0,-0.25,0"
+          }
+        },
+        {
+          "id": "ball",
+          "kind": "actor:spawn-asset",
+          "x": 565,
+          "y": 60,
+          "values": {
+            "id": "actor-2",
+            "place": "0,3.5,0"
+          }
+        },
+        {
+          "id": "gravity",
+          "kind": "api:Space:Space::set_gravity:Vec3",
+          "x": 865,
+          "y": 60,
+          "values": {
+            "value": "0,-9.8,0"
+          }
+        },
+        {
+          "id": "camera",
+          "kind": "api:Space:Space::camera:Vec3,Vec3,float",
+          "x": 1165,
+          "y": 60,
+          "values": {
+            "from": "6,4.2,8",
+            "to": "0,1.65,0",
+            "angle": "45"
+          }
+        },
+        {
+          "id": "sun",
+          "kind": "api:Space:Space::sun:Vec3,Color",
+          "x": 1465,
+          "y": 60,
+          "values": {
+            "direction": "-0.6,-1,-0.4",
+            "color": "1,0.94,0.84,1"
+          }
+        },
+        {
+          "id": "ambient",
+          "kind": "api:Space:Space::ambient:Color,Color",
+          "x": 1765,
+          "y": 60,
+          "values": {
+            "sky": "0.6,0.7,0.9,1",
+            "ground": "0.25,0.28,0.35,1"
+          }
+        }
+      ],
+      "links": [
+        {
+          "from": "entry",
+          "to": "floor",
+          "output": "then",
+          "input": "in"
+        },
+        {
+          "from": "floor",
+          "to": "ball",
+          "output": "then",
+          "input": "in"
+        },
+        {
+          "from": "ball",
+          "to": "gravity",
+          "output": "then",
+          "input": "in"
+        },
+        {
+          "from": "gravity",
+          "to": "camera",
+          "output": "then",
+          "input": "in"
+        },
+        {
+          "from": "camera",
+          "to": "sun",
+          "output": "then",
+          "input": "in"
+        },
+        {
+          "from": "sun",
+          "to": "ambient",
+          "output": "then",
+          "input": "in"
+        }
+      ]
+    },
+    {
+      "owner": "Screen",
+      "name": "update",
+      "kind": "event",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 24,
+          "y": 60
+        }
+      ],
+      "links": []
+    },
+    {
+      "owner": "Screen",
+      "name": "draw",
+      "kind": "event",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 24,
+          "y": 60
+        },
+        {
+          "id": "render",
+          "kind": "render:space",
+          "x": 285,
+          "y": 60
+        }
+      ],
+      "links": [
+        {
+          "from": "entry",
+          "to": "render",
+          "output": "then",
+          "input": "in"
+        }
+      ]
+    },
+    {
+      "owner": "Screen",
+      "name": "onSuspend",
+      "kind": "event",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 24,
+          "y": 60
+        }
+      ],
+      "links": []
+    },
+    {
+      "owner": "Screen",
+      "name": "onResume",
+      "kind": "event",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 24,
+          "y": 60
+        }
+      ],
+      "links": []
+    },
+    {
+      "owner": "Screen",
+      "name": "onExit",
+      "kind": "event",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 24,
+          "y": 60
+        }
+      ],
+      "links": []
+    }
+  ]
+}
