@@ -69,7 +69,7 @@ namespace
         bool debugWait = false;
         bool debugRemote = false;
 #ifdef NX_DESKTOP_BLUEPRINT
-        bool blueprintStudio = false;
+        bool blueprintStudio = false, blueprintProjects = false;
 #endif
     };
 
@@ -528,8 +528,8 @@ namespace
             Screens screens;
 #ifdef NX_DESKTOP_BLUEPRINT
             BlueprintWorkspace studio;
-            static bool studioRequested = false;
-            studioRequested = false;
+            static unsigned studioRequested = 0;
+            studioRequested = 0;
 #endif
             services.platform = &platform;
             services.device = device;
@@ -579,13 +579,14 @@ namespace
             {
                 debugger.waitForReady();
             }
-            ok = ok && (options.docs || screens.init(services, "showcase", "main"));
 #ifdef NX_DESKTOP_BLUEPRINT
             if (!options.null && !options.hidden && !options.frames && !options.tour && options.demo <= 0 && !options.docs && !options.screen)
             {
-                screens.setBlueprintLauncher([]() { studioRequested = true; return true; });
+                screens.setBlueprintLauncher([]() { studioRequested = 1; return true; });
+                screens.setBlueprintProjectLauncher([]() { studioRequested = 2; return true; });
             }
 #endif
+            ok = ok && (options.docs || screens.init(services, "showcase", "main"));
 
             if (ok && !options.docs)
             {
@@ -595,9 +596,9 @@ namespace
                 }
                 bool done = false;
 #ifdef NX_DESKTOP_BLUEPRINT
-                if (options.blueprintStudio)
+                if (options.blueprintStudio||options.blueprintProjects)
                 {
-                    studio.open(services);
+                    studio.open(services,options.blueprintProjects);
                     if (studio.active()) screens.setDevelopmentPaused(true);
                     else { ok = false; done = true; }
                 }
@@ -688,8 +689,9 @@ namespace
 #ifdef NX_DESKTOP_BLUEPRINT
                             if (studioRequested)
                             {
-                                studioRequested = false;
-                                studio.open(services);
+                                const bool projects=studioRequested==2;
+                                studioRequested = 0;
+                                studio.open(services,projects);
                                 if (studio.active()) screens.setDevelopmentPaused(true);
                                 else screens.blueprintLaunchFailed();
                             }
@@ -886,6 +888,7 @@ int main(int argc, char** argv)
         else if (strcmp(a, "--menu") == 0) options.menu = true;
 #ifdef NX_DESKTOP_BLUEPRINT
         else if (strcmp(a, "--blueprint-studio") == 0) options.blueprintStudio = true;
+        else if (strcmp(a, "--blueprint-projects") == 0) options.blueprintProjects = true;
 #endif
         else if (strcmp(a, "--bench") == 0) options.bench = true;
         else if (strcmp(a, "--dev") == 0) options.dev = true;

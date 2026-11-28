@@ -61,6 +61,9 @@ namespace nx
         void setCanQuit(bool can) { m_canQuit = can; }
         // Native desktop host may supply an optional development-tool action.
         void setBlueprintLauncher(bool (*launch)()) { m_blueprintLauncher = launch; }
+#ifdef NX_DESKTOP_BLUEPRINT
+        void setBlueprintProjectLauncher(bool (*launch)()) { m_blueprintProjectLauncher=launch; }
+#endif
         // A deferred native workspace launch can fail after the menu has closed.
         void blueprintLaunchFailed() { setMenu(true); m_blueprintError = true; }
         // The desktop workspace takes input while the home screen stays paused.
@@ -145,6 +148,9 @@ namespace nx
         bool m_canQuit = true;
         bool m_quit = false;
         bool (*m_blueprintLauncher)() = nullptr;
+#ifdef NX_DESKTOP_BLUEPRINT
+        bool (*m_blueprintProjectLauncher)() = nullptr;
+#endif
         bool m_blueprintError = false;
         std::vector<std::string> m_included;
 #ifdef NX_DESKTOP_BLUEPRINT

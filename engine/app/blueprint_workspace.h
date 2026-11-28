@@ -21,7 +21,7 @@ namespace nx
     {
     public:
         bool active() const { return m_font != nullptr; }
-        void open(Services& services);
+        void open(Services& services,bool projects=false);
         void close(Services& services);
         void update(Services& services);
         bool previewing() const { return m_playing; }
@@ -144,6 +144,7 @@ namespace nx
         bool importSource(Services& services,const std::string& file);
         bool importProjectFolder(Services& services,const std::string& folder);
         void browseFiles(Services& services);
+        bool createTemplate(Services& services,const std::string& id,const std::string& name);
         void browseAssets(Services& services);
         void launchSceneEditor(Services& services);
         bool m_sceneEditor=false,m_sceneExit=false,m_sceneReturnToPlacement=false;
@@ -367,6 +368,8 @@ namespace nx
         std::vector<std::string> m_files;
         size_t m_fileFirst=0;
         bool m_browsing=false;
+        unsigned m_projectCreate=0;
+        std::string m_projectName;
         bool m_previousTyping=false;
         bool m_playing=false;
         bool m_checkpointPresent=false;

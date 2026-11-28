@@ -8,11 +8,7 @@
 #include "assets/formats.h"
 #include "audio/audio.h"
 #include "audio/decoder.h"
-#include <memory>
-#include <sstream>
-#include <iomanip>
 #include <limits>
-#include <locale>
 #include <unordered_set>
 #include <cmath>
 #include <algorithm>
@@ -24,6 +20,51 @@ namespace nx
     namespace
     {
         constexpr size_t kMaxFiles=4096,kMaxFile=64*1024*1024,kMaxTotal=256*1024*1024;
+        // A scoped owner for native engine handles. No additional standard-library
+        // dependencies; all early exits still return allocations to the native pool.
+        template<class T,void (*Release)(T*)> class AudioOwner
+        {
+            T* m_value;
+        public:
+            explicit AudioOwner(T* value):m_value(value){}
+            ~AudioOwner(){if(m_value)Release(m_value);}
+            AudioOwner(const AudioOwner&)=delete;
+            AudioOwner& operator=(const AudioOwner&)=delete;
+            T* get()const{return m_value;}
+            T* operator->()const{return m_value;}
+            T& operator*()const{return *m_value;}
+            explicit operator bool()const{return m_value!=nullptr;}
+        };
+        // Nine significant decimal digits round-trip binary32. Construct the
+        // decimal directly, so neither C++ streams nor the C locale are needed.
+        std::string audioFloatText(float value)
+        {
+            if(value==0)return "0";
+            const bool negative=value<0;
+            double scaled=std::abs(static_cast<double>(value));int exponent=0;
+            while(scaled>=10){scaled/=10;++exponent;}
+            while(scaled<1){scaled*=10;--exponent;}
+            unsigned mantissa=static_cast<unsigned>(std::round(scaled*100000000.0));
+            if(mantissa==1000000000u){mantissa=100000000u;++exponent;}
+            std::string digits=std::to_string(mantissa);
+            while(digits.size()>1&&digits.back()=='0')digits.pop_back();
+            std::string result=negative?"-":"";
+            const int point=exponent+1;
+            if(point>0&&point<=9)
+            {
+                const auto pos=static_cast<size_t>(point);
+                if(pos>=digits.size())result+=digits+std::string(pos-digits.size(),'0');
+                else result+=digits.substr(0,pos)+"."+digits.substr(pos);
+            }
+            else if(point<=0&&point>=-5)result+="0."+std::string(static_cast<size_t>(-point),'0')+digits;
+            else
+            {
+                result+=digits.substr(0,1);
+                if(digits.size()>1)result+="."+digits.substr(1);
+                result+="e"+std::to_string(exponent);
+            }
+            return result;
+        }
         bool folderId(const std::string& s)
         {return s=="Screen"||blueprintAssetName(s,true);}
         bool directoryRoot(const std::string& s)
@@ -190,9 +231,9 @@ namespace nx
         BusEffects processor;processor.set(t.effects,0);
         const auto& fx=t.effects;
         // Isolated copies: never change the live mixer's bus or its effect state.
-        std::unique_ptr<ReverbMemory,decltype(&destroyReverbMemory)> reverb(fx.reverb>0?createReverbMemory():nullptr,destroyReverbMemory);
-        std::unique_ptr<EchoMemory,decltype(&destroyEchoMemory)> echo(fx.echo>0?createEchoMemory():nullptr,destroyEchoMemory);
-        std::unique_ptr<WaverMemory,decltype(&destroyWaverMemory)> waver((fx.chorus>0||fx.flanger>0)?createWaverMemory():nullptr,destroyWaverMemory);
+        AudioOwner<ReverbMemory,destroyReverbMemory> reverb(fx.reverb>0?createReverbMemory():nullptr);
+        AudioOwner<EchoMemory,destroyEchoMemory> echo(fx.echo>0?createEchoMemory():nullptr);
+        AudioOwner<WaverMemory,destroyWaverMemory> waver((fx.chorus>0||fx.flanger>0)?createWaverMemory():nullptr);
         if((fx.reverb>0&&!reverb)||(fx.echo>0&&!echo)||((fx.chorus>0||fx.flanger>0)&&!waver))
         {error="Not enough memory for audio effects.";return false;}
         processor.giveReverb(reverb.get());processor.giveEcho(echo.get());processor.giveWaver(waver.get());
@@ -285,7 +326,7 @@ namespace nx
         {ok=ok&&candidate.connect(g,from,out,to,in,error);};
         const auto input=[&](size_t g,size_t n,const char* pin,const std::string& value)
         {ok=ok&&candidate.setInputValue(g,n,pin,value,error);};
-        const auto number=[](float v){std::ostringstream s;s.imbue(std::locale::classic());s<<std::setprecision(9)<<v;return s.str();};
+        const auto number=[](float v){return audioFloatText(v);};
         constexpr unsigned shapes[]={0,3,2,1}; // editor's wave order differs from the script helper.
         if(stream)
         {
@@ -341,6 +382,188 @@ namespace nx
         if(!ok||!compileBlueprint(candidate,script,error))return false;
         document=std::move(candidate);error.clear();return true;
     }
+    bool blueprintProjectTemplate(const std::string& id,BlueprintDocument& document,std::string& error)
+    {
+        BlueprintDocument candidate;candidate.create();
+        if(id=="blank"){document=std::move(candidate);error.clear();return true;}
+        if(id!="first-person"){error="Unknown project template.";return false;}
+        candidate.name="First Person";
+        bool ok=true;
+        const auto field=[&](const char* command){ok=ok&&candidate.editVariableDeclaration("Screen",command,error);};
+        field("field hero:Entity@");field("field yaw:float=0");field("field pitch:float=0");
+        field("field walkSpeed:float=4.6");field("field jumpSpeed:float=6.4");field("field eyeHeight:float=1.55");
+        field("field mouseSensitivity:float=0.2");field("field gamepadYawSpeed:float=130");field("field gamepadPitchSpeed:float=100");
+        field("field groundGrip:float=14");field("field airGrip:float=4");
+        const auto fn=[&](const char* name,bool delta=false)
+        {
+            const auto index=candidate.graphs.size();
+            ok=ok&&candidate.addFunction(name,error);
+            if(delta)ok=ok&&candidate.setFunctionSignature(index,{{"dt","float"}},"void",error);
+            return index;
+        };
+        const auto arena=fn("BuildArena"),spawn=fn("SpawnCharacter"),look=fn("UpdateLook",true),
+            movement=fn("UpdateMovement",true),camera=fn("UpdateCamera"),hud=fn("DrawHUD"),obstacle=fn("AddObstacle");
+        ok=ok&&candidate.setFunctionSignature(hud,{{"surface","Canvas@"}},"void",error)&&
+            candidate.setFunctionSignature(obstacle,{{"name","string"},{"place","Vec3"},{"size","Vec3"},{"color","Color"}},"void",error);
+        // Each function owns one compact, documented task. World-space layout leaves
+        // room for variable-width titles and both left and right pin columns.
+        const auto add=[&](size_t g,const char* kind,float x,float y,const char* target="")
+        {if(!ok)return size_t(0);const auto n=candidate.graphs[g].nodes.size();ok=candidate.addNode(g,kind,x,y,error,target);return n;};
+        const auto variable=[&](size_t g,const char* name,bool setter,float x,float y)
+        {if(!ok)return size_t(0);const auto n=candidate.graphs[g].nodes.size();ok=candidate.addVariableNode(g,name,false,setter,x,y,error);return n;};
+        const auto wire=[&](size_t g,size_t from,const char* out,size_t to,const char* in)
+        {if(ok)ok=candidate.connect(g,from,out,to,in,error);};
+        const auto value=[&](size_t g,size_t n,const char* pin,const char* text)
+        {if(ok)ok=candidate.setInputValue(g,n,pin,text,error);};
+        const auto chain=[&](size_t g,size_t from,size_t to){wire(g,from,"then",to,"in");};
+        const auto note=[&](size_t g,const char* description)
+        {
+            if(!ok)return;
+            std::vector<size_t> members;
+            for(size_t i=0;i<candidate.graphs[g].nodes.size();++i)members.push_back(i);
+            ok=candidate.addComment(g,members,description,error);
+        };
+        const auto build=add(0,"call:function",320,60,"BuildArena"),player=add(0,"call:function",650,60,"SpawnCharacter");
+        chain(0,0,build);chain(0,build,player);
+        note(0,"INITIALIZE | Build a lightweight test arena, then create and store the player character. Runs once when this screen opens.");
+        const auto inputLook=add(1,"call:function",340,60,"UpdateLook"),move=add(1,"call:function",680,60,"UpdateMovement"),
+            view=add(1,"call:function",1020,60,"UpdateCamera"),dt=add(1,"event:delta",24,250);
+        chain(1,0,inputLook);chain(1,inputLook,move);chain(1,move,view);
+        wire(1,dt,"value",inputLook,"arg_dt");wire(1,dt,"value",move,"arg_dt");
+        note(1,"FRAME UPDATE | Apply mouse/right-stick look, calculate physics motion from left-stick/WASD and jump, then aim the first-person camera. Delta time keeps movement frame-rate independent.");
+        const auto canvasPin=add(2,"event:canvas",24,240),design=add(2,"api:Canvas:design:Canvas@,float,float",340,60),
+            draw=add(2,"render:space",700,60),overlay=add(2,"call:function",1040,60,"DrawHUD");
+        chain(2,0,design);wire(2,canvasPin,"value",design,"target");value(2,design,"width","1280");value(2,design,"height","720");
+        chain(2,design,draw);chain(2,draw,overlay);wire(2,canvasPin,"value",overlay,"arg_surface");
+        note(2,"RENDER | Establish a 1280 x 720 virtual canvas. Native Space draws the scene first, then DrawHUD draws the crosshair on top. The same graph runs on desktop and Xbox.");
+        for(size_t g:{size_t(3),size_t(4),size_t(5)})
+        {
+            const auto lock=add(g,"api:Input:Input::lockMouse:bool",360,60);
+            value(g,lock,"locked",g==4?"true":"false");chain(g,0,lock);
+            note(g,g==4?"RESUME | Recapture mouse for first-person controls after the engine menu closes.":"RELEASE MOUSE | Restore normal pointer behavior while the game is suspended or exiting.");
+        }
+        const auto ground=add(arena,"api:Space:Space::ground:float",340,60);
+        value(arena,ground,"height","0");chain(arena,0,ground);
+        const auto floor=add(arena,"spawn:plane",680,60);chain(arena,ground,floor);
+        value(arena,floor,"name","Arena floor");value(arena,floor,"size","80,1,80");
+        value(arena,floor,"color","0.32,0.37,0.43,1");
+        const auto sky=add(arena,"api:Space:Space::sky:Color,Color",1080,60);chain(arena,floor,sky);
+        value(arena,sky,"top","0.22,0.42,0.75,1");value(arena,sky,"horizon","0.72,0.83,0.93,1");
+        const auto sun=add(arena,"api:Space:Space::sun:Vec3,Color",1480,60);chain(arena,sky,sun);
+        value(arena,sun,"direction","0.5,0.75,0.35");value(arena,sun,"color","1,0.93,0.8,1");
+        size_t last=sun;
+        struct Marker{const char* name;const char* place;const char* size;const char* color;};
+        constexpr Marker markers[]={
+            {"Orange marker","0,1,-7","2,2,2","0.92,0.35,0.12,1"},
+            {"Blue marker","-5,0.75,-11","2,1.5,2","0.15,0.45,0.9,1"},
+            {"Green marker","5,1.5,-12","2,3,2","0.2,0.75,0.36,1"},
+            {"North wall","0,1,-20","40,2,1","0.46,0.49,0.55,1"},
+            {"South wall","0,1,20","40,2,1","0.46,0.49,0.55,1"},
+            {"West wall","-20,1,0","1,2,40","0.46,0.49,0.55,1"},
+            {"East wall","20,1,0","1,2,40","0.46,0.49,0.55,1"}};
+        for(unsigned i=0;i<7;++i)
+        {
+            const auto& marker=markers[i];
+            const auto box=add(arena,"call:function",340+static_cast<float>(i%3)*490,310+static_cast<float>(i/3)*250,"AddObstacle");
+            chain(arena,last,box);last=box;
+            value(arena,box,"arg_name",marker.name);value(arena,box,"arg_place",marker.place);
+            value(arena,box,"arg_size",marker.size);value(arena,box,"arg_color",marker.color);
+        }
+        note(arena,"ARENA | Native ground supplies collision. Floor, sky and sunlight establish the scene; seven calls to AddObstacle build solid markers and perimeter walls. Change each instance's position, size and colour.");
+        const auto box=add(obstacle,"spawn:box",380,60),collider=add(obstacle,"api:Entity:cube:Entity@,Vec3,uint,uint",820,60);
+        chain(obstacle,0,box);chain(obstacle,box,collider);
+        for(const char* pin:{"name","place","size","color"})
+        {
+            const auto arg=std::string("arg_")+pin;
+            wire(obstacle,0,arg.c_str(),box,pin);
+        }
+        wire(obstacle,box,"result",collider,"target");wire(obstacle,0,"arg_size",collider,"size");
+        note(obstacle,"OBSTACLE | Create a native SolidBox with the supplied visual transform, then attach a matching static 3D cube collider. No mass is assigned, so the obstacle stays fixed. Reuse this function for walls and platforms.");
+        const auto entity=add(spawn,"api:Space:Space::spawn:Vec3",340,60);
+        value(spawn,entity,"place","0,0.2,0");chain(spawn,0,entity);
+        const auto keep=variable(spawn,"hero",true,680,60);chain(spawn,entity,keep);wire(spawn,entity,"result",keep,"value");
+        const auto name=add(spawn,"api:Entity:set_name:Entity@,string",1020,60);
+        chain(spawn,keep,name);wire(spawn,entity,"result",name,"target");value(spawn,name,"value","Player");
+        const auto capsule=add(spawn,"api:Entity:capsule:Entity@,float,float,uint,uint",1380,60);
+        chain(spawn,name,capsule);wire(spawn,entity,"result",capsule,"target");value(spawn,capsule,"radius","0.35");value(spawn,capsule,"height","1.7");value(spawn,capsule,"group","1");
+        const auto offset=add(spawn,"api:Entity:set_colliderAt:Entity@,Vec3",340,330);
+        chain(spawn,capsule,offset);wire(spawn,entity,"result",offset,"target");value(spawn,offset,"value","0,0.85,0");
+        const auto walker=add(spawn,"api:Entity:set_walker:Entity@,bool",700,330);
+        chain(spawn,offset,walker);wire(spawn,entity,"result",walker,"target");value(spawn,walker,"value","true");
+        const auto mass=add(spawn,"api:Entity:set_mass:Entity@,float",1060,330);
+        chain(spawn,walker,mass);wire(spawn,entity,"result",mass,"target");value(spawn,mass,"value","60");
+        const auto model=add(spawn,"api:Assets:Assets::model:string",340,590);
+        chain(spawn,mass,model);value(spawn,model,"name","global:model/robot.glb");
+        const auto apply=add(spawn,"api:Entity:model:Entity@,Model@",740,590);
+        chain(spawn,model,apply);wire(spawn,entity,"result",apply,"target");wire(spawn,model,"result",apply,"model");
+        const auto lock=add(spawn,"api:Input:Input::lockMouse:bool",1100,590);chain(spawn,apply,lock);value(spawn,lock,"locked","true");
+        note(spawn,"PLAYER | Spawn at feet height, retain Entity handle, configure 0.35 m radius / 1.7 m capsule with its centre 0.85 m up, enable native walker and 60 kg mass. Attach the Redux robot model, then capture mouse.");
+        const auto mouse=add(look,"api:Input:Input::get_mouseMove:",24,300),pad=add(look,"api:Input:Input::padRight:uint",24,460);
+        value(look,pad,"pad","0");
+        const auto yaw=variable(look,"yaw",false,300,300),pitch=variable(look,"pitch",false,300,460);
+        const auto sense=variable(look,"mouseSensitivity",false,300,620),ys=variable(look,"gamepadYawSpeed",false,300,780),
+            ps=variable(look,"gamepadPitchSpeed",false,300,940);
+        const auto turnYaw=add(look,"player:yaw",640,270),turnPitch=add(look,"player:pitch",640,640);
+        for(size_t turn:{turnYaw,turnPitch})
+        {
+            wire(look,mouse,"result",turn,"mouse");wire(look,pad,"result",turn,"pad");
+            wire(look,0,"arg_dt",turn,"dt");wire(look,sense,"value",turn,"mouseSensitivity");
+        }
+        wire(look,yaw,"value",turnYaw,"yaw");wire(look,ys,"value",turnYaw,"padSpeed");
+        wire(look,pitch,"value",turnPitch,"pitch");wire(look,ps,"value",turnPitch,"padSpeed");
+        const auto setYaw=variable(look,"yaw",true,1120,60),setPitch=variable(look,"pitch",true,1480,60);
+        chain(look,0,setYaw);chain(look,setYaw,setPitch);wire(look,turnYaw,"result",setYaw,"value");wire(look,turnPitch,"result",setPitch,"value");
+        note(look,"LOOK | Mouse movement is measured per frame, right-stick speed per second. Update yaw in degrees, clamp pitch to +/-85 degrees, and store both. Editable sensitivity fields control each input source.");
+        const auto hero=variable(movement,"hero",false,24,240),motion=add(movement,"api:Entity:get_motion:Entity@",340,240),
+            onGround=add(movement,"api:Entity:get_onGround:Entity@",340,390),stick=add(movement,"api:Input:Input::get_move:",340,540),
+            jump=add(movement,"api:Input:Input::pressed:string",340,690),heading=variable(movement,"yaw",false,24,390);
+        wire(movement,hero,"value",motion,"target");wire(movement,hero,"value",onGround,"target");value(movement,jump,"action","accept");
+        const auto speed=variable(movement,"walkSpeed",false,24,540),jumpSpeed=variable(movement,"jumpSpeed",false,24,690),
+            grip=variable(movement,"groundGrip",false,24,840),air=variable(movement,"airGrip",false,340,840);
+        const auto calculate=add(movement,"player:motion",750,250),set=add(movement,"api:Entity:set_motion:Entity@,Vec3",1260,60);
+        wire(movement,motion,"result",calculate,"motion");wire(movement,stick,"result",calculate,"move");wire(movement,heading,"value",calculate,"yaw");
+        wire(movement,0,"arg_dt",calculate,"dt");wire(movement,onGround,"result",calculate,"grounded");wire(movement,jump,"result",calculate,"jump");
+        wire(movement,speed,"value",calculate,"speed");wire(movement,jumpSpeed,"value",calculate,"jumpSpeed");
+        wire(movement,grip,"value",calculate,"groundGrip");wire(movement,air,"value",calculate,"airGrip");
+        chain(movement,0,set);wire(movement,hero,"value",set,"target");wire(movement,calculate,"result",set,"value");
+        note(movement,"WALK / JUMP | Rotate normalized move input by yaw. Blend horizontal velocity using ground or air grip; keep native vertical velocity unless grounded jump is pressed. Space's walker applies gravity and collision; no manual position teleport.");
+        const auto ch=variable(camera,"hero",false,24,240),feet=add(camera,"api:Entity:get_place:Entity@",340,240),
+            cy=variable(camera,"yaw",false,24,410),cp=variable(camera,"pitch",false,24,570),height=variable(camera,"eyeHeight",false,340,410);
+        const auto eye=add(camera,"player:eye",700,240),target=add(camera,"player:target",1080,240),
+            angles=add(camera,"player:angles",700,510),face=add(camera,"api:Entity:set_angles:Entity@,Vec3",340,60),
+            cam=add(camera,"api:Space:Space::camera:Vec3,Vec3,float",1480,60);
+        wire(camera,ch,"value",feet,"target");wire(camera,feet,"result",eye,"feet");wire(camera,height,"value",eye,"height");
+        wire(camera,eye,"result",target,"eye");wire(camera,cy,"value",target,"yaw");wire(camera,cp,"value",target,"pitch");
+        wire(camera,cy,"value",angles,"yaw");wire(camera,angles,"result",face,"value");wire(camera,ch,"value",face,"target");
+        chain(camera,0,face);chain(camera,face,cam);wire(camera,eye,"result",cam,"from");wire(camera,target,"result",cam,"to");value(camera,cam,"angle","72");
+        note(camera,"FIRST PERSON | Eye is feet position plus eye height. Target is one unit along yaw/pitch direction; field of view is 72 degrees vertically. Rotate the attached robot body with yaw, then set the native Space camera.");
+        const auto horizontal=add(hud,"api:Canvas:line:Canvas@,float,float,float,float,float,Color",360,60),
+            vertical=add(hud,"api:Canvas:line:Canvas@,float,float,float,float,float,Color",830,60);
+        chain(hud,0,horizontal);chain(hud,horizontal,vertical);
+        for(size_t line:{horizontal,vertical})
+        {
+            wire(hud,0,"arg_surface",line,"target");value(hud,line,"thickness","2");
+            value(hud,line,"color","1,1,1,0.9");
+            value(hud,line,"x1",line==horizontal?"632":"640");value(hud,line,"x2",line==horizontal?"648":"640");
+            value(hud,line,"y1",line==horizontal?"360":"352");value(hud,line,"y2",line==horizontal?"360":"368");
+        }
+        note(hud,"HUD | Two native Canvas lines draw a small central crosshair after the world. The virtual canvas is 1280 x 720, so 640,360 is its centre. Add health, ammo or interaction prompts here without affecting the character.");
+        if(!ok)return false;
+        std::string source,bytes;
+        if(!compileBlueprint(candidate,source,error)||!candidate.serialize(bytes,error))return false;
+        BlueprintDocument checked;
+        if(!checked.load(bytes.data(),bytes.size(),error))return false;
+        document=std::move(checked);error.clear();return true;
+    }
+    bool blueprintStageTemplateMedia(Platform& p,const std::string& root,const std::string& id,std::string& error)
+    {
+        if(id=="blank"){error.clear();return true;}
+        if(id!="first-person"||!blueprintAssetRoot(root)){error="Invalid template media request.";return false;}
+        if(!ensure(p,root+"/_global")||!ensure(p,root+"/_global/model"))
+        {error="Cannot create template model folder.";return false;}
+        size_t total=0;
+        return copy(p,"global/model/robot.glb","own/"+root+"/_global/model/robot.glb",total,error);
+    }
     bool blueprintAudioAsset(const std::string& relative)
     {
         if(relative.empty()||relative.size()>90)return false;
@@ -363,7 +586,7 @@ namespace nx
         FileData file;
         if(!p.readFile(("own/"+root+"/"+screen+"/asset/"+relative).c_str(),file,MemTag::General)||!file.size||file.size>8*1024*1024)
         {error="Cannot read audio asset (8 MiB file limit).";return false;}
-        std::unique_ptr<SoundData,decltype(&freeSound)> sound(loadSound(file.data,file.size),freeSound);
+        AudioOwner<SoundData,freeSound> sound(loadSound(file.data,file.size));
         if(!sound||sound->kind==SoundKind::Stream||sound->rate<8000||sound->rate>48000||sound->channels<1||sound->channels>2)
         {error="Use a native WAV, Ogg or cooked ADPCM clip at 8-48 kHz.";return false;}
         u32 frames=0;
@@ -425,22 +648,20 @@ namespace nx
     {
         // All keys are fixed literals. Write enough significant digits to
         // recover the identical float, even under a non-English desktop locale.
-        std::ostringstream json;
-        json.imbue(std::locale::classic());
-        json<<std::setprecision(std::numeric_limits<float>::max_digits10)
-            <<"{\"version\":2,\"wave\":"<<tone.wave<<",\"rate\":"<<tone.rate<<",\"channels\":"<<tone.channels
-            <<",\"independentStereo\":"<<(tone.independentStereo?"true":"false")<<",\"rightWave\":"<<tone.rightWave;
-        for(const auto& f:rightFields)json<<",\""<<f.name<<"\":"<<(tone.*f.field);
-        for(const auto& f:toneFields)json<<",\""<<f.name<<"\":"<<(tone.*f.field);
-        json<<",\"effects\":{";
+        std::string json="{\"version\":2,\"wave\":"+std::to_string(tone.wave)+",\"rate\":"+std::to_string(tone.rate)+
+            ",\"channels\":"+std::to_string(tone.channels)+",\"independentStereo\":"+(tone.independentStereo?"true":"false")+
+            ",\"rightWave\":"+std::to_string(tone.rightWave);
+        for(const auto& f:rightFields)json+=",\""+std::string(f.name)+"\":"+audioFloatText(tone.*f.field);
+        for(const auto& f:toneFields)json+=",\""+std::string(f.name)+"\":"+audioFloatText(tone.*f.field);
+        json+=",\"effects\":{";
         bool first=true;
         for(const auto& f:blueprintEffectControls)
         {
-            if(!first)json<<',';
-            first=false;json<<'\"'<<f.name<<"\":"<<(tone.effects.*f.field);
+            if(!first)json+=',';
+            first=false;json+="\""+std::string(f.name)+"\":"+audioFloatText(tone.effects.*f.field);
         }
-        json<<"}}\n";
-        return json.str();
+        json+="}}\n";
+        return json;
     }
 
     bool blueprintSaveTonePreset(Platform& p,const std::string& root,const std::string& screen,
@@ -531,13 +752,11 @@ namespace nx
         {error="The source audio changed; reopen it before saving edits.";return false;}
         std::string validated;
         if(!blueprintEditAudioClip(clip,edit,output,validated,error))return false;
-        std::ostringstream json;json.imbue(std::locale::classic());
-        json<<std::setprecision(std::numeric_limits<float>::max_digits10)
-            <<"{\"version\":1,\"source\":\""<<source<<"\",\"fingerprint\":"<<clipFingerprint(clip)
-            <<",\"reverse\":"<<(edit.reverse?"true":"false")<<",\"normalize\":"<<(edit.normalize?"true":"false");
-        for(const auto& f:clipFields)json<<",\""<<f.name<<"\":"<<(edit.*f.field);
-        json<<",\"output\":"<<tonePresetJson(output)<<"}\n";
-        return newToneAsset(p,root,screen,".bpclip.json",json.str(),relative,error);
+        std::string json="{\"version\":1,\"source\":\""+source+"\",\"fingerprint\":"+std::to_string(clipFingerprint(clip))+
+            ",\"reverse\":"+(edit.reverse?"true":"false")+",\"normalize\":"+(edit.normalize?"true":"false");
+        for(const auto& f:clipFields)json+=",\""+std::string(f.name)+"\":"+audioFloatText(edit.*f.field);
+        json+=",\"output\":"+tonePresetJson(output)+"}\n";
+        return newToneAsset(p,root,screen,".bpclip.json",json,relative,error);
     }
     bool blueprintLoadClipPreset(Platform& p,const std::string& root,const std::string& screen,
         const std::string& relative,std::string& source,BlueprintAudioClip& clip,BlueprintClipEdit& edit,

@@ -115,12 +115,23 @@ namespace nx
 #ifdef NX_DESKTOP_BLUEPRINT
         if(previewing())return static_cast<u32>(m_previewScreens.size());
 #endif
+#ifdef NX_DESKTOP_BLUEPRINT
+        if(m_blueprintProjectLauncher&&strcmp(m_folder,"showcase")==0)return m_count+1;
+#endif
         return m_count;
     }
     const ScreenInfo* Screens::info(u32 index) const
     {
 #ifdef NX_DESKTOP_BLUEPRINT
         if(previewing())return index<m_previewScreens.size()?&m_previewScreens[index].info:nullptr;
+#endif
+#ifdef NX_DESKTOP_BLUEPRINT
+        if(m_blueprintProjectLauncher&&strcmp(m_folder,"showcase")==0)
+        {
+            static const ScreenInfo projects={"blueprint-projects","Blueprint Studio","Create games from templates, browse and manage projects.","Development"};
+            if(index==0)return &projects;
+            --index;
+        }
 #endif
         return index<m_count?&m_infos[index]:nullptr;
     }
@@ -373,6 +384,13 @@ namespace nx
         setMenu(false);
         m_services->input->consume();
 
+#ifdef NX_DESKTOP_BLUEPRINT
+        if(!previewing()&&change==Change::Push&&m_blueprintProjectLauncher&&strcmp(m_folder,"showcase")==0&&strcmp(m_changeId,"blueprint-projects")==0)
+        {
+            if(!m_blueprintProjectLauncher())blueprintLaunchFailed();
+            return;
+        }
+#endif
         const ScreenInfo* next = nullptr;
         if (change == Change::Push || change == Change::Replace)
         {

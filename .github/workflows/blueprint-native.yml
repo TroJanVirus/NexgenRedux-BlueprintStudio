@@ -28,6 +28,8 @@ jobs:
         with:
           ref: ${{ inputs.source_ref || github.sha }}
           persist-credentials: false
+      - name: Check engine self-contained dependency policy
+        run: cmake -DROOT="$GITHUB_WORKSPACE/engine" -P engine/cmake/CheckSelfContained.cmake
       - name: Check generated catalogue
         run: |
           python3 engine/tools/blueprint/generate_catalog.py --check
@@ -121,6 +123,15 @@ jobs:
         run: xvfb-run -a -s "-screen 0 1280x720x24 -noreset" /usr/bin/python3 engine/tools/blueprint/test_native_desktop.py build/showcase/nexgen "$RUNNER_TEMP/bp-desktop-operational"
       - name: Exercise compact 1080p actor class editor and resize
         run: xvfb-run -a -s "-screen 0 1920x1080x24 -noreset" /usr/bin/python3 engine/tools/blueprint/test_compact_desktop.py build/showcase/nexgen "$RUNNER_TEMP/bp-compact-desktop"
+      - name: Create and play first-person template from the native Redux library
+        if: ${{ !cancelled() }}
+        run: xvfb-run -a -s "-screen 0 1280x720x24 -noreset" /usr/bin/python3 engine/tools/blueprint/test_project_browser_desktop.py build/showcase/nexgen "$RUNNER_TEMP/bp-project-browser"
+      - name: Retain project browser and first-person evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: project-browser-first-person-evidence
+          path: ${{ runner.temp }}/bp-project-browser/
       - name: Retain compact editor screenshot evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v6
