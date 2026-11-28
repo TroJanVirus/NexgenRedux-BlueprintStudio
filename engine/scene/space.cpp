@@ -383,6 +383,7 @@ namespace nx
         if (device)
         {
             device->destroyMesh(m_waterMesh);
+            device->destroyMesh(m_editorGridMesh);
             for (gpu::Mesh& m : m_particleMeshes)
             {
                 device->destroyMesh(m);
@@ -394,7 +395,7 @@ namespace nx
                 m = {};
             }
         }
-        m_waterMesh = {};
+        m_waterMesh = {};m_editorGridMesh={};
         while (m_chunks.count())
         {
             removeChunk(m_chunks.count() - 1);
@@ -1859,6 +1860,28 @@ namespace nx
             d.cull = gpu::Cull::None;
             d.depthWrite = d.lit = d.fogged = false;
             device.drawMesh(d);
+        }
+        // Render the authoring reference as actual world geometry, not a
+        // 2D Canvas overlay. Opaque meshes can occlude it through the depth buffer.
+        if(m_editorGrid)
+        {
+            if(!m_editorGridMesh)
+            {
+                MeshData data;
+                for(int i=-20;i<=20;++i)
+                {
+                    const float n=static_cast<float>(i),half=i%5==0?0.012f:0.005f;
+                    const gpu::Color ink=i==0?gpu::Color{0.48f,0.49f,0.53f,1}:i%5==0?gpu::Color{0.30f,0.31f,0.34f,1}:gpu::Color{0.19f,0.20f,0.22f,1};
+                    data.quad({n-half,0,-20},{n+half,0,-20},{n+half,0,20},{n-half,0,20},ink);
+                    data.quad({-20,0,n-half},{20,0,n-half},{20,0,n+half},{-20,0,n+half},ink);
+                }
+                m_editorGridMesh=device.createMesh(data.vertices.begin(),data.vertices.count(),data.indices.begin(),data.indices.count(),false);
+            }
+            if(m_editorGridMesh)
+            {
+                gpu::MeshDraw grid;grid.mesh=m_editorGridMesh;grid.world=Mat4::translation({0,m_editorGridHeight-0.002f,0});
+                grid.cull=gpu::Cull::None;grid.lit=grid.fogged=false;device.drawMesh(grid);
+            }
         }
         drawLand(view, frustum, false);
         drawVoxels(view, frustum, false);

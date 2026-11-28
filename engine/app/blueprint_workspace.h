@@ -36,6 +36,12 @@ namespace nx
         void returnToRedux(Services& services);
         void recoveryWarning(const std::string& message);
         void selectGraph(size_t index);
+        struct NavigationRow {std::string key,label;size_t graph=static_cast<size_t>(-1);unsigned depth=0;};
+        std::vector<NavigationRow> navigationRows() const;
+        void revealNavigationGraph(size_t index);
+        bool m_graphTree=false;
+        size_t m_navigationFirst=0;
+        std::vector<std::string> m_navigationCollapsed;
         void fitGraph();
         void resizeWorkspace(const Canvas& canvas);
         bool modalOpen() const;

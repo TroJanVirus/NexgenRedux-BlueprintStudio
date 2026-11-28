@@ -956,9 +956,12 @@ namespace nx
         GrowArray<u32> m_decals;
         u32 m_decalLimit = 64;
         gpu::SpaceLook m_look;
+        gpu::Mesh m_editorGridMesh;
         gpu::Mesh m_navMesh;
         u32 m_navVersion = 0, m_navMeshVersion = 0;
     public:
+        bool m_editorGrid = false; // native depth-tested reference grid, editor previews only
+        float m_editorGridHeight = 0;
         bool m_showShapes = false;      // colliders drawn as lines: grey walls, green bodies, blue walkers, orange ragdolls, yellow areas
         bool m_showNavigation = false;  // where things can walk, from navigate
         float m_doppler = 0;      // how much sounds in space bend with how fast they come and go; 1 as they would

@@ -86,6 +86,14 @@ with log.open("wb") as output:
         wait_for(project.is_file,"save project")
         assert any(n["kind"]=="literal:int" for n in json.loads(project.read_text())["graphs"][0]["nodes"])
         shot("graph-1920.png")
+        # Optional categorized navigation retains the old compact list and hit targets.
+        click(208,521)
+        wait_for(lambda:"graph navigator tree" in log.read_text(errors="replace"),"categorized navigation")
+        shot("graph-tree-1920.png")
+        click(100,90)
+        shot("graph-tree-collapsed-1920.png")
+        click(208,521)
+        wait_for(lambda:"graph navigator flat" in log.read_text(errors="replace"),"flat navigation restored")
         # Centered legacy content modal has offset (320,180).
         click(1027,18)
         click(774,313)

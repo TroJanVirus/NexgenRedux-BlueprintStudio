@@ -173,11 +173,13 @@ namespace nx
             ",\"collapsed\":"+std::to_string(m_actorCollapsed)+",\"content\":"+(m_contentDrawer?"true":"false")+
             ",\"contentFloating\":"+(m_contentFloating?"true":"false")+",\"contentX\":"+std::to_string(m_contentPanelX)+
             ",\"contentY\":"+std::to_string(m_contentPanelY)+",\"contentWidth\":"+std::to_string(m_contentPanelWidth)+
-            ",\"contentTop\":"+(m_contentDockTop?"true":"false")+",\"contentHeight\":"+std::to_string(m_contentPanelHeight)+"}\n";
+            ",\"contentTop\":"+(m_contentDockTop?"true":"false")+",\"contentHeight\":"+std::to_string(m_contentPanelHeight)+
+            ",\"graphTree\":"+(m_graphTree?"true":"false")+"}\n";
     }
     void BlueprintWorkspace::loadLayout(Services& s)
     {
         m_leftPanel=248;m_graphRightPanel=268;m_actorRightPanel=310;m_uiScale=0;m_actorCollapsed=0;m_contentDrawer=false;m_contentFloating=false;m_contentPanelX=0.25f;m_contentPanelY=0.65f;m_contentPanelWidth=620;m_contentDockTop=false;m_contentPanelHeight=174;
+        m_graphTree=false;m_navigationFirst=0;m_navigationCollapsed.clear();
         FileData file;JsonTree tree;
         if(s.platform->readFile("own/blueprint-editor-layout.json",file,MemTag::General)&&file.size&&file.size<=4096&&
             tree.parse(reinterpret_cast<const char*>(file.data),file.size))
@@ -197,6 +199,7 @@ namespace nx
                 m_contentPanelX=bounded("contentX",0.25f,0,1);m_contentPanelY=bounded("contentY",0.65f,0,1);
                 m_contentPanelWidth=bounded("contentWidth",620,460,1000);
                 m_contentDockTop=root["contentTop"].flag();m_contentPanelHeight=bounded("contentHeight",174,174,510);
+                m_graphTree=root["graphTree"].flag();
                 NX_INFO("Blueprint Studio: restored editor layout");
             }
         }
@@ -280,6 +283,62 @@ namespace nx
         }),m_visualTabs.end());
         if(m_tabFirst>=m_graphTabs.size()+m_actorTabs.size()+m_visualTabs.size())m_tabFirst=0;
     }
+    std::vector<BlueprintWorkspace::NavigationRow> BlueprintWorkspace::navigationRows() const
+    {
+        std::vector<NavigationRow> result;
+        const auto& graphs=m_document.graphs;
+        if(!m_graphTree)
+        {
+            for(size_t i=0;i<graphs.size();++i)result.push_back({"",graphs[i].owner+" / "+graphs[i].name,i,0});
+            return result;
+        }
+        const auto collapsed=[&](const std::string& key){return std::find(m_navigationCollapsed.begin(),m_navigationCollapsed.end(),key)!=m_navigationCollapsed.end();};
+        std::vector<std::string> owners;
+        for(const auto& g:graphs)if(std::find(owners.begin(),owners.end(),g.owner)==owners.end())owners.push_back(g.owner);
+        const auto category=[](const BlueprintDocument::Graph& g)->unsigned
+        {
+            if(g.dataRole=="enum"||g.dataRole=="struct")return 5;
+            if(g.sharedLibrary)return 4;
+            if(g.inlineMacro)return 3;
+            if(g.kind=="event"||g.dataRole=="event"||g.dataRole=="customEvent")return 0;
+            if(g.name=="Construction")return 1;
+            return 2;
+        };
+        const char* labels[]={"Events","Construction","Functions","Macros","Shared library","Types"};
+        for(const auto& owner:owners)
+        {
+            const auto key="owner:"+owner;
+            result.push_back({key,owner.rfind("behaviour:",0)==0?"Actor / "+owner.substr(10):"Screen / "+owner,static_cast<size_t>(-1),0});
+            if(collapsed(key))continue;
+            for(unsigned c=0;c<6;++c)
+            {
+                if(std::none_of(graphs.begin(),graphs.end(),[&](const BlueprintDocument::Graph& g){return g.owner==owner&&category(g)==c;}))continue;
+                const auto group=key+"/"+std::to_string(c);
+                result.push_back({group,labels[c],static_cast<size_t>(-1),1});
+                if(collapsed(group))continue;
+                for(size_t i=0;i<graphs.size();++i)if(graphs[i].owner==owner&&category(graphs[i])==c)
+                    result.push_back({"",graphs[i].name,i,2});
+            }
+        }
+        return result;
+    }
+    void BlueprintWorkspace::revealNavigationGraph(size_t index)
+    {
+        if(!m_graphTree||index>=m_document.graphs.size())return;
+        auto rows=navigationRows();
+        auto found=std::find_if(rows.begin(),rows.end(),[&](const NavigationRow& row){return row.graph==index;});
+        if(found==rows.end())
+        {
+            const auto key="owner:"+m_document.graphs[index].owner;
+            m_navigationCollapsed.erase(std::remove_if(m_navigationCollapsed.begin(),m_navigationCollapsed.end(),[&](const std::string& value)
+            {return value==key||value.rfind(key+"/",0)==0;}),m_navigationCollapsed.end());
+            rows=navigationRows();found=std::find_if(rows.begin(),rows.end(),[&](const NavigationRow& row){return row.graph==index;});
+        }
+        if(found==rows.end())return;
+        const size_t row=static_cast<size_t>(found-rows.begin());
+        if(row<m_navigationFirst)m_navigationFirst=row;
+        if(row>=m_navigationFirst+kRows)m_navigationFirst=row-kRows+1;
+    }
     void BlueprintWorkspace::selectGraph(size_t index)
     {
         if (index >= m_document.graphs.size()) return;
@@ -303,6 +362,7 @@ namespace nx
         if(found->viewed){m_x=found->x;m_y=found->y;m_zoom=found->zoom;}
         if (index < m_first) m_first = index;
         if (index >= m_first + kRows) m_first = index - kRows + 1;
+        revealNavigationGraph(index);
     }
 
     bool BlueprintWorkspace::visualTabOpen() const
@@ -1273,22 +1333,12 @@ namespace nx
             auto& space=m_placementWorld->space();
             const float d=m_placementDistance;
             space.setCamera({std::sin(m_placementYaw)*d,d*0.65f+m_placementHeight,std::cos(m_placementYaw)*d},{0,m_placementHeight,0},55);
+            space.m_editorGrid=true;space.m_editorGridHeight=m_placementHeight;
             space.draw(c,planLeft+modalX(),planTop+modalY(),planRight-planLeft,planBottom-planTop);
             m_placementReady=true;
         }
         c.clip(planLeft,planTop,planRight-planLeft,planBottom-planTop);
-        if(m_placement3D)
-        {
-            // Project the reference plane through the native view matrix.
-            for(int i=-20;i<=20;++i)
-            {
-                const float p=static_cast<float>(i);float x1=0,y1=0,x2=0,y2=0;
-                const Color ink=i?Color{0.35f,0.43f,0.52f,0.35f}:Color{0.55f,0.7f,0.8f,0.7f};
-                if(placementProject(-20,m_placementHeight,p,x1,y1)&&placementProject(20,m_placementHeight,p,x2,y2))c.line(x1,y1,x2,y2,1,ink);
-                if(placementProject(p,m_placementHeight,-20,x1,y1)&&placementProject(p,m_placementHeight,20,x2,y2))c.line(x1,y1,x2,y2,1,ink);
-            }
-        }
-        else for(int i=-static_cast<int>(std::ceil(std::max(planRight-planLeft,planBottom-planTop)/(2*planScale)));i<=static_cast<int>(std::ceil(std::max(planRight-planLeft,planBottom-planTop)/(2*planScale)));++i)
+        if(!m_placement3D)for(int i=-static_cast<int>(std::ceil(std::max(planRight-planLeft,planBottom-planTop)/(2*planScale)));i<=static_cast<int>(std::ceil(std::max(planRight-planLeft,planBottom-planTop)/(2*planScale)));++i)
         {
             const float offset=static_cast<float>(i)*planScale;
             c.rect(planCenterX+offset,planTop,i?1.f:2.f,planBottom-planTop,i?Color{0.16f,0.21f,0.28f,1}:Color{0.37f,0.49f,0.60f,1});
@@ -2558,16 +2608,9 @@ namespace nx
             const float horizontal=d*std::cos(m_actorPitch);
             const Vec3 focus(m_actorFocus[0],m_actorFocus[1],m_actorFocus[2]);
             space.setCamera(focus+Vec3(std::sin(m_placementYaw)*horizontal,d*std::sin(m_actorPitch),std::cos(m_placementYaw)*horizontal),focus,55);
-            space.m_showShapes=m_actorCollision;
+            space.m_showShapes=m_actorCollision;space.m_editorGrid=true;space.m_editorGridHeight=0;
             space.draw(c,kLeft,top,right-kLeft,kBottom-top);m_placementReady=true;
             c.clip(kLeft,top,right-kLeft,kBottom-top);
-            for(int i=-10;i<=10;++i)
-            {
-                Vec2 a,b;const float f=static_cast<float>(i);
-                const Color grid=i?Color{0.38f,0.38f,0.40f,0.32f}:Color{0.56f,0.56f,0.58f,0.62f};
-                if(space.toScreen({-10,0,f},a)&&space.toScreen({10,0,f},b))c.line(a.x,a.y,b.x,b.y,1,grid);
-                if(space.toScreen({f,0,-10},a)&&space.toScreen({f,0,10},b))c.line(a.x,a.y,b.x,b.y,1,grid);
-            }
             if(selectedEntity)
             {
                 const auto place=space.worldPlace(selectedEntity);Vec2 origin;
@@ -3850,7 +3893,7 @@ namespace nx
                     }
                 }
                 else if(in(x,y,300,395,550,425)){m_uiScale=(m_uiScale+1)%4;m_status="Changed desktop UI density (small windows fit automatically).";}
-                else if(in(x,y,300,425,550,455)){m_leftPanel=248;m_graphRightPanel=268;m_actorRightPanel=310;m_uiScale=0;m_actorCollapsed=0;m_actorDetailsScroll=0;m_contentDrawer=false;m_contentFloating=false;m_contentPanelX=0.25f;m_contentPanelY=0.65f;m_contentPanelWidth=620;m_contentDockTop=false;m_contentPanelHeight=174;resizeWorkspace(canvas);fitGraph();m_status="Reset editor panel sizes and density.";}
+                else if(in(x,y,300,425,550,455)){m_leftPanel=248;m_graphRightPanel=268;m_actorRightPanel=310;m_uiScale=0;m_actorCollapsed=0;m_actorDetailsScroll=0;m_contentDrawer=false;m_contentFloating=false;m_contentPanelX=0.25f;m_contentPanelY=0.65f;m_contentPanelWidth=620;m_contentDockTop=false;m_contentPanelHeight=174;m_graphTree=false;m_navigationFirst=0;m_navigationCollapsed.clear();resizeWorkspace(canvas);fitGraph();m_status="Reset editor panel sizes and density.";}
                 m_layoutMenu=false;
             }
             m_left=left;return;
@@ -4356,10 +4399,37 @@ namespace nx
             }
             m_left=left;return;
         }
+        if(click&&in(x,y,kLeft-77,kVariableTop-24,kLeft-4,kVariableTop-2))
+        {
+            m_graphTree=!m_graphTree;m_navigationFirst=0;
+            revealNavigationGraph(m_graph);
+            m_status=m_graphTree?"Categorized graph navigation. Click a section to collapse or expand.":"Flat graph navigation.";
+            NX_INFO("Blueprint Studio: graph navigator %s",m_graphTree?"tree":"flat");
+            m_left=left;return;
+        }
         if (left && !m_left && in(x,y,0,kTop,kLeft,kTop+kRows*31))
         {
             const size_t row = static_cast<size_t>((y-kTop)/31);
-            if (row < kRows) selectGraph(m_first + row);
+            if(m_graphTree)
+            {
+                const auto rows=navigationRows();
+                m_navigationFirst=std::min(m_navigationFirst,rows.size()>kRows?rows.size()-kRows:0);
+                const auto at=m_navigationFirst+row;
+                if(at<rows.size())
+                {
+                    const auto& item=rows[at];
+                    if(item.graph<m_document.graphs.size())selectGraph(item.graph);
+                    else if(!item.key.empty())
+                    {
+                        const auto found=std::find(m_navigationCollapsed.begin(),m_navigationCollapsed.end(),item.key);
+                        if(found==m_navigationCollapsed.end())m_navigationCollapsed.push_back(item.key);
+                        else m_navigationCollapsed.erase(found);
+                        const auto count=navigationRows().size();
+                        m_navigationFirst=std::min(m_navigationFirst,count>kRows?count-kRows:0);
+                    }
+                }
+            }
+            else if (row < kRows) selectGraph(m_first + row);
         }
         if (left && !m_left && over)
         {
@@ -4499,8 +4569,18 @@ namespace nx
         }
         else if (in(x,y,0,kTop,kLeft,kTop+kRows*31) && wheel != 0)
         {
-            if (wheel < 0 && m_first+kRows < m_document.graphs.size()) ++m_first;
-            if (wheel > 0 && m_first) --m_first;
+            if(m_graphTree)
+            {
+                const auto count=navigationRows().size();
+                m_navigationFirst=std::min(m_navigationFirst,count>kRows?count-kRows:0);
+                if(wheel<0&&m_navigationFirst+kRows<count)++m_navigationFirst;
+                if(wheel>0&&m_navigationFirst)--m_navigationFirst;
+            }
+            else
+            {
+                if (wheel < 0 && m_first+kRows < m_document.graphs.size()) ++m_first;
+                if (wheel > 0 && m_first) --m_first;
+            }
         }
         if (input.repeated(Action::Left)) m_x += 24;
         if (input.repeated(Action::Right)) m_x -= 24;
@@ -4599,20 +4679,34 @@ namespace nx
                     if(m_pinDrag||m_pinMenu)c.line(px,py,m_pinX,m_pinY,2,pinColor((m_pendingOutput?rows[m_pending].outputTypes:rows[m_pending].inputTypes)[static_cast<size_t>(pin-pins.begin())]));
                 }
             }
-            std::vector<std::vector<bool>> wiredInputs(rows.size());
-            for(size_t i=0;i<rows.size();++i)wiredInputs[i].resize(rows[i].inputs.size(),false);
+            std::vector<std::vector<bool>> wiredInputs(rows.size()),wiredOutputs(rows.size());
+            for(size_t i=0;i<rows.size();++i){wiredInputs[i].resize(rows[i].inputs.size(),false);wiredOutputs[i].resize(rows[i].outputs.size(),false);}
             for(size_t i=0;i<graph.links.size()&&i<m_wirePins.size();++i)
             {
                 const auto to=graph.links[i].to;const auto pin=m_wirePins[i].input;
                 if(to<wiredInputs.size()&&pin<wiredInputs[to].size())wiredInputs[to][pin]=true;
+                const auto from=graph.links[wire].from,output=m_wirePins[wire].output;
+                if(from<wiredOutputs.size()&&output<wiredOutputs[from].size())wiredOutputs[from][output]=true;
             }
             for(size_t i=0;i<graph.nodes.size();++i)
             {
                 const auto& n=graph.nodes[i];
                 const float x=kLeft+m_x+nodeX(i)*m_zoom,y=kTop+m_y+nodeY(i)*m_zoom,w=kNodeWidth*m_zoom,h=rows[i].height*m_zoom;
                 if(x+w<kLeft||x>kRight||y+h<kTop||y>kBottom) continue;
-                c.roundRect(x,y,w,h,5,{0.15f,0.20f,0.27f,1});
-                c.rect(x,y,w,24*m_zoom,n.kind=="entry"?Color{0.54f,0.20f,0.25f,1}:Color{0.19f,0.35f,0.53f,1});
+                const auto* spec=blueprintSpec(n.kind);
+                const bool event=n.kind=="entry"||n.kind.rfind("event:",0)==0;
+                const bool pure=spec&&spec->pure;
+                const bool flow=n.kind=="branch"||n.kind=="sequence"||n.kind=="repeat"||n.kind.rfind("flow:",0)==0;
+                const Color header=event?Color{0.49f,0.19f,0.23f,1}:pure?Color{0.22f,0.39f,0.27f,1}:flow?Color{0.35f,0.29f,0.44f,1}:Color{0.20f,0.34f,0.48f,1};
+                c.roundRect(x+3*m_zoom,y+4*m_zoom,w,h,5,{0,0,0,0.38f});
+                c.roundRect(x,y,w,h,5,{0.115f,0.12f,0.14f,1});
+                c.roundRect(x,y,w,24*m_zoom,4,header);
+                c.rect(x,y+23*m_zoom,w,m_zoom,{0.065f,0.07f,0.08f,1});
+                c.roundLine(x,y,w,h,5,1,{0.29f,0.30f,0.33f,1});
+                const float ix=x+10*m_zoom,iy=y+12*m_zoom;
+                if(event){c.line(ix-4*m_zoom,iy,ix+4*m_zoom,iy,1.5f*m_zoom,text);c.line(ix,iy-4*m_zoom,ix,iy+4*m_zoom,1.5f*m_zoom,text);}
+                else if(pure)c.circle(ix,iy,3*m_zoom,text);
+                else {c.line(ix-3*m_zoom,iy-4*m_zoom,ix+3*m_zoom,iy,1.5f*m_zoom,text);c.line(ix+3*m_zoom,iy,ix-3*m_zoom,iy+4*m_zoom,1.5f*m_zoom,text);}
                 if(n.watch)c.circle(x+w-12*m_zoom,y+12*m_zoom,5*m_zoom,{1,0.72f,0.22f,1});
                 if(tracePaused()&&m_traceLocation.graph==m_graph&&m_traceLocation.node==i)c.roundLine(x,y,w,h,5,3,{1,0.72f,0.22f,1});
                 else if(m_diagnostic.graph==m_graph&&m_diagnostic.node==i)c.roundLine(x,y,w,h,5,3,{0.98f,0.35f,0.38f,1});
@@ -4620,14 +4714,28 @@ namespace nx
                 // Draw only the visible rows of tall nodes.
                 const size_t first=static_cast<size_t>(std::max(0.0f,std::floor(((kTop-y)/m_zoom-kPinStart)/kPinStep)-1));
                 const size_t last=static_cast<size_t>(std::max(0.0f,std::ceil(((kBottom-y)/m_zoom-kPinStart)/kPinStep)+2));
+                const auto drawPin=[&](float px,float py,const std::string& type,bool connected)
+                {
+                    const Color ink=pinColor(type);const float r=5*m_zoom;
+                    if(type=="exec")
+                    {
+                        c.line(px-r,py-r,px+r,py,1.7f*m_zoom,ink);c.line(px+r,py,px-r,py+r,1.7f*m_zoom,ink);
+                        c.line(px-r,py+r,px-r,py-r,1.7f*m_zoom,ink);
+                    }
+                    else
+                    {
+                        c.circle(px,py,r,ink);
+                        if(!connected)c.circle(px,py,2.7f*m_zoom,{0.115f,0.12f,0.14f,1});
+                    }
+                };
                 for(size_t p=first;p<std::min(last,rows[i].inputs.size());++p)
-                    c.circle(x,y+pinY(p)*m_zoom,4*m_zoom,pinColor(rows[i].inputTypes[p]));
+                    drawPin(x,y+pinY(p)*m_zoom,rows[i].inputTypes[p],wiredInputs[i][p]);
                 for(size_t p=first;p<std::min(last,rows[i].outputs.size());++p)
-                    c.circle(x+w,y+pinY(p)*m_zoom,4*m_zoom,pinColor(rows[i].outputTypes[p]));
+                    drawPin(x+w,y+pinY(p)*m_zoom,rows[i].outputTypes[p],wiredOutputs[i][p]);
                 if(m_zoom>=0.65f)
                 {
                     c.push();c.clip(x+2,y+1,w-4,24*m_zoom);
-                    c.text(*m_font,shorten(n.kind=="call:function"&&m_document.function(graph.owner,n.ref)&&m_document.function(graph.owner,n.ref)->inlineMacro?"Macro "+n.ref:title(n),24).c_str(),x+8,y+3,text);c.pop();
+                    c.text(*m_font,shorten(n.kind=="call:function"&&m_document.function(graph.owner,n.ref)&&m_document.function(graph.owner,n.ref)->inlineMacro?"Macro "+n.ref:title(n),22).c_str(),x+20*m_zoom,y+3,text);c.pop();
                     // Clip each column separately to prevent long pin names overlapping.
                     for(size_t p=first;p<std::min(last,rows[i].inputs.size());++p)
                     {
@@ -4658,14 +4766,34 @@ namespace nx
             }
         }
         c.noClip();
-        for(size_t row=0;row<kRows&&m_first+row<m_document.graphs.size();++row)
+        const auto navigation=navigationRows();
+        const size_t navFirst=m_graphTree?std::min(m_navigationFirst,navigation.size()>kRows?navigation.size()-kRows:0):m_first;
+        for(size_t row=0;row<kRows&&navFirst+row<navigation.size();++row)
         {
-            const size_t i=m_first+row;const auto& g=m_document.graphs[i];const float y=kTop+static_cast<float>(row)*31;
-            if(i==m_graph)c.rect(4,y+2,kLeft-8,28,{0.19f,0.33f,0.50f,1});
+            const auto& item=navigation[navFirst+row];const auto i=item.graph;const float y=kTop+static_cast<float>(row)*31;
+            const float indent=10+12.f*item.depth;
+            if(i==m_graph){c.rect(4,y+2,kLeft-8,28,{0.18f,0.30f,0.43f,1});c.rect(4,y+2,3,28,accent);}
             c.clip(5,y,kLeft-10,31);
-            c.text(*m_font,shorten(g.owner+" / "+(g.sharedLibrary?"[L] ":"")+(g.inlineMacro?"[M] ":"")+(g.dataRole.empty()?"":"["+g.dataRole+"] ")+g.name,32).c_str(),12,y+6,text);c.noClip();
+            if(i>=m_document.graphs.size())
+            {
+                c.rect(5,y+2,kLeft-10,28,{0.22f,0.22f,0.24f,1});
+                const bool closed=std::find(m_navigationCollapsed.begin(),m_navigationCollapsed.end(),item.key)!=m_navigationCollapsed.end();
+                if(closed){c.line(indent,y+11,indent+5,y+15,1,muted);c.line(indent+5,y+15,indent,y+19,1,muted);}
+                else {c.line(indent,y+12,indent+4,y+17,1,muted);c.line(indent+4,y+17,indent+8,y+12,1,muted);}
+                c.text(*m_font,item.label.c_str(),indent+15,y+6,item.depth?muted:text);
+            }
+            else
+            {
+                const auto& g=m_document.graphs[i];
+                const Color ink=g.kind=="event"?Color{0.86f,0.37f,0.42f,1}:g.inlineMacro?Color{0.67f,0.48f,0.82f,1}:accent;
+                c.roundLine(indent,y+10,10,10,2,1,ink);
+                c.text(*m_font,shorten(m_graphTree?item.label:g.owner+" / "+(g.sharedLibrary?"[L] ":"")+(g.inlineMacro?"[M] ":"")+(g.dataRole.empty()?"":"["+g.dataRole+"] ")+g.name,32).c_str(),indent+17,y+6,text);
+            }
+            c.noClip();
         }
-        c.text(*m_font,"MY BLUEPRINT / VARIABLES",10,kVariableTop-20,accent);
+        c.text(*m_font,"VARIABLES",10,kVariableTop-20,accent);
+        c.roundRect(kLeft-77,kVariableTop-24,73,22,3,{0.24f,0.24f,0.26f,1});
+        c.text(*m_font,m_graphTree?"Tree":"List",kLeft-40,kVariableTop-23,text,Align::Center);
         const auto quickRows=variableRows();
         const auto quickFirst=std::min(m_quickVariableFirst,quickRows.size()>kVariableRows?quickRows.size()-kVariableRows:0);
         for(size_t i=0;i<kVariableRows&&quickFirst+i<quickRows.size();++i)
