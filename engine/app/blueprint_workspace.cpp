@@ -157,6 +157,7 @@ namespace nx
     {
         if (!active()) return;
         stopPreview(s);
+        stopTone(s);m_audioEditor=false;m_toneWav.clear();
         s.platform->setEditorChrome(false);
         saveActorTab();cancelActorDrag();m_actorOrbit=false;m_splitter=0;m_actorEditor=false;m_contentDrag.clear();m_contentPanelDrag=false;releaseContentPreviews();
         releaseWidgetPreview();releasePlacementPreview();m_widgetDesigner=m_visualPlacement=false;
@@ -1015,6 +1016,7 @@ namespace nx
         {m_status="Save as a named project before importing assets.";return;}
         if(!blueprintEnsureAssetFolder(*s.platform,m_document.assetRoot,screen,m_status)||
             !blueprintListAssets(*s.platform,m_document.assetRoot,screen,m_assetFiles,m_status))return;
+        stopTone(s);m_audioEditor=false;
         m_assetBrowser=true;m_assetLibrary=false;m_widgetDesigner=false;releaseWidgetPreview();m_visualPlacement=false;cancelVisualPlacement();m_assetFirst=0;m_visualInput=0;clearWire();cancelDrag();
         m_status="Drop a native asset or scene JSON into this window.";
     }
@@ -3367,6 +3369,123 @@ namespace nx
         m_status="Scene editor: Save your scene, then Escape to return.";
         NX_INFO("Blueprint Studio: native scene editor opened: %s",screen.c_str());
     }
+    void BlueprintWorkspace::stopTone(Services& s)
+    {
+        if(s.audio&&m_toneVoice)s.audio->stop(m_toneVoice,0.02f);
+        m_toneVoice={};
+    }
+    void BlueprintWorkspace::refreshTone()
+    {
+        if(!blueprintToneWave(m_tone,m_toneWav,m_status))m_toneWav.clear();
+    }
+    void BlueprintWorkspace::updateTone(Services& s,float x,float y,bool click)
+    {
+        m_toneVoices=s.audio?s.audio->voicesInUse():0;
+        if(!click)return;
+        if(in(x,y,860,116,1000,150)){stopTone(s);m_audioEditor=false;m_status="Audio editor closed.";return;}
+        bool changed=false;
+        if(in(x,y,280,158,1000,190))
+        {
+            const auto index=static_cast<unsigned>((x-280)/144);
+            if(index<5){m_tone.wave=index;changed=true;}
+        }
+        if(in(x,y,280,197,1000,229))
+        {
+            constexpr unsigned rates[]={11025,22050,44100,48000};
+            const auto index=static_cast<unsigned>((x-280)/180);
+            if(index<4){m_tone.rate=rates[index];changed=true;}
+        }
+        struct Control {float* value;float lo,hi;};
+        const Control controls[]={{&m_tone.frequency,20,4000},{&m_tone.endFrequency,20,4000},
+            {&m_tone.seconds,0.05f,4},{&m_tone.amplitude,0,1},{&m_tone.attack,0,0.33f},
+            {&m_tone.decay,0,0.33f},{&m_tone.sustain,0,1},{&m_tone.release,0,0.33f}};
+        for(unsigned i=0;i<8;++i)
+        {
+            const float xx=280.f+360.f*(i%2),yy=240.f+36.f*(i/2);
+            if(in(x,y,xx+150,yy,xx+344,yy+30))
+            {
+                const float fraction=std::clamp((x-xx-150)/194.f,0.f,1.f);
+                *controls[i].value=controls[i].lo+(controls[i].hi-controls[i].lo)*fraction;
+                changed=true;
+            }
+        }
+        if(changed){stopTone(s);refreshTone();m_status="Tone updated. Preview or save to the project.";return;}
+        if(in(x,y,280,530,445,565))
+        {
+            stopTone(s);
+            if(!s.audio||m_toneWav.empty()){m_status="Audio preview unavailable.";return;}
+            if(s.audio->voicesInUse()>=Audio::kVoices){m_status="All Redux voices are in use.";return;}
+            auto* sound=loadSound(reinterpret_cast<const u8*>(m_toneWav.data()),m_toneWav.size());
+            if(!sound){m_status="Redux could not decode the generated WAV.";return;}
+            PlayOptions options;options.volume=0.6f;options.priority=0;
+            m_toneVoice=s.audio->playOwn(*sound,sound,[](void* owner){freeSound(static_cast<SoundData*>(owner));},options);
+            if(!m_toneVoice){freeSound(sound);m_status="No preview voice available.";}
+            else m_status="Previewing through Redux audio.";
+        }
+        else if(in(x,y,455,530,600,565)){stopTone(s);m_status="Preview stopped.";}
+        else if(in(x,y,610,530,825,565))
+        {
+            std::string relative;
+            if(blueprintSaveTone(*s.platform,m_document.assetRoot,assetScreen(),m_tone,relative,m_status)&&
+                blueprintListAssets(*s.platform,m_document.assetRoot,assetScreen(),m_assetFiles,m_status))
+                m_status="Saved asset:"+relative;
+        }
+        else if(in(x,y,835,530,1000,565))
+        {stopTone(s);m_tone=BlueprintTone{};refreshTone();m_status="Tone reset.";}
+    }
+    void BlueprintWorkspace::drawTone(Canvas& c)
+    {
+        const Color selected={0.19f,0.33f,0.50f,1},normal={0.22f,0.22f,0.24f,1};
+        const auto button=[&](float x,float y,float width,float height,const char* name,bool active)
+        {
+            c.roundRect(x,y,width,height,4,active?selected:normal);
+            c.text(*m_font,name,x+width/2,y+6,text,Align::Center);
+        };
+        c.roundRect(260,100,760,525,9,{0.16f,0.16f,0.17f,1});
+        c.text(*m_font,"AUDIO SYNTHESIS / MONO SFX",280,122,accent);
+        button(860,116,140,34,"Back",false);
+        const char* waves[]={"Sine","Triangle","Saw","Square","Noise"};
+        for(unsigned i=0;i<5;++i)button(280.f+i*144,158,138,32,waves[i],m_tone.wave==i);
+        const unsigned rates[]={11025,22050,44100,48000};
+        for(unsigned i=0;i<4;++i)
+            button(280.f+i*180,197,174,32,(std::to_string(rates[i])+" Hz").c_str(),m_tone.rate==rates[i]);
+        struct Item{const char* name;float value,lo,hi;};
+        const Item items[]={{"Start Hz",m_tone.frequency,20,4000},{"End Hz",m_tone.endFrequency,20,4000},
+            {"Seconds",m_tone.seconds,0.05f,4},{"Gain",m_tone.amplitude,0,1},
+            {"Attack",m_tone.attack,0,0.33f},{"Decay",m_tone.decay,0,0.33f},
+            {"Sustain",m_tone.sustain,0,1},{"Release",m_tone.release,0,0.33f}};
+        for(unsigned i=0;i<8;++i)
+        {
+            const auto& item=items[i];const float x=280.f+360.f*(i%2),y=240.f+36.f*(i/2);
+            char label[64];std::snprintf(label,sizeof(label),"%s %.2f",item.name,static_cast<double>(item.value));
+            c.text(*m_font,label,x,y+6,text);
+            c.rect(x+150,y+10,194,8,normal);
+            c.rect(x+150,y+10,194*(item.value-item.lo)/(item.hi-item.lo),8,accent);
+        }
+        c.rect(280,388,720,104,{0.09f,0.12f,0.16f,1});
+        c.line(280,440,1000,440,1,muted);
+        const size_t frames=m_toneWav.size()>44?(m_toneWav.size()-44)/2:0;
+        const auto sample=[&](size_t i)
+        {
+            const unsigned v=static_cast<unsigned char>(m_toneWav[44+2*i])|
+                (static_cast<unsigned>(static_cast<unsigned char>(m_toneWav[45+2*i]))<<8);
+            return static_cast<float>(v>=32768?static_cast<int>(v)-65536:static_cast<int>(v))/32768.f;
+        };
+        if(frames)for(size_t i=0;i<360;++i)
+        {
+            const size_t begin=i*frames/360,end=std::min(frames,std::max(begin+1,(i+1)*frames/360));
+            float lo=1,hi=-1;
+            for(size_t j=begin;j<end;++j){const float v=sample(j);lo=std::min(lo,v);hi=std::max(hi,v);}
+            const float x=281.f+2.f*static_cast<float>(i);
+            c.line(x,440-hi*48,x,440-lo*48,1,accent);
+        }
+        const auto budget="Xbox: "+std::to_string((frames*2+1023)/1024)+" KiB PCM / 6144 KiB default sound cache | "+
+            std::to_string(m_toneVoices)+"/32 voices (desktop preview)";
+        c.text(*m_font,budget.c_str(),280,501,muted);
+        button(280,530,165,35,"Preview",true);button(455,530,145,35,"Stop",false);
+        button(610,530,215,35,"Save WAV asset",true);button(835,530,165,35,"Reset",false);
+        c.clip(280,575,720,42);c.text(*m_font,m_status.c_str(),280,580,text);c.noClip();
+    }
     void BlueprintWorkspace::importAsset(Services& s,const std::string& file)
     {
         const auto screen=assetScreen();
@@ -4022,6 +4141,7 @@ namespace nx
         rememberVisualTab();refreshWidgetPreview(s);refreshPlacementPreview(s);refreshContentPreviews(s);
         if (input.pressed(Action::Menu))
         {
+            if(m_audioEditor){stopTone(s);m_audioEditor=false;m_status="Audio editor closed.";return;}
             if(m_contentPanelDrag||m_contentResize){m_contentPanelDrag=m_contentResize=false;m_status="Content panel move ended.";return;}
             if(!m_contentDrag.empty()){m_contentDrag.clear();m_status="Content drag cancelled.";return;}
             if(m_actorEditor){if(m_visualInput){m_visualInput=0;m_visualText.clear();input.setTyping(false);}else if(m_actorDragAxis>=0){cancelActorDrag();m_status="Component drag cancelled.";}else{leaveActorViewport(true);}return;}
@@ -4039,7 +4159,8 @@ namespace nx
         std::string dropped;
         if (!m_drag && !m_layoutDragging && !m_layoutMenu && !m_pinMenu && !m_pinDrag && !m_quickDrag && !m_quickMenu && !m_focus && !m_browsing && s.platform->takeDropped(dropped))
         {
-            if(m_assetBrowser&&m_assetLibrary)m_status="Switch to Media before importing files.";
+            if(m_audioEditor)m_status="Close audio synthesis before importing files.";
+            else if(m_assetBrowser&&m_assetLibrary)m_status="Switch to Media before importing files.";
             else if(m_assetBrowser)importAsset(s,dropped);
             else if(blueprintFileName(dropped)||blueprintPackageName(dropped))openFile(s,dropped,false);
             else if(dropped.ends_with(".as"))importSource(s,dropped);
@@ -4255,7 +4376,9 @@ namespace nx
         }
         if(m_assetBrowser)
         {
+            if(m_audioEditor){updateTone(s,x,y,click);m_left=left;return;}
             if(m_assetLibrary){updateVisualLibrary(s,x,y,left,click,pressed);m_left=left;return;}
+            if(click&&in(x,y,280,116,380,150)){m_audioEditor=true;refreshTone();m_status="Create a sound effect, then save a native WAV asset.";m_left=left;return;}
             if(click&&in(x,y,384,116,524,150)){m_assetLibrary=true;m_visualInput=0;m_visualText.clear();m_visualFirst=0;m_status="Project-wide reusable actors and widget pages.";m_left=left;return;}
             if(input.wheel()<0&&m_assetFirst+10<m_assetFiles.size())++m_assetFirst;
             if(input.wheel()>0&&m_assetFirst)--m_assetFirst;
@@ -5277,11 +5400,12 @@ namespace nx
         {
             c.rect(0,0,kWidth,kHeight,{0,0,0,0.70f});
             c.push();c.translate(modalX(),modalY());
-            if(m_assetBrowser&&m_assetLibrary)drawVisualLibrary(c);
+            if(m_assetBrowser&&m_audioEditor)drawTone(c);
+            else if(m_assetBrowser&&m_assetLibrary)drawVisualLibrary(c);
             else if(m_assetBrowser)
             {
                 c.roundRect(260,100,760,525,9,{0.16f,0.16f,0.17f,1});
-                c.clip(280,116,100,34);c.text(*m_font,"ASSETS",280,122,accent);c.noClip();
+                c.roundRect(280,116,100,34,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Audio",330,123,text,Align::Center);
                 c.roundRect(384,116,140,34,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Content",454,123,text,Align::Center);
                 c.roundRect(534,116,160,34,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Scene editor",614,123,text,Align::Center);
                 c.roundRect(704,116,146,34,4,{0.22f,0.31f,0.43f,1});c.text(*m_font,"Refresh",777,123,text,Align::Center);

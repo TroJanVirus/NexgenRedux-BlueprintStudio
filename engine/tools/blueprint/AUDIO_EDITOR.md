@@ -1,0 +1,7 @@
+# Native audio synthesis editor
+
+Save a named project, open Media/Assets and choose Audio. Select sine, triangle, saw, square or deterministic noise; sample rate; start/end frequency, duration, gain, and an ADSR envelope. Attack, decay and release are fractions of the entire sound. Click parameter bars to edit; Preview uses the actual Redux audio mixer; Stop ends only that preview. Save WAV asset writes a new, byte-verified `asset:sound/synth-N.wav` and never replaces an existing file. Use the normal Assets::sound and Sound.play Blueprint nodes to play it. The WAV travels in the existing portable project ZIP.
+
+The tool creates mono 16-bit PCM assets up to four seconds long; 22.05 kHz is the default. The graph and game runtime have no editor dependency. The waveform shows per-column sample extrema, including short peaks. Saw and square are simple oscillators, not band-limited synthesizers, so high notes can alias. Preview does not modify global bus effects. Original Xbox has a default 6 MiB sound cache and Redux has 32 mixer voices; the displayed PCM estimate is the generated clip only, not total RAM or actual hardware performance. Use the native Cook tool for ADPCM or Ogg where appropriate.
+
+This first editor bakes WAV, rather than storing an editable synthesis graph or a preset asset. Runtime Samples, AudioStream, native bus effects and playback nodes remain available through the existing catalogue. Native effect preview, imported audio editing, stereo synthesis, reusable presets and streaming authoring controls are separate work.

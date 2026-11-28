@@ -1,5 +1,7 @@
 #pragma once
 #include "tools/blueprint/native_compile.h"
+#include "tools/blueprint/native_assets.h"
+#include "audio/audio.h"
 #include <utility>
 
 class asIScriptContext;
@@ -247,6 +249,15 @@ namespace nx
         bool publishVisualWidget(Services& services);
         std::vector<std::string> m_assetFiles;
         size_t m_assetFirst=0;
+        bool m_audioEditor=false;
+        BlueprintTone m_tone;
+        std::string m_toneWav;
+        Voice m_toneVoice;
+        unsigned m_toneVoices=0;
+        void stopTone(Services& s);
+        void refreshTone();
+        void updateTone(Services& s,float x,float y,bool click);
+        void drawTone(Canvas& c);
         bool saveCurrent(Services& services);
         bool writeVerified(Services& services,const std::string& path,const std::string& bytes);
         bool compileAndExport(Services& services);

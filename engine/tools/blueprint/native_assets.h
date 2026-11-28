@@ -3,6 +3,16 @@
 namespace nx
 {
     class Platform;
+    // Desktop authoring only: bounded mono PCM, played by the original mixer.
+    struct BlueprintTone
+    {
+        unsigned wave=0,rate=22050;
+        float seconds=0.6f,frequency=440,endFrequency=440,amplitude=0.65f;
+        float attack=0.04f,decay=0.15f,sustain=0.65f,release=0.25f;
+    };
+    bool blueprintToneWave(const BlueprintTone& tone,std::string& wav,std::string& error);
+    bool blueprintSaveTone(Platform& platform,const std::string& root,const std::string& screen,
+        const BlueprintTone& tone,std::string& relative,std::string& error);
     bool blueprintPackageName(const std::string& file);
     bool blueprintExportPackage(Platform& platform,const BlueprintDocument& document,const std::string& file,std::string& error);
     bool blueprintImportPackage(Platform& platform,const std::string& file,BlueprintDocument& document,std::string& error);

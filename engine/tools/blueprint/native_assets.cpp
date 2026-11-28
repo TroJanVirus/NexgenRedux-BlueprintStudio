@@ -81,6 +81,72 @@ namespace nx
             return true;
         }
     }
+    bool blueprintToneWave(const BlueprintTone& t,std::string& wav,std::string& error)
+    {
+        const auto between=[](float v,float lo,float hi){return std::isfinite(v)&&v>=lo&&v<=hi;};
+        if(t.wave>4||(t.rate!=11025&&t.rate!=22050&&t.rate!=44100&&t.rate!=48000)||
+            !between(t.seconds,0.05f,4.f)||!between(t.frequency,20,4000)||!between(t.endFrequency,20,4000)||
+            !between(t.amplitude,0,1)||!between(t.attack,0,0.33f)||!between(t.decay,0,0.33f)||
+            !between(t.sustain,0,1)||!between(t.release,0,0.33f))
+        {error="Invalid tone settings.";return false;}
+        const unsigned frames=static_cast<unsigned>(std::round(t.seconds*t.rate));
+        std::string result;
+        result.reserve(44+frames*2);
+        const auto u16le=[&](unsigned v){result+=static_cast<char>(v&255);result+=static_cast<char>((v>>8)&255);};
+        const auto u32le=[&](unsigned v){u16le(v);u16le(v>>16);};
+        result+="RIFF";u32le(36+frames*2);result+="WAVEfmt ";u32le(16);
+        u16le(1);u16le(1);u32le(t.rate);u32le(t.rate*2);u16le(2);u16le(16);
+        result+="data";u32le(frames*2);
+        constexpr double tau=6.2831853071795864769;
+        double phase=0;unsigned rng=0x18374651u;
+        for(unsigned i=0;i<frames;++i)
+        {
+            const float time=static_cast<float>(i)/static_cast<float>(frames-1);
+            float envelope=t.sustain;
+            if(t.attack>0&&time<t.attack)envelope=time/t.attack;
+            else if(t.decay>0&&time<t.attack+t.decay)
+                envelope=1-(1-t.sustain)*(time-t.attack)/t.decay;
+            else if(t.release>0&&time>1-t.release)envelope=t.sustain*(1-time)/t.release;
+            // Even zero attack/release settings get a short de-click ramp.
+            const float ramp=std::min(1.f,std::min(static_cast<float>(i),static_cast<float>(frames-1-i))/(t.rate*0.003f));
+            float sample=0;
+            switch(t.wave)
+            {
+                case 0: sample=static_cast<float>(std::sin(tau*phase));break;
+                case 1: sample=static_cast<float>(1-4*std::abs(phase-0.5));break;
+                case 2: sample=static_cast<float>(2*phase-1);break;
+                case 3: sample=phase<0.5?1.f:-1.f;break;
+                case 4: rng^=rng<<13;rng^=rng>>17;rng^=rng<<5;
+                    sample=static_cast<float>(rng>>8)/8388607.5f-1.f;break;
+            }
+            const int value=static_cast<int>(std::round(std::clamp(sample*envelope*ramp*t.amplitude,-1.f,1.f)*32767));
+            u16le(static_cast<unsigned>(value));
+            phase+=(t.frequency+(t.endFrequency-t.frequency)*time)/t.rate;
+            phase-=std::floor(phase);
+        }
+        wav.swap(result);error.clear();return true;
+    }
+    bool blueprintSaveTone(Platform& p,const std::string& root,const std::string& screen,
+        const BlueprintTone& tone,std::string& relative,std::string& error)
+    {
+        std::string wav;
+        if(!blueprintToneWave(tone,wav,error)||!blueprintAssetRoot(root)||
+            !blueprintEnsureAssetFolder(p,root,screen,error))return false;
+        const auto folder=root+"/"+screen+"/asset/sound";
+        if(!ensure(p,folder)){error="Cannot create sound folder.";return false;}
+        for(unsigned i=1;i<=4096;++i)
+        {
+            const auto name="synth-"+std::to_string(i)+".wav",path="own/"+folder+"/"+name;
+            if(p.fileTime(path.c_str()))continue;
+            if(!p.writeFile(path.c_str(),wav.data(),wav.size())){error="Cannot write generated WAV.";return false;}
+            FileData check;
+            if(!p.readFile(path.c_str(),check,MemTag::General)||check.size!=wav.size()||
+                std::memcmp(check.data,wav.data(),wav.size())!=0)
+            {error="Generated WAV verification failed.";return false;}
+            relative="sound/"+name;error.clear();return true;
+        }
+        error="No unused synthesized sound name.";return false;
+    }
     bool blueprintCreateAssetRoot(Platform& p,std::string& root,std::string& error)
     {
         static unsigned sequence=0;

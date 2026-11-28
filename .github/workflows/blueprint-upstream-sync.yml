@@ -1,4 +1,4 @@
-name: Verify portable Blueprint ZIP packages and bitmap font companions
+name: Verify portable Blueprint projects and audio synthesis
 on:
   workflow_dispatch:
   push:

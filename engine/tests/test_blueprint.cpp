@@ -914,6 +914,33 @@ NX_TEST(nativeProjectAssetsAreCopiedWithoutChangingOriginals)
     NX_EXPECT(r.platform.files["own/scene.json"]=="{\"scene\":[]}");
     NX_EXPECT(!blueprintCopyAssets(r.platform,root,clone,"Screen",error));
 }
+NX_TEST(nativeAudioSynthesisProducesPlayablePortableWav)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    r.platform.workspaceFiles=true;
+    BlueprintTone tone;std::string wav,again,error,relative;
+    for(unsigned wave=0;wave<5;++wave)
+    {
+        tone.wave=wave;NX_EXPECT(blueprintToneWave(tone,wav,error));
+        NX_EXPECT(blueprintToneWave(tone,again,error)&&again==wav);
+        auto* sound=loadSound(reinterpret_cast<const u8*>(wav.data()),wav.size());
+        NX_EXPECT(sound!=nullptr);if(!sound)return;
+        NX_EXPECT(sound->rate==tone.rate&&sound->channels==1&&sound->frames==13230);
+        PlayOptions options;
+        const auto voice=r.audio.playOwn(*sound,sound,[](void* owner){freeSound(static_cast<SoundData*>(owner));},options);
+        NX_EXPECT(static_cast<bool>(voice));if(!voice){freeSound(sound);return;}
+        r.step(45);NX_EXPECT(!r.audio.playing(voice));
+    }
+    NX_EXPECT(wav.size()>48&&wav[44]==0&&wav[45]==0&&wav[wav.size()-1]==0&&wav[wav.size()-2]==0);
+    tone.seconds=0;NX_EXPECT(!blueprintToneWave(tone,again,error));tone.seconds=0.6f;
+    BlueprintDocument doc;doc.create();
+    NX_EXPECT(blueprintCreateAssetRoot(r.platform,doc.assetRoot,error));
+    NX_EXPECT(blueprintSaveTone(r.platform,doc.assetRoot,"Screen",tone,relative,error)&&relative=="sound/synth-1.wav");
+    NX_EXPECT(blueprintSaveTone(r.platform,doc.assetRoot,"Screen",tone,relative,error)&&relative=="sound/synth-2.wav");
+    NX_EXPECT(blueprintExportPackage(r.platform,doc,"tone.bp.zip",error));
+    BlueprintDocument restored;NX_EXPECT(blueprintImportPackage(r.platform,"tone.bp.zip",restored,error));
+    NX_EXPECT(r.platform.files["own/"+restored.assetRoot+"/Screen/asset/sound/synth-1.wav"]==wav);
+}
 NX_TEST(nativeBitmapFontImportsCompanionAndRejectsInvalidPairs)
 {
     Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
