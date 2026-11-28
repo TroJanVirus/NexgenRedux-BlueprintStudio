@@ -395,7 +395,8 @@ with menu_log.open("wb") as out:
         click(445, 220, window)
         click(445, 380, window)
         click(445, 172, window)
-        click(445, 420, window)
+        # Label is palette row 7 after Size Box and Scale Box were added.
+        click(445, 500, window)
         click(445, 420, window)
         click(810, 455, window)
         enter_text("320")

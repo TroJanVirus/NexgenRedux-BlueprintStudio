@@ -288,7 +288,7 @@ namespace nx
         return true;
     }
     bool BlueprintWorkspace::modalOpen() const
-    {return m_assetBrowser||m_browsing||m_focus==5||m_focus==6||m_focus==9||m_focus==10||m_focus==11||m_focus==12||m_focus==13||m_focus==14||m_focus==15||m_focus==17||m_focus==18||m_focus==20||m_focus==21||m_focus==22||m_focus==23||m_focus==24||m_focus==25||m_focus==26||m_focus==27||m_focus==28;}
+    {return m_assetBrowser||m_browsing||m_focus==5||m_focus==6||m_focus==9||m_focus==10||m_focus==11||m_focus==12||m_focus==13||m_focus==14||m_focus==15||m_focus==17||m_focus==18||m_focus==20||m_focus==21||m_focus==22||m_focus==23||m_focus==24||m_focus==25||m_focus==26||m_focus==27||m_focus==28||m_focus==29;}
     void BlueprintWorkspace::resetGraphTabs()
     {
         releaseContentPreviews();m_graphTabs.clear();m_actorTabs.clear();m_visualTabs.clear();m_activeVisualTab={};m_activeTab={};m_tabFirst=0;
@@ -5140,6 +5140,8 @@ namespace nx
             if(action<5)m_device.control(action);
             return;
         }
+        if(in(x,y,630,480,880,512)&&m_device.ready()&&m_device.actorsSupported())
+        {m_focus=29;m_deviceAddressEditing=false;input.setTyping(false);m_actorFirst=m_actorPropertyFirst=0;m_actorEditName.clear();m_device.requestActors(0,s.platform->seconds());return;}
         if(in(x,y,900,480,1140,512)){pushLiveSource(s);return;}
         if(in(x,y,140,600,340,638)){if(!m_device.liveBusy())syncDeviceBreakpoints();return;}
         if(in(x,y,350,600,550,638)){m_deviceAddressEditing=false;input.setTyping(false);locateDeviceNode();return;}
@@ -5168,7 +5170,8 @@ namespace nx
         if(rows.empty())c.text(*m_font,m_deviceVariables?"Pause the remote script to inspect its locals.":"No measured telemetry. Older runtimes may not support counters.",140,318,muted);
         for(size_t i=0;i<rows.size()&&i<14;++i)
         {const float x=140+500.f*(i/7),y=318+27.f*(i%7);c.clip(x,y,490,26);c.text(*m_font,rows[i].c_str(),x,y,text);c.noClip();}
-        c.clip(140,480,740,32);c.text(*m_font,(m_device.liveStatus().empty()?"Live Link: "+m_device.liveScreen():m_device.liveStatus()).c_str(),140,490,muted);c.noClip();
+        c.clip(140,480,480,32);c.text(*m_font,(m_device.liveStatus().empty()?"Live Link: "+m_device.liveScreen():m_device.liveStatus()).c_str(),140,490,muted);c.noClip();
+        c.roundRect(630,480,250,32,4,m_device.ready()&&m_device.actorsSupported()?Color{0.20f,0.32f,0.45f,1}:Color{0.20f,0.22f,0.25f,1});c.text(*m_font,"Live actors",755,486,text,Align::Center);
         c.roundRect(900,480,240,32,4,canPushLiveSource()?Color{0.20f,0.32f,0.45f,1}:Color{0.20f,0.22f,0.25f,1});
         c.text(*m_font,m_device.liveBusy()?"Updating...":"Push live script",1020,486,canPushLiveSource()?text:muted,Align::Center);
         c.clip(140,520,1000,24);c.text(*m_font,m_device.file().empty()?"Script location: none":(m_device.file()+":"+std::to_string(m_device.line())).c_str(),140,520,accent);c.noClip();
@@ -5179,6 +5182,90 @@ namespace nx
         button(560,600,200,m_deviceVariables?"Show telemetry":"Show locals",true);
         button(770,600,220,"Play on Xbox",m_document.target().xbox());
         button(1000,600,150,"Back",true);
+    }
+    void BlueprintWorkspace::updateRemoteActors(Services& s,float x,float y,bool click)
+    {
+        auto& input=*s.input;const auto now=s.platform->seconds();
+        const auto cancel=[&](){m_actorEditName.clear();m_actorEditValue.clear();input.setTyping(false);};
+        if(click&&in(x,y,1000,600,1150,638)){cancel();m_focus=27;return;}
+        if(!m_actorEditName.empty()&&(m_actorEditEpoch!=m_device.actorEpoch()||m_actorEditId!=m_device.selectedActor()||!m_device.ready()))cancel();
+        const auto& actors=m_device.actors();const auto& props=m_device.actorProperties();
+        if(m_actorFirst>=actors.size())m_actorFirst=0;if(m_actorPropertyFirst>=props.size())m_actorPropertyFirst=0;
+        if(in(x,y,140,182,520,514))
+        {
+            if(input.wheel()<0&&m_actorFirst+9<actors.size())++m_actorFirst;
+            if(input.wheel()>0&&m_actorFirst)--m_actorFirst;
+        }
+        if(in(x,y,540,182,1140,514))
+        {
+            if(input.wheel()<0&&m_actorPropertyFirst+9<props.size())++m_actorPropertyFirst;
+            if(input.wheel()>0&&m_actorPropertyFirst)--m_actorPropertyFirst;
+        }
+        if(!m_actorEditName.empty())
+        {
+            for(u32 i=0;i<input.typedCount();++i)
+            {
+                const auto ch=input.typed(i);
+                if(ch==13){if(m_device.editActor(m_actorEditName,m_actorEditValue,now))cancel();return;}
+                if(ch==8&&!m_actorEditValue.empty())m_actorEditValue.pop_back();
+                else if(ch>=32&&ch<127&&m_actorEditValue.size()<96)m_actorEditValue+=static_cast<char>(ch);
+            }
+        }
+        if(!click)return;
+        if(in(x,y,140,600,310,638)){cancel();m_device.requestActors(m_device.actorOffset(),now);return;}
+        if(in(x,y,320,600,410,638)&&m_device.actorOffset()>=48)
+        {cancel();m_actorFirst=0;m_device.requestActors(m_device.actorOffset()-48,now);return;}
+        if(in(x,y,420,600,510,638)&&m_device.actorOffset()+48<m_device.actorCount())
+        {cancel();m_actorFirst=0;m_device.requestActors(m_device.actorOffset()+48,now);return;}
+        if(in(x,y,540,600,710,638)&&!props.empty()){cancel();m_device.inspectActor(m_device.selectedActor(),now);return;}
+        if(in(x,y,720,600,850,638)&&!m_actorEditName.empty()){if(m_device.editActor(m_actorEditName,m_actorEditValue,now))cancel();return;}
+        if(in(x,y,860,600,990,638)){cancel();return;}
+        if(m_device.actorBusy())return;
+        if(in(x,y,140,182,520,506))
+        {
+            const auto at=m_actorFirst+static_cast<size_t>((y-182)/36);
+            if(at<actors.size()){cancel();m_actorPropertyFirst=0;m_device.inspectActor(actors[at].id,now);}
+            return;
+        }
+        if(in(x,y,540,182,1140,506))
+        {
+            const auto at=m_actorPropertyFirst+static_cast<size_t>((y-182)/36);
+            if(at<props.size()&&props[at].editable)
+            {m_actorEditName=props[at].name;m_actorEditValue=props[at].value;m_actorEditEpoch=m_device.actorEpoch();m_actorEditId=m_device.selectedActor();input.setTyping(true);}
+        }
+    }
+    void BlueprintWorkspace::drawRemoteActors(Canvas& c)
+    {
+        c.roundRect(100,64,1080,594,8,{0.15f,0.17f,0.20f,1});
+        c.text(*m_font,"LIVE ACTORS / RUNTIME COMPONENTS",120,78,accent);
+        c.text(*m_font,"Remote snapshot only. Edits change the running game, not the authored Blueprint or saved assets.",140,110,muted);
+        const auto button=[&](float x,float y,float w,const char* label,bool enabled)
+        {c.roundRect(x,y,w,38,4,enabled?Color{0.20f,0.32f,0.45f,1}:Color{0.20f,0.22f,0.25f,1});c.text(*m_font,label,x+w/2,y+8,enabled?text:muted,Align::Center);};
+        const auto& actors=m_device.actors();const auto& props=m_device.actorProperties();
+        const std::string screen="Scene: "+m_device.actorScreen()+" | "+std::to_string(m_device.actorCount())+" actors";
+        c.clip(140,145,380,32);c.text(*m_font,screen.c_str(),140,151,accent);c.noClip();
+        c.text(*m_font,"DETAILS / TRANSFORM / COMPONENTS",540,151,accent);
+        for(size_t i=0;i<9&&m_actorFirst+i<actors.size();++i)
+        {
+            const auto& a=actors[m_actorFirst+i];const float yy=182+36.f*static_cast<float>(i);
+            c.rect(140,yy,380,34,a.id==m_device.selectedActor()&&!props.empty()?Color{0.19f,0.33f,0.50f,1}:Color{0.20f,0.23f,0.27f,1});
+            const std::string label=(a.spatial?"3D ":"2D ")+(a.name.empty()?std::string("(unnamed)"):a.name)+" #"+std::to_string(a.id)+(a.parent?" / parent "+std::to_string(a.parent):"");
+            c.clip(146,yy,368,34);c.text(*m_font,label.c_str(),150,yy+8,text);c.noClip();
+        }
+        for(size_t i=0;i<9&&m_actorPropertyFirst+i<props.size();++i)
+        {
+            const auto& p=props[m_actorPropertyFirst+i];const float yy=182+36.f*static_cast<float>(i);
+            c.rect(540,yy,600,34,p.name==m_actorEditName?Color{0.19f,0.33f,0.50f,1}:Color{0.20f,0.23f,0.27f,1});
+            c.text(*m_font,p.name.c_str(),550,yy+8,p.editable?text:muted);
+            c.clip(725,yy,408,34);c.text(*m_font,(p.name==m_actorEditName?m_actorEditValue:p.value).c_str(),730,yy+8,p.editable?accent:muted);c.noClip();
+        }
+        if(actors.empty())c.text(*m_font,"No actors in this snapshot.",150,200,muted);
+        if(props.empty())c.text(*m_font,"Select an actor to inspect it.",550,200,muted);
+        c.clip(140,528,1000,26);c.text(*m_font,m_device.actorStatus().c_str(),140,530,muted);c.noClip();
+        c.text(*m_font,"Scroll either list. Click an editable value, then Enter or Apply. Scripts/physics may change it again.",140,560,muted);
+        const bool ready=m_device.ready()&&!m_device.actorBusy()&&!m_device.liveBusy();
+        button(140,600,170,"Refresh actors",ready);button(320,600,90,"Prev",ready&&m_device.actorOffset()>=48);button(420,600,90,"Next",ready&&m_device.actorOffset()+48<m_device.actorCount());
+        button(540,600,170,"Refresh detail",ready&&!props.empty());button(720,600,130,"Apply",ready&&!m_actorEditName.empty());button(860,600,130,"Cancel edit",!m_actorEditName.empty());button(1000,600,150,"Back",true);
     }
     bool BlueprintWorkspace::canUpdateXbox()const
     {
@@ -5587,6 +5674,7 @@ namespace nx
             if(m_browsing){if(m_projectCreate){m_projectCreate=0;m_projectName.clear();input.setTyping(false);}else{m_browsing=false;m_status="Project browser closed.";}return;}
             if(m_rgbOpen){m_rgbOpen=false;return;}
             if(m_moveWire!=static_cast<size_t>(-1)){m_moveWire=static_cast<size_t>(-1);m_status="Connection move cancelled.";return;}
+            if(m_focus==29){m_actorEditName.clear();m_actorEditValue.clear();input.setTyping(false);m_focus=27;return;}
             if(m_focus==28){m_deployField=-1;m_deployPassword.clear();input.setTyping(false);m_focus=27;return;}
             if(m_focus==27){m_deviceAddressEditing=false;input.setTyping(false);m_focus=24;return;}
             if(m_focus==22&&m_sceneNaming){m_sceneNaming=false;input.setTyping(false);return;}
@@ -5791,6 +5879,7 @@ namespace nx
             else if((pressed&128u)||(click&&in(x,y,800,405,930,445))){if(confirmNodeDeletion(input))saveLayout(s);}
             m_left=left;return;
         }
+        if(m_focus==29){updateRemoteActors(s,x,y,click);m_left=left;return;}
         if(m_focus==28){updateXboxDeploy(s,x,y,click);m_left=left;return;}
         if(m_focus==27){updateDeviceManager(s,x,y,click);m_left=left;return;}
         if(m_focus==24){updateBuildManager(s,x,y,click);m_left=left;return;}
@@ -7377,6 +7466,7 @@ namespace nx
                 c.roundRect(660,405,130,40,4,{0.22f,0.31f,0.43f,1});c.text(*m_font,"Cancel",725,415,text,Align::Center);
                 c.roundRect(800,405,130,40,4,{0.48f,0.21f,0.25f,1});c.text(*m_font,"Delete",865,415,text,Align::Center);
             }
+            else if(m_focus==29)drawRemoteActors(c);
             else if(m_focus==28)drawXboxDeploy(c);
             else if(m_focus==27)drawDeviceManager(c);
             else if(m_focus==24)drawBuildManager(c);

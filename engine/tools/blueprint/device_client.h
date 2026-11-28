@@ -21,6 +21,39 @@ namespace nx
         bool paused()const{return m_paused;}
         bool sourceIdentity()const{return m_sourceIdentity;}
         bool traceSupported()const{return m_traceSupported;}
+        struct Actor {u32 id=0,parent=0;std::string name;bool spatial=false;};
+        struct ActorProperty {std::string name,value;bool editable=false;};
+        bool actorsSupported()const{return m_actorsSupported;}
+        bool actorBusy()const{return m_actorRequest!=0;}
+        const std::vector<Actor>& actors()const{return m_actors;}
+        const std::vector<ActorProperty>& actorProperties()const{return m_actorProperties;}
+        u32 actorEpoch()const{return m_actorEpoch;}
+        u32 actorOffset()const{return m_actorOffset;}
+        u32 actorCount()const{return m_actorCount;}
+        u32 selectedActor()const{return m_actorSelected;}
+        const std::string& actorScreen()const{return m_actorScreen;}
+        const std::string& actorStatus()const{return m_actorStatus;}
+        bool requestActors(u32 offset,double now)
+        {
+            if(!m_ready||!m_actorsSupported||liveBusy()||actorBusy()||m_out.size()>4096)return false;
+            JsonValue req;req.put("cmd")->setText("studioActors");req.put("id")->setNumber(11);req.put("offset")->setNumber(offset);
+            queue(req.write(true));m_actorRequest=11;m_actorDeadline=now+5;m_actorStatus="Refreshing actor list...";return true;
+        }
+        bool inspectActor(u32 entity,double now)
+        {
+            if(!m_ready||!m_actorsSupported||!m_actorEpoch||liveBusy()||actorBusy()||m_out.size()>4096)return false;
+            JsonValue req;req.put("cmd")->setText("studioActor");req.put("id")->setNumber(12);req.put("epoch")->setNumber(m_actorEpoch);req.put("entity")->setNumber(entity);
+            queue(req.write(true));m_actorSelected=entity;m_actorProperties.clear();m_actorRequest=12;m_actorDeadline=now+5;m_actorStatus="Reading runtime components...";return true;
+        }
+        bool editActor(const std::string& property,const std::string& value,double now)
+        {
+            if(!m_ready||!m_actorsSupported||!m_actorEpoch||liveBusy()||actorBusy()||m_out.size()>4096)return false;
+            const auto allowed=std::find_if(m_actorProperties.begin(),m_actorProperties.end(),[&](const ActorProperty& p){return p.name==property&&p.editable;});
+            if(allowed==m_actorProperties.end()||value.size()>96)return false;
+            JsonValue req;req.put("cmd")->setText("studioActorSet");req.put("id")->setNumber(13);req.put("epoch")->setNumber(m_actorEpoch);req.put("entity")->setNumber(m_actorSelected);
+            req.put("property")->setText(property);req.put("value")->setText(value);
+            queue(req.write(true));m_actorRequest=13;m_actorDeadline=now+5;m_actorStatus="Applying runtime property...";return true;
+        }
         bool liveSupported()const{return m_liveSupported;}
         bool liveBusy()const{return m_liveStage!=0;}
         const std::string& liveScreen()const{return m_liveScreen;}
@@ -69,6 +102,7 @@ namespace nx
         {
             m_socket.close();if(m_network)netStop();m_network=m_ready=m_paused=m_hello=m_sourceIdentity=m_traceSupported=m_tracing=m_traceOutstanding=m_traceGap=false;m_hits.clear();
             m_in.clear();m_out.clear();m_rows.clear();m_log.clear();m_file.clear();m_fingerprint.clear();m_variables.clear();m_line=0;
+            m_actorsSupported=false;m_actorRequest=0;m_actorEpoch=m_actorOffset=m_actorCount=m_actorSelected=0;m_actors.clear();m_actorProperties.clear();m_actorScreen.clear();m_actorStatus.clear();
             m_status="Disconnected";m_launchId.clear();m_address.clear();m_liveSupported=false;m_liveStage=0;m_liveScreen.clear();m_liveFingerprint.clear();std::string().swap(m_liveBytes);
         }
         bool connect(const std::string& address,double now)
@@ -99,6 +133,7 @@ namespace nx
             if(!m_ready&&now>m_deadline){fail("Redux debugger handshake timed out.");return;}
             if(state!=TcpState::Open)return;
             if(!m_hello){m_hello=true;queue("{\"cmd\":\"hello\",\"id\":1}");}
+            if(actorBusy()&&now>m_actorDeadline){fail("Actor request timed out; reconnect to refresh.");return;}
             if(liveBusy()&&now>m_liveDeadline){m_liveStatus="Live Link timed out; reconnect to inspect actual running source.";fail("Live Link response timed out.");return;}
             if(m_ready&&!liveBusy()&&now>=m_poll){m_poll=now+1;queue("{\"cmd\":\"telemetry\",\"id\":4}");if(m_liveSupported)queue("{\"cmd\":\"liveInfo\",\"id\":10}");}
             if(m_ready&&!liveBusy()&&m_tracing&&!m_traceOutstanding&&now>=m_tracePoll){m_tracePoll=now+0.25;m_traceOutstanding=true;queue("{\"cmd\":\"traceDrain\",\"id\":7}");}
@@ -155,7 +190,7 @@ namespace nx
             if(event=="hello"&&id==1&&!m_ready)
             {
                 if(root["version"].exact()!=1){fail("Unsupported debugger protocol.");return;}
-                m_sourceIdentity=root["sourceIdentity"].flag();m_traceSupported=root["remoteTrace"].flag();m_launchId=root["launchId"].text();if(!studioLaunchIdentity(m_launchId))m_launchId.clear();m_liveSupported=root["liveSource"].flag()&&!m_launchId.empty();m_ready=true;m_poll=now;m_status="Connected; waiting for device telemetry.";
+                m_sourceIdentity=root["sourceIdentity"].flag();m_traceSupported=root["remoteTrace"].flag();m_actorsSupported=root["studioActors"].flag();m_launchId=root["launchId"].text();if(!studioLaunchIdentity(m_launchId))m_launchId.clear();m_liveSupported=root["liveSource"].flag()&&!m_launchId.empty();m_ready=true;m_poll=now;m_status="Connected; waiting for device telemetry.";
                 queue("{\"cmd\":\"ready\",\"id\":2}");
             }
             else if(event=="stopped"&&m_ready)
@@ -168,6 +203,45 @@ namespace nx
             {m_paused=false;m_status="Running";m_file.clear();m_fingerprint.clear();m_variables.clear();m_line=0;}
             else if(event=="launchFailed"){m_launchStatus=root["text"].text();}
             else if(id==8){m_launchStatus=root["message"].text();}
+            else if(id>=11&&id<=13&&id==m_actorRequest)
+            {
+                m_actorRequest=0;
+                const bool ok=root["actorOk"].flag();
+                if(!ok)
+                {
+                    m_actorStatus=root["message"].text();m_actorProperties.clear();
+                    if(id==11){m_actors.clear();m_actorEpoch=0;}
+                }
+                else if(id==11)
+                {
+                    const auto epoch=root["epoch"].exact(),offset=root["offset"].exact(),count=root["count"].exact();
+                    if(!(epoch>0&&epoch<=4294967295.0&&offset>=0&&offset<=65536&&count>=0&&count<=65536))
+                    {m_actorStatus="Invalid actor snapshot.";m_actors.clear();m_actorProperties.clear();m_actorEpoch=0;return;}
+                    if(m_actorEpoch!=static_cast<u32>(epoch)){m_actorProperties.clear();m_actorSelected=0;}
+                    m_actorEpoch=static_cast<u32>(epoch);m_actorOffset=static_cast<u32>(offset);m_actorCount=static_cast<u32>(count);
+                    m_actorScreen=root["screen"].text();m_actors.clear();
+                    for(auto item=root["entities"].first();item.exists()&&m_actors.size()<48;item=item.next())
+                    {
+                        const auto actorId=item["entity"].exact(),parent=item["parent"].exact();
+                        if(actorId<0||actorId>4294967295.0||parent<0||parent>4294967295.0)continue;
+                        m_actors.push_back({static_cast<u32>(actorId),static_cast<u32>(parent),std::string(item["name"].text()).substr(0,64),item["space"].flag()});
+                    }
+                    m_actorStatus="Snapshot received; select an actor.";
+                }
+                else if(id==12)
+                {
+                    m_actorProperties.clear();
+                    if(root["epoch"].exact()!=m_actorEpoch||root["entity"].exact()!=m_actorSelected)
+                    {m_actorStatus="Actor identity changed; refresh.";return;}
+                    for(auto p=root["properties"].first();p.exists()&&m_actorProperties.size()<24;p=p.next())
+                        m_actorProperties.push_back({std::string(p["name"].text()).substr(0,32),std::string(p["value"].text()).substr(0,192),p["changes"].flag()});
+                    m_actorStatus="Runtime properties; changes are temporary.";
+                }
+                else
+                {
+                    m_actorStatus=root["message"].text();inspectActor(m_actorSelected,now);
+                }
+            }
             else if(id==10&&m_liveSupported&&!liveBusy())
             {
                 m_liveScreen=root["screen"].text();m_liveFingerprint=root["fingerprint"].text();
@@ -239,7 +313,13 @@ namespace nx
         TcpSocket m_socket;
         bool m_network=false,m_ready=false,m_paused=false,m_hello=false,m_sourceIdentity=false;
         bool m_traceSupported=false,m_tracing=false,m_traceOutstanding=false,m_traceGap=false;
-        bool m_liveSupported=false;
+        bool m_liveSupported=false,m_actorsSupported=false;
+        int m_actorRequest=0;
+        double m_actorDeadline=0;
+        u32 m_actorEpoch=0,m_actorOffset=0,m_actorCount=0,m_actorSelected=0;
+        std::string m_actorStatus,m_actorScreen;
+        std::vector<Actor> m_actors;
+        std::vector<ActorProperty> m_actorProperties;
         unsigned m_liveStage=0;
         size_t m_liveOffset=0;
         double m_liveDeadline=0;

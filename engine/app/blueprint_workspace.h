@@ -387,6 +387,11 @@ namespace nx
         bool m_deviceAddressEditing=false;
         std::string m_deviceFeedback,m_deviceExport;
         bool m_deviceVariables=false;
+        void updateRemoteActors(Services& s,float x,float y,bool click);
+        void drawRemoteActors(Canvas& c);
+        size_t m_actorFirst=0,m_actorPropertyFirst=0;
+        std::string m_actorEditName,m_actorEditValue;
+        u32 m_actorEditEpoch=0,m_actorEditId=0;
         void updateXboxDeploy(Services& s,float x,float y,bool click);
         void drawXboxDeploy(Canvas& c);
         void pollXboxDeploy(Services& s);

@@ -2,7 +2,6 @@
 #include "base/types.h"
 #include <string>
 #include <stdlib.h>
-#include <math.h>
 namespace nx
 {
     // Reject trailing junk, NaN/infinity, extreme coordinates and wrong arity.
@@ -15,7 +14,7 @@ namespace nx
             while(*p==' '||*p=='\t')++p;
             if(i&&*p==','){++p;while(*p==' '||*p=='\t')++p;}
             char* end=nullptr;const float v=strtof(p,&end);
-            if(end==p||!isfinite(v)||v < -bound||v>bound||(positive&&v<=0))return false;
+            if(end==p||!(v>=-bound&&v<=bound)||(positive&&v<=0))return false;
             p=end;
             if(i+1<count&&*p!=','&&*p!=' '&&*p!='\t')return false;
         }
