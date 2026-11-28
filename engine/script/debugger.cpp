@@ -4,6 +4,7 @@
 #include "scene/world.h"
 #include "base/json_value.h"
 #include "base/log.h"
+#include "base/memory.h"
 
 #include "scriptarray/scriptarray.h"
 
@@ -279,6 +280,31 @@ namespace nx
             putNumber(reply, "version", 1);
             putText(reply, "angelscript", ScriptHost::version());
             putNumber(reply, "id", id);
+            send(reply.write(true));
+        }
+        else if (name == "telemetry")
+        {
+            // Read-only snapshot, requested at a low cadence by a connected
+            // development client. No script execution or GPU readback.
+            JsonValue reply;putNumber(reply,"id",id);
+            auto* t=reply.put("telemetry");
+            const auto* s=m_host&&m_host->engine()?static_cast<const Services*>(m_host->engine()->GetUserData()):nullptr;
+            if(s&&s->platform)
+            {
+                putText(*t,"platform",s->platform->name());
+                putNumber(*t,"physicalBytes",static_cast<double>(s->platform->totalMemory()));
+                putNumber(*t,"freeBytes",static_cast<double>(s->platform->freeMemory()));
+                putNumber(*t,"fps",s->fps);putNumber(*t,"draws",s->draws);
+                if(s->audio)putNumber(*t,"voices",s->audio->voicesInUse());
+            }
+            const auto total=memStatsTotal();
+            putNumber(*t,"trackedBytes",static_cast<double>(total.bytes));
+            putNumber(*t,"peakBytes",static_cast<double>(total.peak));
+            putNumber(*t,"textureBytes",static_cast<double>(memStats(MemTag::Texture).bytes));
+            putNumber(*t,"bufferBytes",static_cast<double>(memStats(MemTag::Buffer).bytes));
+            putNumber(*t,"sceneBytes",static_cast<double>(memStats(MemTag::Scene).bytes));
+            putNumber(*t,"scriptBytes",static_cast<double>(memStats(MemTag::Script).bytes));
+            putNumber(*t,"audioBytes",static_cast<double>(memStats(MemTag::Audio).bytes));
             send(reply.write(true));
         }
         else if (name == "pause")

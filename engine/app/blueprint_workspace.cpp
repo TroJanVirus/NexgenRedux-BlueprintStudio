@@ -171,6 +171,7 @@ namespace nx
     {
         if (!active()) return;
         stopPreview(s);
+        m_device.disconnect();m_deviceAddressEditing=false;
         stopTone(s);m_audioEditor=false;m_toneWav.clear();m_clipSource.clear();m_audioClip=BlueprintAudioClip{};
         s.platform->setEditorChrome(false);
         saveActorTab();cancelActorDrag();m_actorOrbit=false;m_splitter=0;m_actorEditor=false;m_contentDrag.clear();m_contentPanelDrag=false;releaseContentPreviews();
@@ -286,7 +287,7 @@ namespace nx
         return true;
     }
     bool BlueprintWorkspace::modalOpen() const
-    {return m_assetBrowser||m_browsing||m_focus==5||m_focus==6||m_focus==9||m_focus==10||m_focus==11||m_focus==12||m_focus==13||m_focus==14||m_focus==15||m_focus==17||m_focus==18||m_focus==20||m_focus==21||m_focus==22||m_focus==23||m_focus==24||m_focus==25||m_focus==26;}
+    {return m_assetBrowser||m_browsing||m_focus==5||m_focus==6||m_focus==9||m_focus==10||m_focus==11||m_focus==12||m_focus==13||m_focus==14||m_focus==15||m_focus==17||m_focus==18||m_focus==20||m_focus==21||m_focus==22||m_focus==23||m_focus==24||m_focus==25||m_focus==26||m_focus==27;}
     void BlueprintWorkspace::resetGraphTabs()
     {
         releaseContentPreviews();m_graphTabs.clear();m_actorTabs.clear();m_visualTabs.clear();m_activeVisualTab={};m_activeTab={};m_tabFirst=0;
@@ -4856,6 +4857,7 @@ namespace nx
     void BlueprintWorkspace::updateBuildManager(Services& s,float x,float y,bool click)
     {
         if(!click)return;
+        if(in(x,y,140,600,425,638)){m_focus=27;return;}
         if(in(x,y,1000,600,1150,638)){m_focus=22;return;}
         if(in(x,y,140,420,470,455)||in(x,y,480,420,790,455)||in(x,y,800,420,1140,455))
         {
@@ -4902,8 +4904,55 @@ namespace nx
         c.text(*m_font,estimate,140,460,muted);
         c.text(*m_font,target.warning().c_str(),140,484,{1.f,0.72f,0.22f,1.f});
         c.text(*m_font,"Exports are source/media. Actual target runtime integrity and performance remain unverified.",140,508,muted);
+        c.roundRect(140,600,285,38,4,{0.20f,0.32f,0.45f,1});c.text(*m_font,"Device Manager",282,609,text,Align::Center);
         c.roundRect(1000,600,150,38,4,{0.20f,0.32f,0.45f,1});c.text(*m_font,"Back",1075,609,text,Align::Center);
         c.clip(120,535,1030,58);c.paragraph(*m_font,m_status.c_str(),120,540,1020,text);c.noClip();
+    }
+    void BlueprintWorkspace::updateDeviceManager(Services& s,float x,float y,bool click)
+    {
+        auto& input=*s.input;
+        bool attach=click&&in(x,y,730,150,900,190);
+        if(click&&in(x,y,140,150,710,190)){m_deviceAddressEditing=true;input.setTyping(true);}
+        if(m_deviceAddressEditing)for(u32 i=0;i<input.typedCount();++i)
+        {
+            const auto ch=input.typed(i);
+            if(ch==13){attach=true;break;}
+            if(ch==8&&!m_deviceAddress.empty())m_deviceAddress.pop_back();
+            else if(((ch>='0'&&ch<='9')||ch=='.')&&m_deviceAddress.size()<15)m_deviceAddress+=static_cast<char>(ch);
+        }
+        if(attach&&!m_device.active()){m_deviceAddressEditing=false;input.setTyping(false);m_device.connect(m_deviceAddress,s.platform->seconds());return;}
+        if(!click)return;
+        if(in(x,y,920,150,1140,190)){m_device.disconnect();return;}
+        if(in(x,y,140,258,1140,298))
+        {
+            const auto action=static_cast<unsigned>((x-140)/200);
+            if(action<5)m_device.control(action);
+            return;
+        }
+        if(in(x,y,1000,600,1150,638)){m_deviceAddressEditing=false;input.setTyping(false);m_focus=24;}
+    }
+    void BlueprintWorkspace::drawDeviceManager(Canvas& c)
+    {
+        c.roundRect(100,64,1080,594,8,{0.15f,0.17f,0.20f,1});
+        c.text(*m_font,"DEVICE MANAGER / REDUX REMOTE DEBUG",120,78,accent);
+        c.text(*m_font,"Start Redux on the console with a debug folder beside the title. Trusted LAN only; TCP 4711.",140,116,muted);
+        const auto button=[&](float x,float y,float w,const char* label,bool enabled)
+        {c.roundRect(x,y,w,40,4,enabled?Color{0.20f,0.32f,0.45f,1}:Color{0.20f,0.22f,0.25f,1});c.text(*m_font,label,x+w/2,y+10,enabled?text:muted,Align::Center);};
+        c.roundRect(140,150,570,40,4,m_deviceAddressEditing?Color{0.24f,0.35f,0.48f,1}:Color{0.18f,0.22f,0.29f,1});
+        c.text(*m_font,m_deviceAddress.empty()?"Enter console IPv4 address":m_deviceAddress.c_str(),154,160,text);
+        button(730,150,170,"Attach",!m_device.active());button(920,150,220,"Disconnect",m_device.active());
+        c.clip(140,200,1000,28);c.text(*m_font,m_device.status().c_str(),140,205,m_device.ready()?accent:muted);c.noClip();
+        c.text(*m_font,("Project target: "+m_document.target().label()).c_str(),140,233,muted);
+        constexpr const char* actions[]={"Pause","Continue","Step over","Step into","Step out"};
+        for(unsigned i=0;i<5;++i)button(140+200.f*i,258,190,actions[i],m_device.ready()&&(i==0?!m_device.paused():m_device.paused()));
+        const auto& rows=m_device.rows();
+        if(rows.empty())c.text(*m_font,"No measured telemetry. Older runtimes may not support counters.",140,318,muted);
+        for(size_t i=0;i<rows.size()&&i<14;++i)
+        {const float x=140+500.f*(i/7),y=318+27.f*(i%7);c.clip(x,y,490,26);c.text(*m_font,rows[i].c_str(),x,y,text);c.noClip();}
+        c.clip(140,520,1000,24);c.text(*m_font,m_device.file().empty()?"Script location: none":(m_device.file()+":"+std::to_string(m_device.line())).c_str(),140,520,accent);c.noClip();
+        c.clip(140,550,1000,24);c.text(*m_font,("Last log: "+m_device.log()).c_str(),140,550,muted);c.noClip();
+        c.text(*m_font,"Tracked allocations are not total physical memory use. No inferred CPU percentage.",140,580,muted);
+        button(1000,600,150,"Back",true);
     }
     void BlueprintWorkspace::drawSceneBrowser(Canvas& c)
     {
@@ -5143,6 +5192,7 @@ namespace nx
     void BlueprintWorkspace::update(Services& s)
     {
         auto& input = *s.input;
+        m_device.update(s.platform->seconds());
         resizeWorkspace(*s.canvas);
         rememberVisualTab();refreshWidgetPreview(s);refreshPlacementPreview(s);refreshContentPreviews(s);
         if (input.pressed(Action::Menu))
@@ -5156,6 +5206,7 @@ namespace nx
             if(m_browsing){if(m_projectCreate){m_projectCreate=0;m_projectName.clear();input.setTyping(false);}else{m_browsing=false;m_status="Project browser closed.";}return;}
             if(m_rgbOpen){m_rgbOpen=false;return;}
             if(m_moveWire!=static_cast<size_t>(-1)){m_moveWire=static_cast<size_t>(-1);m_status="Connection move cancelled.";return;}
+            if(m_focus==27){m_deviceAddressEditing=false;input.setTyping(false);m_focus=24;return;}
             if(m_focus==22&&m_sceneNaming){m_sceneNaming=false;input.setTyping(false);return;}
             if(m_focus){if(m_focus==25){m_deleteSelection.clear();m_skipDeleteConfirmation=false;}m_focus=0;input.setTyping(false);m_status="Input cancelled.";return;}
             if(m_marquee){m_marquee=false;m_selectedNodes=m_marqueeBase;m_selection=m_selectedNodes.empty()?static_cast<size_t>(-1):m_selectedNodes.back();m_left=input.raw().mouseButtons[0];return;}
@@ -5345,6 +5396,7 @@ namespace nx
             else if((pressed&128u)||(click&&in(x,y,800,405,930,445))){if(confirmNodeDeletion(input))saveLayout(s);}
             m_left=left;return;
         }
+        if(m_focus==27){updateDeviceManager(s,x,y,click);m_left=left;return;}
         if(m_focus==24){updateBuildManager(s,x,y,click);m_left=left;return;}
         if(m_focus==23){updateInputActions(s,x,y,click);m_left=left;return;}
         if(m_focus==22){updateSceneBrowser(s,x,y,click);m_left=left;return;}
@@ -6917,6 +6969,7 @@ namespace nx
                 c.roundRect(660,405,130,40,4,{0.22f,0.31f,0.43f,1});c.text(*m_font,"Cancel",725,415,text,Align::Center);
                 c.roundRect(800,405,130,40,4,{0.48f,0.21f,0.25f,1});c.text(*m_font,"Delete",865,415,text,Align::Center);
             }
+            else if(m_focus==27)drawDeviceManager(c);
             else if(m_focus==24)drawBuildManager(c);
             else if(m_focus==23)drawInputActions(c);
             else if(m_focus==22)drawSceneBrowser(c);

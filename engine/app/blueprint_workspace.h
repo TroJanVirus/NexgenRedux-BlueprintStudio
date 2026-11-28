@@ -1,5 +1,6 @@
 #pragma once
 #include "tools/blueprint/native_compile.h"
+#include "tools/blueprint/device_client.h"
 #include "tools/blueprint/native_assets.h"
 #include "audio/audio.h"
 #include <utility>
@@ -377,6 +378,11 @@ namespace nx
         void drawInputActions(Canvas& c);
         void updateBuildManager(Services& s,float x,float y,bool click);
         void drawBuildManager(Canvas& c);
+        void updateDeviceManager(Services& s,float x,float y,bool click);
+        void drawDeviceManager(Canvas& c);
+        BlueprintDevice m_device;
+        std::string m_deviceAddress;
+        bool m_deviceAddressEditing=false;
         bool beginSequenceAsset(const std::string& id,Input& input);
         size_t m_sequenceKey=0;
         float m_sequenceTime=0;
