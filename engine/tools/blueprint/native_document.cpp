@@ -2941,7 +2941,7 @@ namespace nx
             const BlueprintPin* match=nullptr;
             for(const auto& candidate:candidates)if((otherPin.empty()||otherPin==candidate.name)&&candidate.type==endpoint->type){match=&candidate;break;}
             if(!match)for(const auto& candidate:candidates)if((otherPin.empty()||otherPin==candidate.name)&&
-                (output?staged.canAutoConvertPin(graph,existing,pin,candidate.type):staged.canAutoConvertPin(graph,added,candidate.name,endpoint->type))){match=&candidate;break;}
+                (output?staged.canAutoConvertPin(graph,existing,pin,candidate.type):(blueprintLosslessConversion(candidate.type,endpoint->type)||staged.classAssignable(candidate.type,endpoint->type)))){match=&candidate;break;}
             if(!match){error="No compatible pin on this node.";return false;}
             if(!(output?staged.connectCompatible(graph,existing,pin,added,match->name,error):staged.connectCompatible(graph,added,match->name,existing,pin,error)))return false;
         }
