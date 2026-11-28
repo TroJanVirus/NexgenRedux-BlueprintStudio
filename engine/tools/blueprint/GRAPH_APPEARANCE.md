@@ -4,10 +4,13 @@ Node widths use the native font's measured titles, pin labels and visible values
 
 Glyphs scale with zoom; titles remain displayed at the minimum 35% zoom. Pin labels are hidden at low zoom to reduce clutter. Pin padding scales with zoom. Node bodies have 83% opacity.
 
-Layout > Wire style cycles Curved (default), Orthogonal and Straight and persists the choice. Curves use cubic Bézier sampling; backward connections without manual reroutes detour around the endpoint nodes. Manual reroutes override automatic detours. Other intervening nodes are not obstacle-routed. The same sampled geometry is used for reroute hit testing, preserving the original anchor interval.
+Layout > Wire style cycles Curved (default), Orthogonal and Straight and persists the choice. Curved wires use cubic Bézier sampling even when endpoints face backwards. Only Orthogonal mode uses the automatic endpoint detour. Double-click a visible wire to insert a draggable reroute; Ctrl+right-click remains available. Other intervening nodes are not obstacle-routed. The same sampled geometry is used for reroute hit testing, preserving the original anchor interval.
 
 When endpoint nodes have unequal widths, automatic detours use their combined left/right bounds. For very narrow forward gaps, the curve handles are constrained to the gap.
 
 The node library starts with functional categories, shows their available node counts, and drills into the chosen group. Search remains global, exact node IDs rank first. Graph navigation defaults to flat category sections (Events, Construction, Functions, Macros, Shared library, Types); the Variables section remains directly beneath it. Groups/List toggles the navigator mode and persists the preference. Old Tree preferences migrate to Groups by default.
 
 Native desktop authoring tests use the actual measured node/pin positions and allow sufficient space between nodes. The Timeline regression checks each expected wire in the recovery document after the corresponding real mouse gesture. It continues to require all nodes, literal values, connections, native source export and rendered camera motion. Overlapping nodes can still conceal pins; rearrange or drag them apart.
+
+
+Graph interaction: drag empty canvas to marquee-select nodes, Ctrl-click to toggle individual nodes, drag any selected node to move the selection as one undoable edit, hold Shift to snap the dragged anchor to a 16-unit grid, and press Q to align selected nodes horizontally. Unconnected typed inputs and literal values are editable directly on visible nodes at readable zoom; Enter confirms and Escape cancels. Edit node opens the detailed input inspector. Project browsing does not require saving; switching projects saves named work or preserves a verified recovery archive for unnamed/conflicted work.

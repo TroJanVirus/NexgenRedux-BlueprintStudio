@@ -336,6 +336,7 @@ with menu_log.open("wb") as out:
         wait_for(lambda: "File changed outside Studio" in menu_log.read_text(errors="replace"),
                  "save conflict rejected", process)
         assert authored.read_bytes() == external
+        key("Escape")  # Dismiss the save-conflict notice before opening Projects.
         click(850, 18, window)
         click(755, 133, window)
         enter_text("Authored Copy")

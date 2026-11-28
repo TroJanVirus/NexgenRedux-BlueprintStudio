@@ -34,7 +34,7 @@ namespace nx
         {
             const P a=anchors[i-1],b=anchors[i];const size_t seg=i-1;
             if(style==2){append(b,seg);continue;}
-            if(anchors.size()==2&&b.x<=a.x)
+            if(style==1&&anchors.size()==2&&b.x<=a.x)
             {
                 const float gap=std::max(22.f,36*zoom),radius=std::min(14.f*zoom,gap*0.4f);
                 const float above=top-gap,below=bottom+gap;

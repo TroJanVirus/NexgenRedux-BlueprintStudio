@@ -40,8 +40,8 @@ NX_TEST(blueprintGraphCurvedWiresAndReroutes)
     path=blueprintGraphWire({{300,40},{100,140}},0,1,0,200,&segments);
     NX_EXPECT(path[1].x>300&&path[path.size()-2].x<100);
     bool around=false;for(const P& p:path)if(p.y<0||p.y>200)around=true;
-    NX_EXPECT(around);
-    path=blueprintGraphWire({{300,40},{100,140}},0,1,0,200,&segments,-50,500);
+    NX_EXPECT(!around);
+    path=blueprintGraphWire({{300,40},{100,140}},1,1,0,200,&segments,-50,500);
     float minX=300,maxX=300;for(const P& p:path){minX=std::min(minX,p.x);maxX=std::max(maxX,p.x);}
     NX_EXPECT(minX<-50&&maxX>500);
     path=blueprintGraphWire({{300,40},{301,400}},0,1,0,500,&segments);
@@ -2324,7 +2324,16 @@ NX_TEST(nativeWorkspaceRightClickSearchPlacesNodeAndUndoRemovesIt)
     state.keys[static_cast<size_t>(Key::Control)]=true;state.mouseX=534;state.mouseY=180;state.mouseButtons[1]=true;frame();state.mouseButtons[1]=false;frame();state.keys[static_cast<size_t>(Key::Control)]=false;frame();
     studio.checkpoint(r.services,true);bytes=r.platform.files[recovery];NX_EXPECT(doc.load(bytes.data(),bytes.size(),error)&&doc.graphs[0].links.size()==1);
     if(doc.graphs[0].links.size()==1)NX_EXPECT(doc.graphs[0].links[0].route.size()==1);
-    click(320,115);state.keys[static_cast<size_t>(Key::Shift)]=true;click(650,215);state.keys[static_cast<size_t>(Key::Shift)]=false;frame();
+    // Marquee both nodes, align with Q, then undo without changing the original route.
+    drag(260,90,950,330);state.keys[static_cast<size_t>(Key::Q)]=true;frame();state.keys[static_cast<size_t>(Key::Q)]=false;frame();
+    studio.checkpoint(r.services,true);bytes=r.platform.files[recovery];NX_EXPECT(doc.load(bytes.data(),bytes.size(),error));
+    if(doc.graphs[0].nodes.size()==2)NX_EXPECT(doc.graphs[0].nodes[0].y==doc.graphs[0].nodes[1].y);
+    click(900,53);drag(260,90,950,330);
+    // Shift snaps the anchor to a 16-unit grid while preserving group offsets.
+    state.keys[static_cast<size_t>(Key::Shift)]=true;drag(320,115,350,147);state.keys[static_cast<size_t>(Key::Shift)]=false;frame();
+    studio.checkpoint(r.services,true);bytes=r.platform.files[recovery];NX_EXPECT(doc.load(bytes.data(),bytes.size(),error));
+    if(doc.graphs[0].nodes.size()==2){NX_EXPECT(std::fmod(doc.graphs[0].nodes[0].x,16.f)==0&&std::fmod(doc.graphs[0].nodes[0].y,16.f)==0);}
+    click(900,53);drag(260,90,950,330);
     click(352,18);click(410,140);type("\r");studio.checkpoint(r.services,true);bytes=r.platform.files[recovery];
     NX_EXPECT(doc.load(bytes.data(),bytes.size(),error)&&doc.graphs[0].comments.size()==1);
     if(doc.graphs[0].comments.size()==1)NX_EXPECT(doc.graphs[0].comments[0].members.size()==2);
