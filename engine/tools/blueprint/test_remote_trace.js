@@ -75,6 +75,8 @@ async function main() {
         assert.equal(hello.remoteTrace,true);
         assert.equal(hello.studioActors,true);
         assert.equal(hello.studioPins,true);
+        assert.equal(hello.studioPreview,false);
+        assert.equal((await ask("studioPreview")).previewOk,false);
         assert.equal(hello.launchId,undefined);
         const refused=await ask("launchTitle",{folder:"/E/Games/Example",token:"a".repeat(32)});
         assert.equal(refused.launchAccepted,false);

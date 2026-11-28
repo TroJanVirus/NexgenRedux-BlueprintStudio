@@ -557,7 +557,7 @@ namespace nx
         else if(name=="liveInfo")
         {
             putText(reply,"screen",s->screens->current());putText(reply,"fingerprint",s->screens->liveFingerprint());
-            putNumber(reply,"limit",StudioLiveSource::limit);ok=true;
+            putNumber(reply,"limit",static_cast<double>(StudioLiveSource::limit));ok=true;
         }
         else if(m_paused||m_mode!=Mode::Run||!m_pendingLaunch.empty())
         {m_liveUpload.clear();message="Resume the title before updating.";}
@@ -577,7 +577,7 @@ namespace nx
             const double offset=number("offset");
             ok=offset>=0&&offset<=StudioLiveSource::limit&&offset==static_cast<size_t>(offset)&&m_liveUpload.append(static_cast<size_t>(offset),text("hex"));
             if(!ok)m_liveUpload.clear();
-            putNumber(reply,"received",m_liveUpload.source.size());message=ok?"Chunk received.":"Invalid upload chunk.";
+            putNumber(reply,"received",static_cast<double>(m_liveUpload.source.size()));message=ok?"Chunk received.":"Invalid upload chunk.";
         }
         else if(name=="liveCommit")
         {

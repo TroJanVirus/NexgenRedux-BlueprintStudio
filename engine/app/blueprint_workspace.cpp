@@ -5155,7 +5155,7 @@ namespace nx
             return;
         }
         if(in(x,y,380,480,620,512)&&m_device.ready()&&m_device.previewSupported())
-        {m_focus=30;m_deviceAddressEditing=false;input.setTyping(false);m_remotePreviewOn=false;return;}
+        {m_focus=30;m_deviceAddressEditing=false;input.setTyping(false);m_remotePreviewOn=false;m_device.setTrace(false);return;}
         if(in(x,y,630,480,880,512)&&m_device.ready()&&m_device.actorsSupported())
         {m_focus=29;m_deviceAddressEditing=false;input.setTyping(false);m_actorFirst=m_actorPropertyFirst=0;m_actorEditName.clear();m_device.requestActors(0,s.platform->seconds());return;}
         if(in(x,y,900,480,1140,512)){pushLiveSource(s);return;}
@@ -7266,13 +7266,15 @@ namespace nx
                                 continue;
                             }
                         }
-                        graphText(pin,x+pad,py-10*m_zoom,w-2*pad-right,20*m_zoom,m_zoom,muted);
+                        const auto* live=right==0&&wired?remotePinValue(m_graph,i,pin,false):nullptr;
+                        graphText(live?pin+" <- "+*live:pin,x+pad,py-10*m_zoom,w-2*pad-right,20*m_zoom,m_zoom,live?Color{0.20f,0.85f,0.78f,1}:muted);
                     }
                     for(size_t p=first;p<std::min(last,rows[i].outputs.size());++p)
                     {
                         const auto* live=remotePinValue(m_graph,i,rows[i].outputs[p],true);
                         const std::string label=live?rows[i].outputs[p]+" = "+*live:rows[i].outputs[p];
-                        const float width=std::min(w-2*pad,(c.measure(*m_font,label.c_str()).x+4)*m_zoom);
+                        const float leftWidth=p<rows[i].inputs.size()?(c.measure(*m_font,rows[i].inputs[p].c_str()).x+18)*m_zoom:0;
+                        const float width=std::min(w-2*pad-leftWidth,(c.measure(*m_font,label.c_str()).x+4)*m_zoom);
                         graphText(label,x+w-pad-width,y+pinY(p)*m_zoom-10*m_zoom,width,20*m_zoom,m_zoom,live?Color{0.20f,0.85f,0.78f,1}:muted,Align::Right);
                     }
                 }

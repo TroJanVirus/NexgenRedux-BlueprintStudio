@@ -55,3 +55,5 @@ On a source-matched breakpoint or step, Studio requests a bounded snapshot of up
 ## Console preview
 
 The Xbox D3D8 backend directly samples the last presented front buffer into an RGB565 thumbnail, at most 128x96 (24 KiB raw, 48 KiB hexadecimal wire payload), preserving framebuffer pixel aspect ratio. Device Manager > Console preview offers an explicit capture or opt-in one-frame-per-second preview. No full-sized framebuffer allocation, continuous video encoding or screenshot files. Captures are only at running frame boundaries; paused views hold the last captured frame. The preview texture is released on exit, and no capture is requested when the panel is closed. GPU readback can still stall the console; actual hardware impact, video aspect correction for anamorphic modes and other backends require testing. Do not expose the debugger outside a trusted LAN.
+
+Linked input pins with an unoccupied output row also show the materialized upstream source value (marked with an arrow; not a post-conversion evaluation). Opening the preview disables remote trace to avoid competing traffic. The socket regression checks unsupported capture rejection on the null GPU.

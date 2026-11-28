@@ -37,7 +37,7 @@ namespace nx
         const std::vector<u8>& previewPixels()const{return m_previewPixels;}
         bool requestPreview(double now)
         {
-            if(!m_ready||!m_previewSupported||m_previewBusy||m_paused||liveBusy()||actorBusy()||m_out.size()>1024)return false;
+            if(!m_ready||!m_previewSupported||m_previewBusy||m_paused||liveBusy()||actorBusy()||m_tracing||m_traceOutstanding||m_out.size()>1024)return false;
             queue("{\"cmd\":\"studioPreview\",\"id\":15}");m_previewBusy=true;m_previewDeadline=now+5;return true;
         }
         bool actorsSupported()const{return m_actorsSupported;}
