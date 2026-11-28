@@ -28,6 +28,8 @@ jobs:
         with:
           ref: ${{ inputs.source_ref || github.sha }}
           persist-credentials: false
+      - name: Check engine self-contained dependency policy
+        run: cmake -DROOT="$GITHUB_WORKSPACE/engine" -P engine/cmake/CheckSelfContained.cmake
       - name: Check generated catalogue
         run: |
           python3 engine/tools/blueprint/generate_catalog.py --check

@@ -8,11 +8,7 @@
 #include "assets/formats.h"
 #include "audio/audio.h"
 #include "audio/decoder.h"
-#include <memory>
-#include <sstream>
-#include <iomanip>
 #include <limits>
-#include <locale>
 #include <unordered_set>
 #include <cmath>
 #include <algorithm>
@@ -24,6 +20,51 @@ namespace nx
     namespace
     {
         constexpr size_t kMaxFiles=4096,kMaxFile=64*1024*1024,kMaxTotal=256*1024*1024;
+        // A scoped owner for native engine handles. No additional standard-library
+        // dependencies; all early exits still return allocations to the native pool.
+        template<class T,void (*Release)(T*)> class AudioOwner
+        {
+            T* m_value;
+        public:
+            explicit AudioOwner(T* value):m_value(value){}
+            ~AudioOwner(){if(m_value)Release(m_value);}
+            AudioOwner(const AudioOwner&)=delete;
+            AudioOwner& operator=(const AudioOwner&)=delete;
+            T* get()const{return m_value;}
+            T* operator->()const{return m_value;}
+            T& operator*()const{return *m_value;}
+            explicit operator bool()const{return m_value!=nullptr;}
+        };
+        // Nine significant decimal digits round-trip binary32. Construct the
+        // decimal directly, so neither C++ streams nor the C locale are needed.
+        std::string audioFloatText(float value)
+        {
+            if(value==0)return "0";
+            const bool negative=value<0;
+            double scaled=std::abs(static_cast<double>(value));int exponent=0;
+            while(scaled>=10){scaled/=10;++exponent;}
+            while(scaled<1){scaled*=10;--exponent;}
+            unsigned mantissa=static_cast<unsigned>(std::round(scaled*100000000.0));
+            if(mantissa==1000000000u){mantissa=100000000u;++exponent;}
+            std::string digits=std::to_string(mantissa);
+            while(digits.size()>1&&digits.back()=='0')digits.pop_back();
+            std::string result=negative?"-":"";
+            const int point=exponent+1;
+            if(point>0&&point<=9)
+            {
+                const auto pos=static_cast<size_t>(point);
+                if(pos>=digits.size())result+=digits+std::string(pos-digits.size(),'0');
+                else result+=digits.substr(0,pos)+"."+digits.substr(pos);
+            }
+            else if(point<=0&&point>=-5)result+="0."+std::string(static_cast<size_t>(-point),'0')+digits;
+            else
+            {
+                result+=digits.substr(0,1);
+                if(digits.size()>1)result+="."+digits.substr(1);
+                result+="e"+std::to_string(exponent);
+            }
+            return result;
+        }
         bool folderId(const std::string& s)
         {return s=="Screen"||blueprintAssetName(s,true);}
         bool directoryRoot(const std::string& s)
@@ -190,9 +231,9 @@ namespace nx
         BusEffects processor;processor.set(t.effects,0);
         const auto& fx=t.effects;
         // Isolated copies: never change the live mixer's bus or its effect state.
-        std::unique_ptr<ReverbMemory,decltype(&destroyReverbMemory)> reverb(fx.reverb>0?createReverbMemory():nullptr,destroyReverbMemory);
-        std::unique_ptr<EchoMemory,decltype(&destroyEchoMemory)> echo(fx.echo>0?createEchoMemory():nullptr,destroyEchoMemory);
-        std::unique_ptr<WaverMemory,decltype(&destroyWaverMemory)> waver((fx.chorus>0||fx.flanger>0)?createWaverMemory():nullptr,destroyWaverMemory);
+        AudioOwner<ReverbMemory,destroyReverbMemory> reverb(fx.reverb>0?createReverbMemory():nullptr);
+        AudioOwner<EchoMemory,destroyEchoMemory> echo(fx.echo>0?createEchoMemory():nullptr);
+        AudioOwner<WaverMemory,destroyWaverMemory> waver((fx.chorus>0||fx.flanger>0)?createWaverMemory():nullptr);
         if((fx.reverb>0&&!reverb)||(fx.echo>0&&!echo)||((fx.chorus>0||fx.flanger>0)&&!waver))
         {error="Not enough memory for audio effects.";return false;}
         processor.giveReverb(reverb.get());processor.giveEcho(echo.get());processor.giveWaver(waver.get());
@@ -285,7 +326,7 @@ namespace nx
         {ok=ok&&candidate.connect(g,from,out,to,in,error);};
         const auto input=[&](size_t g,size_t n,const char* pin,const std::string& value)
         {ok=ok&&candidate.setInputValue(g,n,pin,value,error);};
-        const auto number=[](float v){std::ostringstream s;s.imbue(std::locale::classic());s<<std::setprecision(9)<<v;return s.str();};
+        const auto number=[](float v){return audioFloatText(v);};
         constexpr unsigned shapes[]={0,3,2,1}; // editor's wave order differs from the script helper.
         if(stream)
         {
@@ -363,7 +404,7 @@ namespace nx
         FileData file;
         if(!p.readFile(("own/"+root+"/"+screen+"/asset/"+relative).c_str(),file,MemTag::General)||!file.size||file.size>8*1024*1024)
         {error="Cannot read audio asset (8 MiB file limit).";return false;}
-        std::unique_ptr<SoundData,decltype(&freeSound)> sound(loadSound(file.data,file.size),freeSound);
+        AudioOwner<SoundData,freeSound> sound(loadSound(file.data,file.size));
         if(!sound||sound->kind==SoundKind::Stream||sound->rate<8000||sound->rate>48000||sound->channels<1||sound->channels>2)
         {error="Use a native WAV, Ogg or cooked ADPCM clip at 8-48 kHz.";return false;}
         u32 frames=0;
@@ -425,22 +466,20 @@ namespace nx
     {
         // All keys are fixed literals. Write enough significant digits to
         // recover the identical float, even under a non-English desktop locale.
-        std::ostringstream json;
-        json.imbue(std::locale::classic());
-        json<<std::setprecision(std::numeric_limits<float>::max_digits10)
-            <<"{\"version\":2,\"wave\":"<<tone.wave<<",\"rate\":"<<tone.rate<<",\"channels\":"<<tone.channels
-            <<",\"independentStereo\":"<<(tone.independentStereo?"true":"false")<<",\"rightWave\":"<<tone.rightWave;
-        for(const auto& f:rightFields)json<<",\""<<f.name<<"\":"<<(tone.*f.field);
-        for(const auto& f:toneFields)json<<",\""<<f.name<<"\":"<<(tone.*f.field);
-        json<<",\"effects\":{";
+        std::string json="{\"version\":2,\"wave\":"+std::to_string(tone.wave)+",\"rate\":"+std::to_string(tone.rate)+
+            ",\"channels\":"+std::to_string(tone.channels)+",\"independentStereo\":"+(tone.independentStereo?"true":"false")+
+            ",\"rightWave\":"+std::to_string(tone.rightWave);
+        for(const auto& f:rightFields)json+=",\""+std::string(f.name)+"\":"+audioFloatText(tone.*f.field);
+        for(const auto& f:toneFields)json+=",\""+std::string(f.name)+"\":"+audioFloatText(tone.*f.field);
+        json+=",\"effects\":{";
         bool first=true;
         for(const auto& f:blueprintEffectControls)
         {
-            if(!first)json<<',';
-            first=false;json<<'\"'<<f.name<<"\":"<<(tone.effects.*f.field);
+            if(!first)json+=',';
+            first=false;json+="\""+std::string(f.name)+"\":"+audioFloatText(tone.effects.*f.field);
         }
-        json<<"}}\n";
-        return json.str();
+        json+="}}\n";
+        return json;
     }
 
     bool blueprintSaveTonePreset(Platform& p,const std::string& root,const std::string& screen,
@@ -531,13 +570,11 @@ namespace nx
         {error="The source audio changed; reopen it before saving edits.";return false;}
         std::string validated;
         if(!blueprintEditAudioClip(clip,edit,output,validated,error))return false;
-        std::ostringstream json;json.imbue(std::locale::classic());
-        json<<std::setprecision(std::numeric_limits<float>::max_digits10)
-            <<"{\"version\":1,\"source\":\""<<source<<"\",\"fingerprint\":"<<clipFingerprint(clip)
-            <<",\"reverse\":"<<(edit.reverse?"true":"false")<<",\"normalize\":"<<(edit.normalize?"true":"false");
-        for(const auto& f:clipFields)json<<",\""<<f.name<<"\":"<<(edit.*f.field);
-        json<<",\"output\":"<<tonePresetJson(output)<<"}\n";
-        return newToneAsset(p,root,screen,".bpclip.json",json.str(),relative,error);
+        std::string json="{\"version\":1,\"source\":\""+source+"\",\"fingerprint\":"+std::to_string(clipFingerprint(clip))+
+            ",\"reverse\":"+(edit.reverse?"true":"false")+",\"normalize\":"+(edit.normalize?"true":"false");
+        for(const auto& f:clipFields)json+=",\""+std::string(f.name)+"\":"+audioFloatText(edit.*f.field);
+        json+=",\"output\":"+tonePresetJson(output)+"}\n";
+        return newToneAsset(p,root,screen,".bpclip.json",json,relative,error);
     }
     bool blueprintLoadClipPreset(Platform& p,const std::string& root,const std::string& screen,
         const std::string& relative,std::string& source,BlueprintAudioClip& clip,BlueprintClipEdit& edit,
