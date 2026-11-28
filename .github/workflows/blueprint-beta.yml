@@ -148,7 +148,8 @@ jobs:
           - Zoom-scaled graph text, automatic node widths, selectable curved/orthogonal/straight connections and translucent node bodies.
           - Native audio editor with independent stereo synthesis, native effects, non-destructive clip manipulation and persistent portable presets.
           - Editable sample and streaming Blueprint graph templates, and a native joint coordinate inspector.
-          - Portable ZIP projects, bitmap font companion handling, upstream clock nodes through bf38665.
+          - Portable ZIP projects, shared global media authoring, bitmap font companion handling and upstream clock nodes.
+          - Upstream Hub and Channels demos and pinned shared artwork through revision 099c007.
           - Verification includes native desktop authoring, sanitizer regressions and all platform packages.
           EOF
           fi

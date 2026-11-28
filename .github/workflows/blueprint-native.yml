@@ -96,12 +96,16 @@ jobs:
         run: cmake -S engine -B build -DCMAKE_BUILD_TYPE=Release
       - name: Build native editor and regression executables
         run: cmake --build build --target showcase nx_blueprint_tests nx_blueprint_document_tests nx_blueprint_platform_tests --parallel 4
-      - name: Verify pinned shared Hub media and native demo startup
+      - name: Verify pinned shared Hub and Channels media and native demo startup
         run: |
           test -s NexgenRedux-Media/media/global/picture/avatar.png
           test -s NexgenRedux-Media/media/global/picture/demos/explore.jpg
+          test -s NexgenRedux-Media/media/global/picture/demos/hub.jpg
           test -s NexgenRedux-Media/media/showcase/hub/main.as
+          test -s NexgenRedux-Media/media/showcase/channels/main.as
+          test -s NexgenRedux-Media/media/showcase/channels/asset/stage.png
           build/showcase/nexgen --screen hub --null --frames 120 --saves "$RUNNER_TEMP/bp-hub"
+          xvfb-run -a -s "-screen 0 1280x720x24 -noreset" build/showcase/nexgen --screen channels --hidden --silent --frames 120 --saves "$RUNNER_TEMP/bp-channels"
       - name: Run native document and engine tests
         run: ctest --test-dir build --output-on-failure --timeout 300 -R '^(blueprint_runtime|blueprint_native_document|blueprint_platform_files)$'
       - name: Start editor with null GPU

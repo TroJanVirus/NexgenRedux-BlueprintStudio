@@ -9,3 +9,5 @@ Layout > Wire style cycles Curved (default), Orthogonal and Straight and persist
 When endpoint nodes have unequal widths, automatic detours use their combined left/right bounds. For very narrow forward gaps, the curve handles are constrained to the gap.
 
 The node library starts with functional categories, shows their available node counts, and drills into the chosen group. Search remains global, exact node IDs rank first. Graph navigation defaults to flat category sections (Events, Construction, Functions, Macros, Shared library, Types); the Variables section remains directly beneath it. Groups/List toggles the navigator mode and persists the preference. Old Tree preferences migrate to Groups by default.
+
+Native desktop authoring tests use the actual measured node/pin positions and allow sufficient space between nodes. The Timeline regression checks each expected wire in the recovery document after the corresponding real mouse gesture. It continues to require all nodes, literal values, connections, native source export and rendered camera motion. Overlapping nodes can still conceal pins; rearrange or drag them apart.

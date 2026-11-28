@@ -126,7 +126,33 @@ def pin(graph, node, row, output=False):
     raise RuntimeError(f"No rendered pin geometry for graph {graph}, node {node}")
 
 def connect(graph, src, out, dst, inp):
-    wire(*pin(graph,src,out,True),*pin(graph,dst,inp))
+    expected = project["graphs"][graph]
+    source_id = expected["nodes"][src]["id"]
+    target_id = expected["nodes"][dst]["id"]
+    matching = [link for link in expected["links"] if link["from"] == source_id and link["to"] == target_id]
+    assert len(matching) == 1, matching
+    expected_link = matching[0]
+    start, end = pin(graph,src,out,True), pin(graph,dst,inp)
+    label = f'graph {graph}: {source_id}.{expected_link["output"]} -> {target_id}.{expected_link["input"]}'
+    print(f'Connecting {label} at {start} -> {end}', flush=True)
+    wire(*start,*end)
+
+    def has_wire():
+        try:
+            actual = json.loads(recovery.read_text(encoding="utf-8"))["graphs"][graph]
+            source = actual["nodes"][src]["id"]
+            target = actual["nodes"][dst]["id"]
+            return any(link["from"] == source and link["to"] == target and
+                       link["output"] == expected_link["output"] and link["input"] == expected_link["input"]
+                       for link in actual["links"])
+        except (OSError, ValueError, KeyError, IndexError):
+            return False
+
+    try:
+        wait_for(has_wire, label, process, timeout=8)
+    except RuntimeError:
+        print("Recovery at failed connection:", recovery.read_text(encoding="utf-8"), flush=True)
+        raise
 
 def assert_authored(process, graph_index, nodes, links):
     def has_graph():
@@ -199,7 +225,9 @@ def author_scene(process):
     else:
         right_add(500, 100, "time:timeline")
         right_add(272, 330, "make:Vec3")
-        right_add(500, 330, "math:orbit-position")
+        # The measured Vec3 node extends to x=501.5 at 100% zoom.
+        # Leave a real gap between its result pin and the next input pin.
+        right_add(550, 330, "math:orbit-position")
         right_add(800, 115, "api:Space:Space::camera:Vec3,Vec3,float")
         value(*pin(1,1,2), "8")
         value(*pin(1,2,0), "0")
