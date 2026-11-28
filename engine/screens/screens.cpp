@@ -1,4 +1,5 @@
 #include "screens/screens.h"
+#include "script/source_fingerprint.h"
 #include "ui/ui.h"
 #include "base/json.h"
 #include "base/log.h"
@@ -534,6 +535,7 @@ namespace nx
             return false;
         }
         // `#include "global:scene.as"`: other files, which the screen shares. The line itself is made blank.
+        const auto originalFingerprint=scriptFingerprint(reinterpret_cast<const char*>(source.data),source.size);
         std::string included;
         m_included.clear();host.clearSections();
         if (!include(source, shown(entry), included, 0))
@@ -547,7 +549,7 @@ namespace nx
         char shown[96];
         snprintf(shown, sizeof(shown), "%s/main.as", entry.info.id);
         host.setSource(shown, path);
-        if (!host.compile(entry.module, shown, reinterpret_cast<const char*>(source.data), source.size))
+        if (!host.compile(entry.module, shown, reinterpret_cast<const char*>(source.data), source.size,originalFingerprint))
         {
             entry.failed = true;
             snprintf(entry.error, sizeof(entry.error), "%s. The log has the details.", host.lastError());

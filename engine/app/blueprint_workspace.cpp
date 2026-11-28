@@ -5488,6 +5488,8 @@ namespace nx
         {
             if(updateContentDrawer(s,x,y,left,click)||updateGraphTabs(s,x,y,click)||updateGraphMap(x,y,left,click)){m_left=left;return;}
         }
+        if(!modalOpen()&&!m_focus&&click&&in(x,y,kWidth*0.56f,kBottom+2,kWidth-12,kBottom+26))
+        {m_focus=27;m_left=left;return;}
         if(modalOpen()){x-=modalX();y-=modalY();}
         if(m_focus==26)
         {
@@ -6923,7 +6925,7 @@ namespace nx
         }
         c.rect(0,kBottom,kWidth,kHeight-kBottom,{0.16f,0.16f,0.17f,1});
         c.clip(12,kBottom+2,kWidth*0.55f,24);c.text(*m_font,shorten(m_status,110).c_str(),12,kBottom+6,text);c.noClip();
-        c.clip(kWidth*0.56f,kBottom+2,kWidth*0.43f,24);c.text(*m_font,m_document.target().label().c_str(),kWidth-12,kBottom+6,m_document.target().highResolutionWarning()||m_document.target().ram==256?Color{1.f,0.72f,0.22f,1.f}:muted,Align::Right);c.noClip();
+        c.clip(kWidth*0.56f,kBottom+2,kWidth*0.43f,24);c.text(*m_font,((m_device.ready()?"Device connected / ":"Device / ")+m_document.target().label()).c_str(),kWidth-12,kBottom+6,m_document.target().highResolutionWarning()||m_document.target().ram==256?Color{1.f,0.72f,0.22f,1.f}:muted,Align::Right);c.noClip();
         if(!m_recoveryWarning.empty())
             c.text(*m_font,shorten(m_recoveryWarning,105).c_str(),12,kBottom+26,{1.f,0.72f,0.22f,1.f});
         else

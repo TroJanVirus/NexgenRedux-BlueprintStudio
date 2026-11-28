@@ -100,7 +100,7 @@ namespace nx
             {
                 m_paused=true;m_status=std::string("Stopped: ")+root["reason"].text();m_file.clear();m_fingerprint.clear();m_variables.clear();m_line=0;
                 queue("{\"cmd\":\"stack\",\"id\":3}");
-                queue("{\"cmd\":\"variables\",\"id\":5,\"frame\":0,\"scope\":\"locals\"}");
+                queue("{\"cmd\":\"variables\",\"id\":5,\"frame\":0,\"scope\":\"locals\",\"limit\":12}");
             }
             else if(event=="continued")
             {m_paused=false;m_status="Running";m_file.clear();m_fingerprint.clear();m_variables.clear();m_line=0;}

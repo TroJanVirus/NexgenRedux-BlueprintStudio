@@ -832,6 +832,9 @@ namespace nx
         const JsonValue* scope = ask.find("scope");
         const JsonValue* frameValue = ask.find("frame");
         const u32 frame = frameValue ? static_cast<u32>(frameValue->number()) : 0;
+        const auto* requestedLimit=ask.find("limit");
+        const double limitValue=requestedLimit?requestedLimit->number():0;
+        const u32 limit=limitValue>=1&&limitValue<=100?static_cast<u32>(limitValue):0;
         if (m_stopped == nullptr)
         {
         }
@@ -865,7 +868,7 @@ namespace nx
                 describe(*list->add(), "this", m_stopped->GetThisTypeId(frame), self);
             }
             const int count = m_stopped->GetVarCount(frame);
-            for (int i = 0; i < count; i++)
+            for (int i = 0; i < count && (!limit || list->count()<limit); i++)
             {
                 const char* name = nullptr;
                 int typeId = 0;

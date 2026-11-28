@@ -46,7 +46,7 @@ namespace nx
         asITypeInfo* hold(const char* declaration);
 
         // Compile errors are logged with file, line and column.
-        bool compile(const char* module, const char* file, const char* code, size_t length);
+        bool compile(const char* module, const char* file, const char* code, size_t length,const std::string& originalFingerprint={});
         // Other files, put in with the next to be compiled: those that it includes.
         void addSection(const char* file, const char* code, size_t length);
         void clearSections() { m_sections.clear(); }

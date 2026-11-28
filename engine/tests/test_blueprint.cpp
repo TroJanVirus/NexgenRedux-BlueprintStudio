@@ -1,4 +1,5 @@
 #include "test.h"
+#include "script/source_fingerprint.h"
 #include "rig.h"
 #include "blueprint_fixtures.h"
 #include "scene/world.h"
@@ -3631,4 +3632,18 @@ NX_TEST(nativeAuthoredUiCentersAndPreservesDesignDimensions)
     r.device->beginFrame({});r.canvas.begin();view.drawDesign(r.canvas,0,0,1920,1080);r.canvas.end();r.device->endFrame();
     float designX=0,designY=0;view.place(*label,designX,designY);
     NX_EXPECT(fabsf(runtimeX-designX)<0.01f&&fabsf(runtimeY-designY)<0.01f);
+}
+
+NX_TEST(nativeCompiledScriptIdentityTracksReloadAndDiscard)
+{
+    Rig r;NX_EXPECT(r.ok);
+    const char* first="int answer(){return 1;}";
+    const char* second="int answer(){return 2;}";
+    NX_EXPECT(r.host.compile("identity","identity.as",first,strlen(first)));
+    NX_EXPECT(scriptFingerprint(first,strlen(first))==r.host.compiledFingerprint("identity","identity.as"));
+    NX_EXPECT(r.host.compile("identity","identity.as",second,strlen(second)));
+    NX_EXPECT(scriptFingerprint(second,strlen(second))==r.host.compiledFingerprint("identity","identity.as"));
+    NX_EXPECT(r.host.compile("identity","identity.as",second,strlen(second),scriptFingerprint(first,strlen(first))));
+    NX_EXPECT(scriptFingerprint(first,strlen(first))==r.host.compiledFingerprint("identity","identity.as"));
+    r.host.discard("identity");NX_EXPECT(!*r.host.compiledFingerprint("identity","identity.as"));
 }
