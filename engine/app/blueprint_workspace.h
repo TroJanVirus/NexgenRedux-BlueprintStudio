@@ -286,12 +286,14 @@ namespace nx
         std::vector<BlueprintScreenOutput> m_previewOutputs;
         BlueprintLocation m_diagnostic;
         void cancelDrag() { m_drag = false; }
-        struct NodePins { std::vector<std::string> inputs, outputs, inputTypes, outputTypes; float height = 72; };
+        struct NodePins { std::vector<std::string> inputs, outputs, inputTypes, outputTypes; float height = 72, width = 196; std::string title; std::vector<std::string> labels; std::vector<float> fieldX; };
         struct WirePins { size_t output, input; };
         std::vector<NodePins> m_rows;
         std::vector<WirePins> m_wirePins;
         BlueprintDocument m_document;
         Asset* m_font = nullptr;
+        Canvas* m_measureCanvas = nullptr;
+        unsigned m_wireStyle=0; // curved, orthogonal, straight
         std::string m_status = "Drop a .bp.json or supported .as file here.";
         size_t m_graph = 0, m_selection = static_cast<size_t>(-1), m_first = 0;
         float m_x = 0, m_y = 0, m_zoom = 1, m_lastX = 0, m_lastY = 0;
@@ -341,7 +343,7 @@ namespace nx
         BlueprintDocument::Point routeLayoutPosition(size_t wire,size_t point) const;
         std::vector<size_t> commentMembers(size_t comment) const;
         bool commentBounds(size_t comment,float& x,float& y,float& w,float& h) const;
-        std::vector<BlueprintDocument::Point> wireRoute(size_t link) const;
+        std::vector<BlueprintDocument::Point> wireRoute(size_t link,std::vector<size_t>* segments=nullptr) const;
         bool m_rightDown=false,m_rightMoved=false;
         float m_rightX=0,m_rightY=0;
         struct ContextResult { std::string kind,reference,title,pin; bool conversion=false; };

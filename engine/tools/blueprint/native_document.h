@@ -123,7 +123,7 @@ namespace nx
         bool serialize(std::string& result,std::string& error) const;
         bool move(size_t graph,size_t node,float x,float y);
         bool moveNodes(size_t graph,const std::vector<size_t>& nodes,float dx,float dy);
-        bool arrange(size_t graph,std::string& error);
+        bool arrange(size_t graph,std::string& error,const std::vector<float>& widths={});
         bool alignNodes(size_t graph,const std::vector<size_t>& nodes,bool horizontal,std::string& error);
         bool addComment(size_t graph,const std::vector<size_t>& nodes,const std::string& title,std::string& error);
         bool renameComment(size_t graph,size_t comment,const std::string& title,std::string& error);

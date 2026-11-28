@@ -1,4 +1,4 @@
-name: Verify portable Blueprint projects and non-destructive audio editing
+name: Verify native graph zoom, node sizing and wire routing
 on:
   workflow_dispatch:
   push:

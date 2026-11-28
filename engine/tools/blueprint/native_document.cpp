@@ -2520,7 +2520,7 @@ namespace nx
         for(auto& l:g.links)if(selected.count(l.from)&&selected.count(l.to))for(auto& p:l.route){p.x+=dx;p.y+=dy;}
         return true;
     }
-    bool BlueprintDocument::arrange(size_t graph,std::string& error)
+    bool BlueprintDocument::arrange(size_t graph,std::string& error,const std::vector<float>& widths)
     {
         if(graph>=graphs.size()){error="Unknown graph.";return false;}
         auto& g=graphs[graph];const size_t count=g.nodes.size();
@@ -2535,11 +2535,13 @@ namespace nx
         for(size_t i=0;i<order.size();++i)for(const auto child:outgoing[order[i]])
         {rank[child]=std::max(rank[child],rank[order[i]]+1);if(!--indegree[child])order.push_back(child);}
         if(order.size()!=count){error="Cannot arrange cyclic graph.";return false;}
-        std::vector<float> offsets(count+1,60.f);std::vector<Point> positions(count);
+        std::vector<float> offsets(count+1,60.f),columns(count+1,196.f);std::vector<Point> positions(count);
+        if(widths.size()==count)for(size_t i=0;i<count;++i)if(std::isfinite(widths[i]))columns[rank[i]]=std::max(columns[rank[i]],std::clamp(widths[i],196.f,640.f));
+        std::vector<float> x(count+1,24.f);for(size_t i=1;i<x.size();++i)x[i]=x[i-1]+columns[i-1]+56.f;
         for(const auto i:order)
         {
             BlueprintNodeSpec spec;if(!nodeSpec(g,g.nodes[i],spec)){error="Unknown node.";return false;}
-            positions[i]={24.f+252.f*static_cast<float>(rank[i]),offsets[rank[i]]};
+            positions[i]={x[rank[i]],offsets[rank[i]]};
             offsets[rank[i]]+=std::max(72.f,46.f+22.f*static_cast<float>(std::max(spec.inputs.size(),spec.outputs.size())))+36.f;
         }
         bool changed=std::any_of(g.links.begin(),g.links.end(),[](const Link& l){return !l.route.empty();});

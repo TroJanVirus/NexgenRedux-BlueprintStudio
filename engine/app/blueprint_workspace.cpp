@@ -3,6 +3,7 @@
 #include "app/blueprint_workspace.h"
 #include "tools/blueprint/native_compile.h"
 #include "tools/blueprint/native_assets.h"
+#include "tools/blueprint/graph_geometry.h"
 #include "tools/blueprint/native_import.h"
 #include "script/script_host.h"
 #include "script/debugger.h"
@@ -117,6 +118,7 @@ namespace nx
             NX_ERROR("Blueprint Studio: cannot load the native workspace font.");
             return;
         }
+        m_measureCanvas=s.canvas;
         s.platform->setEditorChrome(true);
         m_wantedPointer = s.input->wantsPointer();
         s.input->setWantsPointer(true);
@@ -164,7 +166,7 @@ namespace nx
         checkpoint(s,true);saveLayout(s);
         cancelDrag();clearWire();m_quickDrag=m_quickMenu=m_pinMenu=m_rightDown=false;m_layoutMenu=m_layoutDragging=false;m_graphBack.clear();m_focus=0;m_browsing=false;m_assetBrowser=false;s.input->setTyping(m_previousTyping);
         s.assets->release(m_font);
-        m_font = nullptr;
+        m_font = nullptr;m_measureCanvas=nullptr;
         s.platform->releaseBlueprintLease();
         s.input->setWantsPointer(m_wantedPointer);
         s.input->consume();
@@ -180,12 +182,13 @@ namespace nx
             ",\"contentTop\":"+(m_contentDockTop?"true":"false")+",\"contentHeight\":"+std::to_string(m_contentPanelHeight)+
             ",\"graphTree\":"+(m_graphTree?"true":"false")+",\"contentSide\":"+std::to_string(m_contentDockSide)+
             ",\"contentSideWidth\":"+std::to_string(m_contentSideWidth)+",\"minimap\":"+(m_minimap?"true":"false")+
-            ",\"hideGraphLeft\":"+(m_graphHideLeft?"true":"false")+",\"hideGraphRight\":"+(m_graphHideRight?"true":"false")+"}\n";
+            ",\"hideGraphLeft\":"+(m_graphHideLeft?"true":"false")+",\"hideGraphRight\":"+(m_graphHideRight?"true":"false")+",\"wireStyle\":"+std::to_string(m_wireStyle)+"}\n";
     }
     void BlueprintWorkspace::loadLayout(Services& s)
     {
         m_leftPanel=248;m_graphRightPanel=268;m_actorRightPanel=310;m_uiScale=0;m_actorCollapsed=0;m_contentDrawer=false;m_contentFloating=false;m_contentPanelX=0.25f;m_contentPanelY=0.65f;m_contentPanelWidth=620;m_contentDockTop=false;m_contentPanelHeight=174;m_contentDockSide=0;m_contentSideWidth=300;
         m_graphTree=false;m_minimap=m_minimapDragging=false;m_graphHideLeft=m_graphHideRight=false;m_navigationFirst=0;m_navigationCollapsed.clear();
+        m_wireStyle=0;
         FileData file;JsonTree tree;
         if(s.platform->readFile("own/blueprint-editor-layout.json",file,MemTag::General)&&file.size&&file.size<=4096&&
             tree.parse(reinterpret_cast<const char*>(file.data),file.size))
@@ -207,6 +210,7 @@ namespace nx
                 m_contentDockTop=root["contentTop"].flag();m_contentPanelHeight=bounded("contentHeight",174,174,510);
                 m_graphTree=root["graphTree"].flag();m_minimap=root["minimap"].flag();
                 m_graphHideLeft=root["hideGraphLeft"].flag();m_graphHideRight=root["hideGraphRight"].flag();
+                m_wireStyle=static_cast<unsigned>(bounded("wireStyle",0,0,2));
                 m_contentDockSide=static_cast<unsigned>(bounded("contentSide",0,0,2));
                 m_contentSideWidth=bounded("contentSideWidth",300,260,480);
                 NX_INFO("Blueprint Studio: restored editor layout");
@@ -596,8 +600,44 @@ namespace nx
         for(const auto& link:graph.links)
             m_wirePins.push_back({add(m_rows[link.from].outputs,lookup[link.from].outputs,link.output),
                                   add(m_rows[link.to].inputs,lookup[link.to].inputs,link.input)});
-        for(auto& row:m_rows)
+        std::vector<std::vector<bool>> connected(m_rows.size());
+        for(size_t i=0;i<m_rows.size();++i)connected[i].resize(m_rows[i].inputs.size(),false);
+        for(size_t i=0;i<graph.links.size();++i)connected[graph.links[i].to][m_wirePins[i].input]=true;
+        const auto measure=[&](const std::string& value)
+        {return m_measureCanvas&&m_font?m_measureCanvas->measure(*m_font,value.c_str()).x:8.f*static_cast<float>(value.size());};
+        for(size_t i=0;i<m_rows.size();++i)
+        {
+            auto& row=m_rows[i];const auto& n=graph.nodes[i];BlueprintNodeSpec resolved;
+            const bool hasSpec=m_document.nodeSpec(graph,n,resolved);
             row.height=std::max(kNodeHeight,kPinStart+kPinStep*static_cast<float>(std::max(row.inputs.size(),row.outputs.size()))+8);
+            row.title=n.kind=="call:function"&&m_document.function(graph.owner,n.ref)&&m_document.function(graph.owner,n.ref)->inlineMacro?"Macro "+n.ref:title(n);
+            row.width=std::max(kNodeWidth,measure(row.title)*1.45f+54);
+            for(size_t p=0;p<row.inputs.size();++p)
+            {
+                const auto& pin=row.inputs[p];std::string label=pin,value;
+                if(!connected[i][p])
+                {
+                    const auto custom=std::find_if(n.values.begin(),n.values.end(),[&](const BlueprintDocument::InputValue& v){return v.pin==pin;});
+                    if(custom!=n.values.end())value=custom->value;
+                    else if(hasSpec&&p<row.inputTypes.size())for(const auto& def:resolved.defaults)if(def.name==pin)
+                    {
+                        value=def.type;const auto prefix=row.inputTypes[p]+"(";
+                        if(value.rfind(prefix,0)==0&&value.ends_with(")"))value=value.substr(prefix.size(),value.size()-prefix.size()-1);
+                        break;
+                    }
+                }
+                if(!value.empty())label+=" = "+value;
+                for(char& ch:label)if(ch=='\n'||ch=='\r'||ch=='\t')ch=' ';
+                row.labels.push_back(label);
+                const float field=std::max(88.f,measure(pin)+29);
+                row.fieldX.push_back(field);
+                const float right=p<row.outputs.size()?measure(row.outputs[p])+20:0;
+                const float left=std::max(measure(label)+20,field+std::max(65.f,measure(value)+12));
+                row.width=std::max(row.width,left+right+20);
+            }
+            for(const auto& output:row.outputs)row.width=std::max(row.width,measure(output)+40);
+            row.width=std::clamp(row.width,kNodeWidth,640.f);
+        }
     }
 
     void BlueprintWorkspace::filterCatalogue()
@@ -711,7 +751,7 @@ namespace nx
         {
             const auto& node=graph.nodes[i];
             loX=std::min(loX,node.x);loY=std::min(loY,node.y);
-            hiX=std::max(hiX,node.x+kNodeWidth);hiY=std::max(hiY,node.y+m_rows[i].height);
+            hiX=std::max(hiX,node.x+m_rows[i].width);hiY=std::max(hiY,node.y+m_rows[i].height);
         }
         for(const auto& link:graph.links)for(const auto& point:link.route)
         {loX=std::min(loX,point.x);loY=std::min(loY,point.y);hiX=std::max(hiX,point.x);hiY=std::max(hiY,point.y);}
@@ -752,7 +792,7 @@ namespace nx
         {
             if(link.from>=graph.nodes.size()||link.to>=graph.nodes.size())continue;
             const auto& from=graph.nodes[link.from];const auto& to=graph.nodes[link.to];
-            float x=px(from.x+kNodeWidth),y=py(from.y+24);
+            float x=px(from.x+m_rows[link.from].width),y=py(from.y+24);
             for(const auto& point:link.route){const float xx=px(point.x),yy=py(point.y);c.line(x,y,xx,yy,1,{0.46f,0.48f,0.52f,1});x=xx;y=yy;}
             c.line(x,y,px(to.x),py(to.y+24),1,{0.46f,0.48f,0.52f,1});
         }
@@ -761,7 +801,7 @@ namespace nx
             const auto& node=graph.nodes[i];const bool selected=i==m_selection;
             const auto* spec=blueprintSpec(node.kind);
             const Color color=selected?accent:node.kind=="entry"||node.kind.rfind("event:",0)==0?Color{0.66f,0.29f,0.31f,1}:spec&&spec->pure?Color{0.32f,0.57f,0.39f,1}:Color{0.32f,0.47f,0.64f,1};
-            c.rect(px(node.x),py(node.y),std::max(2.f,kNodeWidth*map.scale),std::max(2.f,m_rows[i].height*map.scale),color);
+            c.rect(px(node.x),py(node.y),std::max(2.f,m_rows[i].width*map.scale),std::max(2.f,m_rows[i].height*map.scale),color);
         }
         const float left=px((graphAreaLeft()-kLeft-m_x)/m_zoom),top=py((graphAreaTop()-kTop-m_y)/m_zoom);
         const float right=px((graphAreaRight()-kLeft-m_x)/m_zoom),bottom=py((tabTop()-kTop-m_y)/m_zoom);
@@ -779,11 +819,11 @@ namespace nx
         for(size_t i=0;i<nodes.size();++i)
         {
             const auto& n=nodes[i];left=std::min(left,n.x);top=std::min(top,n.y);
-            right=std::max(right,n.x+kNodeWidth);bottom=std::max(bottom,n.y+rows[i].height);
+            right=std::max(right,n.x+rows[i].width);bottom=std::max(bottom,n.y+rows[i].height);
         }
         for(const auto& l:graph.links)for(const auto& p:l.route){left=std::min(left,p.x-6);top=std::min(top,p.y-6);right=std::max(right,p.x+6);bottom=std::max(bottom,p.y+6);}
         if(!graph.comments.empty()){left-=18;top-=44;right+=18;bottom+=18;}
-        m_zoom=std::clamp(std::min((graphAreaRight()-graphAreaLeft()-48)/(right-left),(tabTop()-graphAreaTop()-48)/(bottom-top)),0.25f,1.0f);
+        m_zoom=std::clamp(std::min((graphAreaRight()-graphAreaLeft()-48)/(right-left),(tabTop()-graphAreaTop()-48)/(bottom-top)),0.35f,1.0f);
         m_x=graphAreaLeft()-kLeft+24-left*m_zoom;m_y=graphAreaTop()-kTop+24-top*m_zoom;
     }
 
@@ -3646,7 +3686,7 @@ namespace nx
         if(location.graph>=m_document.graphs.size()||location.node>=m_document.graphs[location.graph].nodes.size())return;
         selectGraph(location.graph);m_selection=location.node;m_diagnostic=location;
         const auto& n=m_document.graphs[m_graph].nodes[m_selection];
-        m_zoom=1;m_x=(kRight-kLeft-kNodeWidth)*0.5f-n.x;
+        m_zoom=1;m_x=(kRight-kLeft-m_rows[m_selection].width)*0.5f-n.x;
         m_y=(kBottom-kTop-m_rows[m_selection].height)*0.5f-n.y;
     }
 
@@ -4106,20 +4146,22 @@ namespace nx
         for(const auto i:members)
         {
             const auto n=nodeLayoutPosition(i);left=std::min(left,n.x);top=std::min(top,n.y);
-            right=std::max(right,n.x+kNodeWidth);bottom=std::max(bottom,n.y+m_rows[i].height);
+            right=std::max(right,n.x+m_rows[i].width);bottom=std::max(bottom,n.y+m_rows[i].height);
         }
         x=kLeft+m_x+(left-18)*m_zoom;y=kTop+m_y+(top-44)*m_zoom;w=(right-left+36)*m_zoom;h=(bottom-top+62)*m_zoom;return true;
     }
-    std::vector<BlueprintDocument::Point> BlueprintWorkspace::wireRoute(size_t link) const
+    std::vector<BlueprintDocument::Point> BlueprintWorkspace::wireRoute(size_t link,std::vector<size_t>* segments) const
     {
         const auto& g=m_document.graphs[m_graph];const auto& l=g.links[link];const auto& pins=m_wirePins[link];
         const auto from=nodeLayoutPosition(l.from),to=nodeLayoutPosition(l.to);
-        const float x1=kLeft+m_x+(from.x+kNodeWidth)*m_zoom,y1=kTop+m_y+(from.y+pinY(pins.output))*m_zoom;
+        const float x1=kLeft+m_x+(from.x+m_rows[l.from].width)*m_zoom,y1=kTop+m_y+(from.y+pinY(pins.output))*m_zoom;
         const float x2=kLeft+m_x+to.x*m_zoom,y2=kTop+m_y+(to.y+pinY(pins.input))*m_zoom;
-        std::vector<BlueprintDocument::Point> points{{x1,y1}};
-        if(l.route.empty()){const float mid=(x1+x2)*0.5f;points.push_back({mid,y1});points.push_back({mid,y2});}
-        else for(size_t i=0;i<l.route.size();++i){const auto p=routeLayoutPosition(link,i);points.push_back({kLeft+m_x+p.x*m_zoom,kTop+m_y+p.y*m_zoom});}
-        points.push_back({x2,y2});return points;
+        std::vector<BlueprintDocument::Point> anchors{{x1,y1}};
+        for(size_t i=0;i<l.route.size();++i){const auto p=routeLayoutPosition(link,i);anchors.push_back({kLeft+m_x+p.x*m_zoom,kTop+m_y+p.y*m_zoom});}
+        anchors.push_back({x2,y2});
+        const float top=kTop+m_y+std::min(from.y,to.y)*m_zoom;
+        const float bottom=kTop+m_y+std::max(from.y+m_rows[l.from].height,to.y+m_rows[l.to].height)*m_zoom;
+        return blueprintGraphWire(anchors,m_wireStyle,m_zoom,top,bottom,segments);
     }
     std::vector<std::string> BlueprintWorkspace::namedSceneTargets() const
     {
@@ -4316,7 +4358,7 @@ namespace nx
             {
                 const auto nodes=m_selectedNodes.empty()&&m_selection<m_document.graphs[m_graph].nodes.size()?std::vector<size_t>{m_selection}:m_selectedNodes;
                 if(in(x,y,300,35,550,65))
-                {if(m_document.arrange(m_graph,m_status)){fitGraph();m_status="Arranged graph; manual routes reset. Undo restores layout.";}}
+                {std::vector<float> widths;for(const auto& row:m_rows)widths.push_back(row.width);if(m_document.arrange(m_graph,m_status,widths)){fitGraph();m_status="Arranged graph; manual routes reset. Undo restores layout.";}}
                 else if(in(x,y,300,65,550,95))
                 {if(m_document.alignNodes(m_graph,nodes,false,m_status))m_status="Aligned selected nodes left.";}
                 else if(in(x,y,300,95,550,125))
@@ -4371,6 +4413,8 @@ namespace nx
                     if(file.empty())m_status="No free project package name.";
                     else if(blueprintExportPackage(*s.platform,m_document,file,m_status))m_status="Exported own/"+file;
                 }
+                else if(in(x,y,300,575,550,605))
+                {m_wireStyle=(m_wireStyle+1)%3;saveLayout(s);m_status=std::string("Wire style: ")+(m_wireStyle==0?"Curved":m_wireStyle==1?"Orthogonal":"Straight");}
                 m_layoutMenu=false;
             }
             m_left=left;return;
@@ -4420,14 +4464,14 @@ namespace nx
                         const auto& n=nodes[i-1];const auto& row=m_rows[i-1];
                         const float nx=kLeft+m_x+n.x*m_zoom,ny=kTop+m_y+n.y*m_zoom;
                         const auto& pins=m_pendingOutput?row.inputs:row.outputs;
-                        const float px=nx+(m_pendingOutput?0:kNodeWidth*m_zoom);
-                        for(size_t p=0;p<pins.size();++p)if(std::abs(x-px)<=9&&std::abs(y-ny-pinY(p)*m_zoom)<=9)
+                        const float px=nx+(m_pendingOutput?0:row.width*m_zoom);
+                        for(size_t p=0;p<pins.size();++p)if(std::abs(x-px)<=9&&std::abs(y-ny-pinY(p)*m_zoom)<=std::min(9.f,0.45f*kPinStep*m_zoom))
                         {
                             hit=true;
                             const bool ok=m_pendingOutput?m_document.connectCompatible(m_graph,m_pending,m_pendingPin,i-1,pins[p],m_status):m_document.connectCompatible(m_graph,i-1,pins[p],m_pending,m_pendingPin,m_status);
                             if(ok){clearWire();rebuildPins();m_status="Connected pins.";}break;
                         }
-                        if(in(x,y,nx,ny,nx+kNodeWidth*m_zoom,ny+row.height*m_zoom))hit=true;
+                        if(in(x,y,nx,ny,nx+row.width*m_zoom,ny+row.height*m_zoom))hit=true;
                     }
                     if(!hit){openPinMenu(x,y);if(m_pinMenu)input.setTyping(true);}
                 }
@@ -4683,12 +4727,12 @@ namespace nx
                     std::string joined;for(const auto& component:m_inputComponents){if(!joined.empty())joined+=",";joined+=component;}
                     // Preserve empty components as invalid rather than collapsing their positions.
                     if(std::any_of(m_inputComponents.begin(),m_inputComponents.end(),[](const std::string& component){return component.empty();})){m_status="Every component requires a finite number.";break;}
-                    if(m_document.setInputValue(m_graph,m_selection,m_editPin,joined,m_status)){m_focus=0;input.setTyping(false);m_diagnostic={};m_status="Input components applied.";}break;
+                    if(m_document.setInputValue(m_graph,m_selection,m_editPin,joined,m_status)){rebuildPins();m_focus=0;input.setTyping(false);m_diagnostic={};m_status="Input components applied.";}break;
                 }
                 else if(ch<128&&std::string("0123456789.eE+-").find(static_cast<char>(ch))!=std::string::npos)
                 {if(m_inputReplace){part.clear();m_inputReplace=false;}appendCharacter(part,ch,64);}
             }
-            if(click&&in(x,y,360,391,540,430)){m_document.clearInputValue(m_graph,m_selection,m_editPin);m_focus=0;input.setTyping(false);m_status="Input reset to default, or requires a wire.";}
+            if(click&&in(x,y,360,391,540,430)){m_document.clearInputValue(m_graph,m_selection,m_editPin);rebuildPins();m_focus=0;input.setTyping(false);m_status="Input reset to default, or requires a wire.";}
             m_left=left;return;
         }
         if(m_focus==6&&!m_inputChoices.empty())
@@ -4719,7 +4763,7 @@ namespace nx
                 else if(ch>=32&&(focus==1||focus==2||focus==6||focus==10||focus==11||ch<127)&&appendCharacter(value,ch,focus==1?80u:(focus==2||focus==6||focus==10)?4096u:focus==9?1024u:focus==11?256u:64u))changed=true;
                 else if(ch==13)
                 {
-                    if(focus==2&&!m_document.setLiteral(m_graph,m_selection,m_edit,m_status))break;
+                    if(focus==2){if(!m_document.setLiteral(m_graph,m_selection,m_edit,m_status))break;rebuildPins();}
                     if(focus==3)
                     {
                         if(!m_document.setReference(m_graph,m_selection,m_edit,m_status))break;
@@ -4917,7 +4961,7 @@ namespace nx
                         for(size_t i=0;i<nodes.size();++i)
                         {
                             const auto& n=nodes[i];
-                            if(px<n.x+kNodeWidth+12&&px+kNodeWidth+12>n.x&&py<n.y+m_rows[i].height+12&&py+height+12>n.y)
+                            if(px<n.x+m_rows[i].width+12&&px+640.f+12>n.x&&py<n.y+m_rows[i].height+12&&py+height+12>n.y)
                             {overlap=true;next=std::max(next,n.y+m_rows[i].height+16);}
                         }
                         if(!overlap)break;
@@ -5018,10 +5062,10 @@ namespace nx
                 for(unsigned side=0;side<2;++side)
                 {
                     const auto& pins=side?row.outputs:row.inputs;
-                    const float px=nx+(side?kNodeWidth*m_zoom:0);
+                    const float px=nx+(side?rows[i-1].width*m_zoom:0);
                     for(size_t p=0;p<pins.size();++p)
                     {
-                        if(std::abs(x-px)>9||std::abs(y-(ny+pinY(p)*m_zoom))>9)continue;
+                        if(std::abs(x-px)>9||std::abs(y-(ny+pinY(p)*m_zoom))>std::min(9.f,0.45f*kPinStep*m_zoom))continue;
                         m_selection=i-1;m_selectedNodes.clear();
                         if(control){if(m_document.disconnect(m_graph,i-1,pins[p],side!=0)){m_diagnostic={};rebuildPins();m_status="Disconnected pin.";}clearWire();}
                         else if(m_pending!=static_cast<size_t>(-1)&&m_pendingOutput!=(side!=0))
@@ -5038,7 +5082,7 @@ namespace nx
                     }
                 }
             }
-            if(m_pending!=static_cast<size_t>(-1)&&std::none_of(nodes.begin(),nodes.end(),[&](const BlueprintDocument::Node& n){const auto i=static_cast<size_t>(&n-nodes.data());const float nx=kLeft+m_x+n.x*m_zoom,ny=kTop+m_y+n.y*m_zoom;return in(x,y,nx,ny,nx+kNodeWidth*m_zoom,ny+rows[i].height*m_zoom);}))
+            if(m_pending!=static_cast<size_t>(-1)&&std::none_of(nodes.begin(),nodes.end(),[&](const BlueprintDocument::Node& n){const auto i=static_cast<size_t>(&n-nodes.data());const float nx=kLeft+m_x+n.x*m_zoom,ny=kTop+m_y+n.y*m_zoom;return in(x,y,nx,ny,nx+rows[i].width*m_zoom,ny+rows[i].height*m_zoom);}))
             {openPinMenu(x,y);if(m_pinMenu)input.setTyping(true);m_left=left;return;}
             // Explicit value fields on the selected node do not steal socket
             // clicks, multi-selection, or drags on the title/body.
@@ -5051,7 +5095,7 @@ namespace nx
                 {
                     if(p<row.outputs.size())continue;
                     const float py=ny+pinY(p)*m_zoom;
-                    if(!in(x,y,nx+88*m_zoom,py-9*m_zoom,nx+(kNodeWidth-10)*m_zoom,py+9*m_zoom))continue;
+                    if(!in(x,y,nx+row.fieldX[p]*m_zoom,py-9*m_zoom,nx+(row.width-13)*m_zoom,py+9*m_zoom))continue;
                     const auto field=std::find_if(details.begin(),details.end(),[&](const InputDetail& detail){return detail.name==row.inputs[p]&&detail.editable;});
                     if(field==details.end())continue;
                     const std::string initial=field->origin=="Custom"?field->value:std::string();
@@ -5072,7 +5116,7 @@ namespace nx
             {
                 const auto& n = nodes[i-1];
                 const float nx = kLeft+m_x+n.x*m_zoom, ny = kTop+m_y+n.y*m_zoom;
-                if (in(x,y,nx,ny,nx+kNodeWidth*m_zoom,ny+rows[i-1].height*m_zoom))
+                if (in(x,y,nx,ny,nx+rows[i-1].width*m_zoom,ny+rows[i-1].height*m_zoom))
                 {
                     m_selection=i-1;
                     if(held(Key::Shift))
@@ -5124,14 +5168,14 @@ namespace nx
                     const auto& links=m_document.graphs[m_graph].links;
                     for(size_t i=0;i<links.size();++i)
                     {
-                        const auto points=wireRoute(i);
+                        std::vector<size_t> segments;const auto points=wireRoute(i,&segments);
                         for(size_t j=1;j<points.size();++j)
                         {
                             const auto& a=points[j-1];const auto& b=points[j];const float dx=b.x-a.x,dy=b.y-a.y,len=dx*dx+dy*dy;
                             if(len==0)continue;
                             const float t=std::clamp(((x-a.x)*dx+(y-a.y)*dy)/len,0.f,1.f);
                             const float distance=std::hypot(x-a.x-t*dx,y-a.y-t*dy);
-                            if(distance<best){best=distance;bestLink=i;bestPoint=links[i].route.empty()?0:j-1;}
+                            if(distance<best){best=distance;bestLink=i;bestPoint=segments[j-1];}
                         }
                     }
                     if(bestLink!=static_cast<size_t>(-1)&&m_document.insertRoutePoint(m_graph,bestLink,bestPoint,(x-kLeft-m_x)/m_zoom,(y-kTop-m_y)/m_zoom))m_status="Reroute added. Drag it, or Ctrl+click to remove.";
@@ -5148,7 +5192,7 @@ namespace nx
         if (over && wheel != 0)
         {
             const float previous = m_zoom;
-            m_zoom = std::clamp(m_zoom * std::pow(1.12f, std::clamp(wheel,-8.0f,8.0f)),0.25f,2.0f);
+            m_zoom = std::clamp(m_zoom * std::pow(1.12f, std::clamp(wheel,-8.0f,8.0f)),0.35f,2.0f);
             m_x = x-kLeft-(x-kLeft-m_x)*m_zoom/previous;
             m_y = y-kTop-(y-kTop-m_y)*m_zoom/previous;
         }
@@ -5271,9 +5315,15 @@ namespace nx
                 const auto pin=std::find(pins.begin(),pins.end(),m_pendingPin);
                 if(pin!=pins.end())
                 {
-                    const float px=kLeft+m_x+(n.x+(m_pendingOutput?kNodeWidth:0))*m_zoom,py=kTop+m_y+(n.y+pinY(static_cast<size_t>(pin-pins.begin())))*m_zoom;
+                    const float px=kLeft+m_x+(n.x+(m_pendingOutput?rows[m_pending].width:0))*m_zoom,py=kTop+m_y+(n.y+pinY(static_cast<size_t>(pin-pins.begin())))*m_zoom;
                     c.ring(px,py,9,2,accent);
-                    if(m_pinDrag||m_pinMenu)c.line(px,py,m_pinX,m_pinY,2,pinColor((m_pendingOutput?rows[m_pending].outputTypes:rows[m_pending].inputTypes)[static_cast<size_t>(pin-pins.begin())]));
+                    if(m_pinDrag||m_pinMenu)
+                    {
+                        const auto ink=pinColor((m_pendingOutput?rows[m_pending].outputTypes:rows[m_pending].inputTypes)[static_cast<size_t>(pin-pins.begin())]);
+                        const std::vector<BlueprintDocument::Point> anchors=m_pendingOutput?std::vector<BlueprintDocument::Point>{{px,py},{m_pinX,m_pinY}}:std::vector<BlueprintDocument::Point>{{m_pinX,m_pinY},{px,py}};
+                        const auto path=blueprintGraphWire(anchors,m_wireStyle,m_zoom,std::min(py,m_pinY),std::max(py,m_pinY),nullptr);
+                        for(size_t j=1;j<path.size();++j)c.line(path[j-1].x,path[j-1].y,path[j].x,path[j].y,2,ink);
+                    }
                 }
             }
             std::vector<std::vector<bool>> wiredInputs(rows.size()),wiredOutputs(rows.size());
@@ -5288,17 +5338,18 @@ namespace nx
             for(size_t i=0;i<graph.nodes.size();++i)
             {
                 const auto& n=graph.nodes[i];
-                const float x=kLeft+m_x+nodeX(i)*m_zoom,y=kTop+m_y+nodeY(i)*m_zoom,w=kNodeWidth*m_zoom,h=rows[i].height*m_zoom;
+                const float x=kLeft+m_x+nodeX(i)*m_zoom,y=kTop+m_y+nodeY(i)*m_zoom,w=rows[i].width*m_zoom,h=rows[i].height*m_zoom;
                 if(x+w<kLeft||x>kRight||y+h<kTop||y>kBottom) continue;
                 const auto* spec=blueprintSpec(n.kind);
                 const bool event=n.kind=="entry"||n.kind.rfind("event:",0)==0;
                 const bool pure=spec&&spec->pure;
                 const bool flow=n.kind=="branch"||n.kind=="sequence"||n.kind=="repeat"||n.kind.rfind("flow:",0)==0;
                 const Color header=event?Color{0.49f,0.19f,0.23f,1}:pure?Color{0.22f,0.39f,0.27f,1}:flow?Color{0.35f,0.29f,0.44f,1}:Color{0.20f,0.34f,0.48f,1};
-                c.roundRect(x+3*m_zoom,y+4*m_zoom,w,h,5,{0,0,0,0.38f});
-                c.roundRect(x,y,w,h,5,{0.115f,0.12f,0.14f,1});
-                c.roundRect(x,y,w,24*m_zoom,4,header);
-                c.rect(x,y+23*m_zoom,w,m_zoom,{0.065f,0.07f,0.08f,1});
+                c.roundRect(x+3*m_zoom,y+4*m_zoom,w,h,5,{0,0,0,0.16f});
+                c.roundRect(x,y,w,h,5,{0.115f,0.12f,0.14f,0.83f});
+                const float headerHeight=std::max(11.f,24*m_zoom);
+                c.roundRect(x,y,w,headerHeight,4,header);
+                c.rect(x,y+headerHeight-1,w,1,{0.065f,0.07f,0.08f,1});
                 c.roundLine(x,y,w,h,5,1,{0.29f,0.30f,0.33f,1});
                 const float ix=x+10*m_zoom,iy=y+12*m_zoom;
                 if(event){c.line(ix-4*m_zoom,iy,ix+4*m_zoom,iy,1.5f*m_zoom,text);c.line(ix,iy-4*m_zoom,ix,iy+4*m_zoom,1.5f*m_zoom,text);}
@@ -5329,49 +5380,46 @@ namespace nx
                     drawPin(x,y+pinY(p)*m_zoom,rows[i].inputTypes[p],wiredInputs[i][p]);
                 for(size_t p=first;p<std::min(last,rows[i].outputs.size());++p)
                     drawPin(x+w,y+pinY(p)*m_zoom,rows[i].outputTypes[p],wiredOutputs[i][p]);
+                const auto graphText=[&](const std::string& label,float tx,float ty,float width,float height,float scale,Color ink,Align align=Align::Left)
+                {
+                    if(width<=0||height<=0)return;
+                    c.push();c.clip(tx,ty,width,height);
+                    c.translate(align==Align::Right?tx+width:tx,ty+(height-c.measure(*m_font,label.c_str()).y*scale)*0.5f);
+                    c.scale(scale,scale);c.text(*m_font,label.c_str(),0,0,ink,align);c.pop();
+                };
+                const float titleScale=std::max(0.5f,m_zoom);
+                const float titleInset=std::max(12.f,20*m_zoom),titleRight=n.watch?std::max(9.f,20*m_zoom):4.f*m_zoom;
+                graphText(rows[i].title,x+titleInset,y,w-titleInset-titleRight,headerHeight,titleScale,text);
                 if(m_zoom>=0.65f)
                 {
-                    c.push();c.clip(x+2,y+1,w-4,24*m_zoom);
-                    c.text(*m_font,shorten(n.kind=="call:function"&&m_document.function(graph.owner,n.ref)&&m_document.function(graph.owner,n.ref)->inlineMacro?"Macro "+n.ref:title(n),22).c_str(),x+20*m_zoom,y+3,text);c.pop();
-                    // Clip each column separately to prevent long pin names overlapping.
                     const auto editableDetails=i==m_selection&&m_zoom>=0.85f?inputDetails(i):std::vector<InputDetail>{};
+                    const float pad=13*m_zoom;
                     for(size_t p=first;p<std::min(last,rows[i].inputs.size());++p)
                     {
-                        const auto& pin=rows[i].inputs[p];
-                        std::string label=pin;
-                        const auto custom=std::find_if(n.values.begin(),n.values.end(),[&](const BlueprintDocument::InputValue& v){return v.pin==pin;});
-                        const bool wired=wiredInputs[i][p];
-                        if(!wired&&custom!=n.values.end())label+=" = "+custom->value;
-                        else if(!wired&&(n.kind=="camera:orbit-timed"||n.kind=="spawn:box"||n.kind=="spawn:plane"))
-                        {
-                            if(spec)
-                                for(const auto& d:spec->defaults)if(d.name==pin)
-                                {
-                                    std::string v=d.type;const auto prefix=rows[i].inputTypes[p]+"(";
-                                    if(v.rfind(prefix,0)==0&&v.ends_with(")"))v=v.substr(prefix.size(),v.size()-prefix.size()-1);
-                                    label+=" = "+v;break;
-                                }
-                        }
+                        const auto& pin=rows[i].inputs[p];const bool wired=wiredInputs[i][p];
+                        const float py=y+pinY(p)*m_zoom;
                         const auto detail=std::find_if(editableDetails.begin(),editableDetails.end(),[&](const InputDetail& field){return field.name==pin&&field.editable;});
+                        const float right=p<rows[i].outputs.size()?(c.measure(*m_font,rows[i].outputs[p].c_str()).x+25)*m_zoom:0;
                         if(!wired&&p>=rows[i].outputs.size()&&detail!=editableDetails.end())
                         {
-                            const float py=y+pinY(p)*m_zoom,fx=x+88*m_zoom,fw=w-98*m_zoom;
-                            const bool editing=m_focus==16&&m_editPin==pin;
-                            c.push();c.clip(x+6,py-10,78*m_zoom,20*m_zoom);
-                            c.text(*m_font,pin.c_str(),x+8,py-8,muted);c.pop();
-                            c.roundRect(fx,py-9*m_zoom,fw,18*m_zoom,3,editing?Color{0.23f,0.37f,0.49f,1}:Color{0.21f,0.22f,0.24f,1});
-                            c.push();c.clip(fx+3,py-9*m_zoom,fw-6,18*m_zoom);
-                            const auto value=editing?m_edit:detail->value;
-                            c.text(*m_font,shorten(value.empty()?"Edit":value,15).c_str(),fx+4,py-8,editing||detail->origin=="Custom"?text:muted);
-                            c.pop();continue;
+                            const float fx=x+rows[i].fieldX[p]*m_zoom,fw=x+w-pad-fx;
+                            if(fw>12*m_zoom)
+                            {
+                                const bool editing=m_focus==16&&m_editPin==pin;
+                                graphText(pin,x+pad,py-10*m_zoom,fx-x-pad-4*m_zoom,20*m_zoom,m_zoom,muted);
+                                c.roundRect(fx,py-9*m_zoom,fw,18*m_zoom,3,editing?Color{0.23f,0.37f,0.49f,1}:Color{0.21f,0.22f,0.24f,1});
+                                const auto value=editing?m_edit:detail->value;
+                                graphText(value.empty()?"Edit":value,fx+4*m_zoom,py-9*m_zoom,fw-8*m_zoom,18*m_zoom,m_zoom,editing||detail->origin=="Custom"?text:muted);
+                                continue;
+                            }
                         }
-                        const float column=p<rows[i].outputs.size()?w*0.5f:w;
-                        c.push();c.clip(x+6,y+pinY(p)*m_zoom-10,column-12,20*m_zoom);
-                        c.text(*m_font,shorten(label,p<rows[i].outputs.size()?12:25).c_str(),x+8,y+pinY(p)*m_zoom-8,muted);c.pop();
+                        graphText(rows[i].labels[p],x+pad,py-10*m_zoom,w-2*pad-right,20*m_zoom,m_zoom,muted);
                     }
-                    c.push();c.clip(x+w*0.5f,y+24*m_zoom,w*0.5f-6,h-24*m_zoom);
-                    for(size_t p=first;p<std::min(last,rows[i].outputs.size());++p)c.text(*m_font,shorten(rows[i].outputs[p],12).c_str(),x+w-8,y+pinY(p)*m_zoom-8,muted,Align::Right);
-                    c.pop();
+                    for(size_t p=first;p<std::min(last,rows[i].outputs.size());++p)
+                    {
+                        const float width=std::min(w-2*pad,(c.measure(*m_font,rows[i].outputs[p].c_str()).x+4)*m_zoom);
+                        graphText(rows[i].outputs[p],x+w-pad-width,y+pinY(p)*m_zoom-10*m_zoom,width,20*m_zoom,m_zoom,muted,Align::Right);
+                    }
                 }
             }
         }
@@ -5482,11 +5530,11 @@ namespace nx
         if(m_contentFloating){drawGraphTabs(c);drawContentDrawer(c);}else{drawContentDrawer(c);drawGraphTabs(c);}
         if(m_layoutMenu)
         {
-            c.roundRect(300,35,250,540,5,{0.16f,0.16f,0.17f,1});
-            const char* labels[]={"Arrange graph","Align selected left","Align selected top","Comment selection","Collapse to function","Rename function","Duplicate function","Open selected function","Back to caller",m_document.graphs[m_graph].inlineMacro?"Convert to function":"Convert to inline macro",m_document.graphs[m_graph].sharedLibrary?"Make library graph local":"Publish to project library","Export project library",m_uiScale==0?"UI scale: Auto":m_uiScale==1?"UI scale: 100%":m_uiScale==2?"UI scale: 125%":"UI scale: 150%","Reset editor layout",m_minimap?"Hide graph overview":"Show graph overview",m_graphHideLeft?"Show navigator":"Hide navigator",m_graphHideRight?"Show node library":"Hide node library","Export project ZIP"};
+            c.roundRect(300,35,250,570,5,{0.16f,0.16f,0.17f,1});
+            const char* labels[]={"Arrange graph","Align selected left","Align selected top","Comment selection","Collapse to function","Rename function","Duplicate function","Open selected function","Back to caller",m_document.graphs[m_graph].inlineMacro?"Convert to function":"Convert to inline macro",m_document.graphs[m_graph].sharedLibrary?"Make library graph local":"Publish to project library","Export project library",m_uiScale==0?"UI scale: Auto":m_uiScale==1?"UI scale: 100%":m_uiScale==2?"UI scale: 125%":"UI scale: 150%","Reset editor layout",m_minimap?"Hide graph overview":"Show graph overview",m_graphHideLeft?"Show navigator":"Hide navigator",m_graphHideRight?"Show node library":"Hide node library","Export project ZIP",m_wireStyle==0?"Wire style: Curved":m_wireStyle==1?"Wire style: Orthogonal":"Wire style: Straight"};
             const auto& activeGraph=m_document.graphs[m_graph];
             const bool hasSelection=m_selection<activeGraph.nodes.size()||!m_selectedNodes.empty();
-            for(size_t i=0;i<18;++i)
+            for(size_t i=0;i<19;++i)
             {
                 const bool enabled=i==0||i>=11||(i<=2&&m_selectedNodes.size()>=2)||((i==3||i==4)&&hasSelection)||((i==5||i==6)&&activeGraph.kind=="function")||
                     (i==7&&m_selection<activeGraph.nodes.size()&&(activeGraph.nodes[m_selection].kind=="call:function"||activeGraph.nodes[m_selection].kind=="call:library"))||(i==8&&!m_graphBack.empty())||((i==9||i==10)&&activeGraph.kind=="function");

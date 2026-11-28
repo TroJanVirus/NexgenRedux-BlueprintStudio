@@ -4,6 +4,7 @@
 #include "scene/world.h"
 #include "tools/blueprint/native_compile.h"
 #include "tools/blueprint/native_import.h"
+#include "tools/blueprint/graph_geometry.h"
 #ifdef NX_DESKTOP_BLUEPRINT
 #include "app/blueprint_workspace.h"
 #include "script/debugger.h"
@@ -28,6 +29,26 @@ namespace
     }
 }
 
+NX_TEST(blueprintGraphCurvedWiresAndReroutes)
+{
+    using P=BlueprintDocument::Point;
+    std::vector<size_t> segments;
+    auto path=blueprintGraphWire({{100,40},{300,140}},0,1,0,200,&segments);
+    NX_EXPECT(path.size()>4&&segments.size()+1==path.size());
+    NX_EXPECT(path.front().x==100&&path.back().x==300&&path.back().y==140);
+    NX_EXPECT(path[1].x>100&&path[path.size()-2].x<300);
+    path=blueprintGraphWire({{300,40},{100,140}},0,1,0,200,&segments);
+    NX_EXPECT(path[1].x>300&&path[path.size()-2].x<100);
+    bool around=false;for(const P& p:path)if(p.y<0||p.y>200)around=true;
+    NX_EXPECT(around);
+    path=blueprintGraphWire({{100,40},{200,200},{300,140}},0,1,0,200,&segments);
+    bool through=false,second=false;
+    for(const P& p:path)if(p.x==200&&p.y==200)through=true;
+    for(size_t i:segments)if(i==1)second=true;
+    NX_EXPECT(through&&second&&segments.size()+1==path.size());
+    NX_EXPECT(blueprintGraphWire({{100,40},{300,140}},2,1,0,200,nullptr).size()==2);
+    NX_EXPECT(blueprintGraphWire({{100,40},{300,140}},1,1,0,200,nullptr).size()==4);
+}
 NX_TEST(blueprintCatalogueMatchesNativeBindings)
 {
     Rig r;
