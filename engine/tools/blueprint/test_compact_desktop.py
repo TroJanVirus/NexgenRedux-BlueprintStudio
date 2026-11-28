@@ -94,11 +94,11 @@ with log.open("wb") as output:
         wait_for(lambda:"Actor class preview ready" in log.read_text(errors="replace"),"actor preview")
         # Native full-screen class editor adds a child and edits separate X/Y/Z fields.
         click(110,989)
-        click(1666,170)
+        click(1666,218)
         enter("2.5")
-        click(1764,170)
+        click(1764,218)
         enter("1.25")
-        click(1862,170)
+        click(1862,218)
         enter("-0.5")
         click(540,54)
         def place():
@@ -107,6 +107,10 @@ with log.open("wb") as output:
             return json.loads(actor["source"])["entities"][1]["place"]
         wait_for(lambda: place()==[2.5,1.25,-0.5],"saved XYZ values")
         shot("actor-1920.png")
+        # Collapse and expand the Transform category without altering the asset.
+        click(1760,181)
+        shot("actor-collapsed-details.png")
+        click(1760,181)
         def actor_root():
             assets=json.loads(project.read_text())["visualAssets"]
             actor=next(a for a in assets if a["kind"]=="actor")
@@ -132,7 +136,7 @@ with log.open("wb") as output:
         xdo("windowsize","--sync",window,1280,720)
         wait_for(lambda:(win.get_geometry().width,win.get_geometry().height)==(1280,720),"720p client")
         time.sleep(0.5)
-        click(1026,170)
+        click(1026,218)
         enter("4.25")
         click(540,54)
         wait_for(lambda:place()==[4.25,1.25,-0.5],"resized actor edit")
@@ -143,6 +147,10 @@ with log.open("wb") as output:
         shot("actor-returned-tab.png")
         click(81,54)
         click(930,133)
+        click(1200,688)
+        shot("graph-content-drawer.png")
+        click(310,560)
+        shot("actor-from-drawer.png")
         # A close request exercises normal release of the isolated world.
         msg=protocol.event.ClientMessage(window=win,client_type=conn.intern_atom("WM_PROTOCOLS"),
             data=(32,[conn.intern_atom("WM_DELETE_WINDOW"),X.CurrentTime,0,0,0]))

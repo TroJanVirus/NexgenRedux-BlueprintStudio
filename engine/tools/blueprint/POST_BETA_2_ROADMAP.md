@@ -102,3 +102,7 @@ Actor class editor supports parent-space projected translation, axis-driven nume
 ### UI density and class tabs
 
 Layout menu and actor toolbar cycle Auto / 100% / 125% / 150% (bounded by the minimum supported client). Layout > Reset editor layout restores default density and splitters. Construction and Event graph buttons open native class graphs; the Actor viewport tab returns directly to its class. Added X11 interaction coverage for transform dragging, one-step undo, inspector resizing and class tab navigation. Construction scripts are not executed in the authoring preview. CI pending.
+
+## Grouped Details, rotation rings and content drawer
+
+Actor Details now groups identity, transforms, rendering/animation, class/camera and collision/physics with independent collapse state and wheel scrolling. Rotation mode draws three projected parent-axis rings and selects the nearest ring tangent for angular drag; this edits the native Euler field and preserves a single undo step. The graph's bottom Content drawer shows reusable assets, opens actor viewports directly, and links actors into the active screen via drag/drop (default origin; use the placement viewport for world coordinates). Other asset types open the existing library. This is a docked drawer, not a general-purpose floating-panel/docking framework. Native desktop regression updated for category coordinates and drawer access; CI pending.

@@ -121,7 +121,7 @@ namespace nx
         s.input->consume();
         m_left = m_pan = m_drag = false;
         m_shortcuts = 0;
-        m_previousTyping=s.input->typing();m_focus=0;m_browsing=false;m_assetBrowser=false;m_actorEditor=false;m_actorTabId.clear();m_actorTabScreen.clear();m_splitter=0;s.input->setTyping(false);
+        m_previousTyping=s.input->typing();m_focus=0;m_browsing=false;m_assetBrowser=false;m_actorEditor=false;m_actorTabId.clear();m_actorTabScreen.clear();m_contentDrawer=false;m_contentFirst=0;m_contentDrag.clear();m_actorDetailsScroll=0;m_splitter=0;s.input->setTyping(false);
         resizeWorkspace(*s.canvas);
         if(m_document.graphs.empty())
         {
@@ -153,7 +153,7 @@ namespace nx
     {
         if (!active()) return;
         stopPreview(s);
-        cancelActorDrag();m_actorOrbit=false;m_splitter=0;m_actorEditor=false;
+        cancelActorDrag();m_actorOrbit=false;m_splitter=0;m_actorEditor=false;m_contentDrag.clear();
         releaseWidgetPreview();releasePlacementPreview();m_widgetDesigner=m_visualPlacement=false;
         checkpoint(s,true);
         cancelDrag();clearWire();m_quickDrag=m_quickMenu=m_pinMenu=m_rightDown=false;m_layoutMenu=m_layoutDragging=false;m_graphBack.clear();m_focus=0;m_browsing=false;m_assetBrowser=false;s.input->setTyping(m_previousTyping);
@@ -178,7 +178,7 @@ namespace nx
         if(std::abs(logicalWidth-kWidth)>0.5f||std::abs(logicalHeight-kHeight)>0.5f)
         {
             cancelDrag();clearWire();m_layoutDragging=m_quickDrag=m_quickMenu=m_pan=false;
-            cancelVisualPlacement();cancelActorDrag();m_splitter=0;m_actorOrbit=false;m_widgetPreviewDrag=m_widgetDragging=false;m_placementReady=false;
+            cancelVisualPlacement();cancelActorDrag();m_contentDrag.clear();m_splitter=0;m_actorOrbit=false;m_widgetPreviewDrag=m_widgetDragging=false;m_placementReady=false;
         }
         kWidth=logicalWidth;kHeight=logicalHeight;kLeft=m_leftPanel;kRight=kWidth-m_graphRightPanel;kBottom=kHeight-46;
         const float extra=std::max(0.f,kHeight-kBaseHeight);
@@ -545,7 +545,7 @@ namespace nx
             m_browsing=false;selectGraph(m_graph);checkpoint(s,true);m_status="Imported library "+file;return true;
         }
         if(m_document.dirty()){m_status="Save changes before opening another Blueprint.";return false;}
-        m_actorTabId.clear();m_actorTabScreen.clear();
+        m_actorTabId.clear();m_actorTabScreen.clear();m_contentFirst=0;m_contentDrag.clear();
         const bool archive=recoveryArchiveName(file);
         if(!blueprintFileName(file)&&!archive){m_status="Choose a Blueprint or recovery archive.";return false;}
         const std::string path="own/"+file;
@@ -1503,7 +1503,7 @@ namespace nx
             }
             if(!selected->dependencies.empty()&&m_visualInspector&&!m_visualPhysics&&in(x,y,630,400,1000,430))
             {if(m_document.resetVisualActorOverrides(m_visualSelection,m_status,m_visualComponent))m_status="Selected component overrides cleared.";return;}
-            if(in(x,y,280,584,610,617)){m_actorEditor=true;m_actorTabId=m_visualSelection;m_actorTabScreen=assetScreen();m_actorTabGraph=m_graph;m_visualInspector=false;m_visualPhysics=false;m_placementYaw=0.65f;m_actorPitch=0.576375f;m_placementDistance=8.f;releasePlacementPreview();m_status="Actor class viewport: select a component to edit its properties.";return;}
+            if(in(x,y,280,584,610,617)){openActorViewport(m_visualSelection);return;}
             if(in(x,y,280,548,610,581)){m_visualPlacement=true;m_placementOutliner=false;m_placementSelectedId.clear();m_placementSelectedOwner=assetScreen();m_placementFirst=0;cancelVisualPlacement();m_status="Drag actors into placement or open the World outliner.";return;}
             if(in(x,y,630,232,1000,266)){m_visualInspector=!m_visualInspector;m_visualPhysics=false;return;}
             if(!m_visualInspector&&in(x,y,630,548,810,581))
@@ -1696,6 +1696,45 @@ namespace nx
     {
         if(m_actorDragAxis>=0){m_actorDragAxis=-1;releasePlacementPreview();}
     }
+    void BlueprintWorkspace::openActorViewport(const std::string& id)
+    {
+        const auto* asset=m_document.visualAsset(id);
+        if(!asset||asset->kind!="actor")return;
+        const auto selected=id; // id can alias m_visualSelection.
+        m_actorEditor=true;m_assetBrowser=true;m_assetLibrary=true;m_visualSelection=selected;
+        m_actorTabId=selected;m_actorTabScreen=assetScreen();m_actorTabGraph=m_graph;
+        m_visualInspector=m_visualPhysics=m_visualPlacement=m_widgetDesigner=false;
+        m_visualComponent=m_visualComponentFirst=0;m_visualInput=0;m_actorDetailsScroll=0;
+        m_placementYaw=0.65f;m_actorPitch=0.576375f;m_placementDistance=8.f;
+        clearWire();cancelDrag();releasePlacementPreview();
+        m_status="Actor class viewport: select a component to edit its properties.";
+    }
+    std::vector<BlueprintWorkspace::DetailRow> BlueprintWorkspace::actorDetailRows() const
+    {
+        // Negative property IDs denote category headings.
+        static constexpr int members[][6]={{0,-1,-1,-1,-1,-1},{1,2,3,-1,-1,-1},{4,12,-1,-1,-1,-1},{5,6,-1,-1,-1,-1},{7,8,9,10,11,-1}};
+        std::vector<DetailRow> result;float y=112-m_actorDetailsScroll;
+        for(unsigned group=0;group<5;++group)
+        {
+            result.push_back({-1-static_cast<int>(group),y});y+=24;
+            if(m_actorCollapsed&(1u<<group))continue;
+            for(const int property:members[group])if(property>=0){result.push_back({property,y});y+=36;}
+        }
+        return result;
+    }
+    bool BlueprintWorkspace::actorRing(unsigned axis,float angle,float& x,float& y,float& dx,float& dy) const
+    {
+        float ox=0,oy=0,ax=0,ay=0,bx=0,by=0,unusedX=0,unusedY=0;
+        if(!actorHandle((axis+1)%3,ox,oy,ax,ay)||!actorHandle((axis+2)%3,unusedX,unusedY,bx,by))return false;
+        const float extent=std::max(std::hypot(ax,ay),std::hypot(bx,by));
+        if(extent<0.5f)return false;
+        const float scale=64.f/extent,c=std::cos(angle),s=std::sin(angle);
+        x=ox+scale*(ax*c+bx*s);y=oy+scale*(ay*c+by*s);
+        // The tangent is in pixels per degree, so dragging the ring edits
+        // the authored Euler angle directly instead of using a translation rate.
+        dx=scale*(-ax*s+bx*c)*0.01745329252f;dy=scale*(-ay*s+by*c)*0.01745329252f;
+        return std::isfinite(x)&&std::isfinite(y);
+    }
     void BlueprintWorkspace::openActorGraph(bool construction)
     {
         std::string owner;
@@ -1715,7 +1754,7 @@ namespace nx
             const auto axis=static_cast<unsigned>(m_actorDragAxis);
             const float delta=((x-m_actorDragX)*m_actorDragDx+(y-m_actorDragY)*m_actorDragDy)/(m_actorDragDx*m_actorDragDx+m_actorDragDy*m_actorDragDy);
             const float initial=m_actorDragStart[axis];
-            const float v=m_actorMode==0?initial+std::round(delta*10.f)/10.f:m_actorMode==1?initial+std::round(delta*15.f):std::max(0.01f,initial+delta*0.25f);
+            const float v=m_actorMode==0?initial+std::round(delta*10.f)/10.f:m_actorMode==1?initial+std::round(delta):std::max(0.01f,initial+delta*0.25f);
             m_actorDragValues[axis]=std::clamp(v,m_actorMode==2?0.01f:-1000000.f,1000000.f);
             const Vec3 value(m_actorDragValues[0],m_actorDragValues[1],m_actorDragValues[2]);
             if(left)
@@ -1805,20 +1844,44 @@ namespace nx
             const float wheel=input.wheel();
             if(wheel!=0)m_placementDistance=std::clamp(m_placementDistance*std::pow(0.88f,std::clamp(wheel,-8.f,8.f)),2.f,100.f);
         }
+        if(in(x,y,right+5,112,kWidth-5,kBottom-88)&&input.wheel()!=0)
+        {
+            const auto rowsHere=actorDetailRows();
+            const float full=rowsHere.empty()?112.f:rowsHere.back().y+m_actorDetailsScroll+36;
+            m_actorDetailsScroll=std::clamp(m_actorDetailsScroll-input.wheel()*40.f,0.f,std::max(0.f,full-(kBottom-88)));return;
+        }
         if(!click)return;
         if(in(x,y,kLeft,kTop+44,right,kBottom))
         {
+            int picked=-1;float best=10.f,pickedDx=0,pickedDy=0;
             for(unsigned axis=0;axis<3;++axis)
             {
-                float ox=0,oy=0,dx=0,dy=0;if(!actorHandle(axis,ox,oy,dx,dy))continue;
-                const float len=std::hypot(dx,dy),ex=ox+52*dx/len,ey=oy+52*dy/len;
-                if(std::hypot(x-ex,y-ey)>10)continue;
+                if(m_actorMode==1)
+                {
+                    for(unsigned step=0;step<96;++step)
+                    {
+                        float px=0,py=0,dx=0,dy=0;
+                        if(!actorRing(axis,6.2831853f*static_cast<float>(step)/96.f,px,py,dx,dy)||dx*dx+dy*dy<0.01f)continue;
+                        const float distance=std::hypot(x-px,y-py);
+                        if(distance<best){best=distance;picked=static_cast<int>(axis);pickedDx=dx;pickedDy=dy;}
+                    }
+                }
+                else
+                {
+                    float ox=0,oy=0,dx=0,dy=0;if(!actorHandle(axis,ox,oy,dx,dy))continue;
+                    const float len=std::hypot(dx,dy),ex=ox+52*dx/len,ey=oy+52*dy/len;
+                    const float distance=std::hypot(x-ex,y-ey);
+                    if(distance<best){best=distance;picked=static_cast<int>(axis);pickedDx=dx;pickedDy=dy;}
+                }
+            }
+            if(picked>=0)
+            {
                 const auto item=entries[static_cast<u32>(m_visualComponent)];
                 const char* prop=m_actorMode==0?"place":m_actorMode==1?"angles":"size";
                 std::vector<std::string> values;
                 if(!blueprintInputComponents("Vec3",actorVector(item[prop],prop),values))return;
                 for(size_t i=0;i<3;++i)m_actorDragStart[i]=m_actorDragValues[i]=std::strtof(values[i].c_str(),nullptr);
-                m_actorDragAxis=static_cast<int>(axis);m_actorDragRevision=m_document.revision();m_actorDragX=x;m_actorDragY=y;m_actorDragDx=dx;m_actorDragDy=dy;
+                m_actorDragAxis=picked;m_actorDragRevision=m_document.revision();m_actorDragX=x;m_actorDragY=y;m_actorDragDx=pickedDx;m_actorDragDy=pickedDy;
                 m_status="Drag axis; release to apply one undoable change.";return;
             }
         }
@@ -1841,12 +1904,22 @@ namespace nx
             {m_visualComponent=count;m_visualComponentFirst=count>=rows?count-rows+1:0;m_status="Added child component.";}
             return;
         }
-        if(in(x,y,right+8,112,kWidth-8,112+13*36))
+        if(in(x,y,right+8,112,kWidth-8,kBottom-88))
         {
-            const auto row=static_cast<size_t>((y-112)/36);
-            if(editActorProperty(s,actorProperties[row])&&row>=1&&row<=3&&y>=112+36.f*static_cast<float>(row)+15&&blueprintInputComponents("Vec3",m_visualText,m_actorAxisValues))
+            for(const auto& item:actorDetailRows())
             {
-                m_actorAxis=std::clamp(static_cast<int>((x-right-8)/fieldWidth),0,2);m_visualText=m_actorAxisValues[static_cast<size_t>(m_actorAxis)];
+                if(item.y<112||item.y+(item.property<0?24.f:36.f)>kBottom-88||y<item.y||y>=item.y+(item.property<0?24.f:36.f))continue;
+                if(item.property<0)
+                {
+                    m_actorCollapsed^=1u<<static_cast<unsigned>(-1-item.property);
+                    const auto rowsHere=actorDetailRows();
+                    m_actorDetailsScroll=std::min(m_actorDetailsScroll,std::max(0.f,rowsHere.back().y+m_actorDetailsScroll+36-(kBottom-88)));
+                    return;
+                }
+                const auto row=static_cast<size_t>(item.property);
+                if(editActorProperty(s,actorProperties[row])&&row>=1&&row<=3&&y>=item.y+15&&blueprintInputComponents("Vec3",m_visualText,m_actorAxisValues))
+                {m_actorAxis=std::clamp(static_cast<int>((x-right-8)/fieldWidth),0,2);m_visualText=m_actorAxisValues[static_cast<size_t>(m_actorAxis)];}
+                return;
             }
             return;
         }
@@ -1895,9 +1968,19 @@ namespace nx
             }
             const auto item=entries[static_cast<u32>(m_visualComponent)];
             selectedEntity=actorPreviewEntity();
-            for(size_t i=0;i<13;++i)
+            const char* categories[]={"Identity","Transform","Rendering / animation","Class / camera","Collision / physics"};
+            for(const auto& row:actorDetailRows())
             {
-                const float y=112+36.f*static_cast<float>(i);const auto v=item[actorProperties[i]];
+                const float y=row.y;
+                if(y<112||y+(row.property<0?24.f:36.f)>kBottom-88)continue;
+                if(row.property<0)
+                {
+                    const unsigned group=static_cast<unsigned>(-1-row.property);
+                    c.rect(right+8,y,m_actorRightPanel-16,22,{0.27f,0.27f,0.29f,1});
+                    c.text(*m_font,(std::string(m_actorCollapsed&(1u<<group)?"+  ":"-  ")+categories[group]).c_str(),right+14,y+2,text);
+                    continue;
+                }
+                const auto i=static_cast<size_t>(row.property);const auto v=item[actorProperties[i]];
                 c.rect(right+8,y,m_actorRightPanel-16,34,{0.20f,0.20f,0.21f,1});
                 c.text(*m_font,actorPropertyLabels[i],right+12,y+1,muted);
                 if(i>=1&&i<=3)
@@ -1947,9 +2030,21 @@ namespace nx
                     const Color axes[]={{0.95f,0.2f,0.2f,1},{0.2f,0.9f,0.35f,1},{0.25f,0.5f,1,1}};
                     for(unsigned i=0;i<3;++i)
                     {
+                        const Color ink=m_actorDragAxis==static_cast<int>(i)?Color{1.f,0.8f,0.2f,1}:axes[i];
+                        if(m_actorMode==1)
+                        {
+                            float lastX=0,lastY=0;bool have=false;
+                            for(unsigned step=0;step<=96;++step)
+                            {
+                                float px=0,py=0,dx=0,dy=0;
+                                if(!actorRing(i,6.2831853f*static_cast<float>(step)/96.f,px,py,dx,dy)){have=false;continue;}
+                                if(have)c.line(lastX,lastY,px,py,2,ink);
+                                lastX=px;lastY=py;have=true;
+                            }
+                            continue;
+                        }
                         float ox=0,oy=0,dx=0,dy=0;if(!actorHandle(i,ox,oy,dx,dy))continue;
                         const float len=std::hypot(dx,dy),xx=ox+52*dx/len,yy=oy+52*dy/len;
-                        const Color ink=m_actorDragAxis==static_cast<int>(i)?Color{1.f,0.8f,0.2f,1}:axes[i];
                         c.line(ox,oy,xx,yy,2,ink);if(m_actorMode==2)c.rect(xx-5,yy-5,10,10,ink);else c.circle(xx,yy,5,ink);c.text(*m_font,i==0?"X":i==1?"Y":"Z",xx+6,yy-6,text);
                     }
                 }
@@ -1970,6 +2065,72 @@ namespace nx
             c.rect(x+16,y+50,528,38,{0.28f,0.28f,0.30f,1});c.clip(x+20,y+50,520,38);c.text(*m_font,m_visualText.c_str(),x+24,y+60,text);c.noClip();
             c.text(*m_font,"Enter applies / Escape cancels",x+16,y+112,muted);
         }
+    }
+    bool BlueprintWorkspace::updateContentDrawer(Services& s,float x,float y,bool left,bool click)
+    {
+        const float top=kBottom-174;
+        if(m_contentDrag.size())
+        {
+            if(left)return true;
+            const auto id=m_contentDrag;m_contentDrag.clear();
+            if(m_contentDragRevision!=m_document.revision()||!m_document.visualAsset(id))return true;
+            if(in(x,y,kLeft,kTop,kRight,top)&&std::hypot(x-m_contentDragX,y-m_contentDragY)>8)
+            {
+                if(m_document.placeVisualActor(assetScreen(),id,"0,0,0",m_status)){rebuildPins();filterCatalogue();m_status="Linked actor added to screen. Use the placement viewport to position it.";}
+            }
+            else if(in(x,y,kLeft,top,kRight,kBottom)&&std::hypot(x-m_contentDragX,y-m_contentDragY)<8)openActorViewport(id);
+            return true;
+        }
+        if(click&&in(x,y,kWidth-150,kBottom+2,kWidth-8,kBottom+24))
+        {m_contentDrawer=!m_contentDrawer;return true;}
+        if(!m_contentDrawer||!in(x,y,kLeft,top,kRight,kBottom))return false;
+        const auto& assets=m_document.visualAssets();const size_t columns=static_cast<size_t>(std::max(1.f,(kRight-kLeft-16)/148.f));
+        if(s.input->wheel()<0&&m_contentFirst+columns<assets.size())m_contentFirst+=columns;
+        if(s.input->wheel()>0)m_contentFirst=m_contentFirst>=columns?m_contentFirst-columns:0;
+        if(click)
+        {
+            if(in(x,y,kRight-110,top+3,kRight-8,top+28)){browseAssets(s);return true;}
+            if(y>=top+37&&y<top+145)
+            {
+                const auto index=m_contentFirst+static_cast<size_t>((x-kLeft-8)/148.f);
+                if(x>=kLeft+8&&index<assets.size()&&index<m_contentFirst+columns)
+                {
+                    const auto& asset=assets[index];
+                    if(asset.kind=="actor")
+                    {m_contentDrag=asset.id;m_contentDragX=x;m_contentDragY=y;m_contentDragRevision=m_document.revision();}
+                    else {browseAssets(s);m_assetLibrary=true;m_visualSelection=asset.id;}
+                }
+            }
+        }
+        return true;
+    }
+    void BlueprintWorkspace::drawContentDrawer(Canvas& c)
+    {
+        c.rect(kWidth-150,kBottom+2,142,22,{0.26f,0.26f,0.28f,1});
+        c.text(*m_font,m_contentDrawer?"Hide content":"Content drawer",kWidth-79,kBottom+4,text,Align::Center);
+        if(!m_contentDrawer)return;
+        const float top=kBottom-174;
+        c.rect(kLeft,top,kRight-kLeft,174,{0.16f,0.16f,0.17f,1});
+        c.rect(kLeft,top,kRight-kLeft,30,{0.24f,0.24f,0.26f,1});
+        c.text(*m_font,"CONTENT / PROJECT ASSETS",kLeft+10,top+6,text);
+        c.rect(kRight-110,top+3,102,25,{0.30f,0.30f,0.32f,1});c.text(*m_font,"Manage",kRight-59,top+5,text,Align::Center);
+        const auto& assets=m_document.visualAssets();const size_t columns=static_cast<size_t>(std::max(1.f,(kRight-kLeft-16)/148.f));
+        for(size_t i=0;i<columns&&m_contentFirst+i<assets.size();++i)
+        {
+            const auto& asset=assets[m_contentFirst+i];const float x=kLeft+8+148.f*static_cast<float>(i),y=top+37;
+            c.rect(x,y,140,108,asset.id==m_contentDrag?Color{0.34f,0.31f,0.20f,1}:Color{0.22f,0.22f,0.24f,1});
+            c.rect(x+5,y+5,130,62,{0.12f,0.12f,0.14f,1});
+            const float cx=x+70,cy=y+35;const Color ink={0.66f,0.70f,0.76f,1};
+            if(asset.kind=="actor")
+            {
+                c.line(cx,cy-22,cx+21,cy-11,2,ink);c.line(cx+21,cy-11,cx+21,cy+13,2,ink);c.line(cx+21,cy+13,cx,cy+24,2,ink);
+                c.line(cx,cy+24,cx-21,cy+13,2,ink);c.line(cx-21,cy+13,cx-21,cy-11,2,ink);c.line(cx-21,cy-11,cx,cy-22,2,ink);
+                c.line(cx-21,cy-11,cx,cy,2,ink);c.line(cx,cy,cx+21,cy-11,2,ink);c.line(cx,cy,cx,cy+24,2,ink);
+            }
+            else {c.rect(cx-23,cy-17,46,34,ink);c.rect(cx-20,cy-14,40,28,{0.12f,0.12f,0.14f,1});c.line(cx-15,cy-5,cx+15,cy-5,2,ink);c.line(cx-15,cy+5,cx+8,cy+5,2,ink);}
+            c.clip(x+5,y+68,130,36);c.text(*m_font,asset.title.c_str(),x+8,y+69,text);c.text(*m_font,asset.kind.c_str(),x+8,y+86,muted);c.noClip();
+        }
+        c.text(*m_font,assets.empty()?"Create a reusable asset using Manage.":"Click an actor to edit; drag into the graph to link an instance. Scroll for more.",kLeft+10,kBottom-23,muted);
     }
     void BlueprintWorkspace::drawVisualLibrary(Canvas& c)
     {
@@ -2801,6 +2962,7 @@ namespace nx
         refreshWidgetPreview(s);refreshPlacementPreview(s);
         if (input.pressed(Action::Menu))
         {
+            if(!m_contentDrag.empty()){m_contentDrag.clear();m_status="Content drag cancelled.";return;}
             if(m_actorEditor){if(m_visualInput){m_visualInput=0;m_visualText.clear();input.setTyping(false);}else if(m_actorDragAxis>=0){cancelActorDrag();m_status="Component drag cancelled.";}else{m_actorEditor=false;releasePlacementPreview();if(m_actorTabGraph<m_document.graphs.size())selectGraph(m_actorTabGraph);}return;}
             if(m_assetBrowser){if(m_visualInput){m_visualInput=0;m_visualText.clear();input.setTyping(false);m_status="Input cancelled.";return;}if(m_placementDragging){cancelVisualPlacement();m_status="Placement cancelled.";return;}if(m_visualPlacement){m_visualPlacement=false;return;}if(m_widgetDesigner){if(m_widgetPreviewDrag){m_widgetPreviewDrag=false;m_status="Widget drag cancelled.";return;}if(m_widgetDragging){m_widgetDragging=false;m_widgetDragId.clear();return;}m_widgetDesigner=false;releaseWidgetPreview();return;}m_assetBrowser=false;m_status="Asset browser closed.";return;}
             if(m_browsing){m_browsing=false;m_status="Open cancelled.";return;}
@@ -2838,6 +3000,7 @@ namespace nx
         const bool click=left&&!m_left;
         const bool right=raw.mouseButtons[1];
         if(m_actorEditor){updateActorEditor(s,x,y,left,click,pressed);m_left=left;return;}
+        if(!modalOpen()&&!m_focus&&!m_layoutDragging&&!m_layoutMenu&&!m_pinMenu&&!m_pinDrag&&!m_drag&&!m_quickDrag&&!m_quickMenu&&updateContentDrawer(s,x,y,left,click)){m_left=left;return;}
         if(modalOpen()){x-=modalX();y-=modalY();}
         else if(!m_focus&&!m_layoutDragging&&!m_layoutMenu&&!m_pinMenu&&!m_pinDrag&&!m_drag&&!m_quickDrag&&!m_quickMenu&&resizePanels(x,y,left,click,false)){m_left=left;return;}
         if(m_layoutDragging)
@@ -3349,7 +3512,7 @@ namespace nx
         if(click&&in(x,y,8,kBottom-40,kLeft-8,kBottom-8))
         {
             if(m_document.dirty())m_status="Save changes before creating a new Blueprint.";
-            else{m_actorTabId.clear();m_actorTabScreen.clear();m_document.create();m_filePath.clear();m_fileBaseline.clear();m_checkpointRevision=static_cast<size_t>(-1);m_graphBack.clear();m_first=0;selectGraph(0);m_status="New Blueprint.";}
+            else{m_actorTabId.clear();m_actorTabScreen.clear();m_contentFirst=0;m_contentDrag.clear();m_document.create();m_filePath.clear();m_fileBaseline.clear();m_checkpointRevision=static_cast<size_t>(-1);m_graphBack.clear();m_first=0;selectGraph(0);m_status="New Blueprint.";}
             m_left=left;return;
         }
         if(!m_drag&&in(x,y,kRight,kTop,kWidth,kBottom))
@@ -3788,6 +3951,7 @@ namespace nx
             const char* state=!m_document.dirty()?"Saved / clean":recoveryProtected()?"Recovery protected":"Recovery pending";
             c.text(*m_font,state,kWidth-12,kBottom+26,recoveryProtected()?muted:Color{1.f,0.72f,0.22f,1.f},Align::Right);
         }
+        drawContentDrawer(c);
         if(m_layoutMenu)
         {
             c.roundRect(300,35,250,420,5,{0.16f,0.16f,0.17f,1});

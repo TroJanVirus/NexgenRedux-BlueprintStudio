@@ -46,6 +46,19 @@ namespace nx
         int m_splitter=0;
         unsigned m_uiScale=0; // automatic, 100%, 125%, 150%
         void openActorGraph(bool construction);
+        void openActorViewport(const std::string& id);
+        bool updateContentDrawer(Services& s,float x,float y,bool left,bool click);
+        void drawContentDrawer(Canvas& c);
+        bool m_contentDrawer=false;
+        size_t m_contentFirst=0;
+        std::string m_contentDrag;
+        float m_contentDragX=0,m_contentDragY=0;
+        size_t m_contentDragRevision=0;
+        unsigned m_actorCollapsed=0;
+        float m_actorDetailsScroll=0;
+        struct DetailRow {int property;float y;};
+        std::vector<DetailRow> actorDetailRows() const;
+        bool actorRing(unsigned axis,float angle,float& x,float& y,float& dx,float& dy) const;
         bool resizePanels(float x,float y,bool left,bool click,bool actor);
         float kVariableTop=350,kVariableBottom=443,kPaletteExtra=0;
         size_t kRows=8,kVariableRows=3,kPaletteRows=10;
