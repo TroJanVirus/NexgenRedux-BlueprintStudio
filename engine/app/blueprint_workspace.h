@@ -73,7 +73,7 @@ namespace nx
         float m_contentPanelX=0.25f,m_contentPanelY=0.65f,m_contentPanelWidth=620,m_contentGrabX=0,m_contentGrabY=0;
         struct ContentBounds {float left,top,right,bottom;};
         ContentBounds contentBounds() const;
-        struct ContentPreview {std::string id;World* world=nullptr;};
+        struct ContentPreview {std::string id;World* world=nullptr;Ui* ui=nullptr;};
         std::vector<ContentPreview> m_contentPreviews;
         size_t m_contentPreviewRevision=static_cast<size_t>(-1);
         std::string m_contentPreviewScreen;

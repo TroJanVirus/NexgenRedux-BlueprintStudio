@@ -122,3 +122,8 @@ The native tab strip now also appears in actor viewports, with up to 16 independ
 ## Floating content panel and native asset previews
 
 The content drawer can float within the Redux editor window, move by its title bar, redock at the bottom or via a Dock button, and remember its bounded position across restart. The docked graph tab strip moves above the drawer; a floating drawer overlays the graph without changing its tab position. Visible actor tiles use up to four isolated native 3D preview worlds (128 entities each), framed by component transforms, with runtime callbacks, audio, cameras and physics stripped. Worlds are cached per visible asset list and document revision, destroyed when hidden or leaving the project, and unsupported/over-budget assets retain icons. This does not implement detachable OS windows or widget thumbnails. Native desktop regression checks real preview creation and float/redock. CI pending.
+
+
+## Native widget thumbnails and direct asset editing (verification pending)
+
+Visible widget assets now use the same native Ui designer renderer, resolved nested widget page and theme as the full designer, scaled to a clipped 16:9 tile. Actor and widget previews share the existing four-item budget and document-revision cache. Failed or unsupported previews fall back to asset icons; all preview UI objects and worlds are released on cache invalidation or panel closure. Clicking a widget tile opens its designer directly. This is not yet a unified widget/scene tab strip or detached desktop window. Native desktop verification is required.

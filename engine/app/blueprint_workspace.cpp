@@ -2311,7 +2311,7 @@ namespace nx
     }
     void BlueprintWorkspace::releaseContentPreviews()
     {
-        for(auto& preview:m_contentPreviews)if(preview.world)destroy(preview.world);
+        for(auto& preview:m_contentPreviews){if(preview.world)destroy(preview.world);if(preview.ui)destroy(preview.ui);}
         m_contentPreviews.clear();m_contentPreviewRevision=static_cast<size_t>(-1);m_contentPreviewScreen.clear();
     }
     void BlueprintWorkspace::refreshContentPreviews(Services& s)
@@ -2328,7 +2328,7 @@ namespace nx
         const size_t columns=static_cast<size_t>(std::max(1.f,(bounds.right-bounds.left-16)/148.f));
         std::vector<std::string> visible;
         for(size_t i=0;i<columns&&m_contentFirst+i<assets.size()&&visible.size()<4;++i)
-            if(assets[m_contentFirst+i].kind=="actor")visible.push_back(assets[m_contentFirst+i].id);
+            if(assets[m_contentFirst+i].kind=="actor"||assets[m_contentFirst+i].kind=="widget")visible.push_back(assets[m_contentFirst+i].id);
         if(m_contentPreviewRevision==m_document.revision()&&m_contentPreviewScreen==screen&&visible.size()==m_contentPreviews.size()&&
             std::equal(visible.begin(),visible.end(),m_contentPreviews.begin(),[](const std::string& id,const ContentPreview& p){return id==p.id;}))return;
         releaseContentPreviews();m_contentPreviewRevision=m_document.revision();m_contentPreviewScreen=screen;
@@ -2336,6 +2336,23 @@ namespace nx
         for(const auto& id:visible)
         {
             ContentPreview item;item.id=id;std::string json,why;JsonValue root;
+            const auto* asset=m_document.visualAsset(id);
+            if(asset&&asset->kind=="widget")
+            {
+                std::string theme;
+                if(s.canvas&&s.audio&&s.input&&s.platform&&m_document.visualWidgetTheme(id,theme,why)&&m_document.visualWidgetPage(id,json,why))
+                {
+                    item.ui=create<Ui>(MemTag::UI,*s.canvas,*s.assets,*s.audio,*s.input,*s.host,*s.platform,folder.c_str());
+                    if(item.ui)
+                    {
+                        if((!theme.empty()&&!item.ui->loadThemeSource(theme.data(),theme.size()))||
+                           !item.ui->loadPage(json.data(),json.size(),item.ui->root(),nullptr,"thumbnail",true))
+                        {destroy(item.ui);item.ui=nullptr;}
+                        else NX_INFO("Blueprint Studio: native widget thumbnail ready: %s",id.c_str());
+                    }
+                }
+                m_contentPreviews.push_back(std::move(item));continue;
+            }
             if(m_document.visualActorSource(id,json,why)&&root.parse(json.data(),json.size(),why))
             {
                 auto* entities=root.find("entities");
@@ -2439,7 +2456,21 @@ namespace nx
                     const auto& asset=assets[index];
                     if(asset.kind=="actor")
                     {m_contentDrag=asset.id;m_contentDragX=x;m_contentDragY=y;m_contentDragRevision=m_document.revision();}
-                    else {browseAssets(s);if(m_assetBrowser){m_assetLibrary=true;m_visualSelection=asset.id;}}
+                    else
+                    {
+                        const auto id=asset.id;const bool widget=asset.kind=="widget";
+                        browseAssets(s);
+                        if(m_assetBrowser)
+                        {
+                            m_assetLibrary=true;m_visualSelection=id;
+                            if(widget)
+                            {
+                                m_widgetDesigner=true;m_widgetPalette=false;
+                                m_widgetEvents=m_widgetUnbind=m_widgetDragging=m_widgetAnchors=m_widgetPreviewDrag=m_widgetTimeline=m_widgetTimelinePlay=false;
+                                m_widgetTimelineTime=0;m_widgetSelection.clear();m_widgetFirst=0;
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -2464,8 +2495,16 @@ namespace nx
             c.rect(x,y,140,108,asset.id==m_contentDrag?Color{0.34f,0.31f,0.20f,1}:Color{0.22f,0.22f,0.24f,1});
             c.rect(x+5,y+5,130,62,{0.12f,0.12f,0.14f,1});
             const float cx=x+70,cy=y+35;const Color ink={0.66f,0.70f,0.76f,1};
-            const auto preview=std::find_if(m_contentPreviews.begin(),m_contentPreviews.end(),[&](const ContentPreview& p){return p.id==asset.id&&p.world;});
-            if(preview!=m_contentPreviews.end())preview->world->space().draw(c,x+5,y+5,130,62);
+            const auto preview=std::find_if(m_contentPreviews.begin(),m_contentPreviews.end(),[&](const ContentPreview& p){return p.id==asset.id&&(p.world||p.ui);});
+            if(preview!=m_contentPreviews.end()&&preview->world)preview->world->space().draw(c,x+5,y+5,130,62);
+            else if(preview!=m_contentPreviews.end()&&preview->ui)
+            {
+                constexpr float scale=62.f/720.f;
+                const float width=1280.f*scale,px=x+70-width*0.5f,py=y+5;
+                c.push();c.clip(px,py,width,62);c.translate(px,py);c.scale(scale,scale);
+                preview->ui->drawDesign(c,0,0,1280,720);
+                c.pop();
+            }
             else if(asset.kind=="actor")
             {
                 c.line(cx,cy-22,cx+21,cy-11,2,ink);c.line(cx+21,cy-11,cx+21,cy+13,2,ink);c.line(cx+21,cy+13,cx,cy+24,2,ink);
