@@ -4935,7 +4935,7 @@ namespace nx
     {
         c.roundRect(100,64,1080,594,8,{0.15f,0.17f,0.20f,1});
         c.text(*m_font,"DEVICE MANAGER / REDUX REMOTE DEBUG",120,78,accent);
-        c.text(*m_font,"Start Redux on the console with a debug folder beside the title. Trusted LAN only; TCP 4711.",140,116,muted);
+        c.text(*m_font,"Start Redux on the console with a media/debug folder. Trusted LAN only; TCP 4711.",140,116,muted);
         const auto button=[&](float x,float y,float w,const char* label,bool enabled)
         {c.roundRect(x,y,w,40,4,enabled?Color{0.20f,0.32f,0.45f,1}:Color{0.20f,0.22f,0.25f,1});c.text(*m_font,label,x+w/2,y+10,enabled?text:muted,Align::Center);};
         c.roundRect(140,150,570,40,4,m_deviceAddressEditing?Color{0.24f,0.35f,0.48f,1}:Color{0.18f,0.22f,0.29f,1});
