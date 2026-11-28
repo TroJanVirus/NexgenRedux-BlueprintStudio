@@ -293,6 +293,10 @@ namespace nx
         std::vector<BlueprintScreenOutput> m_previewOutputs;
         std::string m_previewStart;
         bool m_playPaused=false,m_playPauseKey=false,m_playStepKey=false,m_playRestartKey=false,m_playPointer=false,m_playTyping=false;
+        bool m_profileOpen=false,m_profileKey=false;
+        double m_profileNext=0;
+        std::vector<std::string> m_profileRows;
+        void samplePreviewProfile(Services& s,double updateMs,unsigned scriptRuns);
         void setPlayPaused(Services& s,bool paused);
         bool launchCompiledPreview(Services& s,const std::string& owner);
         BlueprintLocation m_diagnostic;
@@ -356,6 +360,8 @@ namespace nx
         size_t m_actionFirst=0;
         void updateInputActions(Services& s,float x,float y,bool click);
         void drawInputActions(Canvas& c);
+        void updateBuildManager(Services& s,float x,float y,bool click);
+        void drawBuildManager(Canvas& c);
         bool beginSequenceAsset(const std::string& id,Input& input);
         size_t m_sequenceKey=0;
         float m_sequenceTime=0;

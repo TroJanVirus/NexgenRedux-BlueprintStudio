@@ -11,6 +11,8 @@
 #include "bindings/bindings.h"
 #include "assets/assets.h"
 #include "base/log.h"
+#include "base/memory.h"
+#include "audio/audio.h"
 #include "base/json_tree.h"
 #include "base/curve.h"
 #include "base/json_value.h"
@@ -282,7 +284,7 @@ namespace nx
         return true;
     }
     bool BlueprintWorkspace::modalOpen() const
-    {return m_assetBrowser||m_browsing||m_focus==5||m_focus==6||m_focus==9||m_focus==10||m_focus==11||m_focus==12||m_focus==13||m_focus==14||m_focus==15||m_focus==17||m_focus==18||m_focus==20||m_focus==21||m_focus==22||m_focus==23;}
+    {return m_assetBrowser||m_browsing||m_focus==5||m_focus==6||m_focus==9||m_focus==10||m_focus==11||m_focus==12||m_focus==13||m_focus==14||m_focus==15||m_focus==17||m_focus==18||m_focus==20||m_focus==21||m_focus==22||m_focus==23||m_focus==24;}
     void BlueprintWorkspace::resetGraphTabs()
     {
         releaseContentPreviews();m_graphTabs.clear();m_actorTabs.clear();m_visualTabs.clear();m_activeVisualTab={};m_activeTab={};m_tabFirst=0;
@@ -3999,8 +4001,8 @@ namespace nx
             s.platform->setEditorChrome(true);stopTrace();focusPreviewError(m_status);
             s.input->setWantsPointer(true);s.input->setTyping(false);return false;
         }
-        m_playing=true;m_playPaused=false;m_previewStart=owner;clearWire();
-        m_status="Playing "+owner+". Ctrl+P pauses; Ctrl+R restarts; Escape stops.";
+        m_playing=true;m_playPaused=false;m_previewStart=owner;m_profileNext=0;m_profileRows.clear();clearWire();
+        m_status="Playing "+owner+". Ctrl+P pauses; Ctrl+R restarts; Ctrl+O profiler; Escape stops.";
         NX_INFO("Blueprint Studio: preview started: %s",owner.c_str());return true;
     }
     void BlueprintWorkspace::setPlayPaused(Services& s,bool paused)
@@ -4017,7 +4019,7 @@ namespace nx
         const bool scene=m_sceneEditor;
         stopTrace();
         s.screens->stopPreview();
-        m_playing=false;m_sceneEditor=false;m_sceneExit=false;m_playPaused=false;m_playPauseKey=m_playStepKey=m_playRestartKey=false;
+        m_playing=false;m_sceneEditor=false;m_sceneExit=false;m_playPaused=false;m_playPauseKey=m_playStepKey=m_playRestartKey=false;m_profileKey=false;m_profileRows.clear();
         s.platform->setEditorChrome(true);
         s.input->setWantsPointer(true);
         s.input->setTyping(false);
@@ -4074,6 +4076,7 @@ namespace nx
         if(!m_sceneEditor&&!m_tracePaused)
         {
             const auto& raw=s.input->raw();const bool ctrl=raw.keys[static_cast<size_t>(Key::Control)];
+            const bool o=ctrl&&raw.keys[static_cast<size_t>(Key::O)];if(o&&!m_profileKey){m_profileOpen=!m_profileOpen;m_profileNext=0;}m_profileKey=o;
             const bool p=ctrl&&raw.keys[static_cast<size_t>(Key::P)],n=ctrl&&raw.keys[static_cast<size_t>(Key::N)],r=ctrl&&raw.keys[static_cast<size_t>(Key::R)];
             const bool pause=p&&!m_playPauseKey,step=n&&!m_playStepKey,restart=r&&!m_playRestartKey;
             m_playPauseKey=p;m_playStepKey=n;m_playRestartKey=r;
@@ -4135,7 +4138,9 @@ namespace nx
             if(toggle||m_tracePending){pauseTrace(s);return;}
             m_traceBudget=128;
         }
+        const double began=s.platform->seconds();const auto runs=s.host->runs();
         s.screens->update(dt);
+        if(!m_sceneEditor&&m_profileOpen)samplePreviewProfile(s,(s.platform->seconds()-began)*1000.0,static_cast<unsigned>(s.host->runs()-runs));
         if(m_traceStep){m_traceStep=false;m_tracePending=true;}
         if(s.screens->failed())
         {
@@ -4147,8 +4152,31 @@ namespace nx
         }
     }
 
+    void BlueprintWorkspace::samplePreviewProfile(Services& s,double updateMs,unsigned scriptRuns)
+    {
+        const double now=s.platform->seconds();if(now<m_profileNext)return;m_profileNext=now+0.25;
+        m_profileRows.clear();char line[160];
+        const auto mib=[](size_t bytes){return static_cast<double>(bytes)/(1024.0*1024.0);};
+        const auto mem=memStatsTotal();
+        std::snprintf(line,sizeof(line),"Host FPS %.1f | draws %u",static_cast<double>(s.fps),static_cast<unsigned>(s.draws));m_profileRows.emplace_back(line);
+        std::snprintf(line,sizeof(line),"Last update %.2f ms | script calls %u",updateMs,scriptRuns);m_profileRows.emplace_back(line);
+        std::snprintf(line,sizeof(line),"Tracked RAM %.2f MiB | peak %.2f",mib(mem.bytes),mib(mem.peak));m_profileRows.emplace_back(line);
+        std::snprintf(line,sizeof(line),"64 MiB reference: %.1f%% (not Xbox usage)",100.0*mib(mem.bytes)/64.0);m_profileRows.emplace_back(line);
+        std::snprintf(line,sizeof(line),"Host free RAM %.1f MiB",mib(s.platform->freeMemory()));m_profileRows.emplace_back(line);
+        std::snprintf(line,sizeof(line),"Texture %.2f | buffers %.2f MiB",mib(memStats(MemTag::Texture).bytes),mib(memStats(MemTag::Buffer).bytes));m_profileRows.emplace_back(line);
+        std::snprintf(line,sizeof(line),"Scene %.2f | script %.2f MiB",mib(memStats(MemTag::Scene).bytes),mib(memStats(MemTag::Script).bytes));m_profileRows.emplace_back(line);
+        std::snprintf(line,sizeof(line),"Audio %.2f MiB | voices %u",mib(memStats(MemTag::Audio).bytes),static_cast<unsigned>(s.audio->voicesInUse()));m_profileRows.emplace_back(line);
+        if(s.world){const auto& stats=s.world->stats();std::snprintf(line,sizeof(line),"Entities %u | contacts %u",static_cast<unsigned>(stats.entities),static_cast<unsigned>(stats.contacts));m_profileRows.emplace_back(line);}
+    }
     void BlueprintWorkspace::drawPreviewOverlay(Canvas& c)
     {
+        if(m_profileOpen&&!m_sceneEditor&&!tracePaused()&&!playPaused()&&m_font)
+        {
+            c.design(kBaseWidth,kBaseHeight);c.noClip();c.roundRect(16,16,490,268,7,{0.10f,0.14f,0.20f,0.94f});
+            c.text(*m_font,"PREVIEW PROFILER / DESKTOP SAMPLE",28,25,accent);
+            for(size_t i=0;i<m_profileRows.size();++i)c.text(*m_font,m_profileRows[i].c_str(),28,53+22.f*static_cast<float>(i),text);
+            c.text(*m_font,"Ctrl+O hide | includes engine/editor overhead",28,258,muted);
+        }
         if(tracePaused()&&m_font)
         {
             c.design(kBaseWidth,kBaseHeight);c.noClip();
@@ -4649,6 +4677,7 @@ namespace nx
         if(!click)return;
         if(in(x,y,120,160,450,512)){const auto at=m_sceneFirst+static_cast<size_t>((y-160)/44);if(at<scenes.size())m_sceneBrowserOwner=scenes[at];return;}
         if(in(x,y,470,160,1150,512)){const auto at=m_sceneAssetFirst+static_cast<size_t>((y-160)/44);if(at<assets.size())m_sceneBrowserAsset=assets[at]->id;return;}
+        if(in(x,y,640,582,840,616)){m_focus=24;input.setTyping(false);m_status="Validate or export this project.";return;}
         if(in(x,y,120,582,450,616)){m_actionName="Jump";m_actionKey="Space";m_actionButton=8;m_actionField=0;m_actionFirst=0;m_focus=23;input.setTyping(true);m_status="Create a named held-input query.";return;}
         if(in(x,y,120,540,280,574)){for(size_t i=0;i<m_document.graphs.size();++i)if(m_document.graphs[i].owner==m_sceneBrowserOwner&&m_document.graphs[i].name=="update"){selectGraph(i);m_focus=0;input.setTyping(false);return;}}
         if(in(x,y,290,540,450,574)){m_focus=7;m_edit.clear();input.setTyping(true);m_status="New scene: enter a lowercase ID.";return;}
@@ -4689,6 +4718,36 @@ namespace nx
         button(120,540,330,"+ New action");button(820,540,320,"Apply binding");button(1000,600,150,"Back");
         c.clip(120,600,865,42);c.text(*m_font,m_status.c_str(),120,610,muted);c.noClip();
     }
+    void BlueprintWorkspace::updateBuildManager(Services& s,float x,float y,bool click)
+    {
+        if(!click)return;
+        if(in(x,y,1000,600,1150,638)){m_focus=22;return;}
+        if(in(x,y,140,275,1140,330)){compileAndExport(s);return;}
+        const bool validate=in(x,y,140,195,1140,250),package=in(x,y,140,355,1140,410);
+        if(!validate&&!package)return;
+        std::vector<BlueprintScreenOutput> outputs;BlueprintLocation location;m_diagnostic={};
+        if(!compileBlueprintProject(m_document,outputs,m_status,&location)){focusDiagnostic(location);m_focus=0;return;}
+        if(!validateProject(s,outputs)){m_focus=0;return;}
+        if(validate){m_status="Validated "+std::to_string(outputs.size())+" scene script(s) with the native compiler and AngelScript.";return;}
+        std::string file;
+        for(unsigned i=1;i<=10000;++i){const auto candidate="blueprint-package-"+std::to_string(i)+".bp.zip";if(!s.platform->fileTime(("own/"+candidate).c_str())){file=candidate;break;}}
+        if(file.empty())m_status="No free project package name.";
+        else if(blueprintExportPackage(*s.platform,m_document,file,m_status))m_status="Validated and exported own/"+file;
+    }
+    void BlueprintWorkspace::drawBuildManager(Canvas& c)
+    {
+        c.roundRect(100,64,1080,594,8,{0.15f,0.17f,0.20f,1});c.text(*m_font,"BUILD & PACKAGE MANAGER",120,78,accent);
+        c.text(*m_font,m_document.name.c_str(),120,111,text);
+        c.text(*m_font,("Scenes: "+std::to_string(m_document.screens().size())+" | Graphs: "+std::to_string(m_document.graphs.size())+" | Linked assets: "+std::to_string(m_document.visualAssets().size())).c_str(),120,140,muted);
+        const auto row=[&](float y,const char* title,const char* detail){c.roundRect(140,y,1000,55,5,{0.20f,0.32f,0.45f,1});c.text(*m_font,title,154,y+6,text);c.text(*m_font,detail,154,y+28,muted);};
+        row(195,"Validate project","Compile every scene and verify generated AngelScript.");
+        row(275,"Compile & export native project","Export native screen manifests, generated scripts and project media into a new folder.");
+        row(355,"Validate & package editable project","Export a portable Blueprint ZIP containing the document and media.");
+        c.text(*m_font,"Exports are Redux projects, not cooked executable builds.",140,458,accent);
+        c.text(*m_font,"Use the Redux platform cooker for target executables and hardware testing.",140,484,muted);
+        c.roundRect(1000,600,150,38,4,{0.20f,0.32f,0.45f,1});c.text(*m_font,"Back",1075,609,text,Align::Center);
+        c.clip(120,535,1030,58);c.paragraph(*m_font,m_status.c_str(),120,540,1020,text);c.noClip();
+    }
     void BlueprintWorkspace::drawSceneBrowser(Canvas& c)
     {
         c.roundRect(100,64,1080,594,8,{0.15f,0.17f,0.20f,1});c.text(*m_font,"SCENES & CINEMATICS",120,78,accent);
@@ -4703,7 +4762,7 @@ namespace nx
             c.rect(470,yy,680,40,asset.id==m_sceneBrowserAsset?Color{0.20f,0.34f,0.47f,1}:Color{0.20f,0.23f,0.27f,1});c.clip(478,yy,500,40);c.text(*m_font,asset.title.c_str(),482,yy+4,text);c.text(*m_font,asset.id.c_str(),482,yy+21,muted);c.noClip();c.text(*m_font,("In scene: "+std::to_string(used)).c_str(),1000,yy+10,muted);
         }
         if(!index)c.text(*m_font,"Create your first reusable cinematic.",482,175,muted);
-        button(120,540,160,"Open Blueprint");button(290,540,160,"+ Scene");button(470,540,160,"+ Sequence");button(640,540,160,"Edit Sequence");button(810,540,160,"Place in Scene");button(980,540,170,"Rename");button(120,582,330,"Input Action Editor");button(470,582,160,"Delete Asset");button(1030,610,130,"Close");
+        button(120,540,160,"Open Blueprint");button(290,540,160,"+ Scene");button(470,540,160,"+ Sequence");button(640,540,160,"Edit Sequence");button(810,540,160,"Place in Scene");button(980,540,170,"Rename");button(120,582,330,"Input Action Editor");button(470,582,160,"Delete Asset");button(640,582,200,"Build & Package");button(1030,610,130,"Close");
         c.clip(120,620,880,26);c.text(*m_font,m_status.c_str(),120,626,muted);c.noClip();
         if(m_sceneNaming){c.rect(100,64,1080,594,{0,0,0,0.65f});c.roundRect(280,440,880,170,6,{0.16f,0.20f,0.25f,1});c.text(*m_font,"Rename cinematic",300,454,accent);c.roundRect(300,490,840,38,4,{0.24f,0.35f,0.48f,1});c.text(*m_font,m_sceneNameDraft.c_str(),310,498,text);c.text(*m_font,"Enter = Apply | Escape = Cancel",300,568,muted);button(830,556,150,"Apply");button(990,556,150,"Cancel");}
     }
@@ -5019,6 +5078,7 @@ namespace nx
             if(updateContentDrawer(s,x,y,left,click)||updateGraphTabs(s,x,y,click)||updateGraphMap(x,y,left,click)){m_left=left;return;}
         }
         if(modalOpen()){x-=modalX();y-=modalY();}
+        if(m_focus==24){updateBuildManager(s,x,y,click);m_left=left;return;}
         if(m_focus==23){updateInputActions(s,x,y,click);m_left=left;return;}
         if(m_focus==22){updateSceneBrowser(s,x,y,click);m_left=left;return;}
         if(m_focus==21){updateSequenceEditor(s,x,y,left,click);m_left=left;return;}
@@ -6497,6 +6557,7 @@ namespace nx
                 c.text(*m_font,("Active: "+m_document.name+(m_document.dirty()?"  /  Unsaved changes":"")).c_str(),28,638,accent);
                 c.clip(28,665,1220,40);c.text(*m_font,m_status.c_str(),28,673,text);c.noClip();
             }
+            else if(m_focus==24)drawBuildManager(c);
             else if(m_focus==23)drawInputActions(c);
             else if(m_focus==22)drawSceneBrowser(c);
             else if(m_focus==21)drawSequenceEditor(c);
