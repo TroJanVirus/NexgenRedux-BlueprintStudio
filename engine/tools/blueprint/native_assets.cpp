@@ -613,8 +613,10 @@ namespace nx
         chain(spawn,mass,model);value(spawn,model,"name","global:model/robot.glb");
         const auto apply=add(spawn,"api:Entity:model:Entity@,Model@",740,590);
         chain(spawn,model,apply);wire(spawn,entity,"result",apply,"target");wire(spawn,model,"result",apply,"model");
-        const auto lock=add(spawn,"api:Input:Input::lockMouse:bool",1100,590);chain(spawn,apply,lock);value(spawn,lock,"locked","true");
-        note(spawn,"PLAYER | Spawn at feet height, retain Entity handle, configure 0.35 m radius / 1.7 m capsule with its centre 0.85 m up, enable native walker and 60 kg mass. Attach the Redux robot model, then capture mouse.");
+        size_t finishModel=apply;
+        if(third){const auto surfaces=add(spawn,"api:Entity:set_twoSided:Entity@,bool",1100,590);chain(spawn,apply,surfaces);wire(spawn,entity,"result",surfaces,"target");value(spawn,surfaces,"value","true");finishModel=surfaces;}
+        const auto lock=add(spawn,"api:Input:Input::lockMouse:bool",1460,590);chain(spawn,finishModel,lock);value(spawn,lock,"locked","true");
+        note(spawn,"PLAYER | Spawn at feet height, retain Entity handle, configure 0.35 m radius / 1.7 m capsule with its centre 0.85 m up, enable native walker and 60 kg mass. Attach the Redux robot model (third person also draws both triangle sides to prevent back-face gaps), then capture mouse.");
         const auto mouse=add(look,"api:Input:Input::get_mouseMove:",24,300),pad=add(look,"api:Input:Input::padRight:uint",24,460);
         value(look,pad,"pad","0");
         const auto yaw=variable(look,"yaw",false,300,300),pitch=variable(look,"pitch",false,300,460);

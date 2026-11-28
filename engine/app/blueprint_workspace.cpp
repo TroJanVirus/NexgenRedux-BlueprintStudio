@@ -5050,6 +5050,7 @@ namespace nx
             (control&&(held(Key::Y)||(held(Key::Z)&&held(Key::Shift)))?4u:0u)|(!control&&held(Key::Q)?8u:0u)|(control&&held(Key::F)?16u:0u)|(!control&&held(Key::C)?32u:0u);
         const unsigned pressed=keys&~m_shortcuts;m_shortcuts=keys;
         const bool click=left&&!m_left;
+        if(!left)m_paletteDragging=false;
         const bool right=raw.mouseButtons[1];
         const auto placeInlineCaret=[&](const std::string& value,float position)
         {
@@ -5059,7 +5060,8 @@ namespace nx
                 size_t end=p+1;while(end<value.size()&&(static_cast<unsigned char>(value[end])&0xc0)==0x80)++end;
                 const float a=m_font?canvas.measure(*m_font,value.substr(0,p).c_str()).x:8.f*static_cast<float>(p);
                 const float b=m_font?canvas.measure(*m_font,value.substr(0,end).c_str()).x:8.f*static_cast<float>(end);
-                if(position<(a+b)*.5f)break;caret=end;p=end;
+                if(position<(a+b)*.5f)break;
+                caret=end;p=end;
             }
             return caret;
         };
@@ -5580,9 +5582,10 @@ namespace nx
                 }
                 if(ch==9&&!m_inputComponents.empty()){m_inputComponent=(m_inputComponent+1)%m_inputComponents.size();m_inlineCaret=active().size();m_inlineSelectAll=false;continue;}
                 auto& value=active();
-                if(m_inlineSelectAll&&(ch==8||(ch>=32&&ch!=127&&!control))){value.clear();m_inlineCaret=0;m_inlineSelectAll=false;m_inlineDirty=true;}
+                if(m_inlineSelectAll&&(ch==8||ch==127||(ch>=32&&!control))){value.clear();m_inlineCaret=0;m_inlineSelectAll=false;m_inlineDirty=true;}
                 if(control&&ch!=8)continue;
                 if(ch==8&&m_inlineCaret){const auto end=m_inlineCaret;previous(value);value.erase(m_inlineCaret,end-m_inlineCaret);m_inlineDirty=true;}
+                else if(ch==127&&m_inlineCaret<value.size()){size_t end=m_inlineCaret+1;while(end<value.size()&&(static_cast<unsigned char>(value[end])&0xc0)==0x80)++end;value.erase(m_inlineCaret,end-m_inlineCaret);m_inlineDirty=true;}
                 else if(ch>=32&&ch!=127&&(m_inputComponents.empty()||(ch<128&&std::string("0123456789.eE+-").find(static_cast<char>(ch))!=std::string::npos)))
                 {std::string part;appendCharacter(part,ch,4096);if(value.size()+part.size()<=4096){value.insert(m_inlineCaret,part);m_inlineCaret+=part.size();m_inlineDirty=true;}}
             }
@@ -5844,7 +5847,7 @@ namespace nx
             else{m_actorTabId.clear();m_actorTabScreen.clear();m_contentFirst=0;m_contentDrag.clear();resetGraphTabs();m_document.create();m_filePath.clear();m_fileBaseline.clear();m_checkpointRevision=static_cast<size_t>(-1);m_graphBack.clear();m_first=0;selectGraph(0);m_status="New Blueprint.";}
             m_left=left;return;
         }
-        if(!m_graphHideRight&&!m_drag&&in(x,y,kRight,kTop,kWidth,kBottom))
+        if(!m_graphHideRight&&!m_drag&&(m_paletteDragging||in(x,y,kRight,kTop,kWidth,kBottom)))
         {
             const bool back=!m_paletteGroup.empty()||!m_query.empty();
             const size_t visible=kPaletteRows-(back?1u:0u);
@@ -6380,7 +6383,7 @@ namespace nx
                     {
                         c.roundRect(bx,py-9*m_zoom,bw,18*m_zoom,3,active?Color{0.23f,0.37f,0.49f,1}:Color{0.21f,0.22f,0.24f,1});
                         const float inset=(label.empty()?4.f:17.f)*m_zoom;
-                        if(!label.empty())graphText(label,bx+3*m_zoom,py-9*m_zoom,13*m_zoom,18*m_zoom,m_zoom,muted);
+                        if(!label.empty()){const Color axis=label=="X"||label=="R"?Color{0.95f,0.45f,0.45f,1}:label=="Y"||label=="G"?Color{0.44f,0.85f,0.47f,1}:label=="Z"||label=="B"?Color{0.42f,0.68f,1.f,1}:muted;graphText(label,bx+3*m_zoom,py-9*m_zoom,13*m_zoom,18*m_zoom,m_zoom,axis);}
                         if(active&&m_inlineSelectAll)c.rect(bx+inset,py-8*m_zoom,std::max(0.f,bw-inset-2*m_zoom),16*m_zoom,{0.18f,0.43f,0.70f,1});
                         graphText(part.empty()&&!active?"Edit":part,bx+inset,py-9*m_zoom,bw-inset-3*m_zoom,18*m_zoom,m_zoom,text);
                         if(active){const float at=bx+inset+c.measure(*m_font,part.substr(0,m_inlineCaret).c_str()).x*m_zoom;if(at<bx+bw-2*m_zoom)c.rect(at,py-7*m_zoom,std::max(1.f,m_zoom),14*m_zoom,accent);}

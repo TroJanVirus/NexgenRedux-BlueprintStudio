@@ -1803,7 +1803,7 @@ namespace nx
                     p->setNumber(index);keys.push_back(id+":"+std::to_string(i+1));
                 }
             }
-            const std::string allowed="|name|place|angles|size|shape|model|animate|camera|mass|friction|bounce|gravity|drag|cube|sphere|capsule|exact|behaviour|";
+            const std::string allowed="|name|place|angles|size|shape|model|animate|camera|mass|friction|bounce|gravity|drag|cube|sphere|capsule|exact|colliderAt|wall|behaviour|";
             const auto apply=[&](JsonValue* entity,const JsonValue* fields)->bool
             {
                 if(!entity||!fields||fields->type()!=JsonValue::Type::Object){error="Invalid component overrides.";return false;}

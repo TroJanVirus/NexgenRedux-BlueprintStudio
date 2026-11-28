@@ -1465,6 +1465,25 @@ NX_TEST(nativeActorInspectorEditsSharedComponentProperties)
     NX_EXPECT(copy.undo()&&copy.undo()&&!copy.removeBehaviour("Movement",error));
 }
 
+NX_TEST(nativeActorGeneratedSimpleCollision)
+{
+    BlueprintDocument doc;doc.create();std::string error,id,child,before,after,source;
+    NX_EXPECT(doc.createVisualAsset("actor",id,error));
+    NX_EXPECT(doc.visualActorSource(id,before,error));
+    NX_EXPECT(doc.setVisualActorProperty(id,0,"simpleCollision","2,3,4;0,1.5,0",error));
+    NX_EXPECT(doc.visualActorSource(id,after,error));
+    JsonTree json;NX_EXPECT(json.parse(after.data(),after.size()));
+    const auto entity=json.root()["entities"][0u];
+    NX_EXPECT(entity["wall"].flag()&&entity["cube"][1u].number()==3&&entity["colliderAt"][1u].number()==1.5f);
+    NX_EXPECT(!doc.setVisualActorProperty(id,0,"simpleCollision","0,3,4;0,0,0",error));
+    NX_EXPECT(doc.undo()&&doc.visualActorSource(id,source,error)&&source==before);
+    NX_EXPECT(doc.redo()&&doc.visualActorSource(id,source,error)&&source==after);
+    NX_EXPECT(doc.createVisualActorChild(id,child,error));
+    NX_EXPECT(doc.setVisualActorProperty(child,0,"simpleCollision","1,2,3;0,1,0",error));
+    NX_EXPECT(doc.visualActorSource(child,source,error)&&json.parse(source.data(),source.size()));
+    NX_EXPECT(json.root()["entities"][0u]["cube"][1u].number()==2);
+    NX_EXPECT(doc.visualActorSource(id,source,error)&&source==after);
+}
 NX_TEST(nativeActorPhysicsAndRootInstanceOverrides)
 {
     BlueprintDocument doc;doc.create();std::string error,id,source,bytes;
