@@ -32,6 +32,10 @@ jobs:
         run: |
           python3 engine/tools/blueprint/generate_catalog.py --check
           python3 engine/tools/blueprint/generate_native_catalog.py --check
+      - name: Verify generated examples and legacy compiler fixtures
+        run: |
+          node engine/tools/blueprint/make_examples.js --check
+          node engine/tools/blueprint/test_compiler.js
       - name: Verify editable orbit fixture matches native test fixture
         run: python3 -c 'from pathlib import Path; a=Path("engine/tools/blueprint/examples/camera-orbit.bp.json").read_text(); b=Path("engine/tests/blueprint_orbit_fixture.h").read_text(); assert "R\"BP_ORBIT("+a+")BP_ORBIT\"" in b; t=Path("engine/tools/blueprint/examples/camera-orbit-timeline.bp.json").read_text(); assert "R\"BP_TIME("+t+")BP_TIME\"" in b; u=Path("engine/tools/blueprint/examples/camera-orbit-timed.bp.json").read_text(); assert "R\"BP_TIMED("+u+")BP_TIMED\"" in b'
       - name: Compile native document tests with sanitizers
@@ -46,6 +50,140 @@ jobs:
           ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
         run: /tmp/nx-blueprint-document-tests
+
+  runtime-sanitizer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: document
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.source_ref || github.sha }}
+          submodules: true
+          persist-credentials: false
+      - name: Install native dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libx11-dev libgl-dev
+      - name: Configure symbolized AddressSanitizer build
+        run: cmake -S engine -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo "-DCMAKE_C_FLAGS=-fsanitize=address -fno-omit-frame-pointer" "-DCMAKE_CXX_FLAGS=-fsanitize=address -fno-omit-frame-pointer"
+      - name: Build runtime regression executable
+        run: cmake --build build --target nx_blueprint_tests --parallel 4
+      - name: Run Blueprint runtime with leak detection
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1:fast_unwind_on_malloc=0
+        run: ctest --test-dir build --output-on-failure --timeout 300 -R '^blueprint_runtime
+    timeout-minutes: 20
+    needs: document
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.source_ref || github.sha }}
+          submodules: true
+          persist-credentials: false
+      - name: Install native desktop build dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libx11-dev libgl-dev xvfb libgl1-mesa-dri xauth xdotool python3-xlib ffmpeg
+      - name: Configure
+        run: cmake -S engine -B build -DCMAKE_BUILD_TYPE=Release
+      - name: Build native editor and regression executables
+        run: cmake --build build --target showcase nx_blueprint_tests nx_blueprint_document_tests nx_blueprint_platform_tests --parallel 4
+      - name: Run native document and engine tests
+        run: ctest --test-dir build --output-on-failure --timeout 300 -R '^(blueprint_runtime|blueprint_native_document|blueprint_platform_files)$'
+      - name: Start editor with null GPU
+        if: ${{ !cancelled() }}
+        run: build/showcase/nexgen --blueprint-studio --null --frames 180 --saves "$RUNNER_TEMP/bp-null-saves"
+      - name: Start editor with native desktop renderer
+        if: ${{ !cancelled() }}
+        run: xvfb-run -a -s "-screen 0 1280x720x24 -noreset" build/showcase/nexgen --blueprint-studio --hidden --frames 600 --saves "$RUNNER_TEMP/bp-desktop-saves"
+      - name: Reopen native editor with existing save directory
+        if: ${{ !cancelled() }}
+        run: xvfb-run -a -s "-screen 0 1280x720x24 -noreset" build/showcase/nexgen --blueprint-studio --hidden --frames 120 --saves "$RUNNER_TEMP/bp-desktop-saves"
+      - name: Exercise real X11 input, crash recovery, save, play, export and large graph
+        run: xvfb-run -a -s "-screen 0 1280x720x24 -noreset" /usr/bin/python3 engine/tools/blueprint/test_native_desktop.py build/showcase/nexgen "$RUNNER_TEMP/bp-desktop-operational"
+      - name: Exercise compact 1080p actor class editor and resize
+        run: xvfb-run -a -s "-screen 0 1920x1080x24 -noreset" /usr/bin/python3 engine/tools/blueprint/test_compact_desktop.py build/showcase/nexgen "$RUNNER_TEMP/bp-compact-desktop"
+      - name: Retain compact editor screenshot evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: compact-desktop-evidence
+          path: |
+            ${{ runner.temp }}/bp-compact-desktop/*.png
+            ${{ runner.temp }}/bp-compact-desktop/*.log
+          if-no-files-found: ignore
+      - name: Exercise editable 3D camera orbit and capture native frames
+        if: ${{ !cancelled() }}
+        run: xvfb-run -a -s "-screen 0 1280x720x24 -noreset" /usr/bin/python3 engine/tools/blueprint/test_camera_orbit_desktop.py build/showcase/nexgen "$RUNNER_TEMP/bp-camera-orbit"
+      - name: Exercise simplified Timeline orbit and capture native frames
+        if: ${{ !cancelled() }}
+        run: xvfb-run -a -s "-screen 0 1280x720x24 -noreset" /usr/bin/python3 engine/tools/blueprint/test_camera_orbit_desktop.py build/showcase/nexgen "$RUNNER_TEMP/bp-camera-timeline" camera-orbit-timeline.bp.json
+      - name: Author the Timeline orbit from a blank native workspace
+        if: ${{ !cancelled() }}
+        run: xvfb-run -a -s "-screen 0 1280x720x24 -noreset" /usr/bin/python3 engine/tools/blueprint/test_camera_orbit_desktop.py build/showcase/nexgen "$RUNNER_TEMP/bp-camera-authored" camera-orbit-timeline.bp.json --author
+      - name: Exercise timed camera action and capture native frames
+        if: ${{ !cancelled() }}
+        run: xvfb-run -a -s "-screen 0 1280x720x24 -noreset" /usr/bin/python3 engine/tools/blueprint/test_camera_orbit_desktop.py build/showcase/nexgen "$RUNNER_TEMP/bp-camera-timed" camera-orbit-timed.bp.json --record
+      - name: Author the seven-node timed orbit from a blank workspace
+        if: ${{ !cancelled() }}
+        run: xvfb-run -a -s "-screen 0 1280x720x24 -noreset" /usr/bin/python3 engine/tools/blueprint/test_camera_orbit_desktop.py build/showcase/nexgen "$RUNNER_TEMP/bp-camera-timed-authored" camera-orbit-timed.bp.json --author --record
+      - name: Retain native camera orbit evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: camera-orbit-native-evidence
+          path: |
+            ${{ runner.temp }}/bp-camera-orbit/
+            ${{ runner.temp }}/bp-camera-timeline/
+            ${{ runner.temp }}/bp-camera-timed/
+            ${{ runner.temp }}/bp-camera-authored/
+            ${{ runner.temp }}/bp-camera-timed-authored/
+          if-no-files-found: ignore
+      - name: Verify native process contention and crash release
+        run: python3 engine/tools/blueprint/test_native_lease.py build/showcase/nexgen "$RUNNER_TEMP/bp-linux-lease"
+      - name: Retain operational test logs
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: native-desktop-operational-logs
+          path: |
+            ${{ runner.temp }}/bp-desktop-operational/*.log
+            ${{ runner.temp }}/bp-linux-lease/*.log
+          if-no-files-found: ignore
+
+  portable-desktop:
+    name: Native Studio (${{ matrix.name }})
+    needs: document
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: windows-x64, os: windows-latest, binary: build/showcase/Release/nexgen.exe }
+          - { name: macos-arm64, os: macos-latest, binary: build/showcase/nexgen.app/Contents/MacOS/nexgen }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.source_ref || github.sha }}
+          submodules: true
+          persist-credentials: false
+      - name: Configure
+        run: cmake -S engine -B build -DCMAKE_BUILD_TYPE=Release
+      - name: Build native editor and regression executables
+        run: cmake --build build --config Release --target showcase nx_blueprint_tests nx_blueprint_document_tests nx_blueprint_platform_tests --parallel 4
+      - name: Run native document and runtime tests
+        run: ctest --test-dir build -C Release --output-on-failure --timeout 300 -R '^(blueprint_runtime|blueprint_native_document|blueprint_platform_files)$'
+      - name: Verify native process contention and crash release
+        run: python3 engine/tools/blueprint/test_native_lease.py "${{ matrix.binary }}" "$RUNNER_TEMP/bp-portable-lease"
+      - name: Retain native process logs
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: native-lease-${{ matrix.name }}
+          path: ${{ runner.temp }}/bp-portable-lease/*.log
+          if-no-files-found: ignore
+
 
   workspace:
     runs-on: ubuntu-22.04

@@ -217,3 +217,8 @@ The placement viewport now reads the selected saved Redux scene from scenes.json
 ## Graph panel visibility and full-width focus layout
 
 The navigator and node library/details dock can independently hide or restore via Layout, preserving the original dock widths and graph coordinate system. Graph clip, minimap, tabs and content docking expand into reclaimed width; hidden panel input/resize targets are disabled. Visibility persists. Native desktop coverage exercises hiding/restoring both. This is a useful dock visibility feature, not universal drag docking or a detachable OS-window implementation. The engine still presents through one Platform native window and GPU Device; separate render targets, per-window input, resize/close lifecycles and shared resource ownership must be designed before true multi-window editing can safely ship.
+
+
+## Beta 3 release regression fixes
+
+Regenerated the legacy compiler fixture using the repository generator. Corrected borrowed Entity handle ownership in Space::activateActorCamera, actorComponent and validEntity using the established @+ registration convention; added a direct reference-count test. The release sanitizer reported eight 72-byte allocations (consistent with EntityRef allocation size), so the normal native CI now also runs a symbolized ASan runtime job with leak detection and the generated fixture/legacy compiler consistency check. Full verification is required before release.
