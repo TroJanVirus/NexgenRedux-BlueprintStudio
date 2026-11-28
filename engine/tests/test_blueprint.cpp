@@ -8,6 +8,7 @@
 #include "app/blueprint_workspace.h"
 #include "script/debugger.h"
 #include "tools/blueprint/native_assets.h"
+#include "assets/decode.h"
 #endif
 
 #include <math.h>
@@ -912,6 +913,47 @@ NX_TEST(nativeProjectAssetsAreCopiedWithoutChangingOriginals)
     NX_EXPECT(r.platform.files["own/"+clone+"/Screen/asset/scene.json"]=="{\"scene\":[]}");
     NX_EXPECT(r.platform.files["own/scene.json"]=="{\"scene\":[]}");
     NX_EXPECT(!blueprintCopyAssets(r.platform,root,clone,"Screen",error));
+}
+NX_TEST(nativeBitmapFontImportsCompanionAndRejectsInvalidPairs)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    r.platform.workspaceFiles=true;
+    std::string root,error;
+    NX_EXPECT(blueprintCreateAssetRoot(r.platform,root,error));
+    const auto descriptor=[](const std::string& page,unsigned width=2)
+    {
+        return "common lineHeight=2 base=2 scaleW="+std::to_string(width)+" scaleH=2 pages=1\npage id=0 file=\""+page+"\"\nchar id=65 x=0 y=0 width=1 height=2 xoffset=0 yoffset=0 xadvance=1 page=0\n";
+    };
+    r.platform.files["own/hud.fnt"]=descriptor("atlas.png");
+    const auto base="own/"+root+"/Screen/asset/";
+    NX_EXPECT(blueprintAssetImportPath("hud.fnt")=="font/hud.fnt");
+    NX_EXPECT(!blueprintImportAsset(r.platform,root,"Screen","hud.fnt",error));
+    NX_EXPECT(r.platform.files.count(base+"font/hud.fnt")==0);
+    const u8 rgba[16]={255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255};
+    size_t size=0;auto* png=encodePng(rgba,2,2,size);
+    NX_EXPECT(png!=nullptr);if(!png)return;
+    const std::string atlas(reinterpret_cast<const char*>(png),size);freeImage(png);
+    r.platform.files["own/atlas.png"]=atlas;
+    NX_EXPECT(blueprintImportAsset(r.platform,root,"Screen","hud.fnt",error));
+    NX_EXPECT(r.platform.files[base+"font/atlas.png"]==atlas);
+    NX_EXPECT(r.platform.files[base+"font/hud.fnt"]==r.platform.files["own/hud.fnt"]);
+    r.platform.files["own/second.fnt"]=descriptor("atlas.png");
+    NX_EXPECT(blueprintImportAsset(r.platform,root,"Screen","second.fnt",error));
+    r.platform.files["own/unsafe.fnt"]=descriptor("../atlas.png");
+    NX_EXPECT(!blueprintImportAsset(r.platform,root,"Screen","unsafe.fnt",error));
+    r.platform.files["own/wrong.fnt"]=descriptor("atlas.png",4);
+    NX_EXPECT(!blueprintImportAsset(r.platform,root,"Screen","wrong.fnt",error));
+    r.platform.files["own/atlas.png"]="different";
+    r.platform.files["own/conflict.fnt"]=descriptor("atlas.png");
+    NX_EXPECT(!blueprintImportAsset(r.platform,root,"Screen","conflict.fnt",error));
+    NX_EXPECT(r.platform.files[base+"font/atlas.png"]==atlas);
+    NX_EXPECT(r.platform.files.count(base+"font/conflict.fnt")==0);
+    BlueprintDocument project;project.create();project.assetRoot=root;
+    NX_EXPECT(blueprintExportPackage(r.platform,project,"font-project.bp.zip",error));
+    BlueprintDocument restored;
+    NX_EXPECT(blueprintImportPackage(r.platform,"font-project.bp.zip",restored,error));
+    NX_EXPECT(r.platform.files["own/"+restored.assetRoot+"/Screen/asset/font/atlas.png"]==atlas);
+    NX_EXPECT(r.platform.files["own/"+restored.assetRoot+"/Screen/asset/font/hud.fnt"]==r.platform.files["own/hud.fnt"]);
 }
 NX_TEST(nativeProjectPreviewReadsItsOwnAssetsNotSavedHostOverlays)
 {

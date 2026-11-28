@@ -3,6 +3,8 @@
 #include "base/json_tree.h"
 #include "base/json_value.h"
 #include "assets/decode.h"
+#include "assets/bitmap_font.h"
+#include "assets/formats.h"
 #include <unordered_set>
 #include <cmath>
 #include <algorithm>
@@ -225,6 +227,7 @@ namespace nx
     {
         if(!blueprintAssetName(file))return "";
         const auto ext=file.substr(file.find_last_of('.')==std::string::npos?file.size():file.find_last_of('.'));
+        if(ext==".fnt")return "font/"+file;
         for(const char* type:{".obj",".glb",".gltf",".stl",".fbx",".dae"})
             if(ext==type)return "model/"+file;
         for(const char* type:{".png",".jpg",".jpeg",".tga",".bmp",".dds"})
@@ -326,6 +329,45 @@ namespace nx
         if(slash!=std::string::npos&&!ensure(p,dest+relative.substr(0,slash)))
         {error="Cannot create native asset type folder.";return false;}
         size_t total=0;
+        if(file.ends_with(".fnt"))
+        {
+            // Use the same descriptor parser and texture formats as the runtime.
+            // Keep the atlas beside its descriptor, not in the generic picture folder.
+            const auto target="own/"+dest+relative;
+            if(p.fileTime(target.c_str())){error="Asset already exists: "+target;return false;}
+            FileData descriptor;
+            if(!p.readFile(("own/"+file).c_str(),descriptor,MemTag::General)||!descriptor.size||descriptor.size>1024*1024)
+            {error="Cannot read bitmap font descriptor (maximum 1 MiB).";return false;}
+            const std::string text(reinterpret_cast<const char*>(descriptor.data),descriptor.size);
+            FontData font{};char page[96]={};u32 w=0,h=0;
+            if(!parseBitmapFont(text.c_str(),text.size(),font,page,sizeof(page),w,h)||
+                !blueprintAssetName(page)||std::string(page)==file||!w||!h||w>2048||h>2048)
+            {error="Unsupported bitmap font: use a single-page text BMFont with a portable atlas name and size up to 2048.";return false;}
+            const auto sourcePage="own/"+std::string(page),targetPage="own/"+dest+"font/"+page;
+            FileData staged,existing;
+            const bool hasStaged=p.readFile(sourcePage.c_str(),staged,MemTag::General);
+            const bool hasExisting=p.readFile(targetPage.c_str(),existing,MemTag::General);
+            if(!hasStaged&&!hasExisting)
+            {error="Missing bitmap font atlas: "+std::string(page)+". Drop the atlas and descriptor together, or stage the atlas first.";return false;}
+            if(hasStaged&&hasExisting&&(staged.size!=existing.size||std::memcmp(staged.data,existing.data,staged.size)!=0))
+            {error="A different bitmap font atlas already exists: "+std::string(page);return false;}
+            const auto& image=hasStaged?staged:existing;
+            if(!image.size||image.size>kMaxFile)
+            {error="Invalid bitmap font atlas size.";return false;}
+            u32 iw=0,ih=0;gpu::TextureData cooked;
+            if(readCookedTexture(image.data,image.size,cooked)){iw=cooked.width;ih=cooked.height;}
+            else if(imageSize(image.data,image.size,iw,ih)&&iw==w&&ih==h)
+            {
+                auto* pixels=decodeImage(image.data,image.size,iw,ih);
+                if(!pixels){error="Cannot decode bitmap font atlas.";return false;}
+                freeImage(pixels);
+            }
+            if(iw!=w||ih!=h)
+            {error="Bitmap font atlas dimensions do not match the descriptor.";return false;}
+            // Publish the descriptor last so a failed copy never advertises a missing atlas.
+            if(!hasExisting&&!copy(p,sourcePage,targetPage,total,error))return false;
+            return copy(p,"own/"+file,target,total,error);
+        }
         return copy(p,"own/"+file,"own/"+dest+relative,total,error);
     }
 
