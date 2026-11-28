@@ -5093,6 +5093,32 @@ namespace nx
         }
         if(kWidth>1120)c.text(*m_font,m_remoteGap?"Trace capped / gaps":"Remote debug",824,y+1,muted);
     }
+    bool BlueprintWorkspace::canPushLiveSource()const
+    {
+        return m_document.target().xbox()&&m_device.ready()&&m_device.liveSupported()&&!m_device.paused()&&!m_device.liveBusy()&&
+            !m_deployBaseline.empty()&&!m_deployRunning&&m_device.address()==m_deployHost&&m_device.launchId()==m_deployInstallId&&
+            m_document.name==m_deployProject&&m_document.assetRoot==m_deployAssetRoot&&!m_device.liveFingerprint().empty();
+    }
+    void BlueprintWorkspace::pushLiveSource(Services& s)
+    {
+        if(!canPushLiveSource()){m_deviceFeedback="Attach to the current project's installed development title first; resume gameplay.";return;}
+        std::vector<BlueprintScreenOutput> screens;std::string error;
+        if(!compileBlueprintProject(m_document,screens,error)){m_deviceFeedback=error;return;}
+        for(const auto& screen:screens)
+        {
+            if(screen.id!=m_device.liveScreen())continue;
+            if(screen.source.size()>StudioLiveSource::limit){m_deviceFeedback="Source exceeds 128 KiB. Use deployment instead.";return;}
+            if(!s.platform->showMessage("Live Link","Restart the active screen with updated script logic? Screen state resets. Installed assets and files do not change.",true))return;
+            for(const auto& key:m_deployLaunchKeys)if(key.first==m_device.launchId())
+            {
+                m_deviceFeedback=m_device.pushLive(screen.source,key.second,s.platform->seconds())?
+                    "Live Link requested. Resync watches after reload.":"Live Link could not start.";
+                return;
+            }
+            break;
+        }
+        m_deviceFeedback="No matching exported screen or installation key.";
+    }
     void BlueprintWorkspace::updateDeviceManager(Services& s,float x,float y,bool click)
     {
         auto& input=*s.input;
@@ -5114,7 +5140,8 @@ namespace nx
             if(action<5)m_device.control(action);
             return;
         }
-        if(in(x,y,140,600,340,638)){syncDeviceBreakpoints();return;}
+        if(in(x,y,900,480,1140,512)){pushLiveSource(s);return;}
+        if(in(x,y,140,600,340,638)){if(!m_device.liveBusy())syncDeviceBreakpoints();return;}
         if(in(x,y,350,600,550,638)){m_deviceAddressEditing=false;input.setTyping(false);locateDeviceNode();return;}
         if(in(x,y,560,600,760,638)){m_deviceVariables=!m_deviceVariables;return;}
         if(in(x,y,770,600,990,638))
@@ -5141,6 +5168,9 @@ namespace nx
         if(rows.empty())c.text(*m_font,m_deviceVariables?"Pause the remote script to inspect its locals.":"No measured telemetry. Older runtimes may not support counters.",140,318,muted);
         for(size_t i=0;i<rows.size()&&i<14;++i)
         {const float x=140+500.f*(i/7),y=318+27.f*(i%7);c.clip(x,y,490,26);c.text(*m_font,rows[i].c_str(),x,y,text);c.noClip();}
+        c.clip(140,480,740,32);c.text(*m_font,(m_device.liveStatus().empty()?"Live Link: "+m_device.liveScreen():m_device.liveStatus()).c_str(),140,490,muted);c.noClip();
+        c.roundRect(900,480,240,32,4,canPushLiveSource()?Color{0.20f,0.32f,0.45f,1}:Color{0.20f,0.22f,0.25f,1});
+        c.text(*m_font,m_device.liveBusy()?"Updating...":"Push live script",1020,486,canPushLiveSource()?text:muted,Align::Center);
         c.clip(140,520,1000,24);c.text(*m_font,m_device.file().empty()?"Script location: none":(m_device.file()+":"+std::to_string(m_device.line())).c_str(),140,520,accent);c.noClip();
         c.clip(140,550,1000,24);c.text(*m_font,("Last log: "+m_device.log()).c_str(),140,550,muted);c.noClip();
         c.clip(140,576,1000,24);c.text(*m_font,m_deviceFeedback.empty()?"Tracked allocations are not total physical memory use.":m_deviceFeedback.c_str(),140,578,muted);c.noClip();
@@ -5178,7 +5208,7 @@ namespace nx
                 m_deployStatus=(ok?"Complete: ":"Failed: ")+std::string(root["message"].text());
                 if(ok&&!m_deployJobHost.empty())
                 {
-                    m_deployBaseline=m_deployCandidate;m_deployHost=m_deployJobHost;m_deployRemote=m_deployJobRemote;
+                    m_deployInstallId.clear();m_deployBaseline=m_deployCandidate;m_deployHost=m_deployJobHost;m_deployRemote=m_deployJobRemote;
                     m_deployProject=m_deployJobProject;m_deployAssetRoot=m_deployJobRoot;
                     FileData identity,secret;
                     if(s.platform->readFile((m_deployCandidate+"/media/studio-install.id").c_str(),identity,MemTag::General)&&identity.size==32&&
@@ -5189,7 +5219,7 @@ namespace nx
                         if(studioLaunchIdentity(id)&&studioLaunchIdentity(key))
                         {
                             if(m_deployLaunchKeys.size()>=8)m_deployLaunchKeys.erase(m_deployLaunchKeys.begin());
-                            m_deployLaunchKeys.emplace_back(id,key);
+                            m_deployLaunchKeys.emplace_back(id,key);m_deployInstallId=id;
                         }
                     }
                 }

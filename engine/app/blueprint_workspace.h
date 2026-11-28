@@ -401,6 +401,9 @@ namespace nx
         size_t m_deployStart=0;
         bool m_deployRunning=false,m_deployPaste=false;
         void syncDeviceBreakpoints();
+        bool canPushLiveSource()const;
+        void pushLiveSource(Services& s);
+        std::string m_deployInstallId;
         void locateDeviceNode();
         void updateRemoteGraph(double now);
         void toggleRemoteTrace();

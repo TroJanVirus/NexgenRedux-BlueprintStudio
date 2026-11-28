@@ -3,6 +3,8 @@
 #include "base/json_tree.h"
 #include "base/json_value.h"
 #include "script/studio_launch.h"
+#include "script/studio_live_source.h"
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -19,6 +21,26 @@ namespace nx
         bool paused()const{return m_paused;}
         bool sourceIdentity()const{return m_sourceIdentity;}
         bool traceSupported()const{return m_traceSupported;}
+        bool liveSupported()const{return m_liveSupported;}
+        bool liveBusy()const{return m_liveStage!=0;}
+        const std::string& liveScreen()const{return m_liveScreen;}
+        const std::string& liveFingerprint()const{return m_liveFingerprint;}
+        const std::string& liveStatus()const{return m_liveStatus;}
+        bool pushLive(const std::string& source,const std::string& token,double now)
+        {
+            if(!m_ready||m_paused||!m_liveSupported||liveBusy()||m_liveScreen.empty()||
+                !StudioLiveSource::validHash(m_liveFingerprint)||!studioLaunchIdentity(token)||
+                source.empty()||source.size()>StudioLiveSource::limit||m_out.size()>2048)return false;
+            const auto hash=scriptFingerprint(source.data(),source.size());
+            if(hash==m_liveFingerprint){m_liveStatus="Current source is already running.";return true;}
+            JsonValue request;request.put("cmd")->setText("liveBegin");request.put("id")->setNumber(9);
+            request.put("token")->setText(token);request.put("screen")->setText(m_liveScreen);
+            request.put("expected")->setText(m_liveFingerprint);request.put("fingerprint")->setText(hash);
+            request.put("size")->setNumber(static_cast<double>(source.size()));
+            setTrace(false);
+            queue(request.write(true));m_liveBytes=source;m_liveOffset=0;m_liveStage=1;m_liveDeadline=now+10;
+            m_liveStatus="Sending source snapshot.";return true;
+        }
         const std::string& launchId()const{return m_launchId;}
         const std::string& launchStatus()const{return m_launchStatus;}
         const std::string& address()const{return m_address;}
@@ -47,7 +69,7 @@ namespace nx
         {
             m_socket.close();if(m_network)netStop();m_network=m_ready=m_paused=m_hello=m_sourceIdentity=m_traceSupported=m_tracing=m_traceOutstanding=m_traceGap=false;m_hits.clear();
             m_in.clear();m_out.clear();m_rows.clear();m_log.clear();m_file.clear();m_fingerprint.clear();m_variables.clear();m_line=0;
-            m_status="Disconnected";m_launchId.clear();m_address.clear();
+            m_status="Disconnected";m_launchId.clear();m_address.clear();m_liveSupported=false;m_liveStage=0;m_liveScreen.clear();m_liveFingerprint.clear();std::string().swap(m_liveBytes);
         }
         bool connect(const std::string& address,double now)
         {
@@ -77,8 +99,9 @@ namespace nx
             if(!m_ready&&now>m_deadline){fail("Redux debugger handshake timed out.");return;}
             if(state!=TcpState::Open)return;
             if(!m_hello){m_hello=true;queue("{\"cmd\":\"hello\",\"id\":1}");}
-            if(m_ready&&now>=m_poll){m_poll=now+1;queue("{\"cmd\":\"telemetry\",\"id\":4}");}
-            if(m_ready&&m_tracing&&!m_traceOutstanding&&now>=m_tracePoll){m_tracePoll=now+0.25;m_traceOutstanding=true;queue("{\"cmd\":\"traceDrain\",\"id\":7}");}
+            if(liveBusy()&&now>m_liveDeadline){m_liveStatus="Live Link timed out; reconnect to inspect actual running source.";fail("Live Link response timed out.");return;}
+            if(m_ready&&!liveBusy()&&now>=m_poll){m_poll=now+1;queue("{\"cmd\":\"telemetry\",\"id\":4}");if(m_liveSupported)queue("{\"cmd\":\"liveInfo\",\"id\":10}");}
+            if(m_ready&&!liveBusy()&&m_tracing&&!m_traceOutstanding&&now>=m_tracePoll){m_tracePoll=now+0.25;m_traceOutstanding=true;queue("{\"cmd\":\"traceDrain\",\"id\":7}");}
             if(!m_out.empty())
             {
                 const auto sent=m_socket.send(m_out.data(),m_out.size());m_out.erase(0,sent);
@@ -105,6 +128,25 @@ namespace nx
             if(m_out.size()+value.size()+1>8192)return;
             m_out+=value;m_out+='\n';
         }
+        void sendLiveChunk(double now)
+        {
+            JsonValue request;request.put("id")->setNumber(9);
+            if(m_liveOffset==m_liveBytes.size())
+            {
+                request.put("cmd")->setText("liveCommit");m_liveStage=3;m_liveDeadline=now+30;
+                m_liveStatus="Validating and restarting active screen.";
+            }
+            else
+            {
+                const size_t size=std::min(StudioLiveSource::chunkLimit,m_liveBytes.size()-m_liveOffset);
+                std::string hex;hex.reserve(size*2);const char* digits="0123456789abcdef";
+                for(size_t i=0;i<size;++i){const auto byte=static_cast<unsigned char>(m_liveBytes[m_liveOffset+i]);hex+=digits[byte>>4];hex+=digits[byte&15];}
+                request.put("cmd")->setText("liveChunk");request.put("offset")->setNumber(static_cast<double>(m_liveOffset));
+                request.put("hex")->setText(hex);m_liveOffset+=size;m_liveStage=2;m_liveDeadline=now+10;
+                m_liveStatus="Sending source: "+std::to_string(m_liveOffset)+" / "+std::to_string(m_liveBytes.size())+" bytes";
+            }
+            queue(request.write(true));
+        }
         void consume(const std::string& line,double now)
         {
             JsonTree tree;if(!tree.parse(line.data(),line.size()))return;
@@ -113,7 +155,7 @@ namespace nx
             if(event=="hello"&&id==1&&!m_ready)
             {
                 if(root["version"].exact()!=1){fail("Unsupported debugger protocol.");return;}
-                m_sourceIdentity=root["sourceIdentity"].flag();m_traceSupported=root["remoteTrace"].flag();m_launchId=root["launchId"].text();if(!studioLaunchIdentity(m_launchId))m_launchId.clear();m_ready=true;m_poll=now;m_status="Connected; waiting for device telemetry.";
+                m_sourceIdentity=root["sourceIdentity"].flag();m_traceSupported=root["remoteTrace"].flag();m_launchId=root["launchId"].text();if(!studioLaunchIdentity(m_launchId))m_launchId.clear();m_liveSupported=root["liveSource"].flag()&&!m_launchId.empty();m_ready=true;m_poll=now;m_status="Connected; waiting for device telemetry.";
                 queue("{\"cmd\":\"ready\",\"id\":2}");
             }
             else if(event=="stopped"&&m_ready)
@@ -126,6 +168,23 @@ namespace nx
             {m_paused=false;m_status="Running";m_file.clear();m_fingerprint.clear();m_variables.clear();m_line=0;}
             else if(event=="launchFailed"){m_launchStatus=root["text"].text();}
             else if(id==8){m_launchStatus=root["message"].text();}
+            else if(id==10&&m_liveSupported&&!liveBusy())
+            {
+                m_liveScreen=root["screen"].text();m_liveFingerprint=root["fingerprint"].text();
+                if(!StudioLiveSource::validHash(m_liveFingerprint))m_liveFingerprint.clear();
+            }
+            else if(id==9&&liveBusy())
+            {
+                const bool ok=root["liveOk"].flag();
+                if(!ok||m_liveStage==3)
+                {
+                    m_liveStatus=root["message"].text();m_liveStage=0;std::string().swap(m_liveBytes);
+                    m_liveFingerprint.clear();m_poll=now;
+                }
+                else if(m_liveStage==1||(m_liveStage==2&&root["received"].exact()==static_cast<double>(m_liveOffset)))
+                    sendLiveChunk(now);
+                else {m_liveStatus="Unexpected upload acknowledgement.";fail("Live Link acknowledgement mismatch.");}
+            }
             else if(event=="output")
             {m_log=std::string(root["text"].text()).substr(0,240);}
             else if(id==3&&m_paused)
@@ -180,6 +239,11 @@ namespace nx
         TcpSocket m_socket;
         bool m_network=false,m_ready=false,m_paused=false,m_hello=false,m_sourceIdentity=false;
         bool m_traceSupported=false,m_tracing=false,m_traceOutstanding=false,m_traceGap=false;
+        bool m_liveSupported=false;
+        unsigned m_liveStage=0;
+        size_t m_liveOffset=0;
+        double m_liveDeadline=0;
+        std::string m_liveScreen,m_liveFingerprint,m_liveStatus,m_liveBytes;
         double m_tracePoll=0;
         std::vector<RemoteHit> m_hits;
         double m_deadline=0,m_poll=0;
