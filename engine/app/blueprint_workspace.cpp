@@ -5120,6 +5120,18 @@ namespace nx
         button(770,600,220,"Play on Xbox",m_document.target().xbox());
         button(1000,600,150,"Back",true);
     }
+    bool BlueprintWorkspace::canUpdateXbox()const
+    {
+        return !m_deployRunning&&!m_deployBaseline.empty()&&m_deployHost==m_deployFields[4]&&m_deployRemote==m_deployFields[6]&&
+            m_deployProject==m_document.name&&m_deployAssetRoot==m_document.assetRoot&&!m_device.active();
+    }
+    bool BlueprintWorkspace::canLaunchXbox()const
+    {
+        if(m_deployRunning||m_deployBaseline.empty()||!m_device.ready()||m_device.paused()||
+            m_device.address()!=m_deployHost||studioLaunchPath(m_deployRemote).empty())return false;
+        for(const auto& key:m_deployLaunchKeys)if(key.first==m_device.launchId())return true;
+        return false;
+    }
     void BlueprintWorkspace::pollXboxDeploy(Services& s)
     {
         if(!m_deployRunning)return;
@@ -5132,7 +5144,27 @@ namespace nx
             if(result.size<=16384&&json.parse(reinterpret_cast<const char*>(result.data),result.size))
             {
                 const auto root=json.root();
-                m_deployStatus=(code==0&&root["ok"].flag()?"Complete: ":"Failed: ")+std::string(root["message"].text());
+                const bool ok=code==0&&root["ok"].flag();
+                m_deployStatus=(ok?"Complete: ":"Failed: ")+std::string(root["message"].text());
+                if(ok&&!m_deployJobHost.empty())
+                {
+                    m_deployBaseline=m_deployCandidate;m_deployHost=m_deployJobHost;m_deployRemote=m_deployJobRemote;
+                    m_deployProject=m_deployJobProject;m_deployAssetRoot=m_deployJobRoot;
+                    FileData identity,secret;
+                    if(s.platform->readFile((m_deployCandidate+"/media/studio-install.id").c_str(),identity,MemTag::General)&&identity.size==32&&
+                        s.platform->readFile((m_deployCandidate+"/media/studio-launch.key").c_str(),secret,MemTag::General)&&secret.size==32)
+                    {
+                        const std::string id(reinterpret_cast<const char*>(identity.data),identity.size);
+                        const std::string key(reinterpret_cast<const char*>(secret.data),secret.size);
+                        if(studioLaunchIdentity(id)&&studioLaunchIdentity(key))
+                        {
+                            if(m_deployLaunchKeys.size()>=8)m_deployLaunchKeys.erase(m_deployLaunchKeys.begin());
+                            m_deployLaunchKeys.emplace_back(id,key);
+                        }
+                    }
+                }
+                else if(!ok&&m_deployJobHost==m_deployHost&&m_deployJobRemote==m_deployRemote)
+                    m_deployBaseline.clear(); // uncertain remote state: require a fresh install
                 return;
             }
         }
@@ -5165,8 +5197,21 @@ namespace nx
                 else if(ch>=32&&ch<127&&value.size()<256)value+=static_cast<char>(ch);
             }
         }
-        if(!click||!in(x,y,140,600,430,638))return;
+        if(click&&in(x,y,740,600,990,638))
+        {
+            if(!canLaunchXbox()){m_deployStatus="Attach to a running Studio development title installed during this session first.";return;}
+            if(!s.platform->showMessage("Launch Xbox title","Exit the running Xbox title and launch the last verified installation?",true))return;
+            for(const auto& key:m_deployLaunchKeys)if(key.first==m_device.launchId())
+            {
+                m_deployStatus=m_device.launchTitle(m_deployRemote,key.second)?"Launch requested; check the device status.":"Launch could not be queued.";
+                return;
+            }
+            return;
+        }
+        const bool incremental=click&&in(x,y,440,600,730,638);
+        if(!incremental&&(!click||!in(x,y,140,600,430,638)))return;
         m_deployField=-1;input.setTyping(false);
+        if(incremental&&!canUpdateXbox()){m_deployStatus="Use the last successful FTP installation of this project, same address and folder; disconnect and exit to dashboard.";return;}
         if(!m_document.target().xbox()||screens.empty()){m_deployStatus="Select an Original Xbox project with a start screen.";return;}
         if(m_deployFields[0].empty()||m_deployFields[1].empty()||m_deployFields[2].empty()||m_deployFields[3].empty())
         {m_deployStatus="Set Python executable, deployment helper, Xbox runtime folder and cooker.";return;}
@@ -5176,7 +5221,8 @@ namespace nx
             u32 ip=0;
             if(!netParseAddress(m_deployFields[4].c_str(),ip)||!ip||ip==kBroadcast||m_deployFields[5].empty()||m_deployFields[6].empty()||m_deployPassword.empty())
             {m_deployStatus="For FTP, supply IPv4, user, new remote Games folder and password.";return;}
-            if(!s.platform->showMessage("Play on Xbox","Upload a NEW title using plaintext FTP on your trusted LAN? Existing titles will not be overwritten.",true))
+            const char* question=incremental?"Confirm the game is closed and the dashboard FTP server is running. Update ONLY verified existing project files?":"Upload a NEW title using plaintext FTP on your trusted LAN? Existing titles will not be overwritten.";
+            if(!s.platform->showMessage("Play on Xbox",question,true))
             {m_deployStatus="FTP cancelled.";return;}
         }
         if(!compileAndExport(s)){m_deployStatus=m_status;return;}
@@ -5190,8 +5236,15 @@ namespace nx
         request.put("runtime")->setText(m_deployFields[2]);request.put("cook")->setText(m_deployFields[3]);
         request.put("start")->setText(screens[m_deployStart%screens.size()]);
         request.put("host")->setText(m_deployFields[4]);request.put("user")->setText(m_deployFields[5]);request.put("remote")->setText(m_deployFields[6]);
+        if(incremental)
+        {
+            std::string previous;
+            if(!s.platform->blueprintOwnPath(m_deployBaseline.c_str(),previous)){m_deployStatus="Cannot resolve the previous verified build.";return;}
+            request.put("previous")->setText(previous);
+        }
         if(!writeVerified(s,job+"/request.json",request.write(false))){m_deployStatus=m_status;return;}
-        m_deployResult=job+"/result.json";
+        m_deployResult=job+"/result.json";m_deployCandidate=output;
+        m_deployJobHost=m_deployFields[4];m_deployJobRemote=m_deployFields[6];m_deployJobProject=m_document.name;m_deployJobRoot=m_document.assetRoot;
         m_deployRunning=s.platform->startBlueprintProcess(m_deployFields[0],{m_deployFields[1],"--request",requestPath},ftp?m_deployPassword:std::string());
         m_deployPassword.clear();
         m_deployStatus=m_deployRunning?"Cooking / preparing title in a separate process...":"Could not start the deployment helper.";
@@ -5200,7 +5253,7 @@ namespace nx
     {
         c.roundRect(100,64,1080,594,8,{0.15f,0.17f,0.20f,1});
         c.text(*m_font,"PLAY ON XBOX / BUILD & DEPLOY",120,78,accent);
-        c.text(*m_font,"Cook a fresh development title; optional FTP upload; then launch on the dashboard.",140,110,muted);
+        c.text(*m_font,"Build a new title, update an installed title from dashboard FTP, or launch from a connected development title.",140,110,muted);
         const char* labels[]={"Python executable","deploy_xbox.py path","Extracted Xbox runtime","Redux cook executable","FTP IPv4 (blank = local only)","FTP username","New remote folder","FTP password (not saved)"};
         for(int i=0;i<8;++i)
         {
@@ -5213,9 +5266,12 @@ namespace nx
         const auto screens=m_document.screens();
         c.roundRect(140,493,1000,33,4,{0.20f,0.32f,0.45f,1});
         c.text(*m_font,("Start screen: "+(screens.empty()?std::string("None"):screens[m_deployStart%screens.size()])+" >").c_str(),150,500,text);
-        c.clip(140,533,1000,62);c.paragraph(*m_font,m_deployStatus.empty()?"Use matching runtime and cooker. FTP is optional; password is not written to the job file.":m_deployStatus.c_str(),140,535,1000,muted);c.noClip();
+        const auto status=m_device.launchStatus().empty()?m_deployStatus:m_deployStatus+" | "+m_device.launchStatus();
+        c.clip(140,533,1000,62);c.paragraph(*m_font,status.empty()?"Use matching runtime and cooker. FTP is optional; password is not written to the job file.":status.c_str(),140,535,1000,muted);c.noClip();
         c.roundRect(140,600,290,38,4,m_deployRunning?Color{0.20f,0.22f,0.25f,1}:Color{0.20f,0.32f,0.45f,1});
         c.text(*m_font,m_deployRunning?"Working...":"Build / install new title",285,608,text,Align::Center);
+        c.roundRect(440,600,290,38,4,canUpdateXbox()?Color{0.20f,0.32f,0.45f,1}:Color{0.20f,0.22f,0.25f,1});c.text(*m_font,"Update installed title",585,608,canUpdateXbox()?text:muted,Align::Center);
+        c.roundRect(740,600,250,38,4,canLaunchXbox()?Color{0.20f,0.32f,0.45f,1}:Color{0.20f,0.22f,0.25f,1});c.text(*m_font,"Launch installed title",865,608,canLaunchXbox()?text:muted,Align::Center);
         c.roundRect(1000,600,150,38,4,{0.20f,0.32f,0.45f,1});c.text(*m_font,"Back",1075,608,text,Align::Center);
     }
     void BlueprintWorkspace::drawSceneBrowser(Canvas& c)

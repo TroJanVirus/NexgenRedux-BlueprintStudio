@@ -392,6 +392,11 @@ namespace nx
         void pollXboxDeploy(Services& s);
         std::string m_deployFields[7]={"python3","","","","","xbox",""};
         std::string m_deployPassword,m_deployStatus,m_deployResult;
+        std::string m_deployCandidate,m_deployBaseline,m_deployHost,m_deployRemote,m_deployProject,m_deployAssetRoot;
+        std::string m_deployJobHost,m_deployJobRemote,m_deployJobProject,m_deployJobRoot;
+        std::vector<std::pair<std::string,std::string>> m_deployLaunchKeys;
+        bool canUpdateXbox()const;
+        bool canLaunchXbox()const;
         int m_deployField=-1;
         size_t m_deployStart=0;
         bool m_deployRunning=false,m_deployPaste=false;

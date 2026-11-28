@@ -1,4 +1,6 @@
 #include "script/debugger.h"
+#include "script/studio_launch.h"
+#include "platform/console.h"
 #include "bindings/script_refs.h"
 #include "scene/space.h"
 #include "scene/world.h"
@@ -90,6 +92,7 @@ namespace nx
             return false;
         }
         m_host = &host;
+        loadLaunchIdentity();
         m_stringType = host.engine()->GetTypeIdByDecl("string");
         host.setWatcher(this);
         g_debugger = this;
@@ -128,6 +131,7 @@ namespace nx
         g_debugger = nullptr;
         m_host->setWatcher(nullptr);
         m_host = nullptr;
+        m_pendingLaunch.clear();m_launchKey.clear();m_launchId.clear();
         resetRemoteTrace();
         m_client.close();
         m_listener.close();
@@ -147,6 +151,19 @@ namespace nx
         }
     }
 
+    void ScriptDebugger::loadLaunchIdentity()
+    {
+        m_launchId.clear();m_launchKey.clear();
+        const auto* s=m_host&&m_host->engine()?static_cast<const Services*>(m_host->engine()->GetUserData()):nullptr;
+        if(!consoleAvailable()||!s||!s->development||!s->platform)return;
+        if(!s->platform->fileTime("studio-install.id")||!s->platform->fileTime("studio-launch.key"))return;
+        FileData identity,key;
+        if(!s->platform->readFile("studio-install.id",identity,MemTag::General)||identity.size!=32||
+            !s->platform->readFile("studio-launch.key",key,MemTag::General)||key.size!=32)return;
+        const std::string id(reinterpret_cast<const char*>(identity.data),identity.size);
+        const std::string secret(reinterpret_cast<const char*>(key.data),key.size);
+        if(studioLaunchIdentity(id)&&studioLaunchIdentity(secret)){m_launchId=id;m_launchKey=secret;}
+    }
     void ScriptDebugger::update()
     {
         if (m_host == nullptr)
@@ -174,6 +191,19 @@ namespace nx
             }
         }
         pump();
+        // Only the frame boundary may leave the running title. Never launch
+        // from a script callback or while the VM is suspended.
+        if(!m_pendingLaunch.empty())
+        {
+            if(!connected()){m_pendingLaunch.clear();return;}
+            if(!m_out.empty()||m_paused)return;
+            const auto image=m_pendingLaunch;m_pendingLaunch.clear();
+            if(!consoleLaunch(image.c_str()))
+            {
+                JsonValue event;putText(event,"event","launchFailed");putText(event,"text","Console refused to launch the requested title.");
+                send(event.write(true));flush();
+            }
+        }
     }
 
     void ScriptDebugger::pump()
@@ -298,8 +328,24 @@ namespace nx
             putNumber(reply, "version", 1);
             reply.put("sourceIdentity")->setFlag(true);
             reply.put("remoteTrace")->setFlag(true);
+            if(!m_launchId.empty())putText(reply,"launchId",m_launchId);
             putText(reply, "angelscript", ScriptHost::version());
             putNumber(reply, "id", id);
+            send(reply.write(true));
+        }
+        else if (name == "launchTitle")
+        {
+            const auto* token=ask.find("token");const auto* folder=ask.find("folder");
+            const std::string supplied=token?token->text():"";
+            const auto image=folder?studioLaunchPath(folder->text()):std::string();
+            unsigned difference=0;
+            if(supplied.size()==32&&m_launchKey.size()==32)
+                for(size_t i=0;i<32;++i)difference|=static_cast<unsigned>(supplied[i]^m_launchKey[i]);
+            else difference=1;
+            const bool allowed=!difference&&!m_paused&&m_pendingLaunch.empty()&&!image.empty()&&consoleAvailable();
+            if(allowed)m_pendingLaunch=image;
+            JsonValue reply;putNumber(reply,"id",id);reply.put("launchAccepted")->setFlag(allowed);
+            putText(reply,"message",allowed?"Launch accepted; reconnect after the title starts.":"Launch refused: running title, valid key and Games directory required.");
             send(reply.write(true));
         }
         else if (name == "trace")

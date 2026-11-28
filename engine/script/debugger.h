@@ -94,6 +94,8 @@ namespace nx
         };
 
         void pump();
+        std::string m_pendingLaunch,m_launchId,m_launchKey;
+        void loadLaunchIdentity();
         void handle(const char* text, size_t size);
         void send(const std::string& line);
         void flush();

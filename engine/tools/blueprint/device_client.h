@@ -1,6 +1,8 @@
 #pragma once
 #include "net/socket.h"
 #include "base/json_tree.h"
+#include "base/json_value.h"
+#include "script/studio_launch.h"
 #include <string>
 #include <vector>
 
@@ -17,6 +19,18 @@ namespace nx
         bool paused()const{return m_paused;}
         bool sourceIdentity()const{return m_sourceIdentity;}
         bool traceSupported()const{return m_traceSupported;}
+        const std::string& launchId()const{return m_launchId;}
+        const std::string& launchStatus()const{return m_launchStatus;}
+        const std::string& address()const{return m_address;}
+        bool launchTitle(const std::string& folder,const std::string& token)
+        {
+            if(!m_ready||m_paused||m_launchId.empty()||!studioLaunchIdentity(token)||studioLaunchPath(folder).empty())return false;
+            JsonValue request;request.put("cmd")->setText("launchTitle");request.put("id")->setNumber(8);
+            request.put("folder")->setText(folder);request.put("token")->setText(token);
+            const auto bytes=request.write(true);
+            if(m_out.size()+bytes.size()+1>8192)return false;
+            queue(bytes);m_launchStatus="Launch requested; awaiting runtime response.";return true;
+        }
         bool tracing()const{return m_tracing;}
         struct RemoteHit {std::string file,fingerprint;unsigned line=0,run=0,depth=0;};
         std::vector<RemoteHit> takeTrace(bool& gap){gap=m_traceGap;m_traceGap=false;std::vector<RemoteHit> result;result.swap(m_hits);return result;}
@@ -33,7 +47,7 @@ namespace nx
         {
             m_socket.close();if(m_network)netStop();m_network=m_ready=m_paused=m_hello=m_sourceIdentity=m_traceSupported=m_tracing=m_traceOutstanding=m_traceGap=false;m_hits.clear();
             m_in.clear();m_out.clear();m_rows.clear();m_log.clear();m_file.clear();m_fingerprint.clear();m_variables.clear();m_line=0;
-            m_status="Disconnected";
+            m_status="Disconnected";m_launchId.clear();m_address.clear();
         }
         bool connect(const std::string& address,double now)
         {
@@ -43,7 +57,7 @@ namespace nx
             if(!netStart()){m_status="Network unavailable.";return false;}
             m_network=true;
             if(!m_socket.connect({ip,4711})){fail("Could not connect to TCP 4711.");return false;}
-            m_deadline=now+8;m_status="Connecting to Redux debugger...";return true;
+            m_address=address;m_launchStatus.clear();m_deadline=now+8;m_status="Connecting to Redux debugger...";return true;
         }
         void control(unsigned action)
         {
@@ -99,7 +113,7 @@ namespace nx
             if(event=="hello"&&id==1&&!m_ready)
             {
                 if(root["version"].exact()!=1){fail("Unsupported debugger protocol.");return;}
-                m_sourceIdentity=root["sourceIdentity"].flag();m_traceSupported=root["remoteTrace"].flag();m_ready=true;m_poll=now;m_status="Connected; waiting for device telemetry.";
+                m_sourceIdentity=root["sourceIdentity"].flag();m_traceSupported=root["remoteTrace"].flag();m_launchId=root["launchId"].text();if(!studioLaunchIdentity(m_launchId))m_launchId.clear();m_ready=true;m_poll=now;m_status="Connected; waiting for device telemetry.";
                 queue("{\"cmd\":\"ready\",\"id\":2}");
             }
             else if(event=="stopped"&&m_ready)
@@ -110,6 +124,8 @@ namespace nx
             }
             else if(event=="continued")
             {m_paused=false;m_status="Running";m_file.clear();m_fingerprint.clear();m_variables.clear();m_line=0;}
+            else if(event=="launchFailed"){m_launchStatus=root["text"].text();}
+            else if(id==8){m_launchStatus=root["message"].text();}
             else if(event=="output")
             {m_log=std::string(root["text"].text()).substr(0,240);}
             else if(id==3&&m_paused)
@@ -167,7 +183,7 @@ namespace nx
         double m_tracePoll=0;
         std::vector<RemoteHit> m_hits;
         double m_deadline=0,m_poll=0;
-        std::string m_in,m_out,m_status="Disconnected",m_log,m_file,m_fingerprint;
+        std::string m_in,m_out,m_status="Disconnected",m_log,m_file,m_fingerprint,m_launchId,m_launchStatus,m_address;
         unsigned m_line=0;
         std::vector<std::string> m_rows,m_variables;
     };
