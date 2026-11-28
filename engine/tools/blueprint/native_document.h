@@ -92,6 +92,10 @@ namespace nx
         // Atomic replacement validates all references, including forward references.
         bool replaceVisualAssets(const std::vector<VisualAsset>& assets,std::string& error);
         bool createVisualAsset(const std::string& kind,std::string& id,std::string& error);
+        bool cameraSequenceKeys(const std::string& id,std::vector<BlueprintCameraKey>& keys,std::string& error) const;
+        bool setCameraSequenceKeys(const std::string& id,const std::vector<BlueprintCameraKey>& keys,std::string& error);
+        bool promoteCameraSequence(size_t graph,size_t node,const std::string& title,const std::vector<BlueprintCameraKey>& keys,std::string& id,std::string& error);
+        bool placeCameraSequence(const std::string& owner,const std::string& id,size_t& graph,size_t& node,std::string& error);
         bool renameVisualAsset(const std::string& id,const std::string& title,std::string& error);
         bool removeVisualAsset(const std::string& id,std::string& error);
         bool appendVisualWidget(const std::string& id,const std::string& kind,const std::string& label,std::string& error,const std::string& parent="");

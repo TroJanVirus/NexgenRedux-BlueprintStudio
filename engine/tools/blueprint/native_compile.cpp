@@ -364,10 +364,11 @@ namespace nx
                 }
                 if(n.kind=="camera:sequence")
                 {
-                    if(incoming(to,"keys"))return fail(to,"Camera keys must be authored in Sequencer, not linked.");
+                    if(incoming(to,"keys")||incoming(to,"asset"))return fail(to,"Camera sequence keys and asset must be constant references.");
                     std::string raw="0,0,2,8,0,1,0,60,0;3,5,3,5,0,1,0,50,0;6,0,2,4,0,1,0,60,0";
                     for(const auto& v:n.values)if(v.pin=="keys")raw=v.value;
-                    std::vector<BlueprintCameraKey> keys;std::string why;if(!blueprintCameraKeys(raw,keys,why))return fail(to,why);
+                    std::string asset;for(const auto& v:n.values)if(v.pin=="asset")asset=v.value;
+                    std::vector<BlueprintCameraKey> keys;std::string why;if(!(asset.empty()?blueprintCameraKeys(raw,keys,why):document.cameraSequenceKeys(asset,keys,why)))return fail(to,why);
                     std::string play,stop,dt;if(!value(to,"play",play,0)||!value(to,"stop",stop,0)||!value(to,"dt",dt,0))return false;
                     const auto id=std::to_string(to),state="bp_seq_state_"+std::to_string(graphIndex)+"_"+id;
                     const auto active="bp_seq_active_"+id,finished="bp_seq_finished_"+id,elapsed="bp_seq_elapsed_"+id;

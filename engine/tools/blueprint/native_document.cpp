@@ -59,7 +59,7 @@ namespace nx
             {"player:target","Look target from yaw and pitch","Actors / Character","eye:Vec3|yaw:float|pitch:float","result:Vec3","bp_player_target","","","pure","Vec3","","in:eye|in:yaw|in:pitch",""},
             {"player:angles","Character facing from yaw","Actors / Character","yaw:float","result:Vec3","bp_player_angles","","","pure","Vec3","","in:yaw",""},
             {"camera:orbit-timed","Orbit camera around entity (timed)","Space / Camera","in:exec|name:string|radius:float|height:float|duration:float|turns:float|angle:float|loop:bool|reset:bool|dt:float","then:exec|progress:float|elapsed:float|finished:bool|found:bool","","","","","void","","","name:\"Target\"|radius:float(6)|height:float(2)|duration:float(8)|turns:float(1)|angle:float(60)|loop:false|reset:false|dt:dt"},
-            {"camera:sequence","Camera Sequence (Sequencer)","Space / Camera","in:exec|play:bool|stop:bool|dt:float|keys:string","then:exec|active:bool|finished:bool|elapsed:float","","","","","void","","","play:false|stop:false|dt:dt|keys:\"0,0,2,8,0,1,0,60,0;3,5,3,5,0,1,0,50,0;6,0,2,4,0,1,0,60,0\""},
+            {"camera:sequence","Camera Sequence (Sequencer)","Space / Camera","in:exec|play:bool|stop:bool|dt:float|asset:string|keys:string","then:exec|active:bool|finished:bool|elapsed:float","","","","","void","","","play:false|stop:false|dt:dt|asset:\"\"|keys:\"0,0,2,8,0,1,0,60,0;3,5,3,5,0,1,0,50,0;6,0,2,4,0,1,0,60,0\""},
             {"camera:activate-actor","Activate actor camera","Space / Camera","in:exec|actor:Entity@|component:string","then:exec|result:bool","Space::activateActorCamera","","","","bool","","in:actor|in:component","component:\"\""},
             {"actor:component","Get actor component","Space / Blueprint Classes","actor:Entity@|component:string","result:Entity@","Space::actorComponent","","","pure","Entity@","","in:actor|in:component"},
             {"actor:valid","Is valid entity","Space / Blueprint Classes","entity:Entity@","result:bool","Space::validEntity","","","pure","bool","","in:entity"},
@@ -632,7 +632,7 @@ namespace nx
             {
                 const auto& a=assets[i];
                 if(!blueprintAssetName(a.id,true)||!ids.emplace(a.id,i).second||
-                    (a.kind!="actor"&&a.kind!="widget"&&a.kind!="theme")||a.title.empty()||a.title.size()>128||
+                    (a.kind!="actor"&&a.kind!="widget"&&a.kind!="theme"&&a.kind!="sequence")||a.title.empty()||a.title.size()>128||
                     std::any_of(a.title.begin(),a.title.end(),[](unsigned char c){return c<32||c==127;})||
                     a.source.empty()||a.source.size()>64*1024||a.source.find('\0')!=std::string::npos||
                     a.dependencies.size()>32)
@@ -643,6 +643,7 @@ namespace nx
                 if(!tree.parse(a.source.data(),a.source.size())||
                     (a.kind=="widget"?!tree.root().isArray():!tree.root().isObject()))
                 {error="Invalid reusable visual asset JSON: "+a.id;return false;}
+                if(a.kind=="sequence"){std::vector<BlueprintCameraKey> keys;if(!tree.root()["keys"].isString()||!blueprintCameraKeys(tree.root()["keys"].text(),keys,error)||!a.dependencies.empty()){error="Invalid camera sequence asset: "+a.id;return false;}}
             }
             for(const auto& a:assets)
             {
@@ -652,7 +653,7 @@ namespace nx
                     const auto found=ids.find(dependency);
                     if(found==ids.end()||!seen.insert(dependency).second)
                     {error="Missing or duplicate visual asset dependency: "+a.id+" -> "+dependency;return false;}
-                    if((a.kind=="widget"&&assets[found->second].kind=="actor")||a.kind=="theme")
+                    if((a.kind=="widget"&&assets[found->second].kind=="actor")||a.kind=="theme"||assets[found->second].kind=="sequence")
                     {error="Invalid visual asset dependency kind: "+a.id;return false;}
                 }
             }
@@ -700,17 +701,54 @@ namespace nx
     }
     bool BlueprintDocument::createVisualAsset(const std::string& kind,std::string& id,std::string& error)
     {
-        if(kind!="actor"&&kind!="widget"&&kind!="theme"){error="Unknown visual asset kind.";return false;}
+        if(kind!="actor"&&kind!="widget"&&kind!="theme"&&kind!="sequence"){error="Unknown visual asset kind.";return false;}
         if(m_visualAssets.size()>=128){error="Visual asset limit reached.";return false;}
         // The ID is independent of the user-facing name. At this stage there
         // are no external scene-instance references; dependency links are checked.
         if(m_visualSerial>=999999999){error="Visual asset ID limit reached.";return false;}
         const std::string next=kind+"-"+std::to_string(m_visualSerial+1);
         auto assets=m_visualAssets;
-        assets.push_back({next,kind,kind=="actor"?"New Actor":kind=="theme"?"New Theme":"New Widget",
-            kind=="actor"?"{\"entities\":[{\"name\":\"Root\",\"shape\":\"box\",\"size\":[1,1,1]}]}":kind=="theme"?"{\"styles\":{}}":"[]",{}});
+        assets.push_back({next,kind,kind=="actor"?"New Actor":kind=="theme"?"New Theme":kind=="sequence"?"New Camera Sequence":"New Widget",
+            kind=="actor"?"{\"entities\":[{\"name\":\"Root\",\"shape\":\"box\",\"size\":[1,1,1]}]}":kind=="theme"?"{\"styles\":{}}":kind=="sequence"?"{\"keys\":\"0,0,2,8,0,1,0,60,0;3,5,3,5,0,1,0,50,0;6,0,2,4,0,1,0,60,0\"}":"[]",{}});
         if(!replaceVisualAssets(assets,error))return false;
         id=next;return true;
+    }
+    bool BlueprintDocument::cameraSequenceKeys(const std::string& id,std::vector<BlueprintCameraKey>& keys,std::string& error) const
+    {
+        const auto* asset=visualAsset(id);JsonTree tree;
+        if(!asset||asset->kind!="sequence"||!tree.parse(asset->source.data(),asset->source.size())){error="Unknown camera sequence: "+id;return false;}
+        return blueprintCameraKeys(tree.root()["keys"].text(),keys,error);
+    }
+    bool BlueprintDocument::setCameraSequenceKeys(const std::string& id,const std::vector<BlueprintCameraKey>& keys,std::string& error)
+    {
+        const auto raw=blueprintCameraKeyText(keys);std::vector<BlueprintCameraKey> checked;if(!blueprintCameraKeys(raw,checked,error))return false;
+        auto assets=m_visualAssets;for(auto& asset:assets)if(asset.id==id&&asset.kind=="sequence")
+        {const auto source="{\"keys\":\""+raw+"\"}";if(asset.source==source){error.clear();return true;}asset.source=source;return replaceVisualAssets(assets,error);}
+        error="Unknown camera sequence.";return false;
+    }
+    bool BlueprintDocument::promoteCameraSequence(size_t graph,size_t node,const std::string& title,const std::vector<BlueprintCameraKey>& keys,std::string& id,std::string& error)
+    {
+        if(graph>=graphs.size()||node>=graphs[graph].nodes.size()||graphs[graph].nodes[node].kind!="camera:sequence"){error="Select a camera sequence node.";return false;}
+        const auto raw=blueprintCameraKeyText(keys);std::vector<BlueprintCameraKey> checked;if(!blueprintCameraKeys(raw,checked,error))return false;
+        if(m_visualSerial>=999999999){error="Asset ID limit reached.";return false;}
+        const auto next="sequence-"+std::to_string(m_visualSerial+1);auto assets=m_visualAssets;
+        assets.push_back({next,"sequence",title,"{\"keys\":\""+raw+"\"}",{}});
+        if(!validVisualAssets(assets,error))return false;
+        recordGraphList();m_visualAssets=std::move(assets);++m_visualSerial;auto& values=graphs[graph].nodes[node].values;
+        auto at=std::find_if(values.begin(),values.end(),[](const InputValue& v){return v.pin=="asset";});
+        if(at==values.end())values.push_back({"asset",next});else at->value=next;
+        id=next;error.clear();return true;
+    }
+    bool BlueprintDocument::placeCameraSequence(const std::string& owner,const std::string& id,size_t& graph,size_t& node,std::string& error)
+    {
+        std::vector<BlueprintCameraKey> keys;if(!cameraSequenceKeys(id,keys,error))return false;
+        size_t index=0;for(;index<graphs.size();++index)if(graphs[index].owner==owner&&graphs[index].name=="update")break;
+        if(index==graphs.size()){error="Scene has no Update graph.";return false;}
+        BlueprintDocument staged;staged.graphs=graphs;staged.name=name;staged.assetRoot=assetRoot;staged.manifests=manifests;staged.m_visualAssets=m_visualAssets;staged.m_visualSerial=m_visualSerial;staged.m_nextId=m_nextId;
+        const auto ni=staged.graphs[index].nodes.size();
+        if(!staged.addNode(index,"camera:sequence",300.f,80.f+static_cast<float>(ni)*100.f,error)||!staged.setInputValue(index,ni,"asset",id,error))return false;
+        if(ni==1&&!staged.connect(index,0,"then",ni,"in",error))return false;
+        recordGraphList();graphs=std::move(staged.graphs);m_nextId=staged.m_nextId;graph=index;node=ni;error.clear();return true;
     }
     bool BlueprintDocument::renameVisualAsset(const std::string& id,const std::string& title,std::string& error)
     {
@@ -724,9 +762,9 @@ namespace nx
     }
     bool BlueprintDocument::removeVisualAsset(const std::string& id,std::string& error)
     {
-        for(const auto& g:graphs)for(const auto& node:g.nodes)if(node.kind=="ui:load-asset"||node.kind=="actor:spawn-asset")
-            for(const auto& v:node.values)if(v.pin=="id"&&v.value==id)
-            {error="Remove linked widget or actor nodes before deleting this asset.";return false;}
+        for(const auto& g:graphs)for(const auto& node:g.nodes)if(node.kind=="ui:load-asset"||node.kind=="actor:spawn-asset"||node.kind=="camera:sequence")
+            for(const auto& v:node.values)if((v.pin=="id"||v.pin=="asset")&&v.value==id)
+            {error="Remove linked nodes before deleting this asset.";return false;}
         auto next=m_visualAssets;
         const auto at=std::find_if(next.begin(),next.end(),[&](const VisualAsset& a){return a.id==id;});
         if(at==next.end()){error="Visual asset not found.";return false;}
@@ -2957,6 +2995,7 @@ namespace nx
         auto& n=graphs[graph].nodes[node];
         BlueprintNodeSpec spec;
         const auto* input=nodeSpec(graphs[graph],n,spec)?findPin(spec.inputs,pin):nullptr;
+        if(n.kind=="camera:sequence"&&pin=="asset"&&!value.empty()){std::vector<BlueprintCameraKey> keys;if(!cameraSequenceKeys(value,keys,error))return false;}
         if(n.kind=="camera:sequence"&&pin=="keys"){std::vector<BlueprintCameraKey> keys;if(!blueprintCameraKeys(value,keys,error))return false;value=blueprintCameraKeyText(keys);}
         if(input&&input->type=="Color"){unsigned rgb;if(blueprintParseRGB(value,rgb))value=blueprintRGBHex(rgb);}
         if(!input||!inputLiteral(input->type,value))

@@ -9,7 +9,7 @@
 using namespace nx;
 NX_TEST(nativeCatalogueContainsReferenceAPI)
 {
-    NX_EXPECT(blueprintCatalogue().size()==1540);
+    NX_EXPECT(blueprintCatalogue().size()==1541);
     const auto* save=blueprintSpec("api:Save:Save::set:string,string");
     NX_EXPECT(save&&save->inputs.size()==3&&save->outputs.size()==1);
     if(save&&save->inputs.size()==3)NX_EXPECT(save->inputs[0].type=="exec"&&save->inputs[2].type=="string");
@@ -242,6 +242,22 @@ NX_TEST(nativeNodeAnnotationsAndDisconnectRoundTrip)
     NX_EXPECT(copy.disconnectNode(0,1)&&copy.graphs[0].links.empty()&&copy.undo()&&copy.graphs[0].links.size()==1);
     const std::string reset;NX_EXPECT(copy.editNodeValues(0,1,{},nullptr,error,&reset));
     NX_EXPECT(copy.nodeDisplayName(1,copy.graphs[1].nodes[1]).empty()&&copy.undo()&&copy.nodeDisplayName(1,copy.graphs[1].nodes[1])==alias);
+}
+
+NX_TEST(nativeReusableCameraSequenceSceneReferences)
+{
+    BlueprintDocument doc;doc.create();std::string error,id,source,bytes;
+    NX_EXPECT(doc.createVisualAsset("sequence",id,error)&&doc.addScreen("arena",error));
+    size_t graph=0,node=0;NX_EXPECT(doc.placeCameraSequence("Screen",id,graph,node,error)&&graph==1&&node==1);
+    NX_EXPECT(doc.placeCameraSequence("arena",id,graph,node,error)&&doc.graphs[graph].owner=="arena");
+    std::vector<BlueprintCameraKey> keys;NX_EXPECT(doc.cameraSequenceKeys(id,keys,error));keys.back().fov=33;
+    NX_EXPECT(doc.setCameraSequenceKeys(id,keys,error)&&doc.renameVisualAsset(id,"Boss reveal",error));
+    NX_EXPECT(compileBlueprint(doc,source,error)&&source.find("float(33.000000)")!=std::string::npos);
+    NX_EXPECT(!doc.removeVisualAsset(id,error));
+    NX_EXPECT(doc.serialize(bytes,error));BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error));
+    NX_EXPECT(copy.cameraSequenceKeys(id,keys,error)&&keys.back().fov==33);
+    std::string promoted;NX_EXPECT(copy.promoteCameraSequence(1,1,"Alternate",keys,promoted,error)&&promoted!=id);
+    NX_EXPECT(copy.undo()&&copy.visualAsset(promoted)==nullptr&&copy.visualAsset(id)!=nullptr);
 }
 
 NX_TEST(nativeCameraSequenceKeysAndCompilation)
