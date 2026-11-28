@@ -48,6 +48,12 @@ jobs:
           python3 engine/tools/blueprint/generate_native_catalog.py --check
           node engine/tools/blueprint/make_examples.js --check
           node engine/tools/blueprint/test_compiler.js
+          node - <<'JS'
+          const assert = require('node:assert/strict');
+          const nodes = require('./engine/tools/blueprint/catalog.js').nodes;
+          for (const id of ['api:Thread:Thread:string','api:Channel:Channel:string','api:Channel:pop:Channel@:string out','api:Window:Window::resize:uint,uint','api:System:System::get_processors:','api:Samples:Samples:uint,uint,uint','api:AudioStream:AudioStream:uint,uint,float']) assert(nodes.some(n => n.id === id), id);
+          for (const call of ['wait','demand','Worker::sleep']) assert(!nodes.some(n => ['Thread','Channel'].includes(n.category) && n.call === call), call);
+          JS
           git diff --check
           git add engine/tools/blueprint/catalog.js engine/tools/blueprint/native_catalog.inc engine/tools/blueprint/examples engine/tests/blueprint_fixtures.h engine/tests/test_blueprint_document.cpp
           git diff --cached --stat
