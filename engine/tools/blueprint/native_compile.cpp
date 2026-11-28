@@ -166,6 +166,11 @@ namespace nx
                 {
                     return literalValue(node,n.kind.substr(8),n.ref,result);
                 }
+                if(n.kind=="camera:sequence")
+                {
+                    if(!available[node]||(pin!="active"&&pin!="finished"&&pin!="elapsed"))return fail(node,"Sequence outputs require execution first.");
+                    result="bp_seq_"+pin+"_"+std::to_string(node);return true;
+                }
                 if(n.kind=="time:timeline"||n.kind=="camera:orbit-timed")
                 {
                     if(!available[node])return fail(node,"Timeline output must be used after its execution in Update.");
@@ -356,6 +361,32 @@ namespace nx
                     if(n.kind=="time:delay")source+=pad+"}\n";
                     mark(start,to);
                     return n.kind=="time:timer"?flow(to,"then",indent,depth+1):true;
+                }
+                if(n.kind=="camera:sequence")
+                {
+                    if(incoming(to,"keys"))return fail(to,"Camera keys must be authored in Sequencer, not linked.");
+                    std::string raw="0,0,2,8,0,1,0,60,0;3,5,3,5,0,1,0,50,0;6,0,2,4,0,1,0,60,0";
+                    for(const auto& v:n.values)if(v.pin=="keys")raw=v.value;
+                    std::vector<BlueprintCameraKey> keys;std::string why;if(!blueprintCameraKeys(raw,keys,why))return fail(to,why);
+                    std::string play,stop,dt;if(!value(to,"play",play,0)||!value(to,"stop",stop,0)||!value(to,"dt",dt,0))return false;
+                    const auto id=std::to_string(to),state="bp_seq_state_"+std::to_string(graphIndex)+"_"+id;
+                    const auto active="bp_seq_active_"+id,finished="bp_seq_finished_"+id,elapsed="bp_seq_elapsed_"+id;
+                    const auto num=[](float f){return "float("+std::to_string(f)+")";};
+                    const auto vec=[&](const float* v){return "Vec3("+num(v[0])+", "+num(v[1])+", "+num(v[2])+")";};
+                    source+=pad+"bool bp_seq_play_"+id+" = "+play+";\n"+pad+"if (bp_seq_play_"+id+" && !"+state+"_held) { "+state+"_running = true; "+state+"_time = 0; }\n";
+                    source+=pad+state+"_held = bp_seq_play_"+id+";\n"+pad+"if ("+stop+") "+state+"_running = false;\n";
+                    source+=pad+"bool "+active+" = "+state+"_running;\n"+pad+"bool "+finished+" = false;\n"+pad+"float "+elapsed+" = "+state+"_time;\n";
+                    source+=pad+"if ("+active+")\n"+pad+"{\n"+pad+"    "+elapsed+" = min("+state+"_time, "+num(keys.back().time)+");\n";
+                    for(size_t i=1;i<keys.size();++i)
+                    {
+                        const auto& a=keys[i-1];const auto& b=keys[i];const auto f="bp_seq_mix_"+id;
+                        source+=pad+"    "+(i==1?"if (":"else if (")+elapsed+" < "+num(b.time)+")\n"+pad+"    {\n";
+                        source+=pad+"        float "+f+" = "+(b.cut?std::string("float(0)"):"clamp(("+elapsed+" - "+num(a.time)+") / "+num(b.time-a.time)+", float(0), float(1))")+";\n";
+                        source+=pad+"        Space::camera("+vec(a.from)+" + ("+vec(b.from)+" - "+vec(a.from)+") * "+f+", "+vec(a.to)+" + ("+vec(b.to)+" - "+vec(a.to)+") * "+f+", "+num(a.fov)+" + ("+num(b.fov-a.fov)+") * "+f+");\n"+pad+"    }\n";
+                    }
+                    const auto& last=keys.back();source+=pad+"    else Space::camera("+vec(last.from)+", "+vec(last.to)+", "+num(last.fov)+");\n";
+                    source+=pad+"    "+finished+" = "+elapsed+" >= "+num(last.time)+";\n"+pad+"    "+state+"_running = !"+finished+";\n"+pad+"    "+state+"_time = min("+num(last.time)+", "+elapsed+" + max(float(0), "+dt+"));\n"+pad+"}\n";
+                    available[to]=true;mark(start,to);return flow(to,"then",indent,depth+1);
                 }
                 if(n.kind=="time:timeline"||n.kind=="camera:orbit-timed")
                 {
@@ -1031,6 +1062,8 @@ namespace nx
                     const auto key=deferredKey(gi,ni);
                     result+="    bool "+key+"_active = false;\n    bool "+key+"_loop = false;\n    float "+key+"_period = 0;\n    float "+key+"_remaining = 0;\n";
                 }
+                else if(kind=="camera:sequence")
+                {const auto state="bp_seq_state_"+std::to_string(gi)+"_"+std::to_string(ni);result+="    float "+state+"_time = 0;\n    bool "+state+"_held = false;\n    bool "+state+"_running = false;\n";}
                 else if(kind=="time:timeline"||kind=="camera:orbit-timed")
                     result+="    float bp_timeline_state_"+std::to_string(gi)+"_"+std::to_string(ni)+" = 0;\n";
                 else if(kind=="flow:do-once"||kind=="flow:do-n"||kind=="flow:flip-flop"||kind=="flow:multi-gate"||kind=="flow:controlled-gate")

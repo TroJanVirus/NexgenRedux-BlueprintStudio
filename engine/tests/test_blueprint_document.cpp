@@ -244,6 +244,23 @@ NX_TEST(nativeNodeAnnotationsAndDisconnectRoundTrip)
     NX_EXPECT(copy.nodeDisplayName(1,copy.graphs[1].nodes[1]).empty()&&copy.undo()&&copy.nodeDisplayName(1,copy.graphs[1].nodes[1])==alias);
 }
 
+NX_TEST(nativeCameraSequenceKeysAndCompilation)
+{
+    std::string error,source;std::vector<BlueprintCameraKey> keys;
+    const std::string encoded="0,0,2,8,0,1,0,60,0;2,4,2,8,0,1,0,40,0;4,0,2,4,0,1,0,60,1";
+    NX_EXPECT(blueprintCameraKeys(encoded,keys,error));
+    NX_EXPECT(blueprintCameraSample(keys,1).from[0]==2&&blueprintCameraSample(keys,1).fov==50);
+    NX_EXPECT(blueprintCameraSample(keys,3).from[0]==4&&blueprintCameraSample(keys,4).from[0]==0);
+    NX_EXPECT(blueprintCameraKeyText(keys)==encoded);
+    NX_EXPECT(!blueprintCameraKeys("0,0,0,0,0,0,0,60,0",keys,error));
+    BlueprintDocument doc;doc.create();
+    NX_EXPECT(!doc.addNode(0,"camera:sequence",0,0,error));
+    NX_EXPECT(doc.addNode(1,"camera:sequence",300,60,error)&&doc.connect(1,0,"then",1,"in",error));
+    NX_EXPECT(doc.setInputValue(1,1,"keys",encoded,error)&&doc.setInputValue(1,1,"play","true",error));
+    NX_EXPECT(compileBlueprint(doc,source,error)&&source.find("bp_seq_state_1_1_running")!=std::string::npos&&source.find("Space::camera(")!=std::string::npos);
+    std::string bytes;NX_EXPECT(doc.serialize(bytes,error));BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error)&&compileBlueprint(copy,source,error));
+}
+
 NX_TEST(nativeMoveConnectionIsTransactional)
 {
     BlueprintDocument doc;doc.create();std::string error;

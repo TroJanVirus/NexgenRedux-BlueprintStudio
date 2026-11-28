@@ -59,6 +59,7 @@ namespace nx
             {"player:target","Look target from yaw and pitch","Actors / Character","eye:Vec3|yaw:float|pitch:float","result:Vec3","bp_player_target","","","pure","Vec3","","in:eye|in:yaw|in:pitch",""},
             {"player:angles","Character facing from yaw","Actors / Character","yaw:float","result:Vec3","bp_player_angles","","","pure","Vec3","","in:yaw",""},
             {"camera:orbit-timed","Orbit camera around entity (timed)","Space / Camera","in:exec|name:string|radius:float|height:float|duration:float|turns:float|angle:float|loop:bool|reset:bool|dt:float","then:exec|progress:float|elapsed:float|finished:bool|found:bool","","","","","void","","","name:\"Target\"|radius:float(6)|height:float(2)|duration:float(8)|turns:float(1)|angle:float(60)|loop:false|reset:false|dt:dt"},
+            {"camera:sequence","Camera Sequence (Sequencer)","Space / Camera","in:exec|play:bool|stop:bool|dt:float|keys:string","then:exec|active:bool|finished:bool|elapsed:float","","","","","void","","","play:false|stop:false|dt:dt|keys:\"0,0,2,8,0,1,0,60,0;3,5,3,5,0,1,0,50,0;6,0,2,4,0,1,0,60,0\""},
             {"camera:activate-actor","Activate actor camera","Space / Camera","in:exec|actor:Entity@|component:string","then:exec|result:bool","Space::activateActorCamera","","","","bool","","in:actor|in:component","component:\"\""},
             {"actor:component","Get actor component","Space / Blueprint Classes","actor:Entity@|component:string","result:Entity@","Space::actorComponent","","","pure","Entity@","","in:actor|in:component"},
             {"actor:valid","Is valid entity","Space / Blueprint Classes","entity:Entity@","result:bool","Space::validEntity","","","pure","bool","","in:entity"},
@@ -247,6 +248,7 @@ namespace nx
         bool context(const std::string& event,const std::string& kind,const std::string& owner)
         {
             const bool behaviour=behaviourOwner(owner);
+            if(kind=="camera:sequence")return !behaviour&&event=="update";
             if(kind=="time:delay"||kind=="time:retrigger-delay"||kind=="time:timer")return event=="update"||(behaviour?event=="start":event=="onEnter")||(!ownerEvent(owner,event)&&event!="Construction");
             return ((kind!="time:timeline"&&kind!="camera:orbit-timed")||event=="update")&&(kind!="render:space"||(!behaviour&&event=="draw"))&&(kind!="ui:load-asset"||(!behaviour&&event=="onEnter"))&&(kind!="event:delta"||event=="update")&&(kind!="event:canvas"||(!behaviour&&event=="draw"))&&
                 (kind!="event:entity"||behaviour)&&(kind!="event:other"||(behaviour&&(event=="onHit"||event=="onLeave")))&&
@@ -367,6 +369,48 @@ namespace nx
         return type;
     }
     bool blueprintInputLiteralType(const std::string& type){return blueprintLiteralType(type)||!blueprintEnumChoices(type).empty()||!blueprintInputComponentLabels(type).empty();}
+    bool blueprintCameraKeys(const std::string& text,std::vector<BlueprintCameraKey>& keys,std::string& error)
+    {
+        std::vector<BlueprintCameraKey> result;
+        if(text.empty()||text.size()>8192){error="Sequence requires 2 to 64 camera keys.";return false;}
+        size_t at=0;
+        while(at<text.size())
+        {
+            const auto end=text.find(';',at);const auto row=text.substr(at,end==std::string::npos?end:end-at);float v[9]{};size_t pos=0;
+            for(unsigned i=0;i<9;++i)
+            {
+                const auto comma=row.find(',',pos);if((i==8)!=(comma==std::string::npos)){error="Each key requires time, position XYZ, target XYZ, FOV and cut (0/1).";return false;}
+                const auto part=row.substr(pos,comma==std::string::npos?comma:comma-pos);char* tail=nullptr;const auto number=std::strtof(part.c_str(),&tail);
+                if(part.empty()||tail!=part.c_str()+part.size()||!std::isfinite(number)||std::abs(number)>1000000.f){error="Invalid camera key number.";return false;}
+                v[i]=number;pos=comma==std::string::npos?row.size():comma+1;
+            }
+            if((result.empty()?v[0]!=0:v[0]<=result.back().time)||v[0]>3600||v[7]<1||v[7]>179||(v[8]!=0&&v[8]!=1)||result.size()>=64){error="Keys must start at zero, increase strictly, have FOV 1–179 and valid cut flags.";return false;}
+            if(v[1]==v[4]&&v[2]==v[5]&&v[3]==v[6]){error="Camera position and target must differ.";return false;}
+            BlueprintCameraKey key;key.time=v[0];for(unsigned i=0;i<3;++i){key.from[i]=v[1+i];key.to[i]=v[4+i];}key.fov=v[7];key.cut=v[8]!=0;result.push_back(key);
+            if(end==std::string::npos)break;
+            at=end+1;if(at==text.size()){error="Empty camera key.";return false;}
+        }
+        if(result.size()<2){error="Sequence requires at least two keys.";return false;}
+        keys=std::move(result);error.clear();return true;
+    }
+    std::string blueprintCameraKeyText(const std::vector<BlueprintCameraKey>& keys)
+    {
+        std::string result;const auto add=[&](float f){char value[48];std::snprintf(value,sizeof(value),"%.9g",static_cast<double>(f));if(!result.empty()&&result.back()!=';')result+=",";result+=value;};
+        for(const auto& k:keys){if(!result.empty())result+=";";add(k.time);for(float f:k.from)add(f);for(float f:k.to)add(f);add(k.fov);add(k.cut?1.f:0.f);}
+        return result;
+    }
+    BlueprintCameraKey blueprintCameraSample(const std::vector<BlueprintCameraKey>& keys,float time)
+    {
+        if(keys.empty())return {};
+        if(time<=keys.front().time)return keys.front();
+        for(size_t i=1;i<keys.size();++i)if(time<keys[i].time)
+        {
+            const auto& a=keys[i-1];const auto& b=keys[i];auto out=a;out.time=time;
+            const float f=b.cut?0.f:(time-a.time)/(b.time-a.time);
+            for(unsigned j=0;j<3;++j){out.from[j]=a.from[j]+(b.from[j]-a.from[j])*f;out.to[j]=a.to[j]+(b.to[j]-a.to[j])*f;}out.fov=a.fov+(b.fov-a.fov)*f;return out;
+        }
+        return keys.back();
+    }
     bool blueprintInputComponents(const std::string& type,const std::string& value,std::vector<std::string>& components)
     {
         const auto labels=blueprintInputComponentLabels(type);
@@ -2913,6 +2957,7 @@ namespace nx
         auto& n=graphs[graph].nodes[node];
         BlueprintNodeSpec spec;
         const auto* input=nodeSpec(graphs[graph],n,spec)?findPin(spec.inputs,pin):nullptr;
+        if(n.kind=="camera:sequence"&&pin=="keys"){std::vector<BlueprintCameraKey> keys;if(!blueprintCameraKeys(value,keys,error))return false;value=blueprintCameraKeyText(keys);}
         if(input&&input->type=="Color"){unsigned rgb;if(blueprintParseRGB(value,rgb))value=blueprintRGBHex(rgb);}
         if(!input||!inputLiteral(input->type,value))
         {error="Invalid value for input "+pin+".";return false;}
