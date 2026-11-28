@@ -595,7 +595,7 @@ namespace nx
         }
         wire(obstacle,box,"result",collider,"target");value(obstacle,collider,"size","1,1,1");
         const auto wall=add(obstacle,"api:Entity:set_wall:Entity@,bool",1260,60);chain(obstacle,collider,wall);wire(obstacle,box,"result",wall,"target");value(obstacle,wall,"value","true");
-        note(obstacle,"OBSTACLE | Create a native SolidBox with the supplied visual transform, then attach a unit local cube collider (the entity transform already supplies the dimensions). Enable the native wall flag explicitly; no mass is assigned, so the obstacle stays fixed. Reuse this function for walls and platforms.");
+        note(obstacle,"OBSTACLE | Spawn a box and attach a unit local collider; entity scale supplies the dimensions. Enable wall collision. No mass keeps it fixed. Reuse for walls and platforms.");
         const auto entity=add(spawn,"api:Space:Space::spawn:Vec3",340,60);
         value(spawn,entity,"place","0,0.2,0");chain(spawn,0,entity);
         const auto keep=variable(spawn,"hero",true,680,60);chain(spawn,entity,keep);wire(spawn,entity,"result",keep,"value");
@@ -616,7 +616,7 @@ namespace nx
         size_t finishModel=apply;
         if(third){const auto surfaces=add(spawn,"api:Entity:set_twoSided:Entity@,bool",1100,590);chain(spawn,apply,surfaces);wire(spawn,entity,"result",surfaces,"target");value(spawn,surfaces,"value","true");finishModel=surfaces;}
         const auto lock=add(spawn,"api:Input:Input::lockMouse:bool",1460,590);chain(spawn,finishModel,lock);value(spawn,lock,"locked","true");
-        note(spawn,"PLAYER | Spawn at feet height, retain Entity handle, configure 0.35 m radius / 1.7 m capsule with its centre 0.85 m up, enable native walker and 60 kg mass. Attach the Redux robot model (third person also draws both triangle sides to prevent back-face gaps), then capture mouse.");
+        note(spawn,"PLAYER | Spawn at feet height and retain Entity handle. Add a 0.35 m radius / 1.7 m capsule, offset 0.85 m upward; enable walker and 60 kg mass. Attach robot, use two-sided surfaces in third person, then lock mouse.");
         const auto mouse=add(look,"api:Input:Input::get_mouseMove:",24,300),pad=add(look,"api:Input:Input::padRight:uint",24,460);
         value(look,pad,"pad","0");
         const auto yaw=variable(look,"yaw",false,300,300),pitch=variable(look,"pitch",false,300,460);
@@ -655,7 +655,7 @@ namespace nx
         wire(camera,eye,"result",target,"eye");wire(camera,cy,"value",target,"yaw");wire(camera,cp,"value",target,"pitch");
         wire(camera,cy,"value",angles,"yaw");if(third){const auto modelHeading=variable(camera,"modelYawOffset",false,340,730);wire(camera,modelHeading,"value",angles,"modelYawOffset");}wire(camera,angles,"result",face,"value");wire(camera,ch,"value",face,"target");
         chain(camera,0,face);chain(camera,face,cam);if(third){const auto chase=add(camera,"player:chase-camera",1080,550),distance=variable(camera,"cameraDistance",false,700,730);wire(camera,eye,"result",chase,"pivot");wire(camera,cy,"value",chase,"yaw");wire(camera,cp,"value",chase,"pitch");wire(camera,distance,"value",chase,"distance");wire(camera,chase,"result",cam,"from");wire(camera,eye,"result",cam,"to");}else{wire(camera,eye,"result",cam,"from");wire(camera,target,"result",cam,"to");}value(camera,cam,"angle","72");
-        note(camera,third?"THIRD PERSON | Pivot is above the character feet. Chase camera offsets backward along yaw/pitch by cameraDistance, looks at the pivot, and follows the robot. Model yaw offset corrects the robot asset forward axis without changing movement or camera heading. Camera collision avoidance is not included.":"FIRST PERSON | Eye is feet position plus eye height. Target is one unit along yaw/pitch direction; field of view is 72 degrees vertically. Rotate the attached robot body with yaw, then set the native Space camera.");
+        note(camera,third?"THIRD PERSON | Chase camera follows the pivot above the feet, offset backward by cameraDistance. Model yaw offset corrects the robot forward axis independently of movement and camera. No camera collision avoidance yet.":"FIRST PERSON | Eye is feet position plus eye height. Target is one unit along yaw/pitch direction; field of view is 72 degrees vertically. Rotate the attached robot body with yaw, then set the native Space camera.");
         const auto horizontal=add(hud,"api:Canvas:line:Canvas@,float,float,float,float,float,Color",360,60),
             vertical=add(hud,"api:Canvas:line:Canvas@,float,float,float,float,float,Color",830,60);
         chain(hud,0,horizontal);chain(hud,horizontal,vertical);

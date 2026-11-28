@@ -327,6 +327,22 @@ with menu_log.open("wb") as out:
         wait_for(lambda: json.loads(authored.read_text())["graphs"][0]["nodes"][1]["values"]["value"] == "first",
                  "inline edit undone", process)
 
+        # Delete is a graph shortcut, with Cancel and one-step undo.
+        click(650, 330, window)
+        key("Delete")
+        key("Escape")
+        click(800, 53, window)
+        assert len(json.loads(authored.read_text())["graphs"][0]["nodes"]) == 2
+        key("Delete")
+        key("Return")
+        click(800, 53, window)
+        wait_for(lambda: len(json.loads(authored.read_text())["graphs"][0]["nodes"]) == 1,
+                 "keyboard node deletion", process)
+        key("ctrl+z")
+        click(800, 53, window)
+        wait_for(lambda: len(json.loads(authored.read_text())["graphs"][0]["nodes"]) == 2,
+                 "keyboard deletion undone", process)
+
         # An external valid file modification must not be overwritten, even
         # if the current authoring process still holds the cooperative lease.
         external = authored.read_bytes() + b"\n"
