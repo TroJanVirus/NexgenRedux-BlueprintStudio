@@ -312,6 +312,18 @@ namespace nx
         void setMinWidth(float v, Widget* w) { w->minWidth = v; w->changed(); }
         float getMaxWidth(const Widget* w) { return w->maxWidth; }
         void setMaxWidth(float v, Widget* w) { w->maxWidth = v; w->changed(); }
+        float getMinHeight(const Widget* w) { return w->minHeight; }
+        void setMinHeight(float v,Widget* w) { if(std::isfinite(v)&&v>=0&&v<=100000){w->minHeight=v;w->changed();} }
+        float getMaxHeight(const Widget* w) { return w->maxHeight; }
+        void setMaxHeight(float v,Widget* w) { if(std::isfinite(v)&&v>=0&&v<=100000){w->maxHeight=v;w->changed();} }
+        bool setGridSlot(int row,int column,int rowSpan,int columnSpan,Widget* w)
+        {
+            if(!w->ui||!w->parent||w->parent->kind!=WidgetKind::Grid)return false;
+            const GridSlot slot{row,column,rowSpan,columnSpan};
+            if(row==-1&&column==-1){w->gridSlot={};w->changed();return true;}
+            if(!slot.valid())return false;
+            w->gridSlot=slot;w->changed();return true;
+        }
         float getColumnWidth(const Widget* w) { return w->columnWidth; }
         void setColumnWidth(float v, Widget* w) { w->columnWidth = v; w->columns = 0; w->changed(); }
         float getRowHeight(const Widget* w) { return w->rowHeight; }
@@ -535,6 +547,11 @@ namespace nx
         b.method("void set_minWidth(float) property", NX_OBJ_LAST(setMinWidth), "Changes it.");
         b.method("float get_maxWidth() const property", NX_OBJ_LAST(getMaxWidth), "At most this wide. 0: any.");
         b.method("void set_maxWidth(float) property", NX_OBJ_LAST(setMaxWidth), "Changes it.");
+        b.method("float get_minHeight() const property", NX_OBJ_LAST(getMinHeight), "Preferred minimum height in design units.");
+        b.method("void set_minHeight(float) property", NX_OBJ_LAST(setMinHeight), "Changes the preferred minimum height.");
+        b.method("float get_maxHeight() const property", NX_OBJ_LAST(getMaxHeight), "Maximum height; zero means unlimited.");
+        b.method("void set_maxHeight(float) property", NX_OBJ_LAST(setMaxHeight), "Changes the maximum height.");
+        b.method("bool setGridSlot(int row, int column, int rowSpan, int columnSpan)", NX_OBJ_LAST(setGridSlot), "Sets an explicit Grid child slot; row and column -1 restore automatic placement.");
         b.method("float get_grow() const property", NX_OBJ_LAST(getGrow), "Its share of what is left over in a row or a column.");
         b.method("void set_grow(float) property", NX_OBJ_LAST(setGrow), "Changes it.");
         b.method("float get_gap() const property", NX_OBJ_LAST(getGap), "Between what is in it.");

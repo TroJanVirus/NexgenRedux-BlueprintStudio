@@ -3705,3 +3705,22 @@ NX_TEST(nativeRuntimeStackSlotAnchorMutation)
     const auto* item=r.services.ui->find("item-2");NX_EXPECT(item&&item->anchor==8&&item->offsetX==-10&&item->offsetY==-20);
     if(item&&item->parent)NX_EXPECT(fabsf(item->x-(item->parent->w-item->parent->pad(2)-item->w-10))<0.01f);
 }
+
+NX_TEST(nativeExplicitGridSpanLayout)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    BlueprintDocument doc;doc.create();std::string error,source;
+    const std::string page=R"GRID([{"grid":[{"label":"wide","id":"wide","gridSlot":[0,0,1,2]},{"label":"tall","id":"tall","gridSlot":[0,2,2,1]},{"label":"auto","id":"auto"},{"label":"capped","id":"capped","gridSlot":[2,0,1,1],"maxHeight":20}],"id":"grid","columns":3,"rowHeight":40,"gap":4,"width":308,"padding":0}])GRID";
+    NX_EXPECT(doc.replaceVisualAssets({{"widget-1","widget","Grid test",page,{}}},error));
+    if(!doc.connectVisualWidget("Screen","widget-1",error)||!compileBlueprint(doc,source,error))
+    {NX_ERROR("Grid: %s",error.c_str());NX_EXPECT(false);return;}
+    r.platform.files["showcase/main/screen.json"]="{\"title\":\"Grid\"}";r.platform.files["showcase/main/main.as"]=source;
+    if(!r.screens.init(r.services,"showcase","main")){NX_EXPECT(false);return;}r.step(3);
+    NX_EXPECT(!r.screens.failed());if(!r.services.ui)return;
+    const auto* wide=r.services.ui->find("wide");const auto* tall=r.services.ui->find("tall");
+    const auto* automatic=r.services.ui->find("auto");const auto* capped=r.services.ui->find("capped");
+    NX_EXPECT(wide&&tall&&automatic&&capped);if(!wide||!tall||!automatic||!capped)return;
+    NX_EXPECT(fabsf(wide->w-204)<0.1f&&fabsf(tall->x-208)<0.1f);
+    NX_EXPECT(fabsf(tall->h-84)<0.1f&&fabsf(automatic->y-44)<0.1f&&fabsf(automatic->x)<0.1f);
+    NX_EXPECT(capped->h<=20.01f&&fabsf(capped->y-88)<0.1f);
+}

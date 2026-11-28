@@ -1,6 +1,7 @@
 #pragma once
 
 #include "audio/audio.h"
+#include "ui/grid_slot.h"
 #include "base/grow_array.h"
 #include "base/json_tree.h"
 #include "canvas/canvas.h"
@@ -48,7 +49,7 @@ namespace nx
         bool secret = false;         // a field's text is hidden
         bool numeric = false;        // a field takes only digits
         float width = 0, height = 0; // 0: as large as what is in it
-        float minWidth = 0, maxWidth = 0;
+        float minWidth = 0, maxWidth = 0, minHeight = 0, maxHeight = 0;
         float grow = 0;              // its share of what is left over
         float gap = -1;              // below 0: the style's
         float padding[4] = { -1, -1, -1, -1 };
@@ -59,6 +60,7 @@ namespace nx
         UiPlace self = UiPlace::Inherit;     // of itself, across what it is in
         u32 columns = 0;             // of a grid or a list; 0: as many as fit
         float columnWidth = 0;
+        GridSlot gridSlot, resolvedGridSlot; // explicit request and transient layout placement
         float value = 0, low = 0, high = 1, step = 0.1f;
         int chosen = 0;              // of a choice, tabs or a list
         std::vector<std::string> items;

@@ -38,7 +38,7 @@ NX_TEST(nativeDeleteSelectedNodesIsAtomic)
 }
 NX_TEST(nativeCatalogueContainsReferenceAPI)
 {
-    NX_EXPECT(blueprintCatalogue().size()==1547);
+    NX_EXPECT(blueprintCatalogue().size()==1552);
     const auto* save=blueprintSpec("api:Save:Save::set:string,string");
     NX_EXPECT(save&&save->inputs.size()==3&&save->outputs.size()==1);
     if(save&&save->inputs.size()==3)NX_EXPECT(save->inputs[0].type=="exec"&&save->inputs[2].type=="string");
@@ -2342,4 +2342,21 @@ NX_TEST(nativeDebugSourceFingerprint)
     NX_EXPECT(scriptFingerprint("a",1)=="af63dc4c8601ec8c");
     NX_EXPECT(scriptFingerprint("a\n",2)!=scriptFingerprint("a\r\n",3));
     NX_EXPECT(scriptFingerprint("abc",3)==scriptFingerprint("abcd",3));
+}
+
+NX_TEST(nativeWidgetGridSlotAndHeightProperties)
+{
+    BlueprintDocument doc;doc.create();std::string page,error,bytes;
+    NX_EXPECT(doc.createVisualAsset("widget",page,error)&&doc.appendVisualWidget(page,"grid","",error));
+    NX_EXPECT(doc.appendVisualWidget(page,"label","Wide",error,"item-1"));
+    NX_EXPECT(doc.setVisualWidgetProperty(page,"item-2","gridSlot","1,2,2,3",error));
+    NX_EXPECT(doc.setVisualWidgetProperty(page,"item-2","minHeight","24",error)&&doc.setVisualWidgetProperty(page,"item-2","maxHeight","100",error));
+    const auto revision=doc.revision();
+    NX_EXPECT(!doc.setVisualWidgetProperty(page,"item-2","gridSlot","0,63,1,2",error));
+    NX_EXPECT(!doc.setVisualWidgetProperty(page,"item-2","gridSlot","0,0,0,1",error));
+    NX_EXPECT(!doc.setVisualWidgetProperty(page,"item-1","gridSlot","0,0,1,1",error));
+    NX_EXPECT(!doc.reparentVisualWidget(page,"item-2","",error)&&doc.revision()==revision);
+    NX_EXPECT(doc.serialize(bytes,error));BlueprintDocument copy;
+    NX_EXPECT(copy.load(bytes.data(),bytes.size(),error)&&copy.visualAsset(page)->source==doc.visualAsset(page)->source);
+    NX_EXPECT(copy.setVisualWidgetProperty(page,"item-2","gridSlot","",error)&&copy.reparentVisualWidget(page,"item-2","",error));
 }

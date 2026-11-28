@@ -22,6 +22,59 @@ namespace nx
             return w.maxWidth > 0 ? smaller(width, w.maxWidth) : width;
         }
 
+        float limitHeight(const Widget& w,float height)
+        {
+            return w.maxHeight>0?smaller(height,w.maxHeight):height;
+        }
+        bool explicitGrid(const Widget& w)
+        {
+            if(w.kind!=WidgetKind::Grid)return false;
+            for(const auto* child:w.children)if(child->visible&&child->gridSlot.valid())return true;
+            return false;
+        }
+        unsigned explicitColumns(const Widget& w,unsigned fallback)
+        {
+            unsigned columns=fallback<1?1:fallback>64?64:fallback;
+            for(const auto* child:w.children)if(child->visible&&child->gridSlot.valid())
+            {
+                const unsigned end=static_cast<unsigned>(child->gridSlot.column+child->gridSlot.columnSpan);
+                if(end>columns)columns=end;
+            }
+            return columns;
+        }
+        void resolveGrid(Widget& w,unsigned columns)
+        {
+            GridOccupancy occupancy;
+            for(auto* child:w.children)
+            {
+                child->resolvedGridSlot={};
+                if(child->visible&&child->gridSlot.valid())
+                {child->resolvedGridSlot=child->gridSlot;occupancy.reserve(child->gridSlot);}
+            }
+            for(auto* child:w.children)
+                if(child->visible&&!child->resolvedGridSlot.valid())child->resolvedGridSlot=occupancy.nextFree(columns);
+        }
+        unsigned explicitRows(const Widget& w)
+        {
+            unsigned rows=0;
+            for(const auto* child:w.children)if(child->visible&&child->resolvedGridSlot.valid())
+            {
+                const unsigned end=static_cast<unsigned>(child->resolvedGridSlot.row+child->resolvedGridSlot.rowSpan);
+                if(end>rows)rows=end;
+            }
+            return rows;
+        }
+        float explicitRowHeight(const Widget& w)
+        {
+            float height=larger(w.rowHeight,0);
+            for(const auto* child:w.children)if(child->visible&&child->resolvedGridSlot.valid())
+            {
+                const float span=static_cast<float>(child->resolvedGridSlot.rowSpan);
+                height=larger(height,(child->naturalH-(span-1)*w.space())/span);
+            }
+            return height;
+        }
+
         UiPlace across(const Widget& w, const Widget& child)
         {
             if (child.self != UiPlace::Inherit)
@@ -136,7 +189,16 @@ namespace nx
         }
         else if (w.kind == WidgetKind::Grid)
         {
-            const u32 columns = w.columns ? w.columns : 1;
+            const u32 columns = explicitGrid(w)?explicitColumns(w,w.columns?w.columns:1):(w.columns?w.columns:1);
+            if(explicitGrid(w))
+            {
+                most=0;
+                for(const auto* child:w.children)if(child->visible)
+                {
+                    const float span=child->gridSlot.valid()?static_cast<float>(child->gridSlot.columnSpan):1.f;
+                    most=larger(most,(child->naturalW-(span-1)*w.space())/span);
+                }
+            }
             width = larger(most, w.columnWidth) * static_cast<float>(columns) + static_cast<float>(columns - 1) * w.space();
         }
         else if (w.kind != WidgetKind::List)
@@ -181,6 +243,22 @@ namespace nx
                     give = larger(give + left * give / soft, 0);
                 }
                 giveWidth(*child, child->visible ? give : 0);
+            }
+            return;
+        }
+        if(explicitGrid(w))
+        {
+            const unsigned columns=explicitColumns(w,gridColumns(w,inner));resolveGrid(w,columns);
+            const float cell=larger((inner-static_cast<float>(columns-1)*w.space())/static_cast<float>(columns),0);
+            for(auto* child:w.children)
+            {
+                const auto& slot=child->resolvedGridSlot;
+                if(!slot.valid()){giveWidth(*child,0);continue;}
+                const float span=static_cast<float>(slot.columnSpan),available=span*cell+(span-1)*w.space();
+                const bool stretch=across(w,*child)==UiPlace::Stretch&&child->width<=0;
+                float wide=stretch?available:smaller(child->naturalW,available);
+                if(child->maxWidth>0)wide=smaller(wide,child->maxWidth);
+                giveWidth(*child,wide);
             }
             return;
         }
@@ -257,6 +335,11 @@ namespace nx
         {
             height = larger(height, most);
         }
+        else if(explicitGrid(w))
+        {
+            const unsigned rows=explicitRows(w);
+            height+=rows?static_cast<float>(rows)*explicitRowHeight(w)+static_cast<float>(rows-1)*w.space():0;
+        }
         else if (column(w) || w.kind == WidgetKind::Grid)
         {
             height += w.children.count() ? stacked : 0;
@@ -266,7 +349,7 @@ namespace nx
         {
             height = larger(height, w.style->minHeight);
         }
-        return w.naturalH = w.height > 0 ? w.height : height;
+        return w.naturalH = limitHeight(w,larger(w.height > 0 ? w.height : height,w.minHeight));
     }
 
     void Ui::giveHeight(Widget& w, float height)
@@ -309,11 +392,29 @@ namespace nx
             for (Widget* child : w.children)
             {
                 const UiPlace place = across(w, *child);
-                const float tall = place == UiPlace::Stretch && child->height <= 0 ? innerH : smaller(child->naturalH, larger(innerH, child->naturalH));
+                const float tall = limitHeight(*child,place == UiPlace::Stretch && child->height <= 0 ? innerH : smaller(child->naturalH, larger(innerH, child->naturalH)));
                 child->x = at;
                 child->y = top + (place == UiPlace::Center ? (innerH - tall) * 0.5f : place == UiPlace::End ? innerH - tall : 0);
                 giveHeight(*child, tall);
                 at += child->visible ? child->w + spread : 0;
+            }
+        }
+        else if (explicitGrid(w))
+        {
+            const unsigned columns=explicitColumns(w,gridColumns(w,innerW)),rows=explicitRows(w);
+            const float cell=larger((innerW-static_cast<float>(columns-1)*gap)/static_cast<float>(columns),0);
+            const float row=rows?smaller(explicitRowHeight(w),larger((innerH-static_cast<float>(rows-1)*gap)/static_cast<float>(rows),0)):0;
+            for(auto* child:w.children)
+            {
+                const auto& slot=child->resolvedGridSlot;
+                if(!child->visible||!slot.valid()){giveHeight(*child,0);continue;}
+                const float spanX=static_cast<float>(slot.columnSpan),spanY=static_cast<float>(slot.rowSpan);
+                const float wide=spanX*cell+(spanX-1)*gap,high=spanY*row+(spanY-1)*gap;
+                const auto place=across(w,*child);
+                const float tall=limitHeight(*child,place==UiPlace::Stretch&&child->height<=0?high:smaller(high,child->naturalH));
+                child->x=left+static_cast<float>(slot.column)*(cell+gap)+(place==UiPlace::Center?(wide-child->w)*0.5f:place==UiPlace::End?wide-child->w:0);
+                child->y=top+static_cast<float>(slot.row)*(row+gap)+(place==UiPlace::Center?(high-tall)*0.5f:place==UiPlace::End?high-tall:0);
+                giveHeight(*child,tall);
             }
         }
         else if (w.kind == WidgetKind::Grid)
@@ -345,7 +446,7 @@ namespace nx
                     }
                 }
                 const UiPlace place = across(w, child);
-                const float tall = place == UiPlace::Stretch && child.height <= 0 ? row : child.naturalH;
+                const float tall = limitHeight(child,place == UiPlace::Stretch && child.height <= 0 ? row : child.naturalH);
                 child.x = left + static_cast<float>(cells % columns) * (cell + gap) + (place == UiPlace::Center ? (cell - child.w) * 0.5f : place == UiPlace::End ? cell - child.w : 0);
                 child.y = y + (place == UiPlace::Center ? (row - tall) * 0.5f : 0);
                 giveHeight(child, tall);
@@ -359,7 +460,7 @@ namespace nx
                 const UiPlace place = across(w, *child);
                 const bool anchored=child->anchor>=0&&child->anchor<9;
                 const bool fillX=child->anchor==9||child->anchor==11,fillY=child->anchor==10||child->anchor==11;
-                const float tall = fillY?larger(innerH-2*larger(child->offsetY,0),0):child->anchor<0&&place == UiPlace::Stretch && child->height <= 0 ? innerH : smaller(child->naturalH, innerH);
+                const float tall = limitHeight(*child,fillY?larger(innerH-2*larger(child->offsetY,0),0):child->anchor<0&&place == UiPlace::Stretch && child->height <= 0 ? innerH : smaller(child->naturalH, innerH));
                 if(fillX||fillY)
                 {
                     child->x=left+(innerW-child->w)*0.5f+(fillX?0:child->offsetX);
@@ -417,6 +518,7 @@ namespace nx
                         tall = larger(tall + over * tall / soft, 0);
                     }
                 }
+                tall=limitHeight(*child,tall);
                 const UiPlace place = across(w, *child);
                 child->x = left + (place == UiPlace::Center ? (innerW - child->w) * 0.5f : place == UiPlace::End ? innerW - child->w : 0);
                 child->y = at;

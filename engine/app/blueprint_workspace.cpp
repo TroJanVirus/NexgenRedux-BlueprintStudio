@@ -1773,7 +1773,7 @@ namespace nx
         constexpr const char* designPalette[]={"column","row","grid","stack","scroll","label","button","toggle","slider","progress","field","space","component"};
         constexpr const char* designEvents[]={"click","change","focus","done","draw","makeRow"};
         constexpr const char* designProps[]={"text","width","height","gap","padding","grow","align","justify","self","style","value","visible"};
-        constexpr const char* advancedDesignProps[]={"minWidth","maxWidth","columns","columnWidth","rowHeight","low","high","step","enabled","checked","wrap","count"};
+        constexpr const char* advancedDesignProps[]={"minWidth","maxWidth","columns","columnWidth","rowHeight","low","high","step","enabled","checked","wrap","count","minHeight","maxHeight","gridSlot"};
         void designRows(JsonTree::Value value,std::vector<DesignRow>& rows,unsigned depth)
         {
             if(depth>12||rows.size()>=256)return;
@@ -2075,10 +2075,10 @@ namespace nx
             }
             return;
         }
-        if(!m_widgetSelection.empty()&&in(x,y,630,439,1000,583))
+        if(!m_widgetSelection.empty()&&in(x,y,630,439,1000,m_widgetAdvanced?619.f:583.f))
         {
             const size_t column=static_cast<size_t>((x-630)/123.34f),row=static_cast<size_t>((y-439)/36);
-            const size_t prop=row*3+column;if(prop>=sizeof(designProps)/sizeof(designProps[0]))return;
+            const size_t prop=row*3+column;if(prop>=(m_widgetAdvanced?sizeof(advancedDesignProps)/sizeof(advancedDesignProps[0]):sizeof(designProps)/sizeof(designProps[0])))return;
             if(!m_widgetAdvanced&&prop==0&&std::any_of(rows.begin(),rows.end(),[&](const DesignRow& row){return row.id==m_widgetSelection&&row.kind=="component";}))
             {if(m_document.removeVisualWidgetComponent(m_visualSelection,m_widgetSelection,m_status)){m_widgetSelection.clear();m_status="Unlinked component; original definition preserved.";}return;}
             m_visualProperty=m_widgetAdvanced?advancedDesignProps[prop]:designProps[prop];
@@ -2092,12 +2092,12 @@ namespace nx
             const auto field=selected[m_visualProperty.c_str()];
             m_visualText=field.isString()?field.text():field.isNumber()?std::to_string(field.exact()):
                 field.type()==JsonTree::Type::Bool?(field.flag()?"true":"false"):"";
-            if(m_visualProperty=="padding"&&field.isArray())
+            if((m_visualProperty=="padding"||m_visualProperty=="gridSlot")&&field.isArray())
                 for(auto part=field.first();part.exists();part=part.next())
                 {if(!m_visualText.empty())m_visualText+=",";m_visualText+=std::to_string(part.exact());}
             if(m_visualProperty=="text"&&!field.exists())
                 for(const char* key:{"label","paragraph","button","toggle","field"})if(selected[key].isString()){m_visualText=selected[key].text();break;}
-            m_visualInput=4;s.input->setTyping(true);m_status=m_visualProperty=="padding"?"Padding: one number, X,Y, or left,top,right,bottom.":m_visualProperty=="grow"?"Slot size: 0 = Auto; positive = relative Fill weight.":"Edit property; blank uses default (except text).";
+            m_visualInput=4;s.input->setTyping(true);m_status=m_visualProperty=="padding"?"Padding: one number, X,Y, or left,top,right,bottom.":m_visualProperty=="grow"?"Slot size: 0 = Auto; positive = relative Fill weight.":m_visualProperty=="gridSlot"?"Grid: row,column,rowSpan,columnSpan (zero-based; blank = Auto).":"Edit property; blank uses default (except text).";
         }
     }
     void BlueprintWorkspace::drawWidgetDesigner(Canvas& c)
@@ -2241,7 +2241,7 @@ namespace nx
             button(630,520,370,m_widgetUnbind?"Mode: unbind event":"Mode: open event graph");
             c.text(*m_font,"Link page to screen before opening events.",630,558,muted);
         }
-        else for(size_t i=0;i<sizeof(designProps)/sizeof(designProps[0]);++i)
+        else for(size_t i=0;i<(m_widgetAdvanced?sizeof(advancedDesignProps)/sizeof(advancedDesignProps[0]):sizeof(designProps)/sizeof(designProps[0]));++i)
             button(630+123.34f*static_cast<float>(i%3),439+36*static_cast<float>(i/3),119,!m_widgetAdvanced&&i==0&&std::any_of(rows.begin(),rows.end(),[&](const DesignRow& row){return row.id==m_widgetSelection&&row.kind=="component";})?"Unlink":m_widgetAdvanced?advancedDesignProps[i]:designProps[i]);
         c.pop();resolutionMenu();
     }

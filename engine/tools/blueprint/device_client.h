@@ -132,9 +132,9 @@ namespace nx
                 m_traceGap=m_traceGap||root["gap"].flag();
                 for(auto item=root["trace"].first();item.exists()&&m_hits.size()<64;item=item.next())
                 {
-                    const auto line=item["line"].exact(),run=item["run"].exact(),depth=item["depth"].exact();
-                    if(line<1||line>1000000||run<0||run>4294967295.0||depth<0||depth>1000000){m_traceGap=true;continue;}
-                    m_hits.push_back({std::string(item["file"].text()).substr(0,192),std::string(item["fingerprint"].text()).substr(0,32),static_cast<unsigned>(line),static_cast<unsigned>(run),static_cast<unsigned>(depth)});
+                    const auto hitLine=item["line"].exact(),run=item["run"].exact(),depth=item["depth"].exact();
+                    if(hitLine<1||hitLine>1000000||run<0||run>4294967295.0||depth<0||depth>1000000){m_traceGap=true;continue;}
+                    m_hits.push_back({std::string(item["file"].text()).substr(0,192),std::string(item["fingerprint"].text()).substr(0,32),static_cast<unsigned>(hitLine),static_cast<unsigned>(run),static_cast<unsigned>(depth)});
                 }
             }
             else if(id==4&&root["telemetry"].isObject())

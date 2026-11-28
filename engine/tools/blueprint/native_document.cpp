@@ -1,4 +1,5 @@
 #include "tools/blueprint/native_document.h"
+#include "ui/grid_slot.h"
 #include "base/json_tree.h"
 #include "base/json_value.h"
 #include <algorithm>
@@ -947,10 +948,41 @@ namespace nx
             WidgetMatch match;findVisualWidget(root,widget,match);
             if(match.matches!=1){error="Select a widget with a unique ID.";return false;}
             auto& item=*match.item;
-            const std::string allowed="|text|style|width|height|minWidth|maxWidth|gap|grow|padding|value|low|high|step|columnWidth|rowHeight|columns|count|align|justify|self|visible|enabled|checked|wrap|anchor|offset|";
+            const std::string allowed="|text|style|width|height|minWidth|maxWidth|minHeight|maxHeight|gridSlot|gap|grow|padding|value|low|high|step|columnWidth|rowHeight|columns|count|align|justify|self|visible|enabled|checked|wrap|anchor|offset|";
             if(property.empty()||property.find('|')!=std::string::npos||allowed.find("|"+property+"|")==std::string::npos)
             {error="Unsupported widget property.";return false;}
-            if(property=="anchor"||property=="offset")
+            if(property=="gridSlot")
+            {
+                const auto parent=[&](auto&& self,JsonValue& node)->bool
+                {
+                    if(node.find("grid")==match.siblings&&match.siblings)return true;
+                    if(node.type()==JsonValue::Type::Array||node.type()==JsonValue::Type::Object)
+                        for(u32 n=0;n<node.count();++n)if(self(self,*node.at(n)))return true;
+                    return false;
+                };
+                if(value.empty())item.remove("gridSlot");
+                else
+                {
+                    if(!parent(parent,root)){error="Grid slot requires a Grid parent.";return false;}
+                    int parts[4]={};size_t start=0;
+                    for(unsigned i=0;i<4;++i)
+                    {
+                        const auto comma=value.find(',',start);
+                        if((i<3)!=(comma!=std::string::npos)){error="Enter row,column,rowSpan,columnSpan.";return false;}
+                        const auto part=value.substr(start,comma==std::string::npos?comma:comma-start);
+                        char* end=nullptr;const double n=std::strtod(part.c_str(),&end);
+                        if(end==part.c_str()){error="Enter integer grid coordinates.";return false;}
+                        while(*end==' '||*end=='\t')++end;
+                        if(*end||!std::isfinite(n)||n<0||n>256||std::floor(n)!=n){error="Enter integer grid coordinates.";return false;}
+                        parts[i]=static_cast<int>(n);start=comma==std::string::npos?value.size():comma+1;
+                    }
+                    const GridSlot slot{parts[0],parts[1],parts[2],parts[3]};
+                    if(!slot.valid()){error="Grid supports 64 columns and 256 rows; spans must stay within bounds.";return false;}
+                    auto* field=item.put("gridSlot");if(!field)return false;field->setArray();
+                    for(int n:parts){auto* part=field->add();if(!part)return false;part->setNumber(n);}
+                }
+            }
+            else if(property=="anchor"||property=="offset")
             {
                 const auto isStackParent=[&](auto&& self,JsonValue& node)->bool
                 {
@@ -1016,7 +1048,7 @@ namespace nx
                 auto* field=item.put("padding");if(!field)return false;field->setArray();
                 for(double n:values){auto* part=field->add();if(!part)return false;part->setNumber(n);}
             }
-            else if(property=="width"||property=="height"||property=="minWidth"||property=="maxWidth"||property=="gap"||property=="grow"||property=="padding"||property=="value"||property=="low"||property=="high"||property=="step"||property=="columns"||property=="count"||property=="columnWidth"||property=="rowHeight")
+            else if(property=="width"||property=="height"||property=="minWidth"||property=="maxWidth"||property=="minHeight"||property=="maxHeight"||property=="gap"||property=="grow"||property=="padding"||property=="value"||property=="low"||property=="high"||property=="step"||property=="columns"||property=="count"||property=="columnWidth"||property=="rowHeight")
             {
                 if(!literal("literal:float",value)){error="Enter a finite number.";return false;}
                 const double n=std::strtod(value.c_str(),nullptr);
@@ -1140,16 +1172,17 @@ namespace nx
             JsonValue root;if(!root.parse(page.source.data(),page.source.size(),error)||root.type()!=JsonValue::Type::Array)return false;
             WidgetMatch from;findVisualWidget(root,widget,from);
             if(from.matches!=1||!from.siblings){error="Select a unique widget inside a container.";return false;}
-            JsonValue* dest=&root;bool stack=false;
+            JsonValue* dest=&root;bool stack=false,grid=false;
             if(!parent.empty())
             {
                 WidgetMatch to,descendant;findVisualWidget(root,parent,to);findVisualWidget(*from.item,parent,descendant);
                 if(descendant.matches||to.matches!=1||!(dest=widgetChildren(*to.item)))
                 {error="Drop onto a container outside the selected widget's subtree.";return false;}
-                stack=to.item->find("stack")!=nullptr;
+                stack=to.item->find("stack")!=nullptr;grid=to.item->find("grid")!=nullptr;
             }
             if(dest==from.siblings){error.clear();return true;}
             if(!stack&&from.item->find("anchor")){error="Clear the widget anchor before moving outside a Stack.";return false;}
+            if(!grid&&from.item->find("gridSlot")){error="Clear the grid slot before moving outside a Grid.";return false;}
             if(dest->count()>=64){error="Destination container is full.";return false;}
             auto* copy=dest->add();
             if(!copy||!copy->setCopy(*from.item)){error="Widget hierarchy nesting limit reached.";return false;}

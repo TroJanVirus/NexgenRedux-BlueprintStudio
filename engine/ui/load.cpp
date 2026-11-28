@@ -287,7 +287,7 @@ namespace nx
         {
             const char* key = p.key();
             const struct { const char* name; float* number; } numbers[] = {
-                { "width", &w->width }, { "height", &w->height }, { "minWidth", &w->minWidth }, { "maxWidth", &w->maxWidth }, { "grow", &w->grow }, { "gap", &w->gap },
+                { "width", &w->width }, { "height", &w->height }, { "minWidth", &w->minWidth }, { "maxWidth", &w->maxWidth }, { "minHeight", &w->minHeight }, { "maxHeight", &w->maxHeight }, { "grow", &w->grow }, { "gap", &w->gap },
                 { "columnWidth", &w->columnWidth }, { "value", &w->value }, { "low", &w->low }, { "high", &w->high }, { "step", &w->step }, { "rowHeight", &w->rowHeight },
             };
             const struct { const char* name; bool* flag; } flags[] = { { "visible", &w->visible }, { "enabled", &w->enabled }, { "checked", &w->checked }, { "wrap", &w->wrap }, { "secret", &w->secret }, { "numeric", &w->numeric } };
@@ -365,6 +365,22 @@ namespace nx
             else if (strcmp(key, "columns") == 0) w->columns = static_cast<u32>(p.number());
             else if (strcmp(key, "limit") == 0) w->limit = static_cast<u32>(p.number());
             else if (strcmp(key, "tag") == 0) w->tag = static_cast<int>(p.number());
+            else if (strcmp(key, "gridSlot") == 0)
+            {
+                if(into.kind!=WidgetKind::Grid||!p.isArray()||p.count()!=4)
+                {fail(file,p.line(),"requires a Grid parent and row,column,rowSpan,columnSpan","gridSlot");return nullptr;}
+                int parts[4]={};
+                for(unsigned i=0;i<4;++i)
+                {
+                    const auto n=p[i];
+                    if(!n.isNumber()||!std::isfinite(n.exact())||n.exact()<0||n.exact()>256||std::floor(n.exact())!=n.exact())
+                    {fail(file,p.line(),"requires integer slot coordinates","gridSlot");return nullptr;}
+                    parts[i]=static_cast<int>(n.exact());
+                }
+                const GridSlot slot{parts[0],parts[1],parts[2],parts[3]};
+                if(!slot.valid()){fail(file,p.line(),"outside bounded grid","gridSlot");return nullptr;}
+                w->gridSlot=slot;
+            }
             else if (strcmp(key, "anchor") == 0)
             {
                 const int anchor=uiSlotAnchorIndex(p.text());

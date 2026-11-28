@@ -1274,6 +1274,11 @@ Is told which of a dialog's buttons was pressed, or -1.
 | `void set_minWidth(float) property` | Changes it. |
 | `float get_maxWidth() const property` | At most this wide. 0: any. |
 | `void set_maxWidth(float) property` | Changes it. |
+| `float get_minHeight() const property` | Preferred minimum height in design units. |
+| `void set_minHeight(float) property` | Changes the preferred minimum height. |
+| `float get_maxHeight() const property` | Maximum height; zero means unlimited. |
+| `void set_maxHeight(float) property` | Changes the maximum height. |
+| `bool setGridSlot(int row, int column, int rowSpan, int columnSpan)` | Sets an explicit Grid child slot; row and column -1 restore automatic placement. |
 | `float get_grow() const property` | Its share of what is left over in a row or a column. |
 | `void set_grow(float) property` | Changes it. |
 | `float get_gap() const property` | Between what is in it. |
