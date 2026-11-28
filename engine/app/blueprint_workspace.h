@@ -289,7 +289,7 @@ namespace nx
         std::vector<BlueprintScreenOutput> m_previewOutputs;
         BlueprintLocation m_diagnostic;
         void cancelDrag() { m_drag = false; m_marquee=false; }
-        struct NodePins { std::vector<std::string> inputs, outputs, inputTypes, outputTypes; float height = 72, width = 196; std::string title; std::vector<std::string> labels; std::vector<float> fieldX; };
+        struct NodePins { std::vector<std::string> inputs, outputs, inputTypes, outputTypes; float height = 72, width = 196; std::string title; std::vector<std::string> fieldValue; std::vector<float> fieldX,fieldW; float literalFieldW=0; };
         struct WirePins { size_t output, input; };
         std::vector<NodePins> m_rows;
         std::vector<WirePins> m_wirePins;

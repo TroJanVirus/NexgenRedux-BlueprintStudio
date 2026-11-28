@@ -362,7 +362,7 @@ namespace nx
             m_graphTabs.push_back({target.owner,target.name});found=m_graphTabs.end()-1;
         }
         revealTab(static_cast<size_t>(found-m_graphTabs.begin()));
-        cancelDrag();clearWire();m_diagnostic={};
+        cancelDrag();clearWire();m_nodeClickTime=m_wireClickTime=-1;m_diagnostic={};
         m_quickDrag=m_quickMenu=m_pinMenu=m_rightDown=false;m_quickVariableFirst=0;
         m_layoutMenu=m_layoutDragging=false;m_layoutComment=m_layoutLink=static_cast<size_t>(-1);m_selectedNodes.clear();
         m_graph = index; m_selection = static_cast<size_t>(-1);
@@ -602,37 +602,32 @@ namespace nx
         {return m_measureCanvas&&m_font?m_measureCanvas->measure(*m_font,value.c_str()).x:8.f*static_cast<float>(value.size());};
         for(size_t i=0;i<m_rows.size();++i)
         {
-            auto& row=m_rows[i];const auto& n=graph.nodes[i];BlueprintNodeSpec resolved;
-            const bool hasSpec=m_document.nodeSpec(graph,n,resolved);
+            auto& row=m_rows[i];const auto& n=graph.nodes[i];
             row.height=std::max(kNodeHeight,kPinStart+kPinStep*static_cast<float>(std::max(row.inputs.size(),row.outputs.size()))+8);
             row.title=n.kind=="call:function"&&m_document.function(graph.owner,n.ref)&&m_document.function(graph.owner,n.ref)->inlineMacro?"Macro "+n.ref:title(n);
             row.width=std::max(kNodeWidth,measure(row.title)*1.45f+54);
+            // A stable field column, shared by rendering and pointer hit testing.
+            const auto details=inputDetails(i);
+            float column=88.f;
+            for(const auto& detail:details)if(detail.editable)column=std::max(column,measure(detail.name)+29.f);
             for(size_t p=0;p<row.inputs.size();++p)
             {
-                const auto& pin=row.inputs[p];std::string label=pin,value;
-                if(!connected[i][p])
-                {
-                    const auto custom=std::find_if(n.values.begin(),n.values.end(),[&](const BlueprintDocument::InputValue& v){return v.pin==pin;});
-                    if(custom!=n.values.end())value=custom->value;
-                    else if(hasSpec&&p<row.inputTypes.size())for(const auto& def:resolved.defaults)if(def.name==pin)
-                    {
-                        value=def.type;const auto prefix=row.inputTypes[p]+"(";
-                        if(value.rfind(prefix,0)==0&&value.ends_with(")"))value=value.substr(prefix.size(),value.size()-prefix.size()-1);
-                        break;
-                    }
-                }
-                if(!value.empty())label+=" = "+value;
-                for(char& ch:label)if(ch=='\n'||ch=='\r'||ch=='\t')ch=' ';
-                row.labels.push_back(label);
-                const float field=std::max(88.f,measure(pin)+29);
-                row.fieldX.push_back(field);
-                const float right=p<row.outputs.size()?measure(row.outputs[p])+20:0;
-                const float left=std::max(measure(label)+20,field+std::max(65.f,measure(value)+12));
-                row.width=std::max(row.width,left+right+20);
+                const auto& pin=row.inputs[p];std::string value;
+                const auto detail=std::find_if(details.begin(),details.end(),[&](const InputDetail& item){return item.name==pin;});
+                const bool editable=!connected[i][p]&&detail!=details.end()&&detail->editable;
+                if(editable)value=detail->value;
+                for(char& ch:value)if(ch=='\n'||ch=='\r'||ch=='\t')ch=' ';
+                row.fieldValue.push_back(value);
+                row.fieldX.push_back(editable?column:0.f);
+                const float outputSpace=p<row.outputs.size()?measure(row.outputs[p])+25.f:0.f;
+                const float left=editable?column+std::max(65.f,measure(value)+12.f):measure(pin)+20.f;
+                row.width=std::max(row.width,left+outputSpace+20.f);
             }
-            for(const auto& output:row.outputs)row.width=std::max(row.width,measure(output)+40);
-            if(n.kind.rfind("literal:",0)==0&&row.inputs.empty()&&!row.outputs.empty())row.width=std::max(row.width,measure(row.outputs.front())+std::max(75.f,measure(n.ref)+15)+55);
+            for(const auto& output:row.outputs)row.width=std::max(row.width,measure(output)+40.f);
+            if(n.kind.rfind("literal:",0)==0&&row.inputs.empty()&&!row.outputs.empty())row.width=std::max(row.width,measure(row.outputs.front())+std::max(75.f,measure(n.ref)+15.f)+55.f);
             row.width=std::clamp(row.width,kNodeWidth,640.f);
+            for(size_t p=0;p<row.inputs.size();++p){const float outputSpace=p<row.outputs.size()?measure(row.outputs[p])+25.f:0.f;row.fieldW.push_back(row.fieldX[p]>0?std::max(0.f,row.width-13.f-row.fieldX[p]-outputSpace):0.f);}
+            if(n.kind.rfind("literal:",0)==0&&row.inputs.empty()&&!row.outputs.empty())row.literalFieldW=std::max(0.f,row.width-26.f-measure(row.outputs.front())-25.f);
         }
     }
 
@@ -4364,7 +4359,7 @@ namespace nx
         if(m_inspectorLiteral)m_inspectorRows.insert(m_inspectorRows.begin(),InputDetail{"Value",n.kind.substr(8),n.ref,"Custom",true});
         m_inspectorDraft.clear();for(const auto& row:m_inspectorRows)m_inspectorDraft.push_back(row.origin=="Required"||row.value=="Event delta time"||row.value=="Native default"?"":row.value);
         m_inspectorChanged.assign(m_inspectorRows.size(),false);m_inspectorFirst=0;m_inspectorRow=static_cast<size_t>(-1);
-        m_focus=15;input.setTyping(true);m_status="Edit values, then Apply. Connected inputs are read-only.";
+        m_focus=15;input.setTyping(true);m_status="Edit values, then Apply. Connected inputs are read-only.";NX_INFO("Blueprint Studio: Edit Node opened");
     }
     bool BlueprintWorkspace::applyNodeEditor(Input& input)
     {
@@ -5023,7 +5018,20 @@ namespace nx
         {
             const bool literal=m_focus==19;
             const auto apply=[&](){return m_inputReplace||(literal?m_document.setLiteral(m_graph,m_selection,m_edit,m_status):m_document.setInputValue(m_graph,m_selection,m_editPin,m_edit,m_status));};
-            if(click){if(!apply()){m_left=left;return;}m_focus=0;input.setTyping(false);clearWire();rebuildPins();filterCatalogue();m_diagnostic={};m_status="Inline edit applied.";m_left=left;return;}
+            if(click)
+            {
+                if(m_selection<m_rows.size())
+                {
+                    const auto& row=m_rows[m_selection];const auto pos=nodeLayoutPosition(m_selection);
+                    const float nx=kLeft+m_x+pos.x*m_zoom,ny=kTop+m_y+pos.y*m_zoom;
+                    if(literal&&row.literalFieldW>12.f&&in(x,y,nx+13*m_zoom,ny+(pinY(0)-9)*m_zoom,nx+(13.f+row.literalFieldW)*m_zoom,ny+(pinY(0)+9)*m_zoom)){m_left=left;return;}
+                    if(!literal)for(size_t p=0;p<row.inputs.size();++p)if(row.inputs[p]==m_editPin&&row.fieldW[p]>12.f&&in(x,y,nx+row.fieldX[p]*m_zoom,ny+(pinY(p)-9)*m_zoom,nx+(row.fieldX[p]+row.fieldW[p])*m_zoom,ny+(pinY(p)+9)*m_zoom)){m_left=left;return;}
+                }
+                if(!apply()){m_left=left;return;}
+                m_focus=0;input.setTyping(false);clearWire();rebuildPins();filterCatalogue();m_diagnostic={};m_status="Inline edit applied.";
+            }
+            else
+            {
             for(u32 i=0;i<input.typedCount();++i)
             {
                 const auto ch=input.typed(i);
@@ -5042,6 +5050,7 @@ namespace nx
                 {if(m_inputReplace){m_edit.clear();m_inputReplace=false;}appendCharacter(m_edit,ch,4096);}
             }
             m_left=left;return;
+            }
         }
         if(m_focus==15)
         {
@@ -5436,8 +5445,8 @@ namespace nx
                     const float px=nx+(side?rows[i-1].width*m_zoom:0);
                     for(size_t p=0;p<pins.size();++p)
                     {
-                        if(std::abs(x-px)>9||std::abs(y-(ny+pinY(p)*m_zoom))>std::min(9.f,0.45f*kPinStep*m_zoom))continue;
-                        m_selection=i-1;m_selectedNodes.clear();
+                        if(std::abs(x-px)>std::min(9.f,10.f*m_zoom)||std::abs(y-(ny+pinY(p)*m_zoom))>std::min(9.f,0.45f*kPinStep*m_zoom))continue;
+                        m_nodeClickTime=-1;m_selection=i-1;m_selectedNodes.clear();
                         if(control){if(m_document.disconnect(m_graph,i-1,pins[p],side!=0)){m_diagnostic={};rebuildPins();m_status="Disconnected pin.";}clearWire();}
                         else if(m_pending!=static_cast<size_t>(-1)&&m_pendingOutput!=(side!=0))
                         {
@@ -5456,7 +5465,7 @@ namespace nx
             if(m_pending!=static_cast<size_t>(-1)&&std::none_of(nodes.begin(),nodes.end(),[&](const BlueprintDocument::Node& n){const auto i=static_cast<size_t>(&n-nodes.data());const float nx=kLeft+m_x+n.x*m_zoom,ny=kTop+m_y+n.y*m_zoom;return in(x,y,nx,ny,nx+rows[i].width*m_zoom,ny+rows[i].height*m_zoom);}))
             {openPinMenu(x,y);if(m_pinMenu)input.setTyping(true);m_left=left;return;}
             // All visible, unconnected literal fields are editable directly.
-            if(!control&&!held(Key::Shift)&&m_pending==static_cast<size_t>(-1)&&m_zoom>=0.65f)
+            if(!control&&!held(Key::Shift)&&m_pending==static_cast<size_t>(-1))
             {
                 for(size_t i=nodes.size();i>0;--i)
                 {
@@ -5465,21 +5474,20 @@ namespace nx
                     if(!in(x,y,nx,ny,nx+row.width*m_zoom,ny+row.height*m_zoom))continue;
                     if(n.kind.rfind("literal:",0)==0&&row.inputs.empty()&&!row.outputs.empty())
                     {
-                        const float outputSpace=(canvas.measure(*m_font,row.outputs.front().c_str()).x+25)*m_zoom,py=ny+pinY(0)*m_zoom;
-                        if(in(x,y,nx+13*m_zoom,py-9*m_zoom,nx+(row.width-13)*m_zoom-outputSpace,py+9*m_zoom))
-                        {m_selection=index;m_selectedNodes={index};m_edit=n.ref;m_editPin="literal";m_inputReplace=true;m_focus=19;input.setTyping(true);m_left=left;return;}
+                        const float py=ny+pinY(0)*m_zoom;
+                        if(row.literalFieldW>12.f&&in(x,y,nx+13*m_zoom,py-9*m_zoom,nx+(13.f+row.literalFieldW)*m_zoom,py+9*m_zoom))
+                        {m_nodeClickTime=-1;m_selection=index;m_selectedNodes={index};m_edit=n.ref;m_editPin="literal";m_inputReplace=true;m_focus=19;input.setTyping(true);m_left=left;return;}
                     }
                     const auto details=inputDetails(index);
                     for(size_t p=0;p<row.inputs.size();++p)
                     {
-                        const float outputSpace=p<row.outputs.size()?(canvas.measure(*m_font,row.outputs[p].c_str()).x+25)*m_zoom:0;
                         const float py=ny+pinY(p)*m_zoom;
-                        if(!in(x,y,nx+row.fieldX[p]*m_zoom,py-9*m_zoom,nx+(row.width-13)*m_zoom-outputSpace,py+9*m_zoom))continue;
+                        if(row.fieldW[p]<=12.f||!in(x,y,nx+row.fieldX[p]*m_zoom,py-9*m_zoom,nx+(row.fieldX[p]+row.fieldW[p])*m_zoom,py+9*m_zoom))continue;
                         const auto field=std::find_if(details.begin(),details.end(),[&](const InputDetail& d){return d.name==row.inputs[p]&&d.editable;});
                         if(field==details.end())continue;
                         if(beginInputEdit(index,field->name,input))
                         {
-                            m_selectedNodes={index};m_edit=(field->origin=="Required"||field->value=="Event delta time"||field->value=="Native default")?"":field->value;
+                            m_nodeClickTime=-1;m_selectedNodes={index};m_edit=(field->origin=="Required"||field->value=="Event delta time"||field->value=="Native default")?"":field->value;
                             m_focus=16;m_inputReplace=true;m_status="Enter = Apply; Escape = Cancel.";
                             m_left=left;return;
                         }
@@ -5496,13 +5504,14 @@ namespace nx
                 hitNode=true;const auto found=std::find(m_selectedNodes.begin(),m_selectedNodes.end(),i-1);
                 if(control)
                 {
+                    m_nodeClickTime=-1;
                     if(found==m_selectedNodes.end())m_selectedNodes.push_back(i-1);else m_selectedNodes.erase(found);
                     m_selection=m_selectedNodes.empty()?static_cast<size_t>(-1):m_selectedNodes.back();m_left=left;return;
                 }
                 const double now=s.platform->seconds();
                 if(!held(Key::Shift)&&m_nodeClickTime>=0&&now-m_nodeClickTime<0.35&&m_nodeClickGraph==m_graph&&m_nodeClickIndex==i-1&&std::hypot(x-m_nodeClickX,y-m_nodeClickY)<9)
                 {beginNodeEditor(i-1,input);m_left=left;return;}
-                m_nodeClickTime=now;m_nodeClickGraph=m_graph;m_nodeClickIndex=i-1;m_nodeClickX=x;m_nodeClickY=y;
+                m_nodeClickTime=held(Key::Shift)?-1:now;m_nodeClickGraph=m_graph;m_nodeClickIndex=i-1;m_nodeClickX=x;m_nodeClickY=y;
                 if(found==m_selectedNodes.end())m_selectedNodes={i-1};
                 m_selection=i-1;m_drag=true;m_dragMoved=false;m_dragX=n.x;m_dragY=n.y;
                 m_pressX=x;m_pressY=y;m_grabX=n.x;m_grabY=n.y;break;
@@ -5799,13 +5808,12 @@ namespace nx
                 const float titleScale=std::max(0.5f,m_zoom);
                 const float titleInset=std::max(12.f,20*m_zoom),titleRight=n.watch?std::max(9.f,20*m_zoom):4.f*m_zoom;
                 graphText(rows[i].title,x+titleInset,y,w-titleInset-titleRight,headerHeight,titleScale,text);
-                if(m_zoom>=0.65f)
                 {
-                    const auto editableDetails=m_zoom>=0.65f?inputDetails(i):std::vector<InputDetail>{};
+                    // Field geometry is visible at every zoom, independent of selection.
                     const float pad=13*m_zoom;
                     if(first==0&&n.kind.rfind("literal:",0)==0&&rows[i].inputs.empty()&&!rows[i].outputs.empty())
                     {
-                        const float fx=x+pad,py=y+pinY(0)*m_zoom,fw=w-2*pad-(c.measure(*m_font,rows[i].outputs.front().c_str()).x+25)*m_zoom;
+                        const float fx=x+pad,py=y+pinY(0)*m_zoom,fw=rows[i].literalFieldW*m_zoom;
                         const bool editing=m_focus==19&&m_selection==i;
                         if(fw>12*m_zoom){c.roundRect(fx,py-9*m_zoom,fw,18*m_zoom,3,editing?Color{0.23f,0.37f,0.49f,1}:Color{0.21f,0.22f,0.24f,1});graphText(editing?m_edit:n.ref,fx+4*m_zoom,py-9*m_zoom,fw-8*m_zoom,18*m_zoom,m_zoom,text);}
                     }
@@ -5813,22 +5821,21 @@ namespace nx
                     {
                         const auto& pin=rows[i].inputs[p];const bool wired=wiredInputs[i][p];
                         const float py=y+pinY(p)*m_zoom;
-                        const auto detail=std::find_if(editableDetails.begin(),editableDetails.end(),[&](const InputDetail& field){return field.name==pin&&field.editable;});
                         const float right=p<rows[i].outputs.size()?(c.measure(*m_font,rows[i].outputs[p].c_str()).x+25)*m_zoom:0;
-                        if(!wired&&detail!=editableDetails.end())
+                        if(!wired&&rows[i].fieldW[p]>12.f)
                         {
-                            const float fx=x+rows[i].fieldX[p]*m_zoom,fw=x+w-pad-fx-right;
+                            const float fx=x+rows[i].fieldX[p]*m_zoom,fw=rows[i].fieldW[p]*m_zoom;
                             if(fw>12*m_zoom)
                             {
                                 const bool editing=m_focus==16&&i==m_selection&&m_editPin==pin;
                                 graphText(pin,x+pad,py-10*m_zoom,fx-x-pad-4*m_zoom,20*m_zoom,m_zoom,muted);
                                 c.roundRect(fx,py-9*m_zoom,fw,18*m_zoom,3,editing?Color{0.23f,0.37f,0.49f,1}:Color{0.21f,0.22f,0.24f,1});
-                                const auto value=editing?m_edit:detail->value;
-                                graphText(value.empty()?"Edit":value,fx+4*m_zoom,py-9*m_zoom,fw-8*m_zoom,18*m_zoom,m_zoom,editing||detail->origin=="Custom"?text:muted);
+                                const auto& value=editing?m_edit:rows[i].fieldValue[p];
+                                graphText(value.empty()&&!editing?"Edit":value,fx+4*m_zoom,py-9*m_zoom,fw-8*m_zoom,18*m_zoom,m_zoom,text);
                                 continue;
                             }
                         }
-                        graphText(rows[i].labels[p],x+pad,py-10*m_zoom,w-2*pad-right,20*m_zoom,m_zoom,muted);
+                        graphText(pin,x+pad,py-10*m_zoom,w-2*pad-right,20*m_zoom,m_zoom,muted);
                     }
                     for(size_t p=first;p<std::min(last,rows[i].outputs.size());++p)
                     {
