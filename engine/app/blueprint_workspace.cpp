@@ -1097,7 +1097,7 @@ namespace nx
         {m_status="Save as a named project before importing assets.";return;}
         if(!blueprintEnsureAssetFolder(*s.platform,m_document.assetRoot,screen,m_status)||
             !blueprintListAssets(*s.platform,m_document.assetRoot,screen,m_assetFiles,m_status))return;
-        stopTone(s);m_audioEditor=false;
+        stopTone(s);m_audioEditor=false;m_sharedMedia=false;
         m_assetBrowser=true;m_assetLibrary=false;m_widgetDesigner=false;releaseWidgetPreview();m_visualPlacement=false;cancelVisualPlacement();m_assetFirst=0;m_visualInput=0;clearWire();cancelDrag();
         m_status="Drop a native asset or scene JSON into this window.";
     }
@@ -3699,9 +3699,11 @@ namespace nx
         const auto screen=assetScreen();
         if(screen.empty()||m_filePath.empty()||m_document.assetRoot.empty())
         {m_status="Save as a named project and select a screen before importing assets.";return;}
-        if(!blueprintImportAsset(*s.platform,m_document.assetRoot,screen,file,m_status))return;
-        if(!blueprintListAssets(*s.platform,m_document.assetRoot,screen,m_assetFiles,m_status))return;
-        m_status="Imported asset:"+blueprintAssetImportPath(file);
+        if(!blueprintImportAsset(*s.platform,m_document.assetRoot,screen,file,m_status,m_sharedMedia))return;
+        const bool listed=m_sharedMedia?blueprintListSharedAssets(*s.platform,m_document.assetRoot,m_assetFiles,m_status):
+            blueprintListAssets(*s.platform,m_document.assetRoot,screen,m_assetFiles,m_status);
+        if(!listed)return;
+        m_status=std::string("Imported ")+(m_sharedMedia?"global:":"asset:")+blueprintAssetImportPath(file);
     }
     bool BlueprintWorkspace::saveNamed(Services& s,const std::string& name)
     {
@@ -4696,17 +4698,31 @@ namespace nx
         {
             if(m_audioEditor){updateTone(s,x,y,click);m_left=left;return;}
             if(m_assetLibrary){updateVisualLibrary(s,x,y,left,click,pressed);m_left=left;return;}
-            if(click&&in(x,y,280,116,380,150)){m_clipSource.clear();m_audioClip=BlueprintAudioClip{};m_clipEdit=BlueprintClipEdit{};m_audioEditor=true;m_toneEffects=false;refreshTone();m_status="Create a sound effect, then save a native WAV asset.";m_left=left;return;}
+            if(click&&in(x,y,280,116,380,150)){if(m_sharedMedia){m_status="Switch to Screen media for the audio editor.";m_left=left;return;}m_clipSource.clear();m_audioClip=BlueprintAudioClip{};m_clipEdit=BlueprintClipEdit{};m_audioEditor=true;m_toneEffects=false;refreshTone();m_status="Create a sound effect, then save a native WAV asset.";m_left=left;return;}
             if(click&&in(x,y,384,116,524,150)){m_assetLibrary=true;m_visualInput=0;m_visualText.clear();m_visualFirst=0;m_status="Project-wide reusable actors and widget pages.";m_left=left;return;}
             if(input.wheel()<0&&m_assetFirst+10<m_assetFiles.size())++m_assetFirst;
             if(input.wheel()>0&&m_assetFirst)--m_assetFirst;
             if(click&&in(x,y,860,116,1000,150))m_assetBrowser=false;
-            if(click&&in(x,y,704,116,850,150))browseAssets(s);
+            if(click&&in(x,y,704,116,850,150))
+            {
+                if(m_sharedMedia)blueprintListSharedAssets(*s.platform,m_document.assetRoot,m_assetFiles,m_status);
+                else blueprintListAssets(*s.platform,m_document.assetRoot,assetScreen(),m_assetFiles,m_status);
+                m_assetFirst=0;m_left=left;return;
+            }
+            if(click&&in(x,y,810,155,1000,185))
+            {
+                const bool next=!m_sharedMedia;
+                const bool listed=next?blueprintListSharedAssets(*s.platform,m_document.assetRoot,m_assetFiles,m_status):
+                    blueprintListAssets(*s.platform,m_document.assetRoot,assetScreen(),m_assetFiles,m_status);
+                if(listed){m_sharedMedia=next;m_assetFirst=0;m_status=next?"Shared media: reference with global:":"Screen media: reference with asset:";}
+                m_left=left;return;
+            }
             if(click&&in(x,y,534,116,694,150))launchSceneEditor(s);
             if(click&&in(x,y,280,190,1000,550))
             {
                 const auto row=m_assetFirst+static_cast<size_t>((y-190)/36);
-                if(row<m_assetFiles.size()&&m_assetFiles[row].ends_with(".bptone.json"))
+                if(m_sharedMedia&&row<m_assetFiles.size())m_status="Reference: global:"+m_assetFiles[row];
+                else if(row<m_assetFiles.size()&&m_assetFiles[row].ends_with(".bptone.json"))
                 {
                     BlueprintTone candidate;
                     if(blueprintLoadTonePreset(*s.platform,m_document.assetRoot,assetScreen(),m_assetFiles[row],candidate,m_status))
@@ -5784,15 +5800,18 @@ namespace nx
                 c.roundRect(534,116,160,34,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Scene editor",614,123,text,Align::Center);
                 c.roundRect(704,116,146,34,4,{0.22f,0.31f,0.43f,1});c.text(*m_font,"Refresh",777,123,text,Align::Center);
                 c.roundRect(860,116,140,34,4,{0.22f,0.31f,0.43f,1});c.text(*m_font,"Close",930,123,text,Align::Center);
-                c.clip(280,155,720,26);c.text(*m_font,("own/"+m_document.assetRoot+"/"+assetScreen()+"/asset").c_str(),280,160,muted);c.noClip();
+                const auto scope=m_sharedMedia?"own/"+m_document.assetRoot+"/_global":"own/"+m_document.assetRoot+"/"+assetScreen()+"/asset";
+                c.clip(280,155,520,30);c.text(*m_font,scope.c_str(),280,160,muted);c.noClip();
+                c.roundRect(810,155,190,30,4,{0.19f,0.33f,0.50f,1});
+                c.text(*m_font,m_sharedMedia?"Shared / global:":"Screen / asset:",905,160,text,Align::Center);
                 for(size_t i=0;i<10&&m_assetFirst+i<m_assetFiles.size();++i)
                 {
                     const float y=190+36*static_cast<float>(i);
                     c.rect(280,y,720,33,{0.22f,0.22f,0.24f,1});
-                    c.clip(286,y,708,33);c.text(*m_font,("asset:"+m_assetFiles[m_assetFirst+i]).c_str(),290,y+8,text);c.noClip();
+                    c.clip(286,y,708,33);c.text(*m_font,(std::string(m_sharedMedia?"global:":"asset:")+m_assetFiles[m_assetFirst+i]).c_str(),290,y+8,text);c.noClip();
                 }
                 if(m_assetFiles.empty())c.text(*m_font,"Drop a file here to import it.",640,330,muted,Align::Center);
-                c.text(*m_font,"Click a sound or preset to edit; drop files to import.",640,565,muted,Align::Center);
+                c.text(*m_font,m_sharedMedia?"Drop files to share across screens; click to show global: reference.":"Click a sound or preset to edit; drop files to import.",640,565,muted,Align::Center);
                 c.clip(280,591,720,26);c.text(*m_font,m_status.c_str(),280,595,text);c.noClip();
             }
             else if(m_browsing)

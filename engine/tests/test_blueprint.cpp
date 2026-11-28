@@ -3395,6 +3395,34 @@ NX_TEST(nativeCubicCurveAuthoringRunsNativeCurve)
 }
 
 #ifdef NX_DESKTOP_BLUEPRINT
+NX_TEST(nativeSharedMediaImportAndPackage)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    r.platform.workspaceFiles=true;
+    BlueprintDocument doc;doc.create();std::string error;
+    NX_EXPECT(blueprintCreateAssetRoot(r.platform,doc.assetRoot,error));
+    std::vector<std::string> files;
+    NX_EXPECT(blueprintListSharedAssets(r.platform,doc.assetRoot,files,error)&&files.empty());
+    r.platform.files["own/avatar.png"]="picture payload";
+    NX_EXPECT(blueprintImportAsset(r.platform,doc.assetRoot,"Screen","avatar.png",error,true));
+    NX_EXPECT(blueprintListSharedAssets(r.platform,doc.assetRoot,files,error)&&files.size()==1&&files[0]=="picture/avatar.png");
+    const auto global="own/"+doc.assetRoot+"/_global/picture/avatar.png";
+    NX_EXPECT(r.platform.files[global]=="picture payload");
+    r.platform.files["own/avatar.png"]="changed";
+    NX_EXPECT(!blueprintImportAsset(r.platform,doc.assetRoot,"Screen","avatar.png",error,true));
+    NX_EXPECT(r.platform.files[global]=="picture payload");
+    NX_EXPECT(blueprintImportAsset(r.platform,doc.assetRoot,"Screen","avatar.png",error));
+    NX_EXPECT(r.platform.files["own/"+doc.assetRoot+"/Screen/asset/picture/avatar.png"]=="changed");
+    NX_EXPECT(blueprintExportPackage(r.platform,doc,"shared-media.bp.zip",error));
+    BlueprintDocument restored;
+    NX_EXPECT(blueprintImportPackage(r.platform,"shared-media.bp.zip",restored,error));
+    NX_EXPECT(r.platform.files["own/"+restored.assetRoot+"/_global/picture/avatar.png"]=="picture payload");
+    NX_EXPECT(blueprintListSharedAssets(r.platform,restored.assetRoot,files,error)&&files.size()==1);
+    std::string fresh;
+    NX_EXPECT(blueprintCreateAssetRoot(r.platform,fresh,error));
+    NX_EXPECT(blueprintCopySharedAssets(r.platform,restored.assetRoot,fresh,error));
+    NX_EXPECT(r.platform.files["own/"+fresh+"/_global/picture/avatar.png"]=="picture payload");
+}
 NX_TEST(nativePortableProjectZipRoundTripAndCorruption)
 {
     Rig r;NX_EXPECT(r.ok);if(!r.ok)return;

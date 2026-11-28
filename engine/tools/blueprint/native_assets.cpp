@@ -738,6 +738,15 @@ namespace nx
             stamp.substr(0,separator).find_first_not_of("0123456789")==std::string::npos&&
             stamp.substr(separator+1).find_first_not_of("0123456789")==std::string::npos;
     }
+    bool blueprintListSharedAssets(Platform& p,const std::string& root,std::vector<std::string>& files,std::string& error)
+    {
+        if(!blueprintAssetRoot(root)||!p.fileTime(("own/"+root).c_str()))
+        {error="Missing or invalid project asset root.";return false;}
+        std::vector<std::string> result;size_t directories=0;
+        const auto base="own/"+root+"/_global";
+        if(p.fileTime(base.c_str())&&!collect(p,base,"",0,directories,result,error))return false;
+        std::sort(result.begin(),result.end());files.swap(result);error.clear();return true;
+    }
     bool blueprintCopySharedAssets(Platform& p,const std::string& source,const std::string& destination,std::string& error)
     {
         if(source.empty()){error.clear();return true;}
@@ -810,12 +819,17 @@ namespace nx
         }
         root=std::move(fresh);error.clear();return true;
     }
-    bool blueprintImportAsset(Platform& p,const std::string& root,const std::string& screen,const std::string& file,std::string& error)
+    bool blueprintImportAsset(Platform& p,const std::string& root,const std::string& screen,const std::string& file,std::string& error,bool shared)
     {
         if(!blueprintAssetName(file)){error="Use a lowercase portable asset filename (letters, digits, _, -, .).";return false;}
         if(!blueprintAssetRoot(root)){error="Invalid project asset root.";return false;}
-        if(!blueprintEnsureAssetFolder(p,root,screen,error))return false;
-        const auto relative=blueprintAssetImportPath(file),dest=root+"/"+screen+"/asset/";
+        if(shared)
+        {
+            if(!p.fileTime(("own/"+root).c_str())||!ensure(p,root+"/_global"))
+            {error="Cannot create shared project asset directory.";return false;}
+        }
+        else if(!blueprintEnsureAssetFolder(p,root,screen,error))return false;
+        const auto relative=blueprintAssetImportPath(file),dest=shared?root+"/_global/":root+"/"+screen+"/asset/";
         const auto slash=relative.find('/');
         if(slash!=std::string::npos&&!ensure(p,dest+relative.substr(0,slash)))
         {error="Cannot create native asset type folder.";return false;}

@@ -9,3 +9,7 @@ The initial format uses stored ZIP entries, 4096 assets, 64 MiB per entry and 25
 ## Bitmap fonts
 
 Import a single-page text BMFont `.fnt` with the atlas named in its `page` entry. Stage both files in Redux's `own/` directory (or drop both into the asset browser); import the descriptor after the atlas is available. Studio puts both in `asset:font/` with their original portable names. Select `asset:font/<name>.fnt` in `Assets::font`. The descriptor uses the original Redux parser; incompatible page names, missing atlases, mismatched dimensions and conflicting existing files are rejected. An identical atlas may be shared by multiple descriptors. A failed disk write may leave an unused atlas, but not a newly imported descriptor without its atlas. Normal project export and portable ZIP packaging retain the pair. Image-strip fonts continue to use `Assets::imageFont` and ordinary image assets.
+
+## Shared media
+
+In Assets, click Screen / asset: to switch to Shared / global:. Dropped files are imported into the project's own _global directory using the native type folders, not into the installed engine media. Use global:picture/avatar.png, for example, from any screen. Click an entry to display its reference. Existing files are never replaced. Save As, native export and portable ZIP retain the shared assets. The screen-local audio editor remains in Screen mode; shared audio files can be referenced from normal Blueprint audio nodes. This matches the upstream Hub/Home shared artwork convention without making custom projects depend on showcase art.

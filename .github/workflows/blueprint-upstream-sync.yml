@@ -1,4 +1,4 @@
-name: Verify upstream clock, audio graphs and joint authoring
+name: Verify upstream integration and shared media
 on:
   workflow_dispatch:
   pull_request:
@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   refresh:
-    if: github.repository == 'TroJanVirus/NexgenRedux-BlueprintStudio' && (github.head_ref == 'blueprint/integration-bf38665' || github.ref == 'refs/heads/blueprint/integration-bf38665')
+    if: github.repository == 'TroJanVirus/NexgenRedux-BlueprintStudio' && (startsWith(github.head_ref, 'blueprint/integration-') || startsWith(github.ref, 'refs/heads/blueprint/integration-'))
     runs-on: ubuntu-latest
     timeout-minutes: 12
     permissions:
@@ -60,7 +60,9 @@ jobs:
           git diff --quiet
           if ! git diff --cached --quiet; then
             git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m "Regenerate Blueprint catalogues and fixtures after upstream integration"
-            git push origin HEAD:refs/heads/blueprint/integration-bf38665
+            branch="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+            [[ "$branch" == blueprint/integration-* ]]
+            git push origin "HEAD:refs/heads/$branch"
           fi
           echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
   verify:

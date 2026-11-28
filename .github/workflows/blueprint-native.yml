@@ -72,10 +72,10 @@ jobs:
           ASAN_OPTIONS: detect_leaks=1:halt_on_error=1:fast_unwind_on_malloc=0
         run: ctest --test-dir build --output-on-failure --timeout 300 -R '^blueprint_runtime$'
       - name: Build engine audio regression tests
-        if: github.ref == 'refs/heads/blueprint/audio-authoring' || github.ref == 'refs/heads/blueprint/integration-1100c4e' || github.head_ref == 'blueprint/integration-bf38665' || github.ref == 'refs/heads/blueprint/integration-bf38665' || startsWith(github.ref, 'refs/heads/blueprint/beta-')
+        if: github.ref == 'refs/heads/blueprint/audio-authoring' || github.ref == 'refs/heads/blueprint/integration-1100c4e' || startsWith(github.head_ref, 'blueprint/integration-') || startsWith(github.ref, 'refs/heads/blueprint/integration-') || startsWith(github.ref, 'refs/heads/blueprint/beta-')
         run: cmake --build build --target nx_tests --parallel 4
       - name: Run engine unit tests with audio decoding and memory bounds
-        if: github.ref == 'refs/heads/blueprint/audio-authoring' || github.ref == 'refs/heads/blueprint/integration-1100c4e' || github.head_ref == 'blueprint/integration-bf38665' || github.ref == 'refs/heads/blueprint/integration-bf38665' || startsWith(github.ref, 'refs/heads/blueprint/beta-')
+        if: github.ref == 'refs/heads/blueprint/audio-authoring' || github.ref == 'refs/heads/blueprint/integration-1100c4e' || startsWith(github.head_ref, 'blueprint/integration-') || startsWith(github.ref, 'refs/heads/blueprint/integration-') || startsWith(github.ref, 'refs/heads/blueprint/beta-')
         env:
           ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
         run: ctest --test-dir build --output-on-failure --timeout 300 -R '^unit$'
@@ -96,6 +96,12 @@ jobs:
         run: cmake -S engine -B build -DCMAKE_BUILD_TYPE=Release
       - name: Build native editor and regression executables
         run: cmake --build build --target showcase nx_blueprint_tests nx_blueprint_document_tests nx_blueprint_platform_tests --parallel 4
+      - name: Verify pinned shared Hub media and native demo startup
+        run: |
+          test -s NexgenRedux-Media/media/global/picture/avatar.png
+          test -s NexgenRedux-Media/media/global/picture/demos/explore.jpg
+          test -s NexgenRedux-Media/media/showcase/hub/main.as
+          build/showcase/nexgen --screen hub --null --frames 120 --saves "$RUNNER_TEMP/bp-hub"
       - name: Run native document and engine tests
         run: ctest --test-dir build --output-on-failure --timeout 300 -R '^(blueprint_runtime|blueprint_native_document|blueprint_platform_files)$'
       - name: Start editor with null GPU
