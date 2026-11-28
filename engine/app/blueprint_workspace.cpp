@@ -917,32 +917,9 @@ namespace nx
     {
         m_actorConstructionApplied=false;m_actorConstructionStatus.clear();
         const auto classOwner=m_document.actorBehaviour(id);
-        const auto* graph=m_document.function(classOwner,"Construction");
-        if(!graph){m_actorConstructionStatus="No Construction graph.";return;}
-        if(graph->returnType!="void"||!graph->parameters.empty()||graph->inlineMacro)
-        {m_actorConstructionStatus="Construction must be a parameterless void function.";return;}
-        // Fail closed. Only the native, synchronous geometry/value subset is
-        // editor-executable. Runtime-only calls, arbitrary APIs, external
-        // services, callbacks, globals and other graph calls are excluded.
-        const auto permitted=[](const BlueprintDocument::Node& node)
-        {
-            const auto& k=node.kind;
-            for(const char* exact:{"entry","event:entity","actor:component","actor:valid","null:entity",
-                "branch","sequence","repeat","make:Vec2","make:Vec3","make:Color",
-                "api:Entity:get_place:Entity@","api:Entity:get_angles:Entity@","api:Entity:get_size:Entity@",
-                "api:Entity:get_name:Entity@","api:Entity:set_place:Entity@,Vec3",
-                "api:Entity:set_angles:Entity@,Vec3","api:Entity:set_size:Entity@,Vec3",
-                "api:Entity:set_color:Entity@,Color","api:Entity:set_name:Entity@,string",
-                "api:Entity:shape:Entity@,Solid,Color"})
-                if(k==exact)return true;
-            if(k.rfind("literal:",0)==0||k.rfind("var:get:",0)==0||k.rfind("var:set:",0)==0||
-               k.rfind("capture:",0)==0)return true;
-            const auto* spec=blueprintSpec(k);
-            return spec&&!spec->operation.empty();
-        };
-        for(const auto& node:graph->nodes)if(!permitted(node))
-        {m_actorConstructionStatus="Runtime-only node: "+node.kind;return;}
         std::string source,why;
+        if(!m_document.validateEditorConstruction(classOwner,why))
+        {m_actorConstructionStatus=why;return;}
         if(!compileBlueprintOwner(m_document,owner,source,why))
         {m_actorConstructionStatus="Construction preview compile: "+why;return;}
         JsonTree tree;if(!tree.parse(actorJson.data(),actorJson.size()))return;

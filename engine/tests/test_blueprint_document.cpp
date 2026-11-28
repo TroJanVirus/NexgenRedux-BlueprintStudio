@@ -1888,3 +1888,50 @@ NX_TEST(nativeNestedStructureAndEnumSwitchValidation)
     NX_EXPECT(!doc.editFunctionSignature(en,"enum(Idle, Jumping)",error));
     NX_EXPECT(compileBlueprint(doc,source,error)&&source.find("BP_Data_State::bp_Running")!=std::string::npos);
 }
+
+
+NX_TEST(nativeEditorConstructionChecksVirtualHelpersAndParentCalls)
+{
+    BlueprintDocument doc;doc.create();std::string base,child,parent,derived,error;
+    NX_EXPECT(doc.createVisualAsset("actor",base,error)&&doc.createVisualActorChild(base,child,error));
+    NX_EXPECT(doc.ensureActorBehaviour(child,derived,error)&&doc.ensureActorBehaviour(base,parent,error));
+    NX_EXPECT(doc.addFunction("Adjust",error,parent)&&doc.addFunction("Construction",error,parent));
+    const auto* construction=doc.function(parent,"Construction");if(!construction){NX_EXPECT(false);return;}
+    const auto gi=static_cast<size_t>(construction-doc.graphs.data());
+    NX_EXPECT(doc.addNode(gi,"call:function",0,0,error,"Adjust")&&doc.connect(gi,0,"then",1,"in",error));
+    NX_EXPECT(doc.validateEditorConstruction(parent,error)&&doc.validateEditorConstruction(derived,error));
+    NX_EXPECT(doc.addFunction("Construction",error,derived));
+    const auto* derivedConstruction=doc.function(derived,"Construction");if(!derivedConstruction){NX_EXPECT(false);return;}
+    const auto ci=static_cast<size_t>(derivedConstruction-doc.graphs.data());
+    NX_EXPECT(doc.addConnectedNode(ci,0,"then","call:parent",0,0,error));
+    NX_EXPECT(doc.validateEditorConstruction(derived,error));
+    NX_EXPECT(doc.addFunction("Adjust",error,derived));
+    const auto* helper=doc.function(derived,"Adjust");if(!helper){NX_EXPECT(false);return;}
+    const auto hi=static_cast<size_t>(helper-doc.graphs.data());
+    NX_EXPECT(doc.addNode(hi,"api:Save:Save::set:string,string",0,0,error));
+    NX_EXPECT(doc.connect(hi,0,"then",1,"in",error));
+    NX_EXPECT(doc.setInputValue(hi,1,"key","test",error)&&doc.setInputValue(hi,1,"value","must not run",error));
+    NX_EXPECT(doc.validateEditorConstruction(parent,error));
+    NX_EXPECT(!doc.validateEditorConstruction(derived,error)&&error.find("Runtime-only node")!=std::string::npos);
+    NX_EXPECT(doc.deleteNode(hi,1,error)&&doc.validateEditorConstruction(derived,error));
+}
+
+NX_TEST(nativeEditorConstructionChecksSharedLibraryAndTypedGeometry)
+{
+    BlueprintDocument doc;doc.create();std::string actor,owner,error;
+    NX_EXPECT(doc.createVisualAsset("actor",actor,error)&&doc.ensureActorBehaviour(actor,owner,error));
+    NX_EXPECT(doc.addFunction("SharedGeometry",error));
+    const auto library=doc.graphs.size()-1;
+    NX_EXPECT(doc.setSharedLibrary(library,true,error));
+    NX_EXPECT(doc.addFunction("Construction",error,owner));
+    const auto* fn=doc.function(owner,"Construction");if(!fn){NX_EXPECT(false);return;}
+    const auto gi=static_cast<size_t>(fn-doc.graphs.data());
+    NX_EXPECT(doc.addNode(gi,"call:library",0,0,error,"SharedGeometry")&&doc.connect(gi,0,"then",1,"in",error));
+    NX_EXPECT(doc.addNode(gi,"event:entity",0,0,error));
+    NX_EXPECT(doc.addNode(gi,"api:Entity:set_size:Entity@,Vec3",0,0,error));
+    NX_EXPECT(doc.connect(gi,1,"then",3,"in",error)&&doc.connect(gi,2,"value",3,"target",error));
+    NX_EXPECT(doc.setInputValue(gi,3,"value","2,3,4",error));
+    NX_EXPECT(doc.validateEditorConstruction(owner,error));
+    std::string source;NX_EXPECT(compileBlueprint(doc,source,error));
+    NX_EXPECT(source.find("bp_lib_SharedGeometry()")!=std::string::npos);
+}

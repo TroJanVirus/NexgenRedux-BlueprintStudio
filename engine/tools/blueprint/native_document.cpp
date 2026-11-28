@@ -1445,6 +1445,73 @@ namespace nx
         {error="An actor supports at most 16 exposed spawn fields.";return false;}
         return true;
     }
+    bool BlueprintDocument::validateEditorConstruction(const std::string& classOwner,std::string& error)const
+    {
+        error.clear();
+        const auto* construction=function(classOwner,"Construction");
+        if(classOwner.rfind("behaviour:",0)!=0||!construction)
+        {error="No Construction graph.";return false;}
+        if(construction->returnType!="void"||!construction->parameters.empty()||construction->inlineMacro)
+        {error="Construction must be a parameterless void function.";return false;}
+        const auto safeType=[](const std::string& type)
+        {
+            for(const char* allowed:{"void","exec","bool","int","uint","float","double","string","Vec2","Vec3","Color","Entity@","Solid"})
+                if(type==allowed)return true;
+            return false;
+        };
+        std::unordered_set<const Graph*> visiting,complete;
+        const auto visit=[&](auto&& self,const Graph* graph,unsigned depth)->bool
+        {
+            if(!graph||depth>32){error="Missing or too deeply nested Construction helper.";return false;}
+            if(complete.count(graph))return true;
+            if(!visiting.insert(graph).second){error="Recursive Construction preview call: "+graph->name;return false;}
+            if(graph->dataRole=="coroutine"||!safeType(graph->returnType)||
+                std::any_of(graph->parameters.begin(),graph->parameters.end(),[&](const BlueprintPin& pin){return !safeType(pin.type);}))
+            {error="Runtime-only Construction helper signature: "+graph->name;return false;}
+            for(const auto& node:graph->nodes)
+            {
+                const auto& k=node.kind;
+                if(k=="call:function"||k=="call:event"||k=="call:library"||k=="call:parent")
+                {
+                    const auto* target=k=="call:library"?libraryFunction(node.ref):k=="call:parent"?
+                        function(parentBehaviour(graph->owner),graph->name):function(graph->owner,node.ref);
+                    if(!self(self,target,depth+1))return false;
+                    // Native callable methods use virtual dispatch. A parent's safe helper
+                    // may be overridden by the selected concrete actor with an unsafe one.
+                    // Macros and explicit parent calls are statically bound.
+                    if(target&&!target->inlineMacro&&!target->sharedLibrary&&k!="call:parent")
+                    {
+                        const auto* actual=function(classOwner,node.ref);
+                        if(!self(self,actual,depth+1))return false;
+                    }
+                    continue;
+                }
+                bool allowed=false;
+                for(const char* exact:{"entry","return:function","event:entity","actor:component","actor:valid","null:entity",
+                    "branch","sequence","repeat","make:Vec2","make:Vec3","make:Color","math:sin","math:cos","math:orbit-position",
+                    "flow:do-once","flow:do-n","flow:flip-flop","flow:multi-gate","flow:controlled-gate","flow:switch-int",
+                    "api:Entity:get_place:Entity@","api:Entity:get_angles:Entity@","api:Entity:get_size:Entity@",
+                    "api:Entity:get_name:Entity@","api:Entity:get_color:Entity@","api:Entity:set_place:Entity@,Vec3",
+                    "api:Entity:set_angles:Entity@,Vec3","api:Entity:set_size:Entity@,Vec3",
+                    "api:Entity:set_color:Entity@,Color","api:Entity:set_name:Entity@,string",
+                    "api:Entity:shape:Entity@,Solid,Color"})
+                    if(k==exact){allowed=true;break;}
+                if(k.rfind("literal:",0)==0||k.rfind("var:get:",0)==0||k.rfind("var:set:",0)==0||
+                    k.rfind("capture:",0)==0||(k.rfind("typed:",0)==0&&k.rfind("typed:global:",0)!=0))
+                    allowed=true;
+                const auto* base=blueprintSpec(k);
+                if(base&&!base->operation.empty())allowed=true;
+                BlueprintNodeSpec spec;
+                if(!allowed||!nodeSpec(*graph,node,spec)||
+                    std::any_of(spec.inputs.begin(),spec.inputs.end(),[&](const BlueprintPin& pin){return !safeType(pin.type);})||
+                    std::any_of(spec.outputs.begin(),spec.outputs.end(),[&](const BlueprintPin& pin){return !safeType(pin.type);}))
+                {error="Runtime-only node in "+graph->owner+"/"+graph->name+": "+k;return false;}
+            }
+            visiting.erase(graph);complete.insert(graph);return true;
+        };
+        return visit(visit,construction,0);
+    }
+
     bool BlueprintDocument::createVisualActorChild(const std::string& parentId,std::string& id,std::string& error)
     {
         std::string resolved;if(!visualActorSource(parentId,resolved,error))return false;

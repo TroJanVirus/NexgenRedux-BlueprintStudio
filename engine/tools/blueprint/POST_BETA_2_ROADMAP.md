@@ -147,3 +147,8 @@ The actor viewport has a Construction preview toggle, off by default. It compile
 ## Resizable top/bottom and floating content docks (verification pending)
 
 Content panel supports top and bottom docking with visible drop guides, floating corner resize, dock-edge height resize and multiple asset rows. Editor-only layout persistence stores the last docking edge and height, with backward-compatible defaults. Graph clipping and Fit Graph use the available center area rather than placing nodes behind the docked drawer. Existing thumbnail budget remains four visible native previews, with icons for additional tiles. Compact desktop regression exercises top/bottom docking and the opt-in empty Construction graph. Other side panels remain fixed/resizable, so general-purpose docking and detached desktop windows are still incomplete.
+
+
+## Construction preview call-tree validation (verification pending)
+
+Editor-safe Construction now accepts synchronous reusable functions, custom events, shared libraries/macros and explicit parent calls. Validation lives in the native document layer, traverses nested calls and checks the concrete actor's virtual overrides, rejecting runtime-only nodes even when hidden behind inherited helpers. Native typed primitive/vector/color/entity pins, safe local fields, arithmetic and selected synchronous flow nodes are accepted. Global accesses, dispatchers, coroutines, arbitrary APIs and recursive calls remain excluded. Added document regressions for inherited unsafe virtual overrides and shared library/geometry calls. The preview still invokes only the generated Construction method on a disposable world.

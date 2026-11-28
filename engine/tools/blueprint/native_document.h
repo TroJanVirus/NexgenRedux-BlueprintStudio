@@ -167,6 +167,8 @@ namespace nx
         std::string actorBehaviour(const std::string& id)const;
         std::vector<Field> actorSpawnFields(const std::string& id)const;
         bool validateBehaviourInheritance(std::string& error)const;
+        // True only for a synchronous, preview-safe Construction call tree.
+        bool validateEditorConstruction(const std::string& classOwner,std::string& error)const;
         bool removeBehaviour(const std::string& name,std::string& error);
         bool removeFunction(size_t graph,std::string& error);
         bool setInlineMacro(size_t graph,bool enabled,std::string& error);
