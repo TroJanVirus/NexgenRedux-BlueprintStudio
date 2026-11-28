@@ -319,6 +319,9 @@ with menu_log.open("wb") as out:
         enter_text("inline")
         wait_for(lambda: "inline input applied: value" in menu_log.read_text(errors="replace"),
                  "inline scalar edit", process)
+        click(800, 53, window)
+        wait_for(lambda: json.loads(authored.read_text())["graphs"][0]["nodes"][1]["values"]["value"].replace("inline", "", 1) == "first" and "inline" in json.loads(authored.read_text())["graphs"][0]["nodes"][1]["values"]["value"],
+                 "inline typing preserves existing characters", process)
         key("ctrl+z")
         click(800, 53, window)
         wait_for(lambda: json.loads(authored.read_text())["graphs"][0]["nodes"][1]["values"]["value"] == "first",

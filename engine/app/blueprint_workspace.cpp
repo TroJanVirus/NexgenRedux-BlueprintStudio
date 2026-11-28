@@ -5849,7 +5849,7 @@ namespace nx
         }
         if(!m_graphHideRight&&!m_drag&&(m_paletteDragging||in(x,y,kRight,kTop,kWidth,kBottom)))
         {
-            const bool back=!m_paletteGroup.empty()||!m_query.empty();
+            const bool back=m_query.empty()&&!m_paletteGroup.empty();
             const size_t visible=kPaletteRows-(back?1u:0u);
             const size_t maxFirst=m_paletteRows.size()>visible?m_paletteRows.size()-visible:0;
             const float listTop=kTop+80+(back?26.f:0.f),listHeight=26.f*static_cast<float>(visible);
@@ -6486,7 +6486,7 @@ namespace nx
         c.roundRect(kRight+8,kTop+38,kWidth-kRight-16,30,4,m_focus==1?Color{0.24f,0.35f,0.48f,1}:Color{0.16f,0.21f,0.28f,1});
         c.clip(kRight+12,kTop+38,kWidth-kRight-24,30);
         c.text(*m_font,m_query.empty()?"Search nodes...":m_query.c_str(),kRight+14,kTop+43,text);c.noClip();
-        const bool back=!m_paletteGroup.empty()||!m_query.empty();
+        const bool back=m_query.empty()&&!m_paletteGroup.empty();
         const size_t visible=kPaletteRows-(back?1u:0u),maxFirst=m_paletteRows.size()>visible?m_paletteRows.size()-visible:0;
         const float listTop=kTop+80+(back?26.f:0.f),listHeight=26.f*static_cast<float>(visible);
         if(back){c.rect(kRight+8,kTop+80,kWidth-kRight-16,24,{0.22f,0.30f,0.39f,1});c.text(*m_font,"< All categories",kRight+14,kTop+82,accent);}
