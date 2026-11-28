@@ -1,4 +1,5 @@
 #include "test.h"
+#include "script/studio_actor_value.h"
 #include "script/studio_live_source.h"
 #include "script/studio_launch.h"
 #include "script/source_fingerprint.h"
@@ -2432,4 +2433,19 @@ NX_TEST(nativeLiveSourceTransfer)
     NX_EXPECT(transfer.begin("Screen",hash,hash,code.size())&&!transfer.append(1,"61"));
     NX_EXPECT(transfer.begin("Screen",hash,hash,code.size())&&!transfer.append(0,"00"));
     NX_EXPECT(transfer.begin("Screen",hash,hash,code.size())&&transfer.append(0,"61626362")&&!transfer.commit());
+}
+
+NX_TEST(nativeStudioActorValueBounds)
+{
+    NX_EXPECT(studioActorValue("position","-12.5, 8",false));
+    NX_EXPECT(studioActorValue("place","1, 2, 3",true));
+    NX_EXPECT(studioActorValue("color","0.1, 0.2, 0.3, 1",true));
+    NX_EXPECT(!studioActorValue("place","1, 2, nan",true));
+    NX_EXPECT(!studioActorValue("place","1, 2, 3 junk",true));
+    NX_EXPECT(!studioActorValue("place","1, 2, 3, 4",true));
+    NX_EXPECT(!studioActorValue("position","1e20,2",false));
+    NX_EXPECT(!studioActorValue("size","0,1,1",true));
+    NX_EXPECT(!studioActorValue("mass","-1",true));
+    NX_EXPECT(!studioActorValue("shown","yes",false));
+    NX_EXPECT(!studioActorValue("name","renamed",false));
 }

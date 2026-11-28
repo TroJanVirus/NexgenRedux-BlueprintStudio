@@ -2,6 +2,7 @@
 #include "script/studio_launch.h"
 #include "platform/console.h"
 #include "screens/screens.h"
+#include "script/studio_actor_value.h"
 #include "bindings/script_refs.h"
 #include "scene/space.h"
 #include "scene/world.h"
@@ -192,7 +193,7 @@ namespace nx
                 NX_INFO("debugger: connected");
             }
         }
-        pump();
+        m_actorFrame=true;pump();m_actorFrame=false;
         if(!connected())m_liveUpload.clear();
         else if(m_liveUpload.ready&&!m_paused&&m_mode==Mode::Run)applyLiveUpload();
         // Only the frame boundary may leave the running title. Never launch
@@ -332,6 +333,7 @@ namespace nx
             putNumber(reply, "version", 1);
             reply.put("sourceIdentity")->setFlag(true);
             reply.put("remoteTrace")->setFlag(true);
+            reply.put("studioActors")->setFlag(true);
             if(!m_launchId.empty()){putText(reply,"launchId",m_launchId);reply.put("liveSource")->setFlag(true);}
             putText(reply, "angelscript", ScriptHost::version());
             putNumber(reply, "id", id);
@@ -422,6 +424,10 @@ namespace nx
         {
             const JsonValue* on = ask.find("on");
             profile(id, on && on->flag());
+        }
+        else if(name=="studioActors"||name=="studioActor"||name=="studioActorSet")
+        {
+            studioActors(id,name,ask);
         }
         else if (name == "entities")
         {
@@ -1279,15 +1285,58 @@ namespace nx
         send(reply.write(true));
     }
 
-    void ScriptDebugger::entity(int id, const JsonValue& ask)
+    void ScriptDebugger::studioActors(int id,const std::string& command,const JsonValue& ask)
+    {
+        JsonValue reply;putNumber(reply,"id",id);
+        const auto* services=m_host&&m_host->engine()?static_cast<const Services*>(m_host->engine()->GetUserData()):nullptr;
+        auto* screens=services?services->screens:nullptr;
+        auto* world=screens?screens->liveWorld():nullptr;
+        const auto reject=[&](const char* reason){reply.put("actorOk")->setFlag(false);putText(reply,"message",reason);send(reply.write(true));};
+        if(!world||!screens||screens->loading()||screens->failed()||m_liveApplying||(!m_actorFrame&&!m_paused))
+        {reject("World unavailable at this script boundary; retry.");return;}
+        if(m_paused&&services->world!=world){reject("Paused outside active screen.");return;}
+        const auto epoch=screens->liveWorldEpoch();
+        const auto integer=[&](const char* key,u32& out)
+        {
+            const auto* item=ask.find(key);if(!item)return false;
+            const auto n=item->number();if(!(n>=0&&n<=4294967295.0))return false;
+            out=static_cast<u32>(n);return n==static_cast<double>(out);
+        };
+        if(command=="studioActors")
+        {
+            u32 offset=0;if(!integer("offset",offset)||offset>65536){reject("Invalid actor page.");return;}
+            u32 count=0;auto* list=reply.put("entities");list->setArray();
+            world->eachEntity([&](u32 entity,const World::Entity& e){
+                const auto at=count++;
+                if(at<offset||at-offset>=48)return;
+                auto* item=list->add();putNumber(*item,"entity",entity);putText(*item,"name",e.name);
+                putNumber(*item,"parent",world->parentOf(entity));item->put("space")->setFlag(world->space().getSpatial(entity)!=nullptr);
+            });
+            reply.put("actorOk")->setFlag(true);putNumber(reply,"epoch",epoch);putNumber(reply,"offset",offset);
+            putNumber(reply,"count",count);putText(reply,"screen",screens->current());send(reply.write(true));return;
+        }
+        u32 expected=0,entityId=0;
+        if(!integer("epoch",expected)||expected!=epoch||!integer("entity",entityId)||!world->find(entityId))
+        {reject("Actor is stale or was destroyed; refresh the scene.");return;}
+        if(command=="studioActor"){entity(id,ask,true);return;}
+        const auto* name=ask.find("property");const auto* value=ask.find("value");
+        if(!name||!value||!studioActorValue(name->text(),value->text(),world->space().getSpatial(entityId)!=nullptr))
+        {reject("Invalid or out-of-range property value.");return;}
+        // Reuse the established component setters. No script evaluation,
+        // creation/deletion, persistent edits or arbitrary memory writes.
+        setEntity(id,ask,true);
+    }
+    void ScriptDebugger::entity(int id, const JsonValue& ask,bool studio)
     {
         JsonValue reply;
         putNumber(reply, "id", id);
         JsonValue* list = reply.put("properties");
         list->setArray();
-        World* world = worldOf(m_host);
+        const auto* svc=m_host&&m_host->engine()?static_cast<const Services*>(m_host->engine()->GetUserData()):nullptr;
+        World* world = studio&&svc&&svc->screens?svc->screens->liveWorld():worldOf(m_host);
         const JsonValue* which = ask.find("entity");
         const World::Entity* e = world && which ? world->find(static_cast<u32>(which->number())) : nullptr;
+        if(studio){reply.put("actorOk")->setFlag(e!=nullptr);putNumber(reply,"epoch",svc->screens->liveWorldEpoch());putNumber(reply,"entity",which->number());}
         if (e)
         {
             const u32 entity = static_cast<u32>(which->number());
@@ -1345,11 +1394,12 @@ namespace nx
         send(reply.write(true));
     }
 
-    void ScriptDebugger::setEntity(int id, const JsonValue& ask)
+    void ScriptDebugger::setEntity(int id, const JsonValue& ask,bool studio)
     {
         JsonValue reply;
         putNumber(reply, "id", id);
-        World* world = worldOf(m_host);
+        const auto* svc=m_host&&m_host->engine()?static_cast<const Services*>(m_host->engine()->GetUserData()):nullptr;
+        World* world = studio&&svc&&svc->screens?svc->screens->liveWorld():worldOf(m_host);
         const JsonValue* which = ask.find("entity");
         const JsonValue* name = ask.find("property");
         const JsonValue* value = ask.find("value");
@@ -1424,6 +1474,7 @@ namespace nx
             }
         }
         reply.put("done")->setFlag(done);
+        if(studio){reply.put("actorOk")->setFlag(done);putText(reply,"message",done?"Runtime property updated.":"Component does not support this property.");}
         send(reply.write(true));
     }
 

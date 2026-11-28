@@ -84,19 +84,19 @@ namespace nx
 
     bool Widget::setNavigation(const std::string& direction,const std::string& target)
     {
-        const int index=uiNavigationIndex(direction);
-        if(index<0||!ui||!uiNavigationTarget(target))return false;
+        const int navIndex=uiNavigationIndex(direction);
+        if(navIndex<0||!ui||!uiNavigationTarget(target))return false;
         if(target.empty()||target=="@auto")
         {
             if(navigation.size()==4)
             {
-                navigation[index].clear();
+                navigation[navIndex].clear();
                 if(navigation[0].empty()&&navigation[1].empty()&&navigation[2].empty()&&navigation[3].empty())navigation.clear();
             }
             return true;
         }
         if(navigation.empty())navigation.resize(4);
-        navigation[index]=target;return true;
+        navigation[navIndex]=target;return true;
     }
     bool Widget::controlAnimation(const std::string& mode,bool restart)
     {

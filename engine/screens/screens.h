@@ -53,6 +53,8 @@ namespace nx
 
         u32 depth() const { return m_depth; }
         const char* current() const { return m_depth ? m_stack[m_depth - 1].info.id : ""; }
+        u32 liveWorldEpoch()const{return m_depth?m_stack[m_depth-1].group:0;}
+        World* liveWorld()const{return m_depth?m_stack[m_depth-1].world:nullptr;}
         bool menuOpen() const { return m_menuOpen; }
         bool loading() const { return m_depth && m_stack[m_depth - 1].loading; }
         bool failed() const { return m_depth && m_stack[m_depth - 1].failed; }

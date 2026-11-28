@@ -69,8 +69,10 @@ namespace nx
 
         // The entities of the screen on top, and what each is like, to look at and change while it runs.
         void entities(int id);
-        void entity(int id, const JsonValue& ask);
-        void setEntity(int id, const JsonValue& ask);
+        void studioActors(int id,const std::string& command,const JsonValue& ask);
+        bool m_actorFrame=false;
+        void entity(int id, const JsonValue& ask,bool studio=false);
+        void setEntity(int id, const JsonValue& ask,bool studio=false);
 
         struct Breakpoints
         {
