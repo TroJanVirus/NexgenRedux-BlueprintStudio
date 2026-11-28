@@ -2443,6 +2443,35 @@ NX_TEST(nativeBlueprintCameraOrbitKeepsCubeCenteredAndReturnsToStart)
     }
 }
 
+NX_TEST(nativeCameraSequencerFollowsActorAndDispatchesMarkersOnce)
+{
+    BlueprintDocument doc;std::string error,source,manifest,id;
+    NX_EXPECT(blueprint_orbit::author(doc,error,0));
+    auto& update=doc.graphs[1];update.nodes.resize(1);update.links.clear();
+    const std::string encoded="0,0,2,8,0,0,0,60,0;0.5,4,2,8,0,0,0,50,2@Reveal;2,0,2,4,0,0,0,60,1";
+    std::vector<BlueprintCameraKey> keys;
+    bool authored=blueprintCameraKeys(encoded,keys,error)&&doc.createVisualAsset("sequence",id,error)&&doc.setCameraSequenceKeys(id,keys,error);
+    size_t gi=0,ni=0;authored=authored&&doc.placeCameraSequence("Screen",id,gi,ni,error)&&doc.setInputValue(gi,ni,"play","true",error)&&doc.setInputValue(gi,ni,"anchor","Cube",error)&&doc.addFunction("Reveal",error);
+    const size_t f=doc.graphs.size()-1;
+    authored=authored&&doc.addNode(f,"api:Save:Save::set:string,string",300,60,error)&&doc.connect(f,0,"then",1,"in",error)&&doc.setInputValue(f,1,"key","boss_reveal",error)&&doc.setInputValue(f,1,"value","yes",error);
+    authored=authored&&doc.addNode(gi,"branch",500,60,error)&&doc.addNode(gi,"api:Save:Save::set:string,string",780,60,error)&&doc.connect(gi,ni,"then",2,"in",error)&&doc.connect(gi,ni,"finished",2,"condition",error)&&doc.connect(gi,2,"true",3,"in",error)&&doc.setInputValue(gi,3,"key","boss_finished",error)&&doc.setInputValue(gi,3,"value","yes",error);
+    if(!authored||!compileBlueprintScreen(doc,source,manifest,error)){NX_ERROR("Sequencer compile: %s",error.c_str());NX_EXPECT(false);return;}
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    r.platform.files["project/main/screen.json"]=manifest;r.platform.files["project/main/main.as"]=source;
+    if(!r.screens.init(r.services,"project","main")){NX_EXPECT(false);return;}
+    r.step(2);if(r.screens.failed()||!r.services.world){NX_EXPECT(false);return;}
+    auto& world=*r.services.world;auto& space=world.space();auto cube=world.findNamed("Cube");
+    auto* spatial=space.getSpatial(cube);NX_EXPECT(spatial!=nullptr);if(!spatial)return;
+    NX_EXPECT(strcmp(r.save.get("boss_reveal","missing"),"missing")==0);
+    spatial->place={2,1.5f,-3};r.step(2);
+    Vec2 projected{};NX_EXPECT(space.toScreen({2,1.5f,-3},projected)&&fabsf(projected.x-640)<1&&fabsf(projected.y-360)<1);
+    r.step(40);NX_EXPECT(strcmp(r.save.get("boss_reveal","missing"),"yes")==0);
+    r.save.set("boss_reveal","once");
+    r.step(120);NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("boss_reveal","missing"),"once")==0&&strcmp(r.save.get("boss_finished","missing"),"yes")==0);
+    const auto end=space.cameraPlace();NX_EXPECT(fabsf(end.x-2)<0.01f&&fabsf(end.y-3.5f)<0.01f&&fabsf(end.z-1)<0.01f);
+    r.save.set("boss_finished","once");r.step(60);NX_EXPECT(strcmp(r.save.get("boss_finished","missing"),"once")==0&&!r.screens.failed());
+}
+
 NX_TEST(nativeLinkedWidgetPageRunsWithoutSnapshotFile)
 {
     Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
