@@ -72,7 +72,17 @@ def click(x, y):
     xdo("mouseup", 1)
     time.sleep(0.2)
 
+def geometry():
+    lines = [line.split("BP_GEOMETRY ", 1)[1] for line in log.read_text(errors="replace").splitlines() if "BP_GEOMETRY " in line]
+    if not lines:
+        return None, {}
+    fields = lines[-1].split()
+    return int(fields[0]), {int(field.split(":", 1)[0]): tuple(map(float, field.split(":", 1)[1].split(","))) for field in fields[1:]}
+
 def right_add(x, y, query):
+    graph, before = geometry()
+    assert graph is not None and before, "No active rendered graph"
+    index = len(before)
     operations["insert"] += 1
     move(x, y)
     time.sleep(0.12)
@@ -83,7 +93,16 @@ def right_add(x, y, query):
     xdo("type", "--delay", 35, query)
     time.sleep(0.2)
     key("Return")
-    time.sleep(0.3)
+    def added():
+        active, nodes = geometry()
+        if active != graph or len(nodes) != index + 1 or index not in nodes:
+            return False
+        try:
+            actual = json.loads(recovery.read_text(encoding="utf-8"))["graphs"][graph]["nodes"]
+            return len(actual) == index + 1 and actual[index]["kind"] == query
+        except (OSError, ValueError, KeyError, IndexError):
+            return False
+    wait_for(added, f"insert {query} on graph {graph} at ({x}, {y})", process, timeout=8)
 
 def value(x, y, text):
     operations["value"] += 1
@@ -115,23 +134,14 @@ def wire(x1, y1, x2, y2):
 def select_graph(graph):
     # Flat navigation begins below the Components section at logical y=230.
     click(100, 245 + 31 * graph)
-    def active():
-        lines = [line.split("BP_GEOMETRY ", 1)[1] for line in log.read_text(errors="replace").splitlines() if "BP_GEOMETRY " in line]
-        return bool(lines) and int(lines[-1].split()[0]) == graph
-    wait_for(active, f"active graph {graph}", process, timeout=8)
+    wait_for(lambda: geometry()[0] == graph, f"active graph {graph}", process, timeout=8)
 
 def pin(graph, node, row, output=False):
-    lines = [line.split("BP_GEOMETRY ", 1)[1] for line in log.read_text(errors="replace").splitlines() if "BP_GEOMETRY " in line]
-    for line in reversed(lines):
-        fields = line.split()
-        if int(fields[0]) != graph:
-            continue
-        for field in fields[1:]:
-            idx, coordinates = field.split(":", 1)
-            if int(idx) == node:
-                x,y,width,zoom = map(float, coordinates.split(","))
-                return round(x+(width if output else 0)),round(y+(38+22*row)*zoom)
-    raise RuntimeError(f"No rendered pin geometry for graph {graph}, node {node}")
+    active, nodes = geometry()
+    if active != graph or node not in nodes:
+        raise RuntimeError(f"No current rendered pin geometry for graph {graph}, node {node}; active graph {active}")
+    x, y, width, zoom = nodes[node]
+    return round(x + (width if output else 0)), round(y + (38 + 22 * row) * zoom)
 
 def connect(graph, src, out, dst, inp):
     expected = project["graphs"][graph]
@@ -221,8 +231,9 @@ def author_scene(process):
         before = recovery.read_bytes()
         click(580, 112)
         click(1145, 610)
+        wait_for(lambda: "Edit Node opened" in log.read_text(errors="replace"), "node inspector opened", process)
         capture("02-input-inspector")
-        click(1070, 98)
+        click(1055, 621)  # Cancel, not the header colour control.
         assert recovery.read_bytes() == before
         operations["graph_switch"] += 1
         select_graph(2)
@@ -233,10 +244,14 @@ def author_scene(process):
     else:
         right_add(500, 100, "time:timeline")
         right_add(272, 330, "make:Vec3")
-        # The measured Vec3 node extends to x=501.5 at 100% zoom.
-        # Leave a real gap between its result pin and the next input pin.
-        right_add(550, 330, "math:orbit-position")
-        right_add(800, 115, "api:Space:Space::camera:Vec3,Vec3,float")
+        # Use the rendered widths to leave room between pins and avoid
+        # opening a node context menu when inserting the next node.
+        _, nodes = geometry()
+        right_add(round(nodes[2][0] + nodes[2][2] + 44), 330, "math:orbit-position")
+        _, nodes = geometry()
+        camera_x = round(max(nodes[i][0] + nodes[i][2] for i in (1, 3)) + 36)
+        assert camera_x < 1000, f"Camera input would leave the graph canvas: {camera_x}"
+        right_add(camera_x, 115, "api:Space:Space::camera:Vec3,Vec3,float")
         value(*pin(1,1,2), "8")
         value(*pin(1,2,0), "0")
         value(*pin(1,2,1), "0.5")
