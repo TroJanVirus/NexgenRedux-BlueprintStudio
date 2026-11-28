@@ -1935,3 +1935,32 @@ NX_TEST(nativeEditorConstructionChecksSharedLibraryAndTypedGeometry)
     std::string source;NX_EXPECT(compileBlueprint(doc,source,error));
     NX_EXPECT(source.find("bp_lib_SharedGeometry()")!=std::string::npos);
 }
+
+NX_TEST(nativeUpstreamThreadChannelAndAudioNodes)
+{
+    NX_EXPECT(blueprintSpec("api:Window:Window::resize:uint,uint"));
+    NX_EXPECT(blueprintSpec("api:System:System::get_processors:"));
+    NX_EXPECT(blueprintSpec("api:AudioStream:AudioStream:uint,uint,float"));
+    NX_EXPECT(blueprintSpec("api:Samples:Samples:uint,uint,uint"));
+    NX_EXPECT(blueprintSpec("api:Thread:Thread:string"));
+    NX_EXPECT(!blueprintSpec("api:Thread:wait:Thread@"));
+    NX_EXPECT(!blueprintSpec("api:Channel:demand:Channel@,float"));
+    BlueprintDocument doc;doc.create();std::string error,source,bytes;
+    NX_EXPECT(doc.editVariableDeclaration("Screen","field channel:Channel@",error));
+    NX_EXPECT(doc.addNode(0,"api:Channel:Channel:string",0,0,error));
+    NX_EXPECT(doc.setInputValue(0,1,"name","bp-results",error));
+    NX_EXPECT(doc.addVariableNode(0,"channel",false,true,0,0,error));
+    NX_EXPECT(doc.connect(0,0,"then",1,"in",error));
+    NX_EXPECT(doc.connect(0,1,"then",2,"in",error));
+    NX_EXPECT(doc.connect(0,1,"result",2,"value",error));
+    NX_EXPECT(doc.addVariableNode(1,"channel",false,false,0,0,error));
+    NX_EXPECT(doc.addNode(1,"api:Channel:pop:Channel@:string out",0,0,error));
+    NX_EXPECT(doc.connect(1,0,"then",2,"in",error));
+    NX_EXPECT(doc.connect(1,1,"value",2,"target",error));
+    NX_EXPECT(doc.serialize(bytes,error));
+    BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error));
+    NX_EXPECT(compileBlueprint(copy,source,error));
+    NX_EXPECT(source.find("Channel(\"bp-results\")")!=std::string::npos);
+    NX_EXPECT(source.find("@bp_var_channel = ")!=std::string::npos);
+    NX_EXPECT(source.find(".pop(")!=std::string::npos);
+}
