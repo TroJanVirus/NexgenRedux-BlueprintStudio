@@ -2314,3 +2314,23 @@ NX_TEST(nativeProjectTargetProfileRoundTrip)
     target.ram=128;target.resolution=1;NX_EXPECT(copy.setTarget(target)&&copy.target().pixelAspect()>1.f);
     target.platform=5;NX_EXPECT(copy.setTarget(target)&&!copy.target().xbox());
 }
+
+NX_TEST(nativeAdvancedWidgetSlotPropertiesAndDesignMetadata)
+{
+    BlueprintDocument doc;doc.create();std::string id,error,source,page;
+    auto target=doc.target();target.resolution=3;NX_EXPECT(doc.setTarget(target));
+    NX_EXPECT(doc.createVisualAsset("widget",id,error)&&doc.appendVisualWidget(id,"row","",error));
+    NX_EXPECT(doc.appendVisualWidget(id,"progress","",error,"item-1"));
+    NX_EXPECT(doc.setVisualWidgetProperty(id,"item-2","grow","3",error));
+    NX_EXPECT(doc.setVisualWidgetProperty(id,"item-2","padding","1,2,3,4",error));
+    NX_EXPECT(doc.setVisualWidgetProperty(id,"item-2","maxWidth","280",error));
+    NX_EXPECT(doc.setVisualWidgetProperty(id,"item-2","high","150",error));
+    NX_EXPECT(!doc.setVisualWidgetProperty(id,"item-2","padding","1,2,3",error));
+    NX_EXPECT(!doc.setVisualWidgetProperty(id,"item-2","columns","2.5",error));
+    NX_EXPECT(doc.visualWidgetPage(id,page,error)&&doc.connectVisualWidget("Screen",id,error)&&compileBlueprint(doc,source,error));
+    JsonTree tree;NX_EXPECT(tree.parse(page.data(),page.size()));
+    const auto item=tree.root()[0u]["row"][0u];
+    NX_EXPECT(item["padding"].count()==4&&item["padding"][3u].number()==4&&item["grow"].number()==3);
+    NX_EXPECT(source.find("designResolution")!=std::string::npos);
+    NX_EXPECT(source.find("Ui::draw(canvas)")!=std::string::npos);
+}

@@ -1,4 +1,5 @@
 #include "ui/ui.h"
+#include "ui/design_geometry.h"
 #include "base/log.h"
 
 #include <angelscript.h>
@@ -179,10 +180,22 @@ namespace nx
             while(into.children.count()>previous)into.children[into.children.count()-1]->remove();
             return false;
         };
-        const Json root=tree.root();
+        Json root=tree.root();
+        unsigned resolution=uiDesignResolutionCount;
+        if(root.isObject()&&root["designResolution"].exists())
+        {
+            const auto value=root["designResolution"];
+            const double n=value.exact();
+            if(&into!=m_root||!value.isNumber()||!std::isfinite(n)||n<0||n>=uiDesignResolutionCount||std::floor(n)!=n||
+                !root["page"].isArray()||(!designOnly&&m_designResolution<uiDesignResolutionCount&&m_designResolution!=static_cast<unsigned>(n)))
+                return fail(path,root.line(),"invalid or conflicting design resolution","page");
+            resolution=static_cast<unsigned>(n);
+            root=root["page"];
+        }
         if(!root.isArray())return build(root,into,path,screen,designOnly)!=nullptr||rollback();
         for(Json v=root.first();v.exists();v=v.next())
             if(!build(v,into,path,screen,designOnly))return rollback();
+        if(!designOnly&&resolution<uiDesignResolutionCount)m_designResolution=resolution;
         return true;
     }
 

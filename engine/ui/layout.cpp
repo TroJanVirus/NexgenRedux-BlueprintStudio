@@ -168,8 +168,9 @@ namespace nx
             const float left = inner - fixed - (seen ? static_cast<float>(seen - 1) * w.space() : 0);
             for (Widget* child : w.children)
             {
+                if(!child->visible){giveWidth(*child,0);continue;}
                 float give = child->naturalW;
-                if (child->grow > 0)
+                if (child->grow > 0&&grow>0)
                 {
                     give = larger(left, 0) * child->grow / grow;
                     give = child->maxWidth > 0 ? smaller(give, child->maxWidth) : give;
@@ -407,7 +408,7 @@ namespace nx
                 float tall = child->naturalH;
                 if (!scrolls)
                 {
-                    if (child->grow > 0)
+                    if (child->grow > 0&&grow>0)
                     {
                         tall = larger(over, 0) * child->grow / grow;
                     }

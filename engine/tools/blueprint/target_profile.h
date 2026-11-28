@@ -1,6 +1,7 @@
 #pragma once
 #include <cstddef>
 #include "base/types.h"
+#include "ui/design_geometry.h"
 #include <string>
 
 namespace nx
@@ -11,7 +12,7 @@ namespace nx
         unsigned platform=0; // OG Xbox, Windows, Linux, macOS, Xbox 360, UWP
         unsigned ram=64;     // OG Xbox unified physical RAM in MiB
         unsigned resolution=0;
-        static constexpr unsigned platformCount=6,resolutionCount=4;
+        static constexpr unsigned platformCount=6,resolutionCount=uiDesignResolutionCount;
         bool valid()const
         {return platform<platformCount&&(ram==64||ram==128||ram==256)&&resolution<resolutionCount;}
         bool operator==(const BlueprintTarget& other)const
@@ -19,9 +20,9 @@ namespace nx
         bool xbox()const{return platform==0;}
         const char* platformName()const
         {constexpr const char* names[]={"Original Xbox","Windows","Linux","macOS","Xbox 360","UWP / Xbox One & Series"};return names[platform<platformCount?platform:0];}
-        unsigned width()const {constexpr unsigned v[]={640,720,1280,1920};return v[resolution<resolutionCount?resolution:0];}
-        unsigned height()const {constexpr unsigned v[]={480,480,720,1080};return v[resolution<resolutionCount?resolution:0];}
-        float pixelAspect()const{return resolution==1?32.f/27.f:1.f;}
+        unsigned width()const {return uiDesignSize(resolution).width;}
+        unsigned height()const {return uiDesignSize(resolution).height;}
+        float pixelAspect()const{return uiDesignSize(resolution).pixelAspect;}
         const char* resolutionName()const
         {constexpr const char* names[]={"640 x 480","720 x 480 anamorphic","1280 x 720","1920 x 1080"};return names[resolution<resolutionCount?resolution:0];}
         // Illustrative allocation: two 32-bit colour surfaces and one

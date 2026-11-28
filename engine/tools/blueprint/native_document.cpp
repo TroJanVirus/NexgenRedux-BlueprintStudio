@@ -947,7 +947,7 @@ namespace nx
             WidgetMatch match;findVisualWidget(root,widget,match);
             if(match.matches!=1){error="Select a widget with a unique ID.";return false;}
             auto& item=*match.item;
-            const std::string allowed="|text|style|width|height|gap|grow|padding|value|align|justify|self|visible|enabled|checked|anchor|offset|";
+            const std::string allowed="|text|style|width|height|minWidth|maxWidth|gap|grow|padding|value|low|high|step|columnWidth|rowHeight|columns|count|align|justify|self|visible|enabled|checked|wrap|anchor|offset|";
             if(property.empty()||property.find('|')!=std::string::npos||allowed.find("|"+property+"|")==std::string::npos)
             {error="Unsupported widget property.";return false;}
             if(property=="anchor"||property=="offset")
@@ -993,11 +993,36 @@ namespace nx
                 {error="Invalid widget text or style.";return false;}
                 if(!text(item,property.c_str(),value))return false;
             }
-            else if(property=="width"||property=="height"||property=="gap"||property=="grow"||property=="padding"||property=="value")
+            else if(property=="padding"&&value.find(',')!=std::string::npos)
+            {
+                std::vector<double> values;
+                size_t start=0;
+                while(start<=value.size())
+                {
+                    const auto comma=value.find(',',start);
+                    auto part=value.substr(start,comma==std::string::npos?comma:comma-start);
+                    const auto first=part.find_first_not_of(" \t"),last=part.find_last_not_of(" \t");
+                    if(first==std::string::npos){error="Enter two or four padding numbers.";return false;}
+                    part=part.substr(first,last-first+1);
+                    if(!literal("literal:float",part)){error="Enter finite padding numbers.";return false;}
+                    const double n=std::strtod(part.c_str(),nullptr);
+                    if(n<0||n>100000){error="Padding outside supported range.";return false;}
+                    values.push_back(n);
+                    if(values.size()>4){error="Enter two or four padding numbers.";return false;}
+                    if(comma==std::string::npos)break;
+                    start=comma+1;
+                }
+                if(values.size()!=2&&values.size()!=4){error="Enter two or four padding numbers.";return false;}
+                auto* field=item.put("padding");if(!field)return false;field->setArray();
+                for(double n:values){auto* part=field->add();if(!part)return false;part->setNumber(n);}
+            }
+            else if(property=="width"||property=="height"||property=="minWidth"||property=="maxWidth"||property=="gap"||property=="grow"||property=="padding"||property=="value"||property=="low"||property=="high"||property=="step"||property=="columns"||property=="count"||property=="columnWidth"||property=="rowHeight")
             {
                 if(!literal("literal:float",value)){error="Enter a finite number.";return false;}
                 const double n=std::strtod(value.c_str(),nullptr);
-                if((property!="value"&&n<0)||std::abs(n)>100000){error="Widget property outside supported range.";return false;}
+                if((property!="value"&&property!="low"&&property!="high"&&n<0)||std::abs(n)>100000||
+                    (property=="columns"&&(std::floor(n)!=n||n>256))||(property=="count"&&(std::floor(n)!=n||n>4096)))
+                {error="Widget property outside supported range.";return false;}
                 if(!number(item,property.c_str(),n))return false;
             }
             else if(property=="align"||property=="justify"||property=="self")
@@ -1006,7 +1031,7 @@ namespace nx
                 {error="Use start, center, end, stretch or spread.";return false;}
                 if(!text(item,property.c_str(),value))return false;
             }
-            else if(property=="visible"||property=="enabled"||property=="checked")
+            else if(property=="visible"||property=="enabled"||property=="checked"||property=="wrap")
             {
                 if(value!="true"&&value!="false"){error="Use true or false.";return false;}
                 auto* field=item.put(property);if(!field)return false;field->setFlag(value=="true");

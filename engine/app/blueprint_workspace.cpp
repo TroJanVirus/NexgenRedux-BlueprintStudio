@@ -1772,6 +1772,7 @@ namespace nx
         constexpr const char* designPalette[]={"column","row","grid","stack","scroll","label","button","toggle","slider","progress","field","space","component"};
         constexpr const char* designEvents[]={"click","change","focus","done","draw","makeRow"};
         constexpr const char* designProps[]={"text","width","height","gap","padding","grow","align","justify","self","style","value","visible"};
+        constexpr const char* advancedDesignProps[]={"minWidth","maxWidth","columns","columnWidth","rowHeight","low","high","step","enabled","checked","wrap","count"};
         void designRows(JsonTree::Value value,std::vector<DesignRow>& rows,unsigned depth)
         {
             if(depth>12||rows.size()>=256)return;
@@ -1854,10 +1855,22 @@ namespace nx
         {
             m_targetResolutionMenu=false;
             const float menuX=630+layout.rightDx,menuY=194+layout.rightDy;
-            if(in(x,y,menuX,menuY,menuX+370,menuY+4*36))
+            const unsigned choices=BlueprintTarget::resolutionCount;
+            const unsigned guideCount=m_document.target().resolution==3?3u:0u;
+            if(in(x,y,menuX,menuY,menuX+370,menuY+(choices+guideCount)*36))
             {
-                auto target=m_document.target();target.resolution=static_cast<unsigned>((y-menuY)/36);
-                if(m_document.setTarget(target))m_status=target.warning();
+                const auto index=static_cast<unsigned>((y-menuY)/36);
+                if(index<choices)
+                {
+                    auto target=m_document.target();target.resolution=index;
+                    if(m_document.setTarget(target))m_status=target.warning();
+                }
+                else if(index<choices+guideCount)
+                {
+                    m_widgetGuideMask^=1u<<(index-choices);
+                    m_targetResolutionMenu=true;
+                    m_status="Centered display-size guides only; project target unchanged.";
+                }
             }
             return;
         }
@@ -1993,7 +2006,7 @@ namespace nx
         {if(m_document.moveVisualWidget(m_visualSelection,m_widgetSelection,1,m_status))m_status="Moved widget down.";return;}
         if(in(x,y,500,524,610,545)){m_widgetTimeline=!m_widgetTimeline;m_widgetTimelinePlay=false;m_widgetTimelineTime=0;m_widgetAnchors=m_widgetEvents=false;return;}
         if(in(x,y,280,524,500,545)){m_widgetAnchors=!m_widgetAnchors;m_widgetEvents=m_widgetTimeline=m_widgetTimelinePlay=false;return;}
-        if(in(x,y,630,420,1000,438)){if(m_widgetTimeline){m_widgetTimeline=m_widgetTimelinePlay=false;return;}m_widgetAnchors=false;m_widgetEvents=!m_widgetEvents;m_widgetUnbind=false;return;}
+        if(in(x,y,630,420,1000,438)){if(m_widgetTimeline||m_widgetAnchors){m_widgetTimeline=m_widgetTimelinePlay=m_widgetAnchors=false;return;}m_widgetEvents=x>=877;m_widgetAdvanced=x>=753&&x<877;m_widgetUnbind=false;return;}
         if(m_widgetTimeline)
         {
             if(m_widgetSelection.empty())return;
@@ -2065,9 +2078,9 @@ namespace nx
         {
             const size_t column=static_cast<size_t>((x-630)/123.34f),row=static_cast<size_t>((y-439)/36);
             const size_t prop=row*3+column;if(prop>=sizeof(designProps)/sizeof(designProps[0]))return;
-            if(prop==0&&std::any_of(rows.begin(),rows.end(),[&](const DesignRow& row){return row.id==m_widgetSelection&&row.kind=="component";}))
+            if(!m_widgetAdvanced&&prop==0&&std::any_of(rows.begin(),rows.end(),[&](const DesignRow& row){return row.id==m_widgetSelection&&row.kind=="component";}))
             {if(m_document.removeVisualWidgetComponent(m_visualSelection,m_widgetSelection,m_status)){m_widgetSelection.clear();m_status="Unlinked component; original definition preserved.";}return;}
-            m_visualProperty=designProps[prop];
+            m_visualProperty=m_widgetAdvanced?advancedDesignProps[prop]:designProps[prop];
             JsonTree::Value selected;
             const auto find=[&](auto&& self,JsonTree::Value node)->void
             {
@@ -2078,9 +2091,12 @@ namespace nx
             const auto field=selected[m_visualProperty.c_str()];
             m_visualText=field.isString()?field.text():field.isNumber()?std::to_string(field.exact()):
                 field.type()==JsonTree::Type::Bool?(field.flag()?"true":"false"):"";
+            if(m_visualProperty=="padding"&&field.isArray())
+                for(auto part=field.first();part.exists();part=part.next())
+                {if(!m_visualText.empty())m_visualText+=",";m_visualText+=std::to_string(part.exact());}
             if(m_visualProperty=="text"&&!field.exists())
                 for(const char* key:{"label","paragraph","button","toggle","field"})if(selected[key].isString()){m_visualText=selected[key].text();break;}
-            m_visualInput=4;s.input->setTyping(true);m_status="Edit property; blank uses default (except text).";
+            m_visualInput=4;s.input->setTyping(true);m_status=m_visualProperty=="padding"?"Padding: one number, X,Y, or left,top,right,bottom.":m_visualProperty=="grow"?"Slot size: 0 = Auto; positive = relative Fill weight.":"Edit property; blank uses default (except text).";
         }
     }
     void BlueprintWorkspace::drawWidgetDesigner(Canvas& c)
@@ -2126,6 +2142,13 @@ namespace nx
                 auto option=target;option.resolution=i;
                 button(630,194+36.f*i,370,(std::string(option.resolutionName())+(option.highResolutionWarning()?" / poor performance risk":"")).c_str());
             }
+            if(target.resolution==3)
+                for(unsigned i=0;i<3;++i)
+                {
+                    auto option=target;option.resolution=i;
+                    const std::string label=std::string(m_widgetGuideMask&(1u<<i)?"[x] Guide: ":"[ ] Guide: ")+option.resolutionName();
+                    button(630,194+36.f*(BlueprintTarget::resolutionCount+i),370,label.c_str());
+                }
             c.pop();
         };
         const float px=layout.previewX,py=layout.previewY;
@@ -2157,9 +2180,37 @@ namespace nx
         {
             c.clip(px+6,py,screenWidth-12,layout.previewHeight);c.text(*m_font,m_designPreviewError.empty()?"Native preview":m_designPreviewError.c_str(),px+10,py+18,muted);c.noClip();
         }
+        if(target.resolution==3)
+        {
+            const Color colors[]={{0.3f,0.9f,0.5f,1},{1.f,0.72f,0.2f,1},{0.35f,0.75f,1.f,1}};
+            const char* labels[]={"640x480","720x480 wide","1280x720"};
+            c.push();c.clip(px,py,screenWidth,layout.previewHeight);
+            for(unsigned i=0;i<3;++i)if(m_widgetGuideMask&(1u<<i))
+            {
+                const auto g=uiDesignGuide(px+screenWidth*0.5f,py+layout.previewHeight*0.5f,scale,i);
+                c.rect(g.x,g.y,g.w,1,colors[i]);c.rect(g.x,g.y+g.h-1,g.w,1,colors[i]);
+                c.rect(g.x,g.y,1,g.h,colors[i]);c.rect(g.x+g.w-1,g.y,1,g.h,colors[i]);
+                c.text(*m_font,labels[i],g.x+3,i==1?g.y+g.h-18:g.y+2,colors[i]);
+            }
+            c.pop();
+        }
         c.push();c.translate(layout.rightDx,layout.propsDy);
-        c.rect(630,420,370,18,{0.19f,0.33f,0.50f,1});
-        c.text(*m_font,m_widgetTimeline?"TIMELINE / click to exit":m_widgetAnchors?"ANCHORS / Stack children":m_widgetEvents?"EVENTS  /  click to show properties":"PROPERTIES  /  click to show events",630,420,text);
+        if(m_widgetTimeline||m_widgetAnchors)
+        {
+            c.rect(630,420,370,18,{0.19f,0.33f,0.50f,1});
+            c.text(*m_font,m_widgetTimeline?"TIMELINE / click to exit":"ANCHORS / Stack children / click to exit",630,420,text);
+        }
+        else
+        {
+            const char* names[]={"Properties","Advanced","Events"};
+            for(unsigned i=0;i<3;++i)
+            {
+                const bool selected=i==0?!m_widgetAdvanced&&!m_widgetEvents:i==1?m_widgetAdvanced&&!m_widgetEvents:m_widgetEvents;
+                const float x=630+123.34f*i;
+                c.rect(x,420,121,18,selected?Color{0.19f,0.33f,0.50f,1}:Color{0.22f,0.22f,0.24f,1});
+                c.text(*m_font,names[i],x+60,420,text,Align::Center);
+            }
+        }
         if(m_widgetTimeline)
         {
             const auto a=designItem(tree.root(),m_widgetSelection)["animation"];
@@ -2190,7 +2241,7 @@ namespace nx
             c.text(*m_font,"Link page to screen before opening events.",630,558,muted);
         }
         else for(size_t i=0;i<sizeof(designProps)/sizeof(designProps[0]);++i)
-            button(630+123.34f*static_cast<float>(i%3),439+36*static_cast<float>(i/3),119,i==0&&std::any_of(rows.begin(),rows.end(),[&](const DesignRow& row){return row.id==m_widgetSelection&&row.kind=="component";})?"Unlink":designProps[i]);
+            button(630+123.34f*static_cast<float>(i%3),439+36*static_cast<float>(i/3),119,!m_widgetAdvanced&&i==0&&std::any_of(rows.begin(),rows.end(),[&](const DesignRow& row){return row.id==m_widgetSelection&&row.kind=="component";})?"Unlink":m_widgetAdvanced?advancedDesignProps[i]:designProps[i]);
         c.pop();resolutionMenu();
     }
     void BlueprintWorkspace::updateVisualLibrary(Services& s,float x,float y,bool left,bool click,unsigned pressed)

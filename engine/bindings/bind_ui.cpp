@@ -368,7 +368,7 @@ namespace nx
         {
             if (c)
             {
-                ui().draw(*c, 0, 0, c->width(), c->height());
+                ui().drawAuthored(*c);
             }
         }
         void uiDrawIn(Canvas* c, float x, float y, float w, float h)

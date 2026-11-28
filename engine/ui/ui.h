@@ -119,6 +119,7 @@ namespace nx
         bool update(float dt);
         // In the canvas's design, which is remembered for the next layout.
         void draw(Canvas& canvas, float x, float y, float w, float h);
+        void drawAuthored(Canvas& canvas);
 
         // --- Pages ---
 
@@ -299,6 +300,8 @@ namespace nx
         u32 m_watchedCount = 0;
 
         float m_x = 0, m_y = 0, m_w = 1280, m_h = 720;
+        unsigned m_designResolution=4; // no linked design by default
+        float m_inputOffsetX=0,m_inputOffsetY=0,m_inputScaleX=1,m_inputScaleY=1;
         bool m_dirty = true;
         bool m_drawn = false;
         float m_time = 0;

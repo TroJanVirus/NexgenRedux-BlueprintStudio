@@ -1156,7 +1156,7 @@ namespace nx
             return;
         }
         const Vec2 at = m_canvas.toDesign(raw.mouseX, raw.mouseY);
-        const float mx = at.x - m_x, my = at.y - m_y;
+        const float mx = (at.x-m_inputOffsetX)/m_inputScaleX-m_x, my = (at.y-m_inputOffsetY)/m_inputScaleY-m_y;
         const bool moved = mx != m_mouseX || my != m_mouseY;
         const float movedY = my - m_mouseY;
         m_mouseX = mx;

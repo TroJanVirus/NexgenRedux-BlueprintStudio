@@ -3599,3 +3599,36 @@ NX_TEST(nativePortableProjectZipRoundTripAndCorruption)
     NX_EXPECT(copy.assetRoot==root);
 }
 #endif
+
+NX_TEST(nativeAuthoredUiCentersAndPreservesDesignDimensions)
+{
+    const auto a=fitUiDesign(0,0,1920,1080,uiDesignSize(0));
+    NX_EXPECT(fabsf(a.x-240)<0.01f&&a.y==0&&fabsf(a.localX(960)-320)<0.01f);
+    const auto wide=fitUiDesign(0,0,1280,720,uiDesignSize(1));
+    NX_EXPECT(fabsf(wide.x)<0.01f&&fabsf(wide.localX(640)-360)<0.01f);
+    const auto raw=fitUiDesign(0,0,720,480,uiDesignSize(1),32.f/27.f);
+    NX_EXPECT(raw.x==0&&raw.y==0&&raw.scaleX==1&&raw.scaleY==1);
+    const auto guide=uiDesignGuide(960,540,1,1);
+    NX_EXPECT(fabsf(guide.w-853.3333f)<0.01f&&fabsf(guide.x+guide.w*0.5f-960)<0.01f);
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    BlueprintDocument doc;doc.create();std::string id,error,source;
+    auto target=doc.target();target.resolution=3;
+    const bool ok=doc.setTarget(target)&&doc.createVisualAsset("widget",id,error)&&
+        doc.appendVisualWidget(id,"stack","",error)&&doc.setVisualWidgetProperty(id,"item-1","grow","1",error)&&
+        doc.appendVisualWidget(id,"label","Centered",error,"item-1")&&
+        doc.setVisualWidgetProperty(id,"item-2","width","100",error)&&doc.setVisualWidgetProperty(id,"item-2","height","40",error)&&
+        doc.setVisualWidgetProperty(id,"item-2","anchor","center",error)&&
+        doc.connectVisualWidget("Screen",id,error)&&compileBlueprint(doc,source,error);
+    NX_EXPECT(ok);if(!ok)return;
+    r.platform.files["showcase/main/screen.json"]="{\"title\":\"Authored design\"}";
+    r.platform.files["showcase/main/main.as"]=source;
+    if(!r.screens.init(r.services,"showcase","main")){NX_EXPECT(false);return;}
+    r.step(3);NX_EXPECT(!r.screens.failed());if(!r.services.ui)return;
+    auto& view=*r.services.ui;
+    auto* label=view.find("item-2");NX_EXPECT(label);if(!label)return;
+    NX_EXPECT(view.root().w==1920&&view.root().h==1080);
+    float runtimeX=0,runtimeY=0;view.place(*label,runtimeX,runtimeY);
+    r.device->beginFrame({});r.canvas.begin();view.drawDesign(r.canvas,0,0,1920,1080);r.canvas.end();r.device->endFrame();
+    float designX=0,designY=0;view.place(*label,designX,designY);
+    NX_EXPECT(fabsf(runtimeX-designX)<0.01f&&fabsf(runtimeY-designY)<0.01f);
+}

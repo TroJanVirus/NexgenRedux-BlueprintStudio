@@ -442,6 +442,8 @@ namespace nx
                         if(!literalValue(to,"string",theme,json))return false;
                         source+=pad+"Ui::loadThemeSource("+json+");\n";
                     }
+                    // Carry the authoring coordinate system into the native runtime.
+                    page="{\"designResolution\":"+std::to_string(document.target().resolution)+",\"page\":"+page+"}";
                     if(!literalValue(to,"string",page,json))return false;
                     source+=pad+"Ui::loadPage("+json+");\n";
                     if(source.size()>1024*1024)return fail(to,"Generated source exceeds the size limit.");

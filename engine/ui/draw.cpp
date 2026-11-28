@@ -1,4 +1,5 @@
 #include "ui/ui.h"
+#include "ui/design_geometry.h"
 
 #include <math.h>
 #include <string.h>
@@ -357,8 +358,25 @@ namespace nx
         draw(c,x,y,w,h);
     }
 
+    void Ui::drawAuthored(Canvas& c)
+    {
+        if(m_designResolution>=uiDesignResolutionCount)
+        {draw(c,0,0,c.width(),c.height());return;}
+        const auto size=uiDesignSize(m_designResolution);
+        // Exact 720x480 anamorphic output assumes display-side stretching.
+        const float outputAspect=m_designResolution==1&&c.pixelWidth()==720&&c.pixelHeight()==480?size.pixelAspect:1.f;
+        const auto viewport=fitUiDesign(0,0,c.width(),c.height(),size,outputAspect);
+        c.push();c.clip(viewport.x,viewport.y,viewport.w,viewport.h);
+        c.translate(viewport.x,viewport.y);c.scale(viewport.scaleX,viewport.scaleY);
+        draw(c,0,0,static_cast<float>(size.width),static_cast<float>(size.height));
+        c.pop();
+        m_inputOffsetX=viewport.x;m_inputOffsetY=viewport.y;
+        m_inputScaleX=viewport.scaleX;m_inputScaleY=viewport.scaleY;
+    }
+
     void Ui::draw(Canvas& c, float x, float y, float w, float h)
     {
+        m_inputOffsetX=m_inputOffsetY=0;m_inputScaleX=m_inputScaleY=1;
         if (x != m_x || y != m_y || w != m_w || h != m_h || !m_drawn)
         {
             m_x = x;
