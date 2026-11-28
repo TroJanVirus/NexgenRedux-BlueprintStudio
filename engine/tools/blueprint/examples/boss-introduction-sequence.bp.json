@@ -1,0 +1,167 @@
+{
+  "version": 2,
+  "kind": "NativeBlueprint",
+  "name": "Boss Introduction - Camera Sequence",
+  "graphs": [
+    {
+      "owner": "Screen",
+      "name": "onEnter",
+      "kind": "event",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 24,
+          "y": 60
+        },
+        {
+          "id": "floor",
+          "kind": "spawn:plane",
+          "x": 285,
+          "y": 60,
+          "values": {
+            "name": "Floor"
+          }
+        },
+        {
+          "id": "cube",
+          "kind": "spawn:box",
+          "x": 565,
+          "y": 60,
+          "values": {
+            "name": "Boss"
+          },
+          "comment": "Stand-in boss actor. Replace this box with your boss class."
+        }
+      ],
+      "links": [
+        {
+          "from": "entry",
+          "to": "floor",
+          "output": "then",
+          "input": "in"
+        },
+        {
+          "from": "floor",
+          "to": "cube",
+          "output": "then",
+          "input": "in"
+        }
+      ]
+    },
+    {
+      "owner": "Screen",
+      "name": "update",
+      "kind": "event",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 24,
+          "y": 60
+        },
+        {
+          "id": "intro",
+          "kind": "camera:sequence",
+          "x": 320,
+          "y": 60,
+          "displayName": "Boss Introduction",
+          "comment": "Play once when the scene starts. For gameplay encounters, connect a rising-edge boss trigger to play.",
+          "values": {
+            "play": "true",
+            "keys": "0,0,2,9,0,1,0,65,0;2,5,3,5,0,1,0,55,0;4,0,2,3,0,1,0,45,1;6,0,2,8,0,1,0,60,0"
+          }
+        }
+      ],
+      "links": [
+        {
+          "from": "entry",
+          "to": "intro",
+          "output": "then",
+          "input": "in"
+        }
+      ]
+    },
+    {
+      "owner": "Screen",
+      "name": "draw",
+      "kind": "event",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 24,
+          "y": 60
+        },
+        {
+          "id": "canvas",
+          "kind": "event:canvas",
+          "x": 24,
+          "y": 200
+        },
+        {
+          "id": "render",
+          "kind": "api:Space:Space::draw:Canvas@",
+          "x": 300,
+          "y": 60
+        }
+      ],
+      "links": [
+        {
+          "from": "entry",
+          "to": "render",
+          "output": "then",
+          "input": "in"
+        },
+        {
+          "from": "canvas",
+          "to": "render",
+          "output": "value",
+          "input": "canvas"
+        }
+      ]
+    },
+    {
+      "owner": "Screen",
+      "name": "onSuspend",
+      "kind": "event",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 24,
+          "y": 60
+        }
+      ],
+      "links": []
+    },
+    {
+      "owner": "Screen",
+      "name": "onResume",
+      "kind": "event",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 24,
+          "y": 60
+        }
+      ],
+      "links": []
+    },
+    {
+      "owner": "Screen",
+      "name": "onExit",
+      "kind": "event",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 24,
+          "y": 60
+        }
+      ],
+      "links": []
+    }
+  ]
+}
