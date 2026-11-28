@@ -145,7 +145,8 @@ def run_session(index):
                 assert contender.returncode != 0
                 assert "save directory is busy or unavailable" in contender.stdout
                 assert recovery.read_bytes() == before_recovery
-                click(900, 18)
+                click(850, 18)
+                click(755, 133)
                 xdo("type", "--delay", 100, "Desktop Smoke")
                 key("Return")
                 wait_for(project.is_file, "saved recovery project", process)
@@ -161,7 +162,8 @@ def run_session(index):
                          "open saved project", process)
             else:
                 assert "Recovered unsaved Blueprint" in log.read_text(errors="replace")
-                click(900, 18)
+                click(850, 18)
+                click(755, 133)
                 xdo("type", "--delay", 100, "Desktop Recovered")
                 key("Return")
                 wait_for(recovered_project.is_file, "save crash-recovered project", process)
@@ -294,7 +296,8 @@ with menu_log.open("wb") as out:
         enter_text("native_authoring")
         click(630, 397, window)
         enter_text("first")
-        click(900, 18, window)
+        click(850, 18, window)
+        click(755, 133, window)
         enter_text("Authored Desktop")
         authored_own = menu_root / "own"
         authored = authored_own / "blueprint-project-Authored Desktop.bp.json"
@@ -333,7 +336,8 @@ with menu_log.open("wb") as out:
         wait_for(lambda: "File changed outside Studio" in menu_log.read_text(errors="replace"),
                  "save conflict rejected", process)
         assert authored.read_bytes() == external
-        click(900, 18, window)
+        click(850, 18, window)
+        click(755, 133, window)
         enter_text("Authored Copy")
         copy = authored_own / "blueprint-project-Authored Copy.bp.json"
         wait_for(copy.is_file, "save as preserves authored changes", process)

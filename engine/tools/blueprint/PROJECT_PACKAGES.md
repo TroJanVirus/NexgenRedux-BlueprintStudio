@@ -13,3 +13,7 @@ Import a single-page text BMFont `.fnt` with the atlas named in its `page` entry
 ## Shared media
 
 In Assets, click Screen / asset: to switch to Shared / global:. Dropped files are imported into the project's own _global directory using the native type folders, not into the installed engine media. Use global:picture/avatar.png, for example, from any screen. Click an entry to display its reference. Existing files are never replaced. Save As, native export and portable ZIP retain the shared assets. The screen-local audio editor remains in Screen mode; shared audio files can be referenced from normal Blueprint audio nodes. This matches the upstream Hub/Home shared artwork convention without making custom projects depend on showcase art.
+
+## Project browser and first-person template
+
+Select Blueprint Studio in the Redux library to open a dedicated project workspace. Projects in the editor opens the same view, with Blank and First Person templates, saved project list, import entries, Save, Save copy and return to editor/Redux. The browser uses the existing application window (not a detachable OS window). Existing files are never overwritten, and active unsaved work must be saved before another project is opened. The First Person template builds named annotated native functions and copies the installed robot GLB into the project's own shared media directory. Third person, Flight and Rolling Ball are listed as planned, not selectable templates.

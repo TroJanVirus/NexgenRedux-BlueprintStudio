@@ -1061,9 +1061,35 @@ namespace nx
         if(archive)checkpoint(s,true);
         return true;
     }
+    bool BlueprintWorkspace::createTemplate(Services& s,const std::string& id,const std::string& name)
+    {
+        if(m_document.dirty()){m_status="Save the active project before creating another.";return false;}
+        std::string file;
+        if(!blueprintManagedName(name,file)){m_status="Enter a valid project name (1-64 letters, digits, spaces, _ or -).";return false;}
+        const auto path="own/"+file;
+        if(s.platform->fileTime(path.c_str())){m_status="A project with that name already exists.";return false;}
+        BlueprintDocument candidate;
+        if(!blueprintProjectTemplate(id,candidate,m_status))return false;
+        candidate.name=name;
+        std::vector<BlueprintScreenOutput> outputs;
+        if(!compileBlueprintProject(candidate,outputs,m_status))return false;
+        for(const auto& output:outputs)
+            if(!s.screens->validateBlueprintSource(output.source,m_status))return false;
+        if(!blueprintCreateAssetRoot(*s.platform,candidate.assetRoot,m_status)||
+            !blueprintStageTemplateMedia(*s.platform,candidate.assetRoot,id,m_status))return false;
+        std::string bytes;
+        if(!candidate.serialize(bytes,m_status)||!writeVerified(s,path,bytes))return false;
+        candidate.markSaved();
+        resetGraphTabs();m_actorTabId.clear();m_actorTabScreen.clear();m_contentFirst=0;m_contentDrag.clear();
+        m_document=std::move(candidate);m_filePath=path;m_fileBaseline=std::move(bytes);
+        m_checkpointRevision=static_cast<size_t>(-1);m_graphBack.clear();m_first=0;
+        m_browsing=false;m_projectCreate=0;m_projectName.clear();s.input->setTyping(false);
+        selectGraph(0);checkpoint(s,true);m_status="Created "+m_document.name+" from "+id+" (native source compiled).";
+        NX_INFO("Blueprint Studio: %s",m_status.c_str());return true;
+    }
     void BlueprintWorkspace::browseFiles(Services& s)
     {
-        if(m_document.dirty()){m_status="Save changes before opening another Blueprint.";return;}
+        m_projectCreate=0;m_projectName.clear();s.input->setTyping(false);
         m_files.clear();m_fileFirst=0;
         s.platform->list("own",false,[](const char* name,void* user)
         {
@@ -1082,7 +1108,7 @@ namespace nx
         });
         m_files.erase(std::unique(m_files.begin(),m_files.end()),m_files.end());
         m_browsing=true;clearWire();cancelDrag();
-        m_status="Select a project, recovery, source or project folder." ;
+        m_status=m_document.dirty()?"Save or Save copy before opening or creating another project.":"Choose a template or open an existing project." ;
     }
     std::string BlueprintWorkspace::assetScreen() const
     {
@@ -4465,7 +4491,7 @@ namespace nx
             if(!m_contentDrag.empty()){m_contentDrag.clear();m_status="Content drag cancelled.";return;}
             if(m_actorEditor){if(m_visualInput){m_visualInput=0;m_visualText.clear();input.setTyping(false);}else if(m_actorDragAxis>=0){cancelActorDrag();m_status="Component drag cancelled.";}else{leaveActorViewport(true);}return;}
             if(m_assetBrowser){if(m_visualInput){m_visualInput=0;m_visualText.clear();input.setTyping(false);m_status="Input cancelled.";return;}if(m_placementDragging){cancelVisualPlacement();m_status="Placement cancelled.";return;}if(m_visualPlacement){m_visualPlacement=false;return;}if(m_widgetDesigner){if(m_widgetPreviewDrag){m_widgetPreviewDrag=false;m_status="Widget drag cancelled.";return;}if(m_widgetDragging){m_widgetDragging=false;m_widgetDragId.clear();return;}m_widgetDesigner=false;releaseWidgetPreview();return;}m_assetBrowser=false;m_status="Asset browser closed.";return;}
-            if(m_browsing){m_browsing=false;m_status="Open cancelled.";return;}
+            if(m_browsing){if(m_projectCreate){m_projectCreate=0;m_projectName.clear();input.setTyping(false);}else{m_browsing=false;m_status="Project browser closed.";}return;}
             if(m_focus){m_focus=0;input.setTyping(false);m_status="Input cancelled.";return;}
             if(m_minimapDragging){m_minimapDragging=false;return;}
             if(m_layoutDragging||m_layoutMenu){m_layoutDragging=m_layoutMenu=false;m_status="Layout action cancelled.";return;}
@@ -4755,18 +4781,51 @@ namespace nx
         }
         if(m_browsing)
         {
-            if(input.wheel()<0&&m_fileFirst+12<m_files.size())++m_fileFirst;
-            if(input.wheel()>0&&m_fileFirst)--m_fileFirst;
-            if(click&&in(x,y,860,116,1000,150))m_browsing=false;
-            else if(click&&in(x,y,280,166,1000,166+12*36))
+            const auto selectTemplate=[&](unsigned kind)
             {
-                const size_t row=m_fileFirst+static_cast<size_t>((y-166)/36);
-                if(row<m_files.size())
+                m_projectCreate=kind;m_projectName=kind==1?"":"First Person";
+                input.setTyping(true);m_status="Enter a unique project name, then Create.";
+            };
+            if(m_projectCreate)
+            {
+                for(u32 i=0;i<input.typedCount();++i)
                 {
-                    const auto file=m_files[row];
-                    if(projectFolderName(file))importProjectFolder(s,file);
-                    else if(standaloneSourceName(file))importSource(s,file);
-                    else openFile(s,file,true);
+                    const auto ch=input.typed(i);
+                    if(ch==13){createTemplate(s,m_projectCreate==1?"blank":"first-person",m_projectName);break;}
+                    if(ch==8&&!m_projectName.empty())
+                    {
+                        size_t end=m_projectName.size()-1;while(end&&(static_cast<unsigned char>(m_projectName[end])&0xc0)==0x80)--end;m_projectName.resize(end);
+                    }
+                    else if(ch>=32)appendCharacter(m_projectName,ch,64);
+                }
+                if(!m_browsing){m_left=left;return;}
+                if(click&&in(x,y,28,410,250,448)){m_projectName.clear();input.setTyping(true);}
+                if(click&&in(x,y,28,458,250,496)){createTemplate(s,m_projectCreate==1?"blank":"first-person",m_projectName);m_left=left;return;}
+            }
+            if(click&&in(x,y,28,166,250,246))selectTemplate(1);
+            else if(click&&in(x,y,28,256,250,374))selectTemplate(2);
+            else if(click&&in(x,y,860,116,1000,150))
+            {m_browsing=false;m_projectCreate=0;input.setTyping(false);}
+            else if(click&&in(x,y,550,116,650,150))
+            {m_browsing=false;m_projectCreate=0;input.setTyping(false);saveCurrent(s);}
+            else if(click&&in(x,y,660,116,850,150))
+            {m_browsing=false;m_projectCreate=0;m_edit.clear();m_focus=5;input.setTyping(true);m_status="Type a new project name to save a copy.";}
+            else if(click&&in(x,y,1010,116,1235,150))returnToRedux(s);
+            else if(in(x,y,280,166,1240,598))
+            {
+                if(input.wheel()<0&&m_fileFirst+12<m_files.size())++m_fileFirst;
+                if(input.wheel()>0&&m_fileFirst)--m_fileFirst;
+                if(click)
+                {
+                    const size_t row=m_fileFirst+static_cast<size_t>((y-166)/36);
+                    if(row<m_files.size())
+                    {
+                        const auto file=m_files[row];
+                        if(projectFolderName(file))importProjectFolder(s,file);
+                        else if(standaloneSourceName(file))importSource(s,file);
+                        else openFile(s,file,true);
+                        if(!m_browsing){m_projectCreate=0;input.setTyping(false);}
+                    }
                 }
             }
             m_left=left;return;
@@ -5052,7 +5111,7 @@ namespace nx
             }
             if(click&&in(x,y,566,5,734,33)){m_edit.clear();m_focus=8;input.setTyping(true);m_status="Type a behaviour name, then Enter.";m_left=left;return;}
             if(click&&in(x,y,740,5,850,33)){browseFiles(s);m_left=left;return;}
-            if(click&&in(x,y,856,5,966,33)){m_edit.clear();m_focus=5;input.setTyping(true);m_status="Type a new Blueprint name and press Enter.";m_left=left;return;}
+            if(click&&in(x,y,856,5,966,33)){browseFiles(s);m_left=left;return;}
             if(click&&in(x,y,972,5,1082,33)){browseAssets(s);m_left=left;return;}
             if(click&&in(x,y,1088,5,1174,33))
             {
@@ -5443,8 +5502,7 @@ namespace nx
         {c.roundRect(410,5,150,28,3,{0.23f,0.24f,0.26f,1});c.text(*m_font,"Level events",485,9,text,Align::Center);}
         c.roundRect(566,5,168,28,3,{0.23f,0.24f,0.26f,1});
         c.clip(566,5,168,28);c.text(*m_font,m_focus==8?(m_edit.empty()?"Type name...":m_edit.c_str()):"New behaviour",650,9,text,Align::Center);c.noClip();
-        c.roundRect(740,5,110,28,3,{0.23f,0.24f,0.26f,1});c.text(*m_font,"Open",795,9,text,Align::Center);
-        c.roundRect(856,5,110,28,3,{0.23f,0.24f,0.26f,1});c.text(*m_font,"Save as",911,9,text,Align::Center);
+        c.roundRect(740,5,226,28,3,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Projects",853,9,text,Align::Center);
         c.roundRect(972,5,110,28,3,{0.23f,0.24f,0.26f,1});c.text(*m_font,"Assets",1027,9,text,Align::Center);
         const std::string titleText=(m_document.name.empty()?"No document open":m_document.name)+(m_document.dirty()?" *":"");
         if(!m_actorTabId.empty()&&m_document.visualAsset(m_actorTabId))
@@ -5817,19 +5875,41 @@ namespace nx
             }
             else if(m_browsing)
             {
-                c.roundRect(260,100,760,525,9,{0.16f,0.16f,0.17f,1});
-                c.text(*m_font,"OPEN / IMPORT BLUEPRINT",280,122,accent);
-                c.roundRect(860,116,140,34,4,{0.22f,0.31f,0.43f,1});c.text(*m_font,"Cancel",930,123,text,Align::Center);
+                c.rect(0,0,1280,720,{0.075f,0.09f,0.115f,1});
+                c.rect(0,0,1280,94,{0.13f,0.16f,0.21f,1});
+                c.text(*m_font,"NEXGEN  /  BLUEPRINT STUDIO",28,22,accent);
+                c.text(*m_font,"PROJECT LIBRARY",28,51,text);
+                const auto button=[&](float x,float y,float width,const char* label,bool selected=false)
+                {c.roundRect(x,y,width,34,4,selected?Color{0.19f,0.36f,0.56f,1}:Color{0.19f,0.23f,0.30f,1});c.text(*m_font,label,x+width/2,y+7,text,Align::Center);};
+                c.text(*m_font,"CREATE PROJECT",28,120,accent);c.text(*m_font,"MY PROJECTS / IMPORT",280,122,accent);
+                button(550,116,100,"Save");button(660,116,190,"Save copy");button(860,116,140,"Editor");button(1010,116,225,"Return to Redux");
+                c.roundRect(28,166,222,80,5,m_projectCreate==1?Color{0.19f,0.36f,0.56f,1}:Color{0.16f,0.20f,0.27f,1});
+                c.text(*m_font,"BLANK",42,179,text);c.text(*m_font,"Empty event graphs",42,210,muted);
+                c.roundRect(28,256,222,118,5,m_projectCreate==2?Color{0.19f,0.36f,0.56f,1}:Color{0.16f,0.20f,0.27f,1});
+                c.text(*m_font,"FIRST PERSON",42,269,text);
+                c.text(*m_font,"Robot / capsule walker",42,300,muted);
+                c.text(*m_font,"Mouse + gamepad",42,322,muted);c.text(*m_font,"Editable gameplay graphs",42,344,muted);
+                if(m_projectCreate)
+                {
+                    c.text(*m_font,"PROJECT NAME",28,386,accent);
+                    c.roundRect(28,410,222,38,4,{0.19f,0.25f,0.34f,1});
+                    c.clip(38,410,202,38);c.text(*m_font,m_projectName.empty()?"Enter name...":m_projectName.c_str(),38,419,text);c.noClip();
+                    button(28,458,222,"Create & open",true);
+                }
+                c.text(*m_font,"More templates planned:",28,530,muted);
+                c.text(*m_font,"Third person / Flight",28,552,muted);c.text(*m_font,"Rolling ball",28,574,muted);
                 for(size_t i=0;i<12&&m_fileFirst+i<m_files.size();++i)
                 {
                     const float y=166+36*static_cast<float>(i);
-                    c.rect(280,y,720,33,{0.22f,0.22f,0.24f,1});
                     const auto& file=m_files[m_fileFirst+i];
-                    const std::string label=(blueprintPackageName(file)?"PACKAGE  /  ":recoveryArchiveName(file)?"RECOVERY  /  ":standaloneSourceName(file)?"SOURCE  /  ":projectFolderName(file)?"PROJECT FOLDER  /  ":"")+file;
-                    c.clip(286,y,708,33);c.text(*m_font,label.c_str(),290,y+8,text);c.noClip();
+                    c.rect(280,y,955,33,(!m_filePath.empty()&&"own/"+file==m_filePath)?Color{0.20f,0.34f,0.47f,1}:Color{0.16f,0.20f,0.26f,1});
+                    const std::string label=(blueprintPackageName(file)?"PACKAGE  /  ":recoveryArchiveName(file)?"RECOVERY  /  ":standaloneSourceName(file)?"SOURCE  /  ":projectFolderName(file)?"PROJECT FOLDER  /  ":"PROJECT  /  ")+file;
+                    c.clip(290,y,935,33);c.text(*m_font,label.c_str(),290,y+8,text);c.noClip();
                 }
-                if(m_files.empty())c.text(*m_font,"No projects, archives, source or project folders in own/.",640,330,muted,Align::Center);
-                c.clip(280,603,720,22);c.text(*m_font,shorten(m_status,90).c_str(),280,603,muted);c.noClip();
+                if(m_files.empty())c.text(*m_font,"No saved projects yet. Choose a template to begin.",760,330,muted,Align::Center);
+                c.rect(0,625,1280,95,{0.13f,0.16f,0.21f,1});
+                c.text(*m_font,("Active: "+m_document.name+(m_document.dirty()?"  /  Unsaved changes":"")).c_str(),28,638,accent);
+                c.clip(28,665,1220,40);c.text(*m_font,m_status.c_str(),28,673,text);c.noClip();
             }
             else if(m_focus==18)drawJointEditor(c);
             else if(m_focus==17)
