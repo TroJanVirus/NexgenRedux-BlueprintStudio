@@ -157,3 +157,8 @@ Editor-safe Construction now accepts synchronous reusable functions, custom even
 ## Responsive desktop widget workspace (verification pending)
 
 At logical widths of at least 1500, widget tabs use a full-client native workspace with a fixed-density hierarchy/palette on the left, a large aspect-correct design canvas in the centre, and the existing property/anchor/event/timeline tools on the right. Input, widget picking, offset dragging, and side controls share the same responsive geometry. Small clients retain the 720p layout. Added actual X11 authoring and 1080p/4:3 screenshot coverage. This does not resize the separate scene editor yet or introduce a detached OS window.
+
+
+## Responsive scene placement and surface selection (verification pending)
+
+Large desktop scene tabs now use a full-width native viewport beside the content/outliner panel; compact clients preserve the existing arrangement. Both plan and perspective drawing, coordinate conversion, gizmos and input share responsive bounds. Native scene placement picks the closest visible mesh surface, maps the component to its owning linked actor, and retains explicit marker selection for non-mesh actors. Dragging a surface preserves the clicked world-plane offset. The native standalone scene tool can be opened directly from the scene tab; returning restores the placement tab instead of dropping the user back in the media browser. The original editor still runs as a separate screen and saves its own native scene files, not graph-linked placement data. No OS detachment is claimed.

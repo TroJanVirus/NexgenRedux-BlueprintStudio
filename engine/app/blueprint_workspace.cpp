@@ -883,8 +883,7 @@ namespace nx
     {
         // This is a plan view of authored linked placements, not a second
         // scene renderer. Runtime-generated and wired coordinates are omitted.
-        constexpr float planLeft=630,planTop=252,planRight=1000,planBottom=548;
-        constexpr float planCenterX=815,planCenterY=400,planScale=14;
+        constexpr float planScale=14;
         struct ActorMarker {size_t graph,node;std::string asset,id,label;float x,y,z;};
         std::vector<ActorMarker> actorMarkers(const BlueprintDocument& doc,const std::string& owner)
         {
@@ -910,6 +909,7 @@ namespace nx
     }
     void BlueprintWorkspace::releasePlacementPreview()
     {
+        m_placementRoots.clear();
         if(m_placementWorld){destroy(m_placementWorld);m_placementWorld=nullptr;}
         m_placementReady=false;m_placementRevision=static_cast<size_t>(-1);m_placementScreen.clear();m_actorPreviewId.clear();m_actorPreviewRoot=0;
     }
@@ -1015,13 +1015,30 @@ namespace nx
                     entity->remove(field);
             }
             json=root.write(true);JsonTree tree;
-            if(!tree.parse(json.data(),json.size())||!space.makeActor(tree.root(),folder.c_str(),{marker.x,marker.y,marker.z})){++failed;continue;}
-            ++shown;
+            if(!tree.parse(json.data(),json.size())){++failed;continue;}
+            const auto rootId=space.makeActor(tree.root(),folder.c_str(),{marker.x,marker.y,marker.z});
+            if(!rootId){++failed;continue;}
+            m_placementRoots.emplace_back(rootId,marker.id);++shown;
         }
         m_placementOmitted=failed;
     }
+    BlueprintWorkspace::SceneLayout BlueprintWorkspace::sceneLayout() const
+    {
+        SceneLayout layout;
+        if(kWidth<1500||kHeight<720)return layout;
+        layout.wide=true;
+        const float ox=modalX(),oy=modalY();
+        layout.sideDx=12-ox-280;layout.sideDy=96-oy-156;
+        layout.left=354-ox;layout.right=kWidth-12-ox;
+        layout.top=144-oy;layout.bottom=kBottom-102-oy;
+        layout.toolsDx=layout.left-630;layout.toolsDy=96-oy-208;
+        layout.bottomDy=layout.bottom+4-551;
+        return layout;
+    }
     bool BlueprintWorkspace::placementPoint(float x,float y,float height,float& wx,float& wz) const
     {
+        const auto layout=sceneLayout();
+        const float planCenterX=(layout.left+layout.right)*0.5f,planCenterY=(layout.top+layout.bottom)*0.5f;
         if(!m_placement3D){wx=std::round((x-planCenterX)/planScale);wz=std::round((y-planCenterY)/planScale);return true;}
         if(!m_placementWorld||!m_placementReady)return false;
         const auto& space=m_placementWorld->space();
@@ -1034,6 +1051,8 @@ namespace nx
     }
     bool BlueprintWorkspace::placementProject(float wx,float wy,float wz,float& x,float& y) const
     {
+        const auto layout=sceneLayout();
+        const float planCenterX=(layout.left+layout.right)*0.5f,planCenterY=(layout.top+layout.bottom)*0.5f;
         if(!m_placement3D){x=planCenterX+wx*planScale;y=planCenterY+wz*planScale;return true;}
         if(!m_placementReady||!m_placementWorld)return false;
         Vec2 p;if(!m_placementWorld->space().toScreen({wx,wy,wz},p))return false;
@@ -1048,6 +1067,8 @@ namespace nx
     }
     void BlueprintWorkspace::updateVisualPlacement(Services& s,float x,float y,bool left,bool click)
     {
+        const auto layout=sceneLayout();
+        const float planLeft=layout.left,planTop=layout.top,planRight=layout.right,planBottom=layout.bottom;
         m_placementX=x;m_placementY=y;
         if(m_placementDragging)
         {
@@ -1077,7 +1098,7 @@ namespace nx
                         {
                             const float height=m_placement3D?m_placementHeight:marker.y;
                             float wx=0,wz=0;
-                            if(placementPoint(x,y,height,wx,wz))ok=m_document.editVisualActorPlacement(assetScreen(),marker.id,"place",std::to_string(wx)+","+std::to_string(height)+","+std::to_string(wz),m_status);
+                            if(placementPoint(x,y,height,wx,wz))ok=m_document.editVisualActorPlacement(assetScreen(),marker.id,"place",std::to_string(wx+m_placementGrabWorldX)+","+std::to_string(height)+","+std::to_string(wz+m_placementGrabWorldZ),m_status);
                             else m_status="No forward intersection with placement plane.";
                         }
                         break;
@@ -1094,6 +1115,17 @@ namespace nx
             else m_status="Placement cancelled.";
             cancelVisualPlacement();return;
         }
+        const float pointerX=x,pointerY=y;
+        if(layout.wide)
+        {
+            if(in(x,y,280+layout.sideDx,156+layout.sideDy,610+layout.sideDx,590+layout.sideDy))
+            {x-=layout.sideDx;y-=layout.sideDy;}
+            else if(in(x,y,630+layout.toolsDx,208+layout.toolsDy,1000+layout.toolsDx,241+layout.toolsDy))
+            {x-=layout.toolsDx;y-=layout.toolsDy;}
+            else if(in(x,y,630+layout.toolsDx,551+layout.bottomDy,1000+layout.toolsDx,598+layout.bottomDy))
+            {x-=layout.toolsDx;y-=layout.bottomDy;}
+            else {x=-10000;y=-10000;}
+        }
         const auto owner=assetScreen();
         if(m_placementSelectedOwner!=owner){m_placementSelectedId.clear();m_placementSelectedOwner=owner;m_placementFirst=0;}
         const auto listed=actorMarkers(m_document,owner);
@@ -1102,6 +1134,12 @@ namespace nx
         {
             if(s.input->wheel()<0&&m_placementFirst+8<listed.size())++m_placementFirst;
             if(s.input->wheel()>0&&m_placementFirst)--m_placementFirst;
+        }
+        if(!m_placementOutliner&&in(x,y,280,198,610,522))
+        {
+            const auto count=m_document.visualAssets().size();
+            if(s.input->wheel()<0&&m_visualFirst+9<count)++m_visualFirst;
+            if(s.input->wheel()>0&&m_visualFirst)--m_visualFirst;
         }
         if(!click)return;
         if(in(x,y,280,156,610,189)){m_placementOutliner=x>=449;return;}
@@ -1152,6 +1190,7 @@ namespace nx
             }
             return;
         }
+        x=pointerX;y=pointerY;
         if(!in(x,y,planLeft,planTop,planRight,planBottom))return;
         if(m_placement3D&&!m_placementSelectedId.empty())for(const auto& marker:listed)if(marker.id==m_placementSelectedId)
         {
@@ -1179,24 +1218,55 @@ namespace nx
         }
         m_placementSelectedId.clear();
         const auto& markers=listed;
+        std::string surface;
+        if(m_placement3D&&m_placementWorld&&m_placementReady)
+        {
+            auto& world=*m_placementWorld;auto& space=world.space();
+            const auto eye=space.cameraPlace(),ray=space.rayThrough({x+modalX(),y+modalY()});
+            float distance=100000.f;
+            world.eachEntity([&](u32 id,const World::Entity& e)
+            {
+                if(!e.shown||e.dying)return;
+                u32 root=id;
+                for(unsigned depth=0;depth<64;++depth)
+                {
+                    const auto parent=world.parentOf(root);if(!parent)break;root=parent;
+                }
+                const auto entry=std::find_if(m_placementRoots.begin(),m_placementRoots.end(),[&](const auto& item){return item.first==root;});
+                if(entry!=m_placementRoots.end()&&space.pickSurface(id,eye,ray,distance))surface=entry->second;
+            });
+        }
         for(auto it=markers.rbegin();it!=markers.rend();++it)
         {
-            float mx=0,my=0;if(!placementProject(it->x,it->y,it->z,mx,my))continue;
-            if(std::abs(x-mx)<=10&&std::abs(y-my)<=10)
+            float mx=0,my=0;
+            const bool markerHit=placementProject(it->x,it->y,it->z,mx,my)&&std::abs(x-mx)<=10&&std::abs(y-my)<=10;
+            if(!surface.empty()?surface==it->id:markerHit)
             {
                 m_placementGraph=it->graph;m_placementNode=it->node;m_placementAsset=it->asset;
                 m_placementSelectedId=it->id;m_visualSelection=it->asset;m_placementStartX=x;m_placementStartY=y;m_placementDragRevision=m_document.revision();
-                if(m_placement3D)m_placementHeight=it->y;
+                m_placementGrabWorldX=m_placementGrabWorldZ=0;
+                if(m_placement3D)
+                {
+                    m_placementHeight=it->y;
+                    float wx=0,wz=0;
+                    if(placementPoint(x,y,it->y,wx,wz))
+                    {m_placementGrabWorldX=it->x-wx;m_placementGrabWorldZ=it->z-wz;}
+                }
                 m_placementDragging=true;m_status="Move instance; release to save position.";return;
             }
         }
     }
     void BlueprintWorkspace::drawVisualPlacement(Canvas& c)
     {
+        const auto layout=sceneLayout();
+        const float planLeft=layout.left,planTop=layout.top,planRight=layout.right,planBottom=layout.bottom;
+        const float planCenterX=(planLeft+planRight)*0.5f,planCenterY=(planTop+planBottom)*0.5f;
+        c.push();c.translate(layout.toolsDx,layout.toolsDy);
         c.roundRect(630,208,190,33,4,{0.19f,0.33f,0.50f,1});
         c.text(*m_font,"Back",725,215,text,Align::Center);
         c.roundRect(825,208,175,33,4,{0.19f,0.33f,0.50f,1});
         c.text(*m_font,m_placement3D?"Plan view":"3D viewport",912,215,text,Align::Center);
+        c.pop();
         c.rect(planLeft,planTop,planRight-planLeft,planBottom-planTop,{0.07f,0.10f,0.15f,1});
         if(m_placement3D&&m_placementWorld)
         {
@@ -1218,7 +1288,7 @@ namespace nx
                 if(placementProject(p,m_placementHeight,-20,x1,y1)&&placementProject(p,m_placementHeight,20,x2,y2))c.line(x1,y1,x2,y2,1,ink);
             }
         }
-        else for(int i=-13;i<=13;++i)
+        else for(int i=-static_cast<int>(std::ceil(std::max(planRight-planLeft,planBottom-planTop)/(2*planScale)));i<=static_cast<int>(std::ceil(std::max(planRight-planLeft,planBottom-planTop)/(2*planScale)));++i)
         {
             const float offset=static_cast<float>(i)*planScale;
             c.rect(planCenterX+offset,planTop,i?1.f:2.f,planBottom-planTop,i?Color{0.16f,0.21f,0.28f,1}:Color{0.37f,0.49f,0.60f,1});
@@ -1247,10 +1317,11 @@ namespace nx
         {
             const float height=m_placement3D?m_placementHeight:0;
             float wx=0,wz=0,x=0,y=0;
-            if(placementPoint(m_placementX,m_placementY,height,wx,wz)&&placementProject(wx,height,wz,x,y))
+            if(placementPoint(m_placementX,m_placementY,height,wx,wz)&&placementProject(wx+m_placementGrabWorldX,height,wz+m_placementGrabWorldZ,x,y))
                 c.roundRect(x-9,y-9,18,18,3,{0.35f,0.80f,0.56f,1});
         }
         c.noClip();
+        c.push();c.translate(layout.toolsDx,layout.bottomDy);
         if(m_placement3D)
         {
             const char* labels[]={"Orbit L","Orbit R","Zoom +","Zoom -","Reset"};
@@ -1263,6 +1334,7 @@ namespace nx
             c.text(*m_font,"X/Z plan | 1 m snap | Drag actor from library",630,555,muted);
             c.text(*m_font,"Only constant linked placements are shown.",630,575,muted);
         }
+        c.pop();
     }
     namespace
     {
@@ -1769,9 +1841,19 @@ namespace nx
             {updateWidgetDesigner(s,x,y,left,click);return;}
             x=hx;y=hy;
         }
+        if(m_visualPlacement)
+        {
+            const auto scene=sceneLayout();const auto layout=widgetLayout();
+            const float hx=x-(scene.wide?layout.headerDx:0),hy=y-(scene.wide?layout.headerDy:0);
+            if(click&&(scene.wide?in(x,y,420-modalX(),12-modalY(),630-modalX(),45-modalY()):in(x,y,630,156,1000,189)))
+            {launchSceneEditor(s);return;}
+            if(!(click&&(in(hx,hy,860,116,1000,150)||in(hx,hy,704,116,850,150))))
+            {updateVisualPlacement(s,x,y,left,click);return;}
+            x=hx;y=hy;
+        }
         const auto& assets=m_document.visualAssets();
         if(m_visualFirst>=assets.size())m_visualFirst=assets.empty()?0:assets.size()-1;
-        if(in(x,y,280,198,610,535))
+        if(!m_visualPlacement&&in(x,y,280,198,610,535))
         {
             if(input.wheel()<0&&m_visualFirst+9<assets.size())++m_visualFirst;
             if(input.wheel()>0&&m_visualFirst)--m_visualFirst;
@@ -2794,7 +2876,8 @@ namespace nx
     {
         const auto* current=m_document.visualAsset(m_visualSelection);
         const bool actorClass=current&&current->kind=="actor"&&!m_visualPlacement&&!m_widgetDesigner;
-        const auto layout=widgetLayout();const bool wide=m_widgetDesigner&&layout.wide;
+        const auto layout=widgetLayout();const auto scene=sceneLayout();
+        const bool wide=(m_widgetDesigner&&layout.wide)||(m_visualPlacement&&scene.wide);
         if(wide)
         {
             c.rect(-modalX(),-modalY(),kWidth,kHeight,{0.10f,0.10f,0.11f,1});
@@ -2803,14 +2886,25 @@ namespace nx
         else c.roundRect(260,100,760,actorClass?565.f:525.f,9,{0.16f,0.16f,0.17f,1});
         const auto button=[&](float x,float y,float w,const char* label)
         {c.roundRect(x,y,w,33,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,label,x+w*0.5f,y+7,text,Align::Center);};
-        if(wide)c.text(*m_font,("WIDGET DESIGNER / "+(current?current->title:std::string())).c_str(),12-modalX(),18-modalY(),text);
+        if(wide)c.text(*m_font,(m_visualPlacement?"SCENE PLACEMENT / "+assetScreen():"WIDGET DESIGNER / "+(current?current->title:std::string())).c_str(),12-modalX(),18-modalY(),text);
         else c.text(*m_font,"CONTENT / PROJECT LIBRARY",280,122,accent);
         if(!m_widgetDesigner&&!m_visualPlacement)button(566,116,129,"New theme");
         c.push();if(wide)c.translate(layout.headerDx,layout.headerDy);
         button(704,116,146,"Media");button(860,116,140,"Close");c.pop();
+        if(m_visualPlacement)
+        {
+            if(wide)button(420-modalX(),12-modalY(),210,"Native scene editor");
+            else button(630,156,370,"Native scene editor");
+        }
         if(m_widgetDesigner)drawWidgetDesigner(c);
         else
         {
+        c.push();
+        if(m_visualPlacement&&scene.wide)
+        {
+            c.translate(scene.sideDx,scene.sideDy);
+            c.rect(274,150,342,kBottom-112,{0.17f,0.17f,0.18f,1});
+        }
         button(280,156,159,m_visualPlacement?"Content library":"New actor");button(449,156,161,m_visualPlacement?"World outliner":"New widget");
         if(m_visualPlacement&&m_placementOutliner)
         {
@@ -2840,6 +2934,7 @@ namespace nx
         const auto* selected=m_document.visualAsset(m_visualSelection);
         if(selected&&selected->kind=="actor"&&!m_visualPlacement){button(280,548,330,"Open placement plan");button(280,584,330,"Open actor editor / viewport");}
         if(selected&&selected->kind=="widget"&&!m_visualPlacement)button(280,548,330,"Open UI Designer");
+        c.pop();
         if(m_visualPlacement)drawVisualPlacement(c);
         else if(selected)
         {
@@ -3010,6 +3105,7 @@ namespace nx
             s.input->setWantsPointer(true);s.input->setTyping(false);s.platform->lockMouse(false);
             return;
         }
+        m_sceneReturnToPlacement=m_visualPlacement;
         m_sceneEditor=true;m_sceneExit=false;m_playing=true;
         m_left=s.input->raw().mouseButtons[0];
         m_status="Scene editor: Save your scene, then Escape to return.";
@@ -3221,8 +3317,19 @@ namespace nx
         m_left=s.input->raw().mouseButtons[0];
         if(scene)
         {
-            browseAssets(s);
-            if(m_assetBrowser)m_status="Returned from Scene editor. Saved scene files are ready.";
+            if(m_sceneReturnToPlacement)
+            {
+                releasePlacementPreview();
+                m_assetBrowser=m_assetLibrary=m_visualPlacement=true;
+                m_widgetDesigner=false;
+                m_status="Returned to scene placement. Saved native scene files are ready.";
+            }
+            else
+            {
+                browseAssets(s);
+                if(m_assetBrowser)m_status="Returned from Scene editor. Saved scene files are ready.";
+            }
+            m_sceneReturnToPlacement=false;
         }
         else
         {

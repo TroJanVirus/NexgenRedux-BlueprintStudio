@@ -124,7 +124,7 @@ namespace nx
         void browseFiles(Services& services);
         void browseAssets(Services& services);
         void launchSceneEditor(Services& services);
-        bool m_sceneEditor=false,m_sceneExit=false;
+        bool m_sceneEditor=false,m_sceneExit=false,m_sceneReturnToPlacement=false;
         void importAsset(Services& services,const std::string& file);
         std::string assetScreen() const;
         bool m_assetBrowser=false,m_assetLibrary=false,m_actorEditor=false;
@@ -180,7 +180,16 @@ namespace nx
         bool placementProject(float wx,float wy,float wz,float& x,float& y) const;
         void updateVisualPlacement(Services& services,float x,float y,bool left,bool click);
         void drawVisualPlacement(Canvas& canvas);
-        void cancelVisualPlacement(){m_gizmoAxis=-1;m_placementDragging=false;m_placementAsset.clear();m_placementGraph=m_placementNode=static_cast<size_t>(-1);}
+        struct SceneLayout
+        {
+            bool wide=false;
+            float left=630,top=252,right=1000,bottom=548;
+            float sideDx=0,sideDy=0,toolsDx=0,toolsDy=0,bottomDy=0;
+        };
+        SceneLayout sceneLayout() const;
+        std::vector<std::pair<unsigned,std::string>> m_placementRoots;
+        float m_placementGrabWorldX=0,m_placementGrabWorldZ=0;
+        void cancelVisualPlacement(){m_placementGrabWorldX=m_placementGrabWorldZ=0;m_gizmoAxis=-1;m_placementDragging=false;m_placementAsset.clear();m_placementGraph=m_placementNode=static_cast<size_t>(-1);}
         bool m_widgetDesigner=false,m_widgetPalette=false,m_widgetFourThree=false,m_widgetEvents=false,m_widgetUnbind=false,m_widgetAnchors=false;
         bool m_widgetTimeline=false,m_widgetTimelinePlay=false;
         unsigned m_widgetTimelineTrack=0;
