@@ -1574,9 +1574,9 @@ namespace nx
         {
             const auto dot=path.rfind('.');if(dot==std::string::npos)return false;
             auto ext=path.substr(dot);for(char& ch:ext)ch=static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
-            if(key=="font")return ext==".sfn"||ext==".ttf"||ext==".otf";
+            if(key=="font")return ext==".sfn"||ext==".fnt"||ext==".ttf"||ext==".otf";
             if(key=="image")return ext==".png"||ext==".jpg"||ext==".jpeg"||ext==".dds"||ext==".bmp"||ext==".tga";
-            return ext==".wav"||ext==".ogg"||ext==".mp3";
+            return ext==".wav"||ext==".ogg"||ext==".adpcm"||ext==".nxa";
         }
         Color themePickerColor(const std::string& value)
         {
