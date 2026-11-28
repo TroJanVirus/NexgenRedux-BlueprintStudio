@@ -3724,3 +3724,21 @@ NX_TEST(nativeExplicitGridSpanLayout)
     NX_EXPECT(fabsf(tall->h-84)<0.1f&&fabsf(automatic->y-44)<0.1f&&fabsf(automatic->x)<0.1f);
     NX_EXPECT(capped->h<=20.01f&&fabsf(capped->y-88)<0.1f);
 }
+
+NX_TEST(nativeSizeBoxConstrainsChild)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    BlueprintDocument doc;doc.create();std::string error,source;
+    const std::string page=R"BOX([{"sizeBox":[{"label":"Sized","id":"child"}],"id":"box","width":200,"height":80,"maxWidth":120,"maxHeight":50}])BOX";
+    NX_EXPECT(doc.replaceVisualAssets({{"widget-1","widget","Size Box test",page,{}}},error));
+    if(!doc.connectVisualWidget("Screen","widget-1",error)||!compileBlueprint(doc,source,error))
+    {NX_ERROR("Size Box: %s",error.c_str());NX_EXPECT(false);return;}
+    r.platform.files["showcase/main/screen.json"]="{\"title\":\"Size Box\"}";r.platform.files["showcase/main/main.as"]=source;
+    if(!r.screens.init(r.services,"showcase","main")){NX_EXPECT(false);return;}r.step(3);
+    NX_EXPECT(!r.screens.failed());if(!r.services.ui)return;
+    auto* box=r.services.ui->find("box");const auto* child=r.services.ui->find("child");
+    NX_EXPECT(box&&child);if(!box||!child)return;
+    NX_EXPECT(box->sizeBox&&box->children.count()==1&&fabsf(box->w-120)<0.01f&&fabsf(box->h-50)<0.01f);
+    NX_EXPECT(fabsf(child->w-120)<0.01f&&fabsf(child->h-50)<0.01f);
+    NX_EXPECT(box->add(WidgetKind::Label,"")==nullptr);
+}

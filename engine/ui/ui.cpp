@@ -95,7 +95,7 @@ namespace nx
 
     Widget* Widget::add(WidgetKind what, const char* style_)
     {
-        if (ui == nullptr)
+        if (ui == nullptr||(sizeBox&&children.count()!=0))
         {
             return nullptr;
         }

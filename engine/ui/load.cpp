@@ -17,7 +17,7 @@ namespace nx
     namespace
     {
         const struct { const char* name; WidgetKind kind; } kKinds[] = {
-            { "column", WidgetKind::Column }, { "row", WidgetKind::Row }, { "grid", WidgetKind::Grid }, { "stack", WidgetKind::Stack }, { "scroll", WidgetKind::Scroll },
+            { "column", WidgetKind::Column }, { "sizeBox", WidgetKind::Column }, { "row", WidgetKind::Row }, { "grid", WidgetKind::Grid }, { "stack", WidgetKind::Stack }, { "scroll", WidgetKind::Scroll },
             { "label", WidgetKind::Label }, { "paragraph", WidgetKind::Label }, { "image", WidgetKind::Image }, { "button", WidgetKind::Button }, { "toggle", WidgetKind::Toggle },
             { "slider", WidgetKind::Slider }, { "progress", WidgetKind::Progress }, { "choice", WidgetKind::Choice }, { "field", WidgetKind::Field }, { "list", WidgetKind::List },
             { "tabs", WidgetKind::Tabs }, { "space", WidgetKind::Space }, { "line", WidgetKind::Line }, { "custom", WidgetKind::Custom },
@@ -221,8 +221,12 @@ namespace nx
             return nullptr;
         }
         w->release();   // its parent has it
+        w->sizeBox=strcmp(kKinds[which].name,"sizeBox")==0;
+        if(w->sizeBox&&(!main.isArray()||main.count()>1))
+        {fail(file,v.line(),"requires an array of zero or one child","sizeBox");return nullptr;}
         w->wrap = strcmp(kKinds[which].name, "paragraph") == 0;
         w->gap = kind <= WidgetKind::Scroll && !v["style"].exists() ? 12.0f : -1.0f;
+        if(w->sizeBox){w->gap=0;for(float& pad:w->padding)pad=0;}
         if (kind == WidgetKind::Tabs)
         {
             for (Json t = main.first(); t.exists(); t = t.next())

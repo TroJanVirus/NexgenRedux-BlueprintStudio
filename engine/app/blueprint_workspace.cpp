@@ -1770,7 +1770,7 @@ namespace nx
             return {};
         }
         struct DesignRow {std::string id,kind,label;unsigned depth;};
-        constexpr const char* designPalette[]={"column","row","grid","stack","scroll","label","button","toggle","slider","progress","field","space","component"};
+        constexpr const char* designPalette[]={"column","sizeBox","row","grid","stack","scroll","label","button","toggle","slider","progress","field","space","component"};
         constexpr const char* designEvents[]={"click","change","focus","done","draw","makeRow"};
         constexpr const char* designProps[]={"text","width","height","gap","padding","grow","align","justify","self","style","value","visible"};
         constexpr const char* advancedDesignProps[]={"minWidth","maxWidth","columns","columnWidth","rowHeight","low","high","step","enabled","checked","wrap","count","minHeight","maxHeight","gridSlot"};
@@ -1784,7 +1784,7 @@ namespace nx
             }
             if(!value.isObject())return;
             const char* kind=nullptr;
-            for(const char* candidate:{"component","column","row","grid","stack","scroll","label","paragraph","image","button","toggle","slider","progress","choice","field","list","tabs","space","line","custom"})
+            for(const char* candidate:{"component","column","sizeBox","row","grid","stack","scroll","label","paragraph","image","button","toggle","slider","progress","choice","field","list","tabs","space","line","custom"})
                 if(value[candidate].exists()){kind=candidate;break;}
             if(!kind)return;
             const auto main=value[kind];

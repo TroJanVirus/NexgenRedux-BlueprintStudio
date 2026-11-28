@@ -776,7 +776,7 @@ namespace nx
     }
     namespace
     {
-        const char* const widgetKinds[]={"component","column","row","grid","stack","scroll","label","paragraph","image","button","toggle","slider","progress","choice","field","list","tabs","space","line","custom"};
+        const char* const widgetKinds[]={"component","column","sizeBox","row","grid","stack","scroll","label","paragraph","image","button","toggle","slider","progress","choice","field","list","tabs","space","line","custom"};
         const char* widgetKind(const JsonValue& item)
         {
             if(item.type()!=JsonValue::Type::Object)return nullptr;
@@ -788,7 +788,7 @@ namespace nx
             const char* kind=widgetKind(item);
             if(!kind)return nullptr;
             const std::string k=kind;
-            if(k!="column"&&k!="row"&&k!="grid"&&k!="stack"&&k!="scroll"&&k!="button")return nullptr;
+            if(k!="column"&&k!="sizeBox"&&k!="row"&&k!="grid"&&k!="stack"&&k!="scroll"&&k!="button")return nullptr;
             auto* children=item.find(kind);
             return children&&children->type()==JsonValue::Type::Array?children:nullptr;
         }
@@ -808,7 +808,7 @@ namespace nx
     }
     bool BlueprintDocument::appendVisualWidget(const std::string& id,const std::string& kind,const std::string& label,std::string& error,const std::string& parent)
     {
-        const bool container=kind=="column"||kind=="row"||kind=="grid"||kind=="stack"||kind=="scroll";
+        const bool container=kind=="column"||kind=="sizeBox"||kind=="row"||kind=="grid"||kind=="stack"||kind=="scroll";
         if(!container&&kind!="component"&&kind!="label"&&kind!="button"&&kind!="progress"&&kind!="toggle"&&kind!="slider"&&kind!="field"&&kind!="space")
         {error="Unsupported palette widget.";return false;}
         if(kind=="component"&&(!visualAsset(label)||visualAsset(label)->kind!="widget"||label==id))
@@ -827,6 +827,7 @@ namespace nx
                 WidgetMatch match;findVisualWidget(root,parent,match);
                 if(match.matches!=1||!(list=widgetChildren(*match.item)))
                 {error="Select a unique container widget or the page root.";return false;}
+                if(match.item->find("sizeBox")&&list->count()){error="A Size Box supports only one child.";return false;}
             }
             if(list->count()>=64){error="Container widget limit reached.";return false;}
             std::string widgetId;
@@ -842,6 +843,7 @@ namespace nx
             {
                 auto* children=item.put(kind);if(!children)return false;children->setArray();
                 if(kind=="grid"&&!number(item,"columns",2))return false;
+                if(kind=="sizeBox"&&(!number(item,"width",160)||!number(item,"height",64)))return false;
             }
             else if(kind=="progress"||kind=="slider")
             {
@@ -1172,18 +1174,18 @@ namespace nx
             JsonValue root;if(!root.parse(page.source.data(),page.source.size(),error)||root.type()!=JsonValue::Type::Array)return false;
             WidgetMatch from;findVisualWidget(root,widget,from);
             if(from.matches!=1||!from.siblings){error="Select a unique widget inside a container.";return false;}
-            JsonValue* dest=&root;bool stack=false,grid=false;
+            JsonValue* dest=&root;bool stack=false,grid=false,sizeBox=false;
             if(!parent.empty())
             {
                 WidgetMatch to,descendant;findVisualWidget(root,parent,to);findVisualWidget(*from.item,parent,descendant);
                 if(descendant.matches||to.matches!=1||!(dest=widgetChildren(*to.item)))
                 {error="Drop onto a container outside the selected widget's subtree.";return false;}
-                stack=to.item->find("stack")!=nullptr;grid=to.item->find("grid")!=nullptr;
+                stack=to.item->find("stack")!=nullptr;grid=to.item->find("grid")!=nullptr;sizeBox=to.item->find("sizeBox")!=nullptr;
             }
             if(dest==from.siblings){error.clear();return true;}
             if(!stack&&from.item->find("anchor")){error="Clear the widget anchor before moving outside a Stack.";return false;}
             if(!grid&&from.item->find("gridSlot")){error="Clear the grid slot before moving outside a Grid.";return false;}
-            if(dest->count()>=64){error="Destination container is full.";return false;}
+            if(dest->count()>=64||(sizeBox&&dest->count())){error=sizeBox?"A Size Box supports only one child.":"Destination container is full.";return false;}
             auto* copy=dest->add();
             if(!copy||!copy->setCopy(*from.item)){error="Widget hierarchy nesting limit reached.";return false;}
             from.siblings->removeAt(from.index);

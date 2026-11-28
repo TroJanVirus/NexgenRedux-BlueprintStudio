@@ -44,6 +44,7 @@ namespace nx
         const UiStyle* style = nullptr;
 
         bool visible = true, enabled = true;
+        bool sizeBox = false; // Column wrapper with zero or one child
         bool checked = false;        // a toggle
         bool wrap = false;           // text
         bool secret = false;         // a field's text is hidden

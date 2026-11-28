@@ -1196,6 +1196,7 @@ Is told which of a dialog's buttons was pressed, or -1.
 | | |
 |---|---|
 | `Widget@ column(float gap = 12)` | Adds a container of things one under another. |
+| `Widget@ sizeBox(float width, float height)` | Adds a single-child Size Box with preferred width and height; zero uses content size. |
 | `Widget@ row(float gap = 12)` | One beside another. |
 | `Widget@ grid(uint columns, float gap = 12)` | In rows of so many, each as wide as the rest. |
 | `Widget@ stack()` | One over another. |

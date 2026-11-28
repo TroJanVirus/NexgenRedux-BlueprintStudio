@@ -5113,1061 +5113,1061 @@ class BP_Catalog720 : Screen
         // bp-node: ret return
         return bp_value_0;
     }
-    Widget@ Test724(Widget@ bp_arg_arg0, float bp_arg_arg1)
+    Widget@ Test724(Widget@ bp_arg_arg0, float bp_arg_arg1, float bp_arg_arg2)
     {
-        // bp-node: api api:Widget:row:Widget@,float
-        Widget@ bp_value_1 = (bp_arg_arg0).row(bp_arg_arg1);
+        // bp-node: api api:Widget:sizeBox:Widget@,float,float
+        Widget@ bp_value_1 = (bp_arg_arg0).sizeBox(bp_arg_arg1, bp_arg_arg2);
         // bp-node: ret return
         return bp_value_1;
     }
-    Widget@ Test725(Widget@ bp_arg_arg0, uint bp_arg_arg1, float bp_arg_arg2)
+    Widget@ Test725(Widget@ bp_arg_arg0, float bp_arg_arg1)
     {
-        // bp-node: api api:Widget:grid:Widget@,uint,float
-        Widget@ bp_value_2 = (bp_arg_arg0).grid(bp_arg_arg1, bp_arg_arg2);
+        // bp-node: api api:Widget:row:Widget@,float
+        Widget@ bp_value_2 = (bp_arg_arg0).row(bp_arg_arg1);
         // bp-node: ret return
         return bp_value_2;
     }
-    Widget@ Test726(Widget@ bp_arg_arg0)
+    Widget@ Test726(Widget@ bp_arg_arg0, uint bp_arg_arg1, float bp_arg_arg2)
     {
-        // bp-node: api api:Widget:stack:Widget@
-        Widget@ bp_value_3 = (bp_arg_arg0).stack();
+        // bp-node: api api:Widget:grid:Widget@,uint,float
+        Widget@ bp_value_3 = (bp_arg_arg0).grid(bp_arg_arg1, bp_arg_arg2);
         // bp-node: ret return
         return bp_value_3;
     }
-    Widget@ Test727(Widget@ bp_arg_arg0, float bp_arg_arg1)
+    Widget@ Test727(Widget@ bp_arg_arg0)
     {
-        // bp-node: api api:Widget:scroll:Widget@,float
-        Widget@ bp_value_4 = (bp_arg_arg0).scroll(bp_arg_arg1);
+        // bp-node: api api:Widget:stack:Widget@
+        Widget@ bp_value_4 = (bp_arg_arg0).stack();
         // bp-node: ret return
         return bp_value_4;
     }
-    Widget@ Test728(Widget@ bp_arg_arg0)
+    Widget@ Test728(Widget@ bp_arg_arg0, float bp_arg_arg1)
     {
-        // bp-node: api api:Widget:panel:Widget@
-        Widget@ bp_value_5 = (bp_arg_arg0).panel();
+        // bp-node: api api:Widget:scroll:Widget@,float
+        Widget@ bp_value_5 = (bp_arg_arg0).scroll(bp_arg_arg1);
         // bp-node: ret return
         return bp_value_5;
     }
-    Widget@ Test729(Widget@ bp_arg_arg0, string bp_arg_arg1, string bp_arg_arg2)
+    Widget@ Test729(Widget@ bp_arg_arg0)
     {
-        // bp-node: api api:Widget:label:Widget@,string,string
-        Widget@ bp_value_6 = (bp_arg_arg0).label(bp_arg_arg1, bp_arg_arg2);
+        // bp-node: api api:Widget:panel:Widget@
+        Widget@ bp_value_6 = (bp_arg_arg0).panel();
         // bp-node: ret return
         return bp_value_6;
     }
     Widget@ Test730(Widget@ bp_arg_arg0, string bp_arg_arg1, string bp_arg_arg2)
     {
-        // bp-node: api api:Widget:paragraph:Widget@,string,string
-        Widget@ bp_value_7 = (bp_arg_arg0).paragraph(bp_arg_arg1, bp_arg_arg2);
+        // bp-node: api api:Widget:label:Widget@,string,string
+        Widget@ bp_value_7 = (bp_arg_arg0).label(bp_arg_arg1, bp_arg_arg2);
         // bp-node: ret return
         return bp_value_7;
     }
-    Widget@ Test731(Widget@ bp_arg_arg0, Texture@ bp_arg_arg1, float bp_arg_arg2, float bp_arg_arg3)
+    Widget@ Test731(Widget@ bp_arg_arg0, string bp_arg_arg1, string bp_arg_arg2)
     {
-        // bp-node: api api:Widget:image:Widget@,Texture@,float,float
-        Widget@ bp_value_8 = (bp_arg_arg0).image(bp_arg_arg1, bp_arg_arg2, bp_arg_arg3);
+        // bp-node: api api:Widget:paragraph:Widget@,string,string
+        Widget@ bp_value_8 = (bp_arg_arg0).paragraph(bp_arg_arg1, bp_arg_arg2);
         // bp-node: ret return
         return bp_value_8;
     }
-    Widget@ Test732(Widget@ bp_arg_arg0, float bp_arg_arg1)
+    Widget@ Test732(Widget@ bp_arg_arg0, Texture@ bp_arg_arg1, float bp_arg_arg2, float bp_arg_arg3)
     {
-        // bp-node: api api:Widget:progress:Widget@,float
-        Widget@ bp_value_9 = (bp_arg_arg0).progress(bp_arg_arg1);
+        // bp-node: api api:Widget:image:Widget@,Texture@,float,float
+        Widget@ bp_value_9 = (bp_arg_arg0).image(bp_arg_arg1, bp_arg_arg2, bp_arg_arg3);
         // bp-node: ret return
         return bp_value_9;
     }
-    Widget@ Test733(Widget@ bp_arg_arg0)
+    Widget@ Test733(Widget@ bp_arg_arg0, float bp_arg_arg1)
     {
-        // bp-node: api api:Widget:tabs:Widget@
-        Widget@ bp_value_10 = (bp_arg_arg0).tabs();
+        // bp-node: api api:Widget:progress:Widget@,float
+        Widget@ bp_value_10 = (bp_arg_arg0).progress(bp_arg_arg1);
         // bp-node: ret return
         return bp_value_10;
     }
-    Widget@ Test734(Widget@ bp_arg_arg0, string bp_arg_arg1)
+    Widget@ Test734(Widget@ bp_arg_arg0)
     {
-        // bp-node: api api:Widget:tab:Widget@,string
-        Widget@ bp_value_11 = (bp_arg_arg0).tab(bp_arg_arg1);
+        // bp-node: api api:Widget:tabs:Widget@
+        Widget@ bp_value_11 = (bp_arg_arg0).tabs();
         // bp-node: ret return
         return bp_value_11;
     }
-    Widget@ Test735(Widget@ bp_arg_arg0, float bp_arg_arg1)
+    Widget@ Test735(Widget@ bp_arg_arg0, string bp_arg_arg1)
     {
-        // bp-node: api api:Widget:space:Widget@,float
-        Widget@ bp_value_12 = (bp_arg_arg0).space(bp_arg_arg1);
+        // bp-node: api api:Widget:tab:Widget@,string
+        Widget@ bp_value_12 = (bp_arg_arg0).tab(bp_arg_arg1);
         // bp-node: ret return
         return bp_value_12;
     }
-    Widget@ Test736(Widget@ bp_arg_arg0)
+    Widget@ Test736(Widget@ bp_arg_arg0, float bp_arg_arg1)
     {
-        // bp-node: api api:Widget:line:Widget@
-        Widget@ bp_value_13 = (bp_arg_arg0).line();
+        // bp-node: api api:Widget:space:Widget@,float
+        Widget@ bp_value_13 = (bp_arg_arg0).space(bp_arg_arg1);
         // bp-node: ret return
         return bp_value_13;
     }
-    string Test737(Widget@ bp_arg_arg0)
+    Widget@ Test737(Widget@ bp_arg_arg0)
+    {
+        // bp-node: api api:Widget:line:Widget@
+        Widget@ bp_value_14 = (bp_arg_arg0).line();
+        // bp-node: ret return
+        return bp_value_14;
+    }
+    string Test738(Widget@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).text);
     }
-    void Test738(Widget@ bp_arg_arg0, string bp_arg_arg1)
+    void Test739(Widget@ bp_arg_arg0, string bp_arg_arg1)
     {
         // bp-node: api api:Widget:set_text:Widget@,string
         (bp_arg_arg0).text = bp_arg_arg1;
     }
-    string Test739(Widget@ bp_arg_arg0)
+    string Test740(Widget@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).id);
     }
-    void Test740(Widget@ bp_arg_arg0, string bp_arg_arg1)
+    void Test741(Widget@ bp_arg_arg0, string bp_arg_arg1)
     {
         // bp-node: api api:Widget:set_id:Widget@,string
         (bp_arg_arg0).id = bp_arg_arg1;
     }
-    string Test741(Widget@ bp_arg_arg0)
+    string Test742(Widget@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).hint);
     }
-    void Test742(Widget@ bp_arg_arg0, string bp_arg_arg1)
+    void Test743(Widget@ bp_arg_arg0, string bp_arg_arg1)
     {
         // bp-node: api api:Widget:set_hint:Widget@,string
         (bp_arg_arg0).hint = bp_arg_arg1;
     }
-    string Test743(Widget@ bp_arg_arg0)
+    string Test744(Widget@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).style);
     }
-    void Test744(Widget@ bp_arg_arg0, string bp_arg_arg1)
+    void Test745(Widget@ bp_arg_arg0, string bp_arg_arg1)
     {
         // bp-node: api api:Widget:set_style:Widget@,string
         (bp_arg_arg0).style = bp_arg_arg1;
     }
-    bool Test745(Widget@ bp_arg_arg0)
+    bool Test746(Widget@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).visible);
     }
-    void Test746(Widget@ bp_arg_arg0, bool bp_arg_arg1)
+    void Test747(Widget@ bp_arg_arg0, bool bp_arg_arg1)
     {
         // bp-node: api api:Widget:set_visible:Widget@,bool
         (bp_arg_arg0).visible = bp_arg_arg1;
     }
-    bool Test747(Widget@ bp_arg_arg0)
+    bool Test748(Widget@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).enabled);
     }
-    void Test748(Widget@ bp_arg_arg0, bool bp_arg_arg1)
+    void Test749(Widget@ bp_arg_arg0, bool bp_arg_arg1)
     {
         // bp-node: api api:Widget:set_enabled:Widget@,bool
         (bp_arg_arg0).enabled = bp_arg_arg1;
     }
-    bool Test749(Widget@ bp_arg_arg0)
+    bool Test750(Widget@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).checked);
     }
-    void Test750(Widget@ bp_arg_arg0, bool bp_arg_arg1)
+    void Test751(Widget@ bp_arg_arg0, bool bp_arg_arg1)
     {
         // bp-node: api api:Widget:set_checked:Widget@,bool
         (bp_arg_arg0).checked = bp_arg_arg1;
     }
-    bool Test751(Widget@ bp_arg_arg0)
+    bool Test752(Widget@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).secret);
     }
-    void Test752(Widget@ bp_arg_arg0, bool bp_arg_arg1)
+    void Test753(Widget@ bp_arg_arg0, bool bp_arg_arg1)
     {
         // bp-node: api api:Widget:set_secret:Widget@,bool
         (bp_arg_arg0).secret = bp_arg_arg1;
     }
-    bool Test753(Widget@ bp_arg_arg0)
+    bool Test754(Widget@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).numeric);
     }
-    void Test754(Widget@ bp_arg_arg0, bool bp_arg_arg1)
+    void Test755(Widget@ bp_arg_arg0, bool bp_arg_arg1)
     {
         // bp-node: api api:Widget:set_numeric:Widget@,bool
         (bp_arg_arg0).numeric = bp_arg_arg1;
     }
-    bool Test755(Widget@ bp_arg_arg0)
+    bool Test756(Widget@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).wrap);
     }
-    void Test756(Widget@ bp_arg_arg0, bool bp_arg_arg1)
+    void Test757(Widget@ bp_arg_arg0, bool bp_arg_arg1)
     {
         // bp-node: api api:Widget:set_wrap:Widget@,bool
         (bp_arg_arg0).wrap = bp_arg_arg1;
     }
-    float Test757(Widget@ bp_arg_arg0)
+    float Test758(Widget@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).value);
     }
-    void Test758(Widget@ bp_arg_arg0, float bp_arg_arg1)
+    void Test759(Widget@ bp_arg_arg0, float bp_arg_arg1)
     {
         // bp-node: api api:Widget:set_value:Widget@,float
         (bp_arg_arg0).value = bp_arg_arg1;
     }
-    float Test759(Widget@ bp_arg_arg0)
+    float Test760(Widget@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).low);
     }
-    void Test760(Widget@ bp_arg_arg0, float bp_arg_arg1)
+    void Test761(Widget@ bp_arg_arg0, float bp_arg_arg1)
     {
         // bp-node: api api:Widget:set_low:Widget@,float
         (bp_arg_arg0).low = bp_arg_arg1;
     }
-    float Test761(Widget@ bp_arg_arg0)
+    float Test762(Widget@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).high);
     }
-    void Test762(Widget@ bp_arg_arg0, float bp_arg_arg1)
+    void Test763(Widget@ bp_arg_arg0, float bp_arg_arg1)
     {
         // bp-node: api api:Widget:set_high:Widget@,float
         (bp_arg_arg0).high = bp_arg_arg1;
     }
-    float Test763(Widget@ bp_arg_arg0)
+    float Test764(Widget@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).step);
     }
-    void Test764(Widget@ bp_arg_arg0, float bp_arg_arg1)
+    void Test765(Widget@ bp_arg_arg0, float bp_arg_arg1)
     {
         // bp-node: api api:Widget:set_step:Widget@,float
         (bp_arg_arg0).step = bp_arg_arg1;
     }
-    int Test765(Widget@ bp_arg_arg0)
+    int Test766(Widget@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).chosen);
     }
-    void Test766(Widget@ bp_arg_arg0, int bp_arg_arg1)
+    void Test767(Widget@ bp_arg_arg0, int bp_arg_arg1)
     {
         // bp-node: api api:Widget:set_chosen:Widget@,int
         (bp_arg_arg0).chosen = bp_arg_arg1;
-    }
-    string Test767(Widget@ bp_arg_arg0)
-    {
-        // bp-node: ret return
-        return ((bp_arg_arg0).chosenText);
     }
 }
 )BP",
 R"BP(// Generated by Nexgen Blueprint v1. Edit the .bp.json graph, not this file.
 class BP_Catalog768 : Screen
 {
-    void Test768(Widget@ bp_arg_arg0, array<string>@ bp_arg_arg1)
+    string Test768(Widget@ bp_arg_arg0)
+    {
+        // bp-node: ret return
+        return ((bp_arg_arg0).chosenText);
+    }
+    void Test769(Widget@ bp_arg_arg0, array<string>@ bp_arg_arg1)
     {
         // bp-node: api api:Widget:items:Widget@,array<string>@
         (bp_arg_arg0).items(bp_arg_arg1);
     }
-    uint Test769(Widget@ bp_arg_arg0)
+    uint Test770(Widget@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).count);
     }
-    void Test770(Widget@ bp_arg_arg0, uint bp_arg_arg1)
+    void Test771(Widget@ bp_arg_arg0, uint bp_arg_arg1)
     {
         // bp-node: api api:Widget:set_count:Widget@,uint
         (bp_arg_arg0).count = bp_arg_arg1;
     }
-    void Test771(Widget@ bp_arg_arg0)
+    void Test772(Widget@ bp_arg_arg0)
     {
         // bp-node: api api:Widget:refresh:Widget@
         (bp_arg_arg0).refresh();
     }
-    uint Test772(Widget@ bp_arg_arg0)
+    uint Test773(Widget@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).columns);
     }
-    void Test773(Widget@ bp_arg_arg0, uint bp_arg_arg1)
+    void Test774(Widget@ bp_arg_arg0, uint bp_arg_arg1)
     {
         // bp-node: api api:Widget:set_columns:Widget@,uint
         (bp_arg_arg0).columns = bp_arg_arg1;
     }
-    float Test774(Widget@ bp_arg_arg0)
+    float Test775(Widget@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).columnWidth);
     }
-    void Test775(Widget@ bp_arg_arg0, float bp_arg_arg1)
+    void Test776(Widget@ bp_arg_arg0, float bp_arg_arg1)
     {
         // bp-node: api api:Widget:set_columnWidth:Widget@,float
         (bp_arg_arg0).columnWidth = bp_arg_arg1;
     }
-    float Test776(Widget@ bp_arg_arg0)
+    float Test777(Widget@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).rowHeight);
     }
-    void Test777(Widget@ bp_arg_arg0, float bp_arg_arg1)
+    void Test778(Widget@ bp_arg_arg0, float bp_arg_arg1)
     {
         // bp-node: api api:Widget:set_rowHeight:Widget@,float
         (bp_arg_arg0).rowHeight = bp_arg_arg1;
     }
-    uint Test778(Widget@ bp_arg_arg0)
+    uint Test779(Widget@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).limit);
     }
-    void Test779(Widget@ bp_arg_arg0, uint bp_arg_arg1)
+    void Test780(Widget@ bp_arg_arg0, uint bp_arg_arg1)
     {
         // bp-node: api api:Widget:set_limit:Widget@,uint
         (bp_arg_arg0).limit = bp_arg_arg1;
     }
-    int Test780(Widget@ bp_arg_arg0)
+    int Test781(Widget@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).tag);
     }
-    void Test781(Widget@ bp_arg_arg0, int bp_arg_arg1)
+    void Test782(Widget@ bp_arg_arg0, int bp_arg_arg1)
     {
         // bp-node: api api:Widget:set_tag:Widget@,int
         (bp_arg_arg0).tag = bp_arg_arg1;
     }
-    int Test782(Widget@ bp_arg_arg0)
+    int Test783(Widget@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).index);
     }
-    float Test783(Widget@ bp_arg_arg0)
+    float Test784(Widget@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).width);
     }
-    void Test784(Widget@ bp_arg_arg0, float bp_arg_arg1)
+    void Test785(Widget@ bp_arg_arg0, float bp_arg_arg1)
     {
         // bp-node: api api:Widget:set_width:Widget@,float
         (bp_arg_arg0).width = bp_arg_arg1;
     }
-    float Test785(Widget@ bp_arg_arg0)
+    float Test786(Widget@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).height);
     }
-    void Test786(Widget@ bp_arg_arg0, float bp_arg_arg1)
+    void Test787(Widget@ bp_arg_arg0, float bp_arg_arg1)
     {
         // bp-node: api api:Widget:set_height:Widget@,float
         (bp_arg_arg0).height = bp_arg_arg1;
     }
-    float Test787(Widget@ bp_arg_arg0)
+    float Test788(Widget@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).minWidth);
     }
-    void Test788(Widget@ bp_arg_arg0, float bp_arg_arg1)
+    void Test789(Widget@ bp_arg_arg0, float bp_arg_arg1)
     {
         // bp-node: api api:Widget:set_minWidth:Widget@,float
         (bp_arg_arg0).minWidth = bp_arg_arg1;
     }
-    float Test789(Widget@ bp_arg_arg0)
+    float Test790(Widget@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).maxWidth);
     }
-    void Test790(Widget@ bp_arg_arg0, float bp_arg_arg1)
+    void Test791(Widget@ bp_arg_arg0, float bp_arg_arg1)
     {
         // bp-node: api api:Widget:set_maxWidth:Widget@,float
         (bp_arg_arg0).maxWidth = bp_arg_arg1;
     }
-    float Test791(Widget@ bp_arg_arg0)
+    float Test792(Widget@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).minHeight);
     }
-    void Test792(Widget@ bp_arg_arg0, float bp_arg_arg1)
+    void Test793(Widget@ bp_arg_arg0, float bp_arg_arg1)
     {
         // bp-node: api api:Widget:set_minHeight:Widget@,float
         (bp_arg_arg0).minHeight = bp_arg_arg1;
     }
-    float Test793(Widget@ bp_arg_arg0)
+    float Test794(Widget@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).maxHeight);
     }
-    void Test794(Widget@ bp_arg_arg0, float bp_arg_arg1)
+    void Test795(Widget@ bp_arg_arg0, float bp_arg_arg1)
     {
         // bp-node: api api:Widget:set_maxHeight:Widget@,float
         (bp_arg_arg0).maxHeight = bp_arg_arg1;
     }
-    bool Test795(Widget@ bp_arg_arg0, int bp_arg_arg1, int bp_arg_arg2, int bp_arg_arg3, int bp_arg_arg4)
+    bool Test796(Widget@ bp_arg_arg0, int bp_arg_arg1, int bp_arg_arg2, int bp_arg_arg3, int bp_arg_arg4)
     {
         // bp-node: api api:Widget:setGridSlot:Widget@,int,int,int,int
         bool bp_value_0 = (bp_arg_arg0).setGridSlot(bp_arg_arg1, bp_arg_arg2, bp_arg_arg3, bp_arg_arg4);
         // bp-node: ret return
         return bp_value_0;
     }
-    float Test796(Widget@ bp_arg_arg0)
+    float Test797(Widget@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).grow);
     }
-    void Test797(Widget@ bp_arg_arg0, float bp_arg_arg1)
+    void Test798(Widget@ bp_arg_arg0, float bp_arg_arg1)
     {
         // bp-node: api api:Widget:set_grow:Widget@,float
         (bp_arg_arg0).grow = bp_arg_arg1;
     }
-    float Test798(Widget@ bp_arg_arg0)
+    float Test799(Widget@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).gap);
     }
-    void Test799(Widget@ bp_arg_arg0, float bp_arg_arg1)
+    void Test800(Widget@ bp_arg_arg0, float bp_arg_arg1)
     {
         // bp-node: api api:Widget:set_gap:Widget@,float
         (bp_arg_arg0).gap = bp_arg_arg1;
     }
-    float Test800(Widget@ bp_arg_arg0)
+    float Test801(Widget@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).padding);
     }
-    void Test801(Widget@ bp_arg_arg0, float bp_arg_arg1)
+    void Test802(Widget@ bp_arg_arg0, float bp_arg_arg1)
     {
         // bp-node: api api:Widget:set_padding:Widget@,float
         (bp_arg_arg0).padding = bp_arg_arg1;
     }
-    void Test802(Widget@ bp_arg_arg0, float bp_arg_arg1, float bp_arg_arg2, float bp_arg_arg3, float bp_arg_arg4)
+    void Test803(Widget@ bp_arg_arg0, float bp_arg_arg1, float bp_arg_arg2, float bp_arg_arg3, float bp_arg_arg4)
     {
         // bp-node: api api:Widget:pad:Widget@,float,float,float,float
         (bp_arg_arg0).pad(bp_arg_arg1, bp_arg_arg2, bp_arg_arg3, bp_arg_arg4);
     }
-    Place Test803(Widget@ bp_arg_arg0)
+    Place Test804(Widget@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).align);
     }
-    void Test804(Widget@ bp_arg_arg0, Place bp_arg_arg1)
+    void Test805(Widget@ bp_arg_arg0, Place bp_arg_arg1)
     {
         // bp-node: api api:Widget:set_align:Widget@,Place
         (bp_arg_arg0).align = bp_arg_arg1;
     }
-    Place Test805(Widget@ bp_arg_arg0)
+    Place Test806(Widget@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).justify);
     }
-    void Test806(Widget@ bp_arg_arg0, Place bp_arg_arg1)
+    void Test807(Widget@ bp_arg_arg0, Place bp_arg_arg1)
     {
         // bp-node: api api:Widget:set_justify:Widget@,Place
         (bp_arg_arg0).justify = bp_arg_arg1;
     }
-    Place Test807(Widget@ bp_arg_arg0)
+    Place Test808(Widget@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).self);
     }
-    void Test808(Widget@ bp_arg_arg0, Place bp_arg_arg1)
+    void Test809(Widget@ bp_arg_arg0, Place bp_arg_arg1)
     {
         // bp-node: api api:Widget:set_self:Widget@,Place
         (bp_arg_arg0).self = bp_arg_arg1;
     }
-    string Test809(Widget@ bp_arg_arg0)
+    string Test810(Widget@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).anchor);
     }
-    Vec2 Test810(Widget@ bp_arg_arg0)
+    Vec2 Test811(Widget@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).offset);
     }
-    bool Test811(Widget@ bp_arg_arg0, string bp_arg_arg1, float bp_arg_arg2, float bp_arg_arg3)
+    bool Test812(Widget@ bp_arg_arg0, string bp_arg_arg1, float bp_arg_arg2, float bp_arg_arg3)
     {
         // bp-node: api api:Widget:setAnchor:Widget@,string,float,float
         bool bp_value_1 = (bp_arg_arg0).setAnchor(bp_arg_arg1, bp_arg_arg2, bp_arg_arg3);
         // bp-node: ret return
         return bp_value_1;
     }
-    Color Test812(Widget@ bp_arg_arg0)
+    Color Test813(Widget@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).color);
     }
-    void Test813(Widget@ bp_arg_arg0, Color bp_arg_arg1)
+    void Test814(Widget@ bp_arg_arg0, Color bp_arg_arg1)
     {
         // bp-node: api api:Widget:set_color:Widget@,Color
         (bp_arg_arg0).color = bp_arg_arg1;
     }
-    void Test814(Widget@ bp_arg_arg0, Texture@ bp_arg_arg1)
+    void Test815(Widget@ bp_arg_arg0, Texture@ bp_arg_arg1)
     {
         // bp-node: api api:Widget:set_picture:Widget@,Texture@
         @(bp_arg_arg0).picture = bp_arg_arg1;
-    }
-    float Test815(Widget@ bp_arg_arg0)
-    {
-        // bp-node: ret return
-        return ((bp_arg_arg0).scrolled);
     }
 }
 )BP",
 R"BP(// Generated by Nexgen Blueprint v1. Edit the .bp.json graph, not this file.
 class BP_Catalog816 : Screen
 {
-    void Test816(Widget@ bp_arg_arg0, float bp_arg_arg1)
+    float Test816(Widget@ bp_arg_arg0)
+    {
+        // bp-node: ret return
+        return ((bp_arg_arg0).scrolled);
+    }
+    void Test817(Widget@ bp_arg_arg0, float bp_arg_arg1)
     {
         // bp-node: api api:Widget:set_scrolled:Widget@,float
         (bp_arg_arg0).scrolled = bp_arg_arg1;
     }
-    Vec2 Test817(Widget@ bp_arg_arg0)
+    Vec2 Test818(Widget@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).place);
     }
-    Vec2 Test818(Widget@ bp_arg_arg0)
+    Vec2 Test819(Widget@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).size);
     }
-    bool Test819(Widget@ bp_arg_arg0)
+    bool Test820(Widget@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).focused);
     }
-    bool Test820(Widget@ bp_arg_arg0)
+    bool Test821(Widget@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).alive);
     }
-    Widget@ Test821(Widget@ bp_arg_arg0)
+    Widget@ Test822(Widget@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).parent);
     }
-    uint Test822(Widget@ bp_arg_arg0)
+    uint Test823(Widget@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).children);
     }
-    Widget@ Test823(Widget@ bp_arg_arg0, uint bp_arg_arg1)
+    Widget@ Test824(Widget@ bp_arg_arg0, uint bp_arg_arg1)
     {
         // bp-node: api api:Widget:child:Widget@,uint
         Widget@ bp_value_0 = (bp_arg_arg0).child(bp_arg_arg1);
         // bp-node: ret return
         return bp_value_0;
     }
-    void Test824(Widget@ bp_arg_arg0)
+    void Test825(Widget@ bp_arg_arg0)
     {
         // bp-node: api api:Widget:focus:Widget@
         (bp_arg_arg0).focus();
     }
-    void Test825(Widget@ bp_arg_arg0)
+    void Test826(Widget@ bp_arg_arg0)
     {
         // bp-node: api api:Widget:press:Widget@
         (bp_arg_arg0).press();
     }
-    void Test826(Widget@ bp_arg_arg0)
+    void Test827(Widget@ bp_arg_arg0)
     {
         // bp-node: api api:Widget:remove:Widget@
         (bp_arg_arg0).remove();
     }
-    void Test827(Widget@ bp_arg_arg0)
+    void Test828(Widget@ bp_arg_arg0)
     {
         // bp-node: api api:Widget:clear:Widget@
         (bp_arg_arg0).clear();
     }
-    void Test828(Widget@ bp_arg_arg0)
+    void Test829(Widget@ bp_arg_arg0)
     {
         // bp-node: api api:Widget:close:Widget@
         (bp_arg_arg0).close();
     }
-    Widget@ Test829()
+    Widget@ Test830()
     {
         // bp-node: ret return
         return (Ui::root);
     }
-    void Test830(Canvas@ bp_arg_arg0)
+    void Test831(Canvas@ bp_arg_arg0)
     {
         // bp-node: api api:Ui:Ui::draw:Canvas@
         Ui::draw(bp_arg_arg0);
     }
-    void Test831(Canvas@ bp_arg_arg0, float bp_arg_arg1, float bp_arg_arg2, float bp_arg_arg3, float bp_arg_arg4)
+    void Test832(Canvas@ bp_arg_arg0, float bp_arg_arg1, float bp_arg_arg2, float bp_arg_arg3, float bp_arg_arg4)
     {
         // bp-node: api api:Ui:Ui::draw:Canvas@,float,float,float,float
         Ui::draw(bp_arg_arg0, bp_arg_arg1, bp_arg_arg2, bp_arg_arg3, bp_arg_arg4);
     }
-    void Test832(string bp_arg_arg0)
+    void Test833(string bp_arg_arg0)
     {
         // bp-node: api api:Ui:Ui::theme:string
         Ui::theme(bp_arg_arg0);
     }
-    void Test833(string bp_arg_arg0, Widget@ bp_arg_arg1)
+    void Test834(string bp_arg_arg0, Widget@ bp_arg_arg1)
     {
         // bp-node: api api:Ui:Ui::load:string,Widget@
         Ui::load(bp_arg_arg0, bp_arg_arg1);
     }
-    void Test834(string bp_arg_arg0)
+    void Test835(string bp_arg_arg0)
     {
         // bp-node: api api:Ui:Ui::words:string
         Ui::words(bp_arg_arg0);
     }
-    string Test835(string bp_arg_arg0)
+    string Test836(string bp_arg_arg0)
     {
         // bp-node: api api:Ui:Ui::word:string
         string bp_value_1 = Ui::word(bp_arg_arg0);
         // bp-node: ret return
         return bp_value_1;
     }
-    Widget@ Test836(string bp_arg_arg0)
+    Widget@ Test837(string bp_arg_arg0)
     {
         // bp-node: api api:Ui:Ui::find:string
         Widget@ bp_value_2 = Ui::find(bp_arg_arg0);
         // bp-node: ret return
         return bp_value_2;
     }
-    void Test837()
+    void Test838()
     {
         // bp-node: api api:Ui:Ui::clear:
         Ui::clear();
     }
-    Widget@ Test838()
+    Widget@ Test839()
     {
         // bp-node: api api:Ui:Ui::popup:
         Widget@ bp_value_3 = Ui::popup();
         // bp-node: ret return
         return bp_value_3;
     }
-    void Test839(string bp_arg_arg0, float bp_arg_arg1)
+    void Test840(string bp_arg_arg0, float bp_arg_arg1)
     {
         // bp-node: api api:Ui:Ui::toast:string,float
         Ui::toast(bp_arg_arg0, bp_arg_arg1);
     }
-    Widget@ Test840()
+    Widget@ Test841()
     {
         // bp-node: ret return
         return (Ui::focused);
     }
-    bool Test841()
+    bool Test842()
     {
         // bp-node: ret return
         return (Ui::busy);
     }
-    bool Test842()
+    bool Test843()
     {
         // bp-node: ret return
         return (Ui::typing);
     }
-    float Test843()
+    float Test844()
     {
         // bp-node: ret return
         return (Ui::safeArea);
     }
-    void Test844(float bp_arg_arg0)
+    void Test845(float bp_arg_arg0)
     {
         // bp-node: api api:Ui:Ui::set_safeArea:float
         Ui::safeArea = bp_arg_arg0;
     }
-    void Test845(Message@ bp_arg_arg0, int bp_arg_arg1)
+    void Test846(Message@ bp_arg_arg0, int bp_arg_arg1)
     {
         // bp-node: api api:Message:writeInt:Message@,int
         (bp_arg_arg0).writeInt(bp_arg_arg1);
     }
-    void Test846(Message@ bp_arg_arg0, float bp_arg_arg1)
+    void Test847(Message@ bp_arg_arg0, float bp_arg_arg1)
     {
         // bp-node: api api:Message:writeFloat:Message@,float
         (bp_arg_arg0).writeFloat(bp_arg_arg1);
     }
-    void Test847(Message@ bp_arg_arg0, string bp_arg_arg1)
+    void Test848(Message@ bp_arg_arg0, string bp_arg_arg1)
     {
         // bp-node: api api:Message:writeText:Message@,string
         (bp_arg_arg0).writeText(bp_arg_arg1);
     }
-    void Test848(Message@ bp_arg_arg0, Vec2 bp_arg_arg1)
+    void Test849(Message@ bp_arg_arg0, Vec2 bp_arg_arg1)
     {
         // bp-node: api api:Message:writeVec2:Message@,Vec2
         (bp_arg_arg0).writeVec2(bp_arg_arg1);
     }
-    void Test849(Message@ bp_arg_arg0, Vec3 bp_arg_arg1)
+    void Test850(Message@ bp_arg_arg0, Vec3 bp_arg_arg1)
     {
         // bp-node: api api:Message:writeVec3:Message@,Vec3
         (bp_arg_arg0).writeVec3(bp_arg_arg1);
     }
-    int Test850(Message@ bp_arg_arg0)
+    int Test851(Message@ bp_arg_arg0)
     {
         // bp-node: api api:Message:readInt:Message@
         int bp_value_4 = (bp_arg_arg0).readInt();
         // bp-node: ret return
         return bp_value_4;
     }
-    float Test851(Message@ bp_arg_arg0)
+    float Test852(Message@ bp_arg_arg0)
     {
         // bp-node: api api:Message:readFloat:Message@
         float bp_value_5 = (bp_arg_arg0).readFloat();
         // bp-node: ret return
         return bp_value_5;
     }
-    string Test852(Message@ bp_arg_arg0)
+    string Test853(Message@ bp_arg_arg0)
     {
         // bp-node: api api:Message:readText:Message@
         string bp_value_6 = (bp_arg_arg0).readText();
         // bp-node: ret return
         return bp_value_6;
     }
-    Vec2 Test853(Message@ bp_arg_arg0)
+    Vec2 Test854(Message@ bp_arg_arg0)
     {
         // bp-node: api api:Message:readVec2:Message@
         Vec2 bp_value_7 = (bp_arg_arg0).readVec2();
         // bp-node: ret return
         return bp_value_7;
     }
-    Vec3 Test854(Message@ bp_arg_arg0)
+    Vec3 Test855(Message@ bp_arg_arg0)
     {
         // bp-node: api api:Message:readVec3:Message@
         Vec3 bp_value_8 = (bp_arg_arg0).readVec3();
         // bp-node: ret return
         return bp_value_8;
     }
-    bool Test855(Message@ bp_arg_arg0)
+    bool Test856(Message@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).more);
     }
-    bool Test856(Message@ bp_arg_arg0)
+    bool Test857(Message@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).whole);
     }
-    bool Test857(Room@ bp_arg_arg0, string bp_arg_arg1, string bp_arg_arg2, uint bp_arg_arg3)
+    bool Test858(Room@ bp_arg_arg0, string bp_arg_arg1, string bp_arg_arg2, uint bp_arg_arg3)
     {
         // bp-node: api api:Room:host:Room@,string,string,uint
         bool bp_value_9 = (bp_arg_arg0).host(bp_arg_arg1, bp_arg_arg2, bp_arg_arg3);
         // bp-node: ret return
         return bp_value_9;
     }
-    bool Test858(Room@ bp_arg_arg0, string bp_arg_arg1)
+    bool Test859(Room@ bp_arg_arg0, string bp_arg_arg1)
     {
         // bp-node: api api:Room:find:Room@,string
         bool bp_value_10 = (bp_arg_arg0).find(bp_arg_arg1);
         // bp-node: ret return
         return bp_value_10;
     }
-    uint Test859(Room@ bp_arg_arg0)
+    uint Test860(Room@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).found);
     }
-    string Test860(Room@ bp_arg_arg0, uint bp_arg_arg1)
+    string Test861(Room@ bp_arg_arg0, uint bp_arg_arg1)
     {
         // bp-node: api api:Room:foundName:Room@,uint
         string bp_value_11 = (bp_arg_arg0).foundName(bp_arg_arg1);
         // bp-node: ret return
         return bp_value_11;
     }
-    string Test861(Room@ bp_arg_arg0, uint bp_arg_arg1)
+    string Test862(Room@ bp_arg_arg0, uint bp_arg_arg1)
     {
         // bp-node: api api:Room:foundAddress:Room@,uint
         string bp_value_12 = (bp_arg_arg0).foundAddress(bp_arg_arg1);
         // bp-node: ret return
         return bp_value_12;
     }
-    uint Test862(Room@ bp_arg_arg0, uint bp_arg_arg1)
+    uint Test863(Room@ bp_arg_arg0, uint bp_arg_arg1)
     {
         // bp-node: api api:Room:foundPlayers:Room@,uint
         uint bp_value_13 = (bp_arg_arg0).foundPlayers(bp_arg_arg1);
         // bp-node: ret return
         return bp_value_13;
     }
-    uint Test863(Room@ bp_arg_arg0, uint bp_arg_arg1)
-    {
-        // bp-node: api api:Room:foundMost:Room@,uint
-        uint bp_value_14 = (bp_arg_arg0).foundMost(bp_arg_arg1);
-        // bp-node: ret return
-        return bp_value_14;
-    }
 }
 )BP",
 R"BP(// Generated by Nexgen Blueprint v1. Edit the .bp.json graph, not this file.
 class BP_Catalog864 : Screen
 {
-    bool Test864(Room@ bp_arg_arg0, string bp_arg_arg1, uint bp_arg_arg2, string bp_arg_arg3)
+    uint Test864(Room@ bp_arg_arg0, uint bp_arg_arg1)
     {
-        // bp-node: api api:Room:join:Room@,string,uint,string
-        bool bp_value_0 = (bp_arg_arg0).join(bp_arg_arg1, bp_arg_arg2, bp_arg_arg3);
+        // bp-node: api api:Room:foundMost:Room@,uint
+        uint bp_value_0 = (bp_arg_arg0).foundMost(bp_arg_arg1);
         // bp-node: ret return
         return bp_value_0;
     }
-    bool Test865(Room@ bp_arg_arg0, string bp_arg_arg1, string bp_arg_arg2, string bp_arg_arg3)
+    bool Test865(Room@ bp_arg_arg0, string bp_arg_arg1, uint bp_arg_arg2, string bp_arg_arg3)
     {
-        // bp-node: api api:Room:join:Room@,string,string,string
+        // bp-node: api api:Room:join:Room@,string,uint,string
         bool bp_value_1 = (bp_arg_arg0).join(bp_arg_arg1, bp_arg_arg2, bp_arg_arg3);
         // bp-node: ret return
         return bp_value_1;
     }
-    bool Test866(Room@ bp_arg_arg0, string bp_arg_arg1)
+    bool Test866(Room@ bp_arg_arg0, string bp_arg_arg1, string bp_arg_arg2, string bp_arg_arg3)
     {
-        // bp-node: api api:Room:meet:Room@,string
-        bool bp_value_2 = (bp_arg_arg0).meet(bp_arg_arg1);
+        // bp-node: api api:Room:join:Room@,string,string,string
+        bool bp_value_2 = (bp_arg_arg0).join(bp_arg_arg1, bp_arg_arg2, bp_arg_arg3);
         // bp-node: ret return
         return bp_value_2;
     }
-    bool Test867(Room@ bp_arg_arg0)
+    bool Test867(Room@ bp_arg_arg0, string bp_arg_arg1)
+    {
+        // bp-node: api api:Room:meet:Room@,string
+        bool bp_value_3 = (bp_arg_arg0).meet(bp_arg_arg1);
+        // bp-node: ret return
+        return bp_value_3;
+    }
+    bool Test868(Room@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).met);
     }
-    bool Test868(Room@ bp_arg_arg0, uint bp_arg_arg1)
+    bool Test869(Room@ bp_arg_arg0, uint bp_arg_arg1)
     {
         // bp-node: api api:Room:foundFar:Room@,uint
-        bool bp_value_3 = (bp_arg_arg0).foundFar(bp_arg_arg1);
-        // bp-node: ret return
-        return bp_value_3;
-    }
-    bool Test869(Room@ bp_arg_arg0, int bp_arg_arg1)
-    {
-        // bp-node: api api:Room:relayed:Room@,int
-        bool bp_value_4 = (bp_arg_arg0).relayed(bp_arg_arg1);
+        bool bp_value_4 = (bp_arg_arg0).foundFar(bp_arg_arg1);
         // bp-node: ret return
         return bp_value_4;
     }
-    void Test870(Room@ bp_arg_arg0)
+    bool Test870(Room@ bp_arg_arg0, int bp_arg_arg1)
+    {
+        // bp-node: api api:Room:relayed:Room@,int
+        bool bp_value_5 = (bp_arg_arg0).relayed(bp_arg_arg1);
+        // bp-node: ret return
+        return bp_value_5;
+    }
+    void Test871(Room@ bp_arg_arg0)
     {
         // bp-node: api api:Room:leave:Room@
         (bp_arg_arg0).leave();
     }
-    RoomState Test871(Room@ bp_arg_arg0)
+    RoomState Test872(Room@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).state);
     }
-    bool Test872(Room@ bp_arg_arg0)
+    bool Test873(Room@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).hosting);
     }
-    int Test873(Room@ bp_arg_arg0)
+    int Test874(Room@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).me);
     }
-    uint Test874(Room@ bp_arg_arg0)
+    uint Test875(Room@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).players);
     }
-    uint Test875(Room@ bp_arg_arg0)
+    uint Test876(Room@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).most);
     }
-    bool Test876(Room@ bp_arg_arg0, int bp_arg_arg1)
+    bool Test877(Room@ bp_arg_arg0, int bp_arg_arg1)
     {
         // bp-node: api api:Room:present:Room@,int
-        bool bp_value_5 = (bp_arg_arg0).present(bp_arg_arg1);
-        // bp-node: ret return
-        return bp_value_5;
-    }
-    string Test877(Room@ bp_arg_arg0, int bp_arg_arg1)
-    {
-        // bp-node: api api:Room:playerName:Room@,int
-        string bp_value_6 = (bp_arg_arg0).playerName(bp_arg_arg1);
+        bool bp_value_6 = (bp_arg_arg0).present(bp_arg_arg1);
         // bp-node: ret return
         return bp_value_6;
     }
-    int Test878(Room@ bp_arg_arg0, int bp_arg_arg1)
+    string Test878(Room@ bp_arg_arg0, int bp_arg_arg1)
     {
-        // bp-node: api api:Room:ping:Room@,int
-        int bp_value_7 = (bp_arg_arg0).ping(bp_arg_arg1);
+        // bp-node: api api:Room:playerName:Room@,int
+        string bp_value_7 = (bp_arg_arg0).playerName(bp_arg_arg1);
         // bp-node: ret return
         return bp_value_7;
     }
-    bool Test879(Room@ bp_arg_arg0, Message@ bp_arg_arg1, bool bp_arg_arg2, int bp_arg_arg3)
+    int Test879(Room@ bp_arg_arg0, int bp_arg_arg1)
     {
-        // bp-node: api api:Room:send:Room@,Message@,bool,int
-        bool bp_value_8 = (bp_arg_arg0).send(bp_arg_arg1, bp_arg_arg2, bp_arg_arg3);
+        // bp-node: api api:Room:ping:Room@,int
+        int bp_value_8 = (bp_arg_arg0).ping(bp_arg_arg1);
         // bp-node: ret return
         return bp_value_8;
     }
-    Message@ Test880(Room@ bp_arg_arg0)
+    bool Test880(Room@ bp_arg_arg0, Message@ bp_arg_arg1, bool bp_arg_arg2, int bp_arg_arg3)
     {
-        // bp-node: api api:Room:receive:Room@
-        Message@ bp_value_9 = (bp_arg_arg0).receive();
+        // bp-node: api api:Room:send:Room@,Message@,bool,int
+        bool bp_value_9 = (bp_arg_arg0).send(bp_arg_arg1, bp_arg_arg2, bp_arg_arg3);
         // bp-node: ret return
         return bp_value_9;
     }
-    int Test881(Room@ bp_arg_arg0)
+    Message@ Test881(Room@ bp_arg_arg0)
     {
-        // bp-node: api api:Room:arrived:Room@
-        int bp_value_10 = (bp_arg_arg0).arrived();
+        // bp-node: api api:Room:receive:Room@
+        Message@ bp_value_10 = (bp_arg_arg0).receive();
         // bp-node: ret return
         return bp_value_10;
     }
     int Test882(Room@ bp_arg_arg0)
     {
-        // bp-node: api api:Room:departed:Room@
-        int bp_value_11 = (bp_arg_arg0).departed();
+        // bp-node: api api:Room:arrived:Room@
+        int bp_value_11 = (bp_arg_arg0).arrived();
         // bp-node: ret return
         return bp_value_11;
     }
-    bool Test883(Room@ bp_arg_arg0, Entity@ bp_arg_arg1, string bp_arg_arg2)
+    int Test883(Room@ bp_arg_arg0)
     {
-        // bp-node: api api:Room:share:Room@,Entity@,string
-        bool bp_value_12 = (bp_arg_arg0).share(bp_arg_arg1, bp_arg_arg2);
+        // bp-node: api api:Room:departed:Room@
+        int bp_value_12 = (bp_arg_arg0).departed();
         // bp-node: ret return
         return bp_value_12;
     }
-    void Test884(Room@ bp_arg_arg0, Entity@ bp_arg_arg1)
+    bool Test884(Room@ bp_arg_arg0, Entity@ bp_arg_arg1, string bp_arg_arg2)
+    {
+        // bp-node: api api:Room:share:Room@,Entity@,string
+        bool bp_value_13 = (bp_arg_arg0).share(bp_arg_arg1, bp_arg_arg2);
+        // bp-node: ret return
+        return bp_value_13;
+    }
+    void Test885(Room@ bp_arg_arg0, Entity@ bp_arg_arg1)
     {
         // bp-node: api api:Room:unshare:Room@,Entity@
         (bp_arg_arg0).unshare(bp_arg_arg1);
     }
-    int Test885(Room@ bp_arg_arg0, Entity@ bp_arg_arg1)
+    int Test886(Room@ bp_arg_arg0, Entity@ bp_arg_arg1)
     {
         // bp-node: api api:Room:ownerOf:Room@,Entity@
-        int bp_value_13 = (bp_arg_arg0).ownerOf(bp_arg_arg1);
+        int bp_value_14 = (bp_arg_arg0).ownerOf(bp_arg_arg1);
         // bp-node: ret return
-        return bp_value_13;
+        return bp_value_14;
     }
-    uint Test886(Room@ bp_arg_arg0)
+    uint Test887(Room@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).copies);
     }
-    bool Test887(Request@ bp_arg_arg0)
+    bool Test888(Request@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).done);
     }
-    bool Test888(Request@ bp_arg_arg0)
+    bool Test889(Request@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).failed);
     }
-    int Test889(Request@ bp_arg_arg0)
+    int Test890(Request@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).status);
     }
-    string Test890(Request@ bp_arg_arg0)
+    string Test891(Request@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).text);
     }
-    string Test891(Request@ bp_arg_arg0)
+    string Test892(Request@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).error);
     }
-    uint Test892(Request@ bp_arg_arg0)
+    uint Test893(Request@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).received);
     }
-    float Test893(Request@ bp_arg_arg0)
+    float Test894(Request@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).progress);
     }
-    bool Test894(WebSocket@ bp_arg_arg0)
-    {
-        // bp-node: ret return
-        return ((bp_arg_arg0).connecting);
-    }
     bool Test895(WebSocket@ bp_arg_arg0)
     {
         // bp-node: ret return
-        return ((bp_arg_arg0).connected);
+        return ((bp_arg_arg0).connecting);
     }
     bool Test896(WebSocket@ bp_arg_arg0)
     {
         // bp-node: ret return
+        return ((bp_arg_arg0).connected);
+    }
+    bool Test897(WebSocket@ bp_arg_arg0)
+    {
+        // bp-node: ret return
         return ((bp_arg_arg0).closed);
     }
-    string Test897(WebSocket@ bp_arg_arg0)
+    string Test898(WebSocket@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).error);
     }
-    bool Test898(WebSocket@ bp_arg_arg0, string bp_arg_arg1)
+    bool Test899(WebSocket@ bp_arg_arg0, string bp_arg_arg1)
     {
         // bp-node: api api:WebSocket:send:WebSocket@,string
-        bool bp_value_14 = (bp_arg_arg0).send(bp_arg_arg1);
+        bool bp_value_15 = (bp_arg_arg0).send(bp_arg_arg1);
         // bp-node: ret return
-        return bp_value_14;
+        return bp_value_15;
     }
-    bool Test899(WebSocket@ bp_arg_arg0)
+    bool Test900(WebSocket@ bp_arg_arg0)
     {
         // bp-node: api api:WebSocket:receive:WebSocket@:string out
-        string bp_out_15 = "";
-        bool bp_value_16 = (bp_arg_arg0).receive(bp_out_15);
+        string bp_out_16 = "";
+        bool bp_value_17 = (bp_arg_arg0).receive(bp_out_16);
         // bp-node: ret return
-        return bp_value_16;
+        return bp_value_17;
     }
-    void Test900(WebSocket@ bp_arg_arg0)
+    void Test901(WebSocket@ bp_arg_arg0)
     {
         // bp-node: api api:WebSocket:close:WebSocket@
         (bp_arg_arg0).close();
     }
-    bool Test901(Connection@ bp_arg_arg0, string bp_arg_arg1)
+    bool Test902(Connection@ bp_arg_arg0, string bp_arg_arg1)
     {
         // bp-node: api api:Connection:connect:Connection@,string
-        bool bp_value_17 = (bp_arg_arg0).connect(bp_arg_arg1);
-        // bp-node: ret return
-        return bp_value_17;
-    }
-    bool Test902(Connection@ bp_arg_arg0, uint bp_arg_arg1)
-    {
-        // bp-node: api api:Connection:listen:Connection@,uint
-        bool bp_value_18 = (bp_arg_arg0).listen(bp_arg_arg1);
+        bool bp_value_18 = (bp_arg_arg0).connect(bp_arg_arg1);
         // bp-node: ret return
         return bp_value_18;
     }
-    Connection@ Test903(Connection@ bp_arg_arg0)
+    bool Test903(Connection@ bp_arg_arg0, uint bp_arg_arg1)
     {
-        // bp-node: api api:Connection:accept:Connection@
-        Connection@ bp_value_19 = (bp_arg_arg0).accept();
+        // bp-node: api api:Connection:listen:Connection@,uint
+        bool bp_value_19 = (bp_arg_arg0).listen(bp_arg_arg1);
         // bp-node: ret return
         return bp_value_19;
     }
-    void Test904(Connection@ bp_arg_arg0)
+    Connection@ Test904(Connection@ bp_arg_arg0)
+    {
+        // bp-node: api api:Connection:accept:Connection@
+        Connection@ bp_value_20 = (bp_arg_arg0).accept();
+        // bp-node: ret return
+        return bp_value_20;
+    }
+    void Test905(Connection@ bp_arg_arg0)
     {
         // bp-node: api api:Connection:close:Connection@
         (bp_arg_arg0).close();
     }
-    bool Test905(Connection@ bp_arg_arg0)
+    bool Test906(Connection@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).connected);
     }
-    bool Test906(Connection@ bp_arg_arg0)
+    bool Test907(Connection@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).connecting);
     }
-    bool Test907(Connection@ bp_arg_arg0)
+    bool Test908(Connection@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).listening);
     }
-    uint Test908(Connection@ bp_arg_arg0)
+    uint Test909(Connection@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).port);
     }
-    string Test909(Connection@ bp_arg_arg0)
+    string Test910(Connection@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).address);
     }
-    bool Test910(Connection@ bp_arg_arg0, string bp_arg_arg1)
+    bool Test911(Connection@ bp_arg_arg0, string bp_arg_arg1)
     {
         // bp-node: api api:Connection:send:Connection@,string
-        bool bp_value_20 = (bp_arg_arg0).send(bp_arg_arg1);
-        // bp-node: ret return
-        return bp_value_20;
-    }
-    string Test911(Connection@ bp_arg_arg0)
-    {
-        // bp-node: api api:Connection:receive:Connection@
-        string bp_value_21 = (bp_arg_arg0).receive();
+        bool bp_value_21 = (bp_arg_arg0).send(bp_arg_arg1);
         // bp-node: ret return
         return bp_value_21;
     }
@@ -6176,549 +6176,549 @@ class BP_Catalog864 : Screen
 R"BP(// Generated by Nexgen Blueprint v1. Edit the .bp.json graph, not this file.
 class BP_Catalog912 : Screen
 {
-    bool Test912(Connection@ bp_arg_arg0)
+    string Test912(Connection@ bp_arg_arg0)
+    {
+        // bp-node: api api:Connection:receive:Connection@
+        string bp_value_0 = (bp_arg_arg0).receive();
+        // bp-node: ret return
+        return bp_value_0;
+    }
+    bool Test913(Connection@ bp_arg_arg0)
     {
         // bp-node: api api:Connection:receiveLine:Connection@:string out
-        string bp_out_0 = "";
-        bool bp_value_1 = (bp_arg_arg0).receiveLine(bp_out_0);
-        // bp-node: ret return
-        return bp_value_1;
-    }
-    bool Test913(Datagrams@ bp_arg_arg0, uint bp_arg_arg1)
-    {
-        // bp-node: api api:Datagrams:open:Datagrams@,uint
-        bool bp_value_2 = (bp_arg_arg0).open(bp_arg_arg1);
+        string bp_out_1 = "";
+        bool bp_value_2 = (bp_arg_arg0).receiveLine(bp_out_1);
         // bp-node: ret return
         return bp_value_2;
     }
-    void Test914(Datagrams@ bp_arg_arg0)
+    bool Test914(Datagrams@ bp_arg_arg0, uint bp_arg_arg1)
+    {
+        // bp-node: api api:Datagrams:open:Datagrams@,uint
+        bool bp_value_3 = (bp_arg_arg0).open(bp_arg_arg1);
+        // bp-node: ret return
+        return bp_value_3;
+    }
+    void Test915(Datagrams@ bp_arg_arg0)
     {
         // bp-node: api api:Datagrams:close:Datagrams@
         (bp_arg_arg0).close();
     }
-    bool Test915(Datagrams@ bp_arg_arg0)
+    bool Test916(Datagrams@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).opened);
     }
-    uint Test916(Datagrams@ bp_arg_arg0)
+    uint Test917(Datagrams@ bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).port);
     }
-    bool Test917(Datagrams@ bp_arg_arg0, string bp_arg_arg1, string bp_arg_arg2)
+    bool Test918(Datagrams@ bp_arg_arg0, string bp_arg_arg1, string bp_arg_arg2)
     {
         // bp-node: api api:Datagrams:send:Datagrams@,string,string
-        bool bp_value_3 = (bp_arg_arg0).send(bp_arg_arg1, bp_arg_arg2);
-        // bp-node: ret return
-        return bp_value_3;
-    }
-    bool Test918(Datagrams@ bp_arg_arg0, uint bp_arg_arg1, string bp_arg_arg2)
-    {
-        // bp-node: api api:Datagrams:broadcast:Datagrams@,uint,string
-        bool bp_value_4 = (bp_arg_arg0).broadcast(bp_arg_arg1, bp_arg_arg2);
+        bool bp_value_4 = (bp_arg_arg0).send(bp_arg_arg1, bp_arg_arg2);
         // bp-node: ret return
         return bp_value_4;
     }
-    bool Test919(Datagrams@ bp_arg_arg0)
+    bool Test919(Datagrams@ bp_arg_arg0, uint bp_arg_arg1, string bp_arg_arg2)
+    {
+        // bp-node: api api:Datagrams:broadcast:Datagrams@,uint,string
+        bool bp_value_5 = (bp_arg_arg0).broadcast(bp_arg_arg1, bp_arg_arg2);
+        // bp-node: ret return
+        return bp_value_5;
+    }
+    bool Test920(Datagrams@ bp_arg_arg0)
     {
         // bp-node: api api:Datagrams:receive:Datagrams@:string out,string out
-        string bp_out_5 = "";
         string bp_out_6 = "";
-        bool bp_value_7 = (bp_arg_arg0).receive(bp_out_5, bp_out_6);
+        string bp_out_7 = "";
+        bool bp_value_8 = (bp_arg_arg0).receive(bp_out_6, bp_out_7);
         // bp-node: ret return
-        return bp_value_7;
+        return bp_value_8;
     }
-    bool Test920()
+    bool Test921()
     {
         // bp-node: ret return
         return (Net::available);
     }
-    string Test921()
+    string Test922()
     {
         // bp-node: ret return
         return (Net::address);
     }
-    string Test922()
+    string Test923()
     {
         // bp-node: ret return
         return (Net::meetingPlace);
     }
-    void Test923(string bp_arg_arg0)
+    void Test924(string bp_arg_arg0)
     {
         // bp-node: api api:Net:Net::set_meetingPlace:string
         Net::meetingPlace = bp_arg_arg0;
     }
-    Request@ Test924(string bp_arg_arg0)
+    Request@ Test925(string bp_arg_arg0)
     {
         // bp-node: api api:Net:Net::get:string
-        Request@ bp_value_8 = Net::get(bp_arg_arg0);
-        // bp-node: ret return
-        return bp_value_8;
-    }
-    Request@ Test925(string bp_arg_arg0, string bp_arg_arg1, string bp_arg_arg2)
-    {
-        // bp-node: api api:Net:Net::post:string,string,string
-        Request@ bp_value_9 = Net::post(bp_arg_arg0, bp_arg_arg1, bp_arg_arg2);
+        Request@ bp_value_9 = Net::get(bp_arg_arg0);
         // bp-node: ret return
         return bp_value_9;
     }
-    bool Test926()
+    Request@ Test926(string bp_arg_arg0, string bp_arg_arg1, string bp_arg_arg2)
+    {
+        // bp-node: api api:Net:Net::post:string,string,string
+        Request@ bp_value_10 = Net::post(bp_arg_arg0, bp_arg_arg1, bp_arg_arg2);
+        // bp-node: ret return
+        return bp_value_10;
+    }
+    bool Test927()
     {
         // bp-node: ret return
         return (Xbox::available);
     }
-    int Test927()
+    int Test928()
     {
         // bp-node: ret return
         return (Xbox::cpuTemperature);
     }
-    int Test928()
+    int Test929()
     {
         // bp-node: ret return
         return (Xbox::boardTemperature);
     }
-    int Test929()
+    int Test930()
     {
         // bp-node: ret return
         return (Xbox::fan);
     }
-    void Test930(int bp_arg_arg0)
+    void Test931(int bp_arg_arg0)
     {
         // bp-node: api api:Xbox:Xbox::set_fan:int
         Xbox::fan = bp_arg_arg0;
     }
-    void Test931(uint bp_arg_arg0)
+    void Test932(uint bp_arg_arg0)
     {
         // bp-node: api api:Xbox:Xbox::set_light:uint
         Xbox::light = bp_arg_arg0;
     }
-    Tray Test932()
+    Tray Test933()
     {
         // bp-node: ret return
         return (Xbox::tray);
     }
-    bool Test933()
-    {
-        // bp-node: api api:Xbox:Xbox::openTray:
-        bool bp_value_10 = Xbox::openTray();
-        // bp-node: ret return
-        return bp_value_10;
-    }
     bool Test934()
     {
-        // bp-node: api api:Xbox:Xbox::closeTray:
-        bool bp_value_11 = Xbox::closeTray();
+        // bp-node: api api:Xbox:Xbox::openTray:
+        bool bp_value_11 = Xbox::openTray();
         // bp-node: ret return
         return bp_value_11;
     }
-    string Test935(XboxText bp_arg_arg0)
+    bool Test935()
     {
-        // bp-node: api api:Xbox:Xbox::text:XboxText
-        string bp_value_12 = Xbox::text(bp_arg_arg0);
+        // bp-node: api api:Xbox:Xbox::closeTray:
+        bool bp_value_12 = Xbox::closeTray();
         // bp-node: ret return
         return bp_value_12;
     }
-    uint Test936(string bp_arg_arg0)
+    string Test936(XboxText bp_arg_arg0)
     {
-        // bp-node: api api:Xbox:Xbox::driveSize:string
-        uint bp_value_13 = Xbox::driveSize(bp_arg_arg0);
+        // bp-node: api api:Xbox:Xbox::text:XboxText
+        string bp_value_13 = Xbox::text(bp_arg_arg0);
         // bp-node: ret return
         return bp_value_13;
     }
     uint Test937(string bp_arg_arg0)
     {
-        // bp-node: api api:Xbox:Xbox::driveFree:string
-        uint bp_value_14 = Xbox::driveFree(bp_arg_arg0);
+        // bp-node: api api:Xbox:Xbox::driveSize:string
+        uint bp_value_14 = Xbox::driveSize(bp_arg_arg0);
         // bp-node: ret return
         return bp_value_14;
     }
-    array<string>@ Test938(string bp_arg_arg0)
+    uint Test938(string bp_arg_arg0)
     {
-        // bp-node: api api:Xbox:Xbox::folders:string
-        array<string>@ bp_value_15 = Xbox::folders(bp_arg_arg0);
+        // bp-node: api api:Xbox:Xbox::driveFree:string
+        uint bp_value_15 = Xbox::driveFree(bp_arg_arg0);
         // bp-node: ret return
         return bp_value_15;
     }
     array<string>@ Test939(string bp_arg_arg0)
     {
-        // bp-node: api api:Xbox:Xbox::files:string
-        array<string>@ bp_value_16 = Xbox::files(bp_arg_arg0);
+        // bp-node: api api:Xbox:Xbox::folders:string
+        array<string>@ bp_value_16 = Xbox::folders(bp_arg_arg0);
         // bp-node: ret return
         return bp_value_16;
     }
-    bool Test940(string bp_arg_arg0)
+    array<string>@ Test940(string bp_arg_arg0)
     {
-        // bp-node: api api:Xbox:Xbox::launch:string
-        bool bp_value_17 = Xbox::launch(bp_arg_arg0);
+        // bp-node: api api:Xbox:Xbox::files:string
+        array<string>@ bp_value_17 = Xbox::files(bp_arg_arg0);
         // bp-node: ret return
         return bp_value_17;
     }
-    bool Test941(string bp_arg_arg0, string bp_arg_arg1, bool bp_arg_arg2, uint bp_arg_arg3)
+    bool Test941(string bp_arg_arg0)
     {
-        // bp-node: api api:Xbox:Xbox::startFtp:string,string,bool,uint
-        bool bp_value_18 = Xbox::startFtp(bp_arg_arg0, bp_arg_arg1, bp_arg_arg2, bp_arg_arg3);
+        // bp-node: api api:Xbox:Xbox::launch:string
+        bool bp_value_18 = Xbox::launch(bp_arg_arg0);
         // bp-node: ret return
         return bp_value_18;
     }
-    void Test942()
+    bool Test942(string bp_arg_arg0, string bp_arg_arg1, bool bp_arg_arg2, uint bp_arg_arg3)
+    {
+        // bp-node: api api:Xbox:Xbox::startFtp:string,string,bool,uint
+        bool bp_value_19 = Xbox::startFtp(bp_arg_arg0, bp_arg_arg1, bp_arg_arg2, bp_arg_arg3);
+        // bp-node: ret return
+        return bp_value_19;
+    }
+    void Test943()
     {
         // bp-node: api api:Xbox:Xbox::stopFtp:
         Xbox::stopFtp();
     }
-    bool Test943()
+    bool Test944()
     {
         // bp-node: ret return
         return (Xbox::ftpRunning);
     }
-    uint Test944()
+    uint Test945()
     {
         // bp-node: ret return
         return (Xbox::ftpClients);
     }
-    string Test945()
+    string Test946()
     {
         // bp-node: ret return
         return (Xbox::ftpLast);
     }
-    uint Test946()
+    uint Test947()
     {
         // bp-node: ret return
         return (Xbox::ftpKilobytes);
     }
-    void Test947()
+    void Test948()
     {
         // bp-node: api api:Xbox:Xbox::toDashboard:
         Xbox::toDashboard();
     }
-    void Test948()
+    void Test949()
     {
         // bp-node: api api:Xbox:Xbox::toFirmware:
         Xbox::toFirmware();
     }
-    void Test949()
+    void Test950()
     {
         // bp-node: api api:Xbox:Xbox::restart:
         Xbox::restart();
     }
-    void Test950()
+    void Test951()
     {
         // bp-node: api api:Xbox:Xbox::powerOff:
         Xbox::powerOff();
     }
-    int Test951(uint bp_arg_arg0, uint bp_arg_arg1, bool bp_arg_arg2)
+    int Test952(uint bp_arg_arg0, uint bp_arg_arg1, bool bp_arg_arg2)
     {
         // bp-node: api api:Xbox:Xbox::busRead:uint,uint,bool
-        int bp_value_19 = Xbox::busRead(bp_arg_arg0, bp_arg_arg1, bp_arg_arg2);
-        // bp-node: ret return
-        return bp_value_19;
-    }
-    bool Test952(uint bp_arg_arg0, uint bp_arg_arg1, uint bp_arg_arg2, bool bp_arg_arg3)
-    {
-        // bp-node: api api:Xbox:Xbox::busWrite:uint,uint,uint,bool
-        bool bp_value_20 = Xbox::busWrite(bp_arg_arg0, bp_arg_arg1, bp_arg_arg2, bp_arg_arg3);
+        int bp_value_20 = Xbox::busRead(bp_arg_arg0, bp_arg_arg1, bp_arg_arg2);
         // bp-node: ret return
         return bp_value_20;
     }
-    bool Test953()
+    bool Test953(uint bp_arg_arg0, uint bp_arg_arg1, uint bp_arg_arg2, bool bp_arg_arg3)
     {
+        // bp-node: api api:Xbox:Xbox::busWrite:uint,uint,uint,bool
+        bool bp_value_21 = Xbox::busWrite(bp_arg_arg0, bp_arg_arg1, bp_arg_arg2, bp_arg_arg3);
         // bp-node: ret return
-        return (Window::available);
+        return bp_value_21;
     }
     bool Test954()
     {
         // bp-node: ret return
+        return (Window::available);
+    }
+    bool Test955()
+    {
+        // bp-node: ret return
         return (Window::fullscreen);
     }
-    void Test955(bool bp_arg_arg0)
+    void Test956(bool bp_arg_arg0)
     {
         // bp-node: api api:Window:Window::set_fullscreen:bool
         Window::fullscreen = bp_arg_arg0;
     }
-    string Test956()
+    string Test957()
     {
         // bp-node: ret return
         return (Window::title);
     }
-    void Test957(string bp_arg_arg0)
+    void Test958(string bp_arg_arg0)
     {
         // bp-node: api api:Window:Window::set_title:string
         Window::title = bp_arg_arg0;
     }
-    uint Test958()
-    {
-        // bp-node: ret return
-        return (Window::width);
-    }
     uint Test959()
     {
         // bp-node: ret return
-        return (Window::height);
+        return (Window::width);
     }
 }
 )BP",
 R"BP(// Generated by Nexgen Blueprint v1. Edit the .bp.json graph, not this file.
 class BP_Catalog960 : Screen
 {
-    bool Test960(uint bp_arg_arg0, uint bp_arg_arg1)
+    uint Test960()
+    {
+        // bp-node: ret return
+        return (Window::height);
+    }
+    bool Test961(uint bp_arg_arg0, uint bp_arg_arg1)
     {
         // bp-node: api api:Window:Window::resize:uint,uint
         bool bp_value_0 = Window::resize(bp_arg_arg0, bp_arg_arg1);
         // bp-node: ret return
         return bp_value_0;
     }
-    bool Test961()
+    bool Test962()
     {
         // bp-node: ret return
         return (Window::vsync);
     }
-    void Test962(bool bp_arg_arg0)
+    void Test963(bool bp_arg_arg0)
     {
         // bp-node: api api:Window:Window::set_vsync:bool
         Window::vsync = bp_arg_arg0;
     }
-    Pointer Test963()
+    Pointer Test964()
     {
         // bp-node: ret return
         return (Window::pointer);
     }
-    void Test964(Pointer bp_arg_arg0)
+    void Test965(Pointer bp_arg_arg0)
     {
         // bp-node: api api:Window:Window::set_pointer:Pointer
         Window::pointer = bp_arg_arg0;
     }
-    bool Test965()
+    bool Test966()
     {
         // bp-node: ret return
         return (Window::focused);
     }
-    bool Test966(string bp_arg_arg0, string bp_arg_arg1)
+    bool Test967(string bp_arg_arg0, string bp_arg_arg1)
     {
         // bp-node: api api:Window:Window::message:string,string
         bool bp_value_1 = Window::message(bp_arg_arg0, bp_arg_arg1);
         // bp-node: ret return
         return bp_value_1;
     }
-    bool Test967(string bp_arg_arg0, string bp_arg_arg1)
+    bool Test968(string bp_arg_arg0, string bp_arg_arg1)
     {
         // bp-node: api api:Window:Window::ask:string,string
         bool bp_value_2 = Window::ask(bp_arg_arg0, bp_arg_arg1);
         // bp-node: ret return
         return bp_value_2;
     }
-    string Test968()
+    string Test969()
     {
         // bp-node: ret return
         return (System::clipboard);
     }
-    void Test969(string bp_arg_arg0)
+    void Test970(string bp_arg_arg0)
     {
         // bp-node: api api:System:System::set_clipboard:string
         System::clipboard = bp_arg_arg0;
     }
-    string Test970()
+    string Test971()
     {
         // bp-node: ret return
         return (System::locale);
     }
-    string Test971()
+    string Test972()
     {
         // bp-node: ret return
         return (System::language);
     }
-    int Test972()
+    int Test973()
     {
         // bp-node: ret return
         return (System::hour);
     }
-    int Test973()
+    int Test974()
     {
         // bp-node: ret return
         return (System::minute);
     }
-    int Test974()
+    int Test975()
     {
         // bp-node: ret return
         return (System::second);
     }
-    string Test975(bool bp_arg_arg0)
+    string Test976(bool bp_arg_arg0)
     {
         // bp-node: api api:System:System::clock:bool
         string bp_value_3 = System::clock(bp_arg_arg0);
         // bp-node: ret return
         return bp_value_3;
     }
-    uint Test976()
+    uint Test977()
     {
         // bp-node: ret return
         return (System::processors);
     }
-    bool Test977(string bp_arg_arg0)
+    bool Test978(string bp_arg_arg0)
     {
         // bp-node: api api:System:System::open:string
         bool bp_value_4 = System::open(bp_arg_arg0);
         // bp-node: ret return
         return bp_value_4;
     }
-    int Test978()
+    int Test979()
     {
         // bp-node: ret return
         return (System::battery);
     }
-    bool Test979()
+    bool Test980()
     {
         // bp-node: ret return
         return (System::charging);
     }
-    bool Test980()
+    bool Test981()
     {
         // bp-node: ret return
         return (Xbox360::available);
     }
-    int Test981()
+    int Test982()
     {
         // bp-node: ret return
         return (Xbox360::cpuTemperature);
     }
-    int Test982()
+    int Test983()
     {
         // bp-node: ret return
         return (Xbox360::gpuTemperature);
     }
-    int Test983()
+    int Test984()
     {
         // bp-node: ret return
         return (Xbox360::memoryTemperature);
     }
-    int Test984()
+    int Test985()
     {
         // bp-node: ret return
         return (Xbox360::boardTemperature);
     }
-    Tray Test985()
+    Tray Test986()
     {
         // bp-node: ret return
         return (Xbox360::tray);
     }
-    bool Test986()
+    bool Test987()
     {
         // bp-node: api api:Xbox360:Xbox360::openTray:
         bool bp_value_5 = Xbox360::openTray();
         // bp-node: ret return
         return bp_value_5;
     }
-    bool Test987()
+    bool Test988()
     {
         // bp-node: api api:Xbox360:Xbox360::closeTray:
         bool bp_value_6 = Xbox360::closeTray();
         // bp-node: ret return
         return bp_value_6;
     }
-    void Test988(uint bp_arg_arg0)
+    void Test989(uint bp_arg_arg0)
     {
         // bp-node: api api:Xbox360:Xbox360::set_lights:uint
         Xbox360::lights = bp_arg_arg0;
     }
-    string Test989()
+    string Test990()
     {
         // bp-node: ret return
         return (Xbox360::kernel);
     }
-    string Test990()
+    string Test991()
     {
         // bp-node: ret return
         return (Xbox360::region);
     }
-    string Test991()
+    string Test992()
     {
         // bp-node: ret return
         return (Xbox360::language);
     }
-    string Test992()
+    string Test993()
     {
         // bp-node: ret return
         return (Xbox360::video);
     }
-    string Test993()
+    string Test994()
     {
         // bp-node: ret return
         return (Xbox360::player);
     }
-    bool Test994(string bp_arg_arg0)
+    bool Test995(string bp_arg_arg0)
     {
         // bp-node: api api:Xbox360:Xbox360::launch:string
         bool bp_value_7 = Xbox360::launch(bp_arg_arg0);
         // bp-node: ret return
         return bp_value_7;
     }
-    void Test995()
+    void Test996()
     {
         // bp-node: api api:Xbox360:Xbox360::toDashboard:
         Xbox360::toDashboard();
     }
-    void Test996()
+    void Test997()
     {
         // bp-node: api api:Xbox360:Xbox360::restart:
         Xbox360::restart();
     }
-    void Test997()
+    void Test998()
     {
         // bp-node: api api:Xbox360:Xbox360::powerOff:
         Xbox360::powerOff();
     }
-    bool Test998()
+    bool Test999()
     {
         // bp-node: ret return
         return (XboxOne::available);
     }
-    string Test999()
+    string Test1000()
     {
         // bp-node: ret return
         return (XboxOne::model);
     }
-    string Test1000()
+    string Test1001()
     {
         // bp-node: ret return
         return (XboxOne::system);
     }
-    uint Test1001()
+    uint Test1002()
     {
         // bp-node: ret return
         return (XboxOne::memoryLimit);
     }
-    bool Test1002(string bp_arg_arg0)
+    bool Test1003(string bp_arg_arg0)
     {
         // bp-node: api api:XboxOne:XboxOne::open:string
         bool bp_value_8 = XboxOne::open(bp_arg_arg0);
         // bp-node: ret return
         return bp_value_8;
     }
-    bool Test1003()
+    bool Test1004()
     {
         // bp-node: ret return
         return (Windows::available);
     }
-    string Test1004()
+    string Test1005()
     {
         // bp-node: ret return
         return (Windows::version);
     }
-    string Test1005()
+    string Test1006()
     {
         // bp-node: ret return
         return (Windows::computer);
     }
-    string Test1006()
+    string Test1007()
     {
         // bp-node: ret return
         return (Windows::user);
-    }
-    bool Test1007(string bp_arg_arg0)
-    {
-        // bp-node: api api:Windows:Windows::open:string
-        bool bp_value_9 = Windows::open(bp_arg_arg0);
-        // bp-node: ret return
-        return bp_value_9;
     }
 }
 )BP",
@@ -6727,595 +6727,602 @@ class BP_Catalog1008 : Screen
 {
     bool Test1008(string bp_arg_arg0)
     {
-        // bp-node: api api:Windows:Windows::reveal:string
-        bool bp_value_0 = Windows::reveal(bp_arg_arg0);
+        // bp-node: api api:Windows:Windows::open:string
+        bool bp_value_0 = Windows::open(bp_arg_arg0);
         // bp-node: ret return
         return bp_value_0;
     }
-    bool Test1009(string bp_arg_arg0, string bp_arg_arg1)
+    bool Test1009(string bp_arg_arg0)
     {
-        // bp-node: api api:Windows:Windows::run:string,string
-        bool bp_value_1 = Windows::run(bp_arg_arg0, bp_arg_arg1);
+        // bp-node: api api:Windows:Windows::reveal:string
+        bool bp_value_1 = Windows::reveal(bp_arg_arg0);
         // bp-node: ret return
         return bp_value_1;
     }
-    int Test1010()
+    bool Test1010(string bp_arg_arg0, string bp_arg_arg1)
+    {
+        // bp-node: api api:Windows:Windows::run:string,string
+        bool bp_value_2 = Windows::run(bp_arg_arg0, bp_arg_arg1);
+        // bp-node: ret return
+        return bp_value_2;
+    }
+    int Test1011()
     {
         // bp-node: ret return
         return (Windows::battery);
     }
-    bool Test1011()
+    bool Test1012()
     {
         // bp-node: ret return
         return (Windows::charging);
     }
-    bool Test1012()
+    bool Test1013()
     {
         // bp-node: ret return
         return (Windows::darkMode);
     }
-    string Test1013()
+    string Test1014()
     {
         // bp-node: ret return
         return (Windows::clipboard);
     }
-    void Test1014(string bp_arg_arg0)
+    void Test1015(string bp_arg_arg0)
     {
         // bp-node: api api:Windows:Windows::set_clipboard:string
         Windows::clipboard = bp_arg_arg0;
     }
-    bool Test1015()
+    bool Test1016()
     {
         // bp-node: ret return
         return (Windows::titleColors);
     }
-    bool Test1016()
+    bool Test1017()
     {
         // bp-node: ret return
         return (Windows::backdrops);
     }
-    TitleLook Test1017()
+    TitleLook Test1018()
     {
         // bp-node: ret return
         return (Windows::titleLook);
     }
-    void Test1018(TitleLook bp_arg_arg0)
+    void Test1019(TitleLook bp_arg_arg0)
     {
         // bp-node: api api:Windows:Windows::set_titleLook:TitleLook
         Windows::titleLook = bp_arg_arg0;
     }
-    Color Test1019()
+    Color Test1020()
     {
         // bp-node: ret return
         return (Windows::titleColor);
     }
-    void Test1020(Color bp_arg_arg0)
+    void Test1021(Color bp_arg_arg0)
     {
         // bp-node: api api:Windows:Windows::set_titleColor:Color
         Windows::titleColor = bp_arg_arg0;
     }
-    Color Test1021()
+    Color Test1022()
     {
         // bp-node: ret return
         return (Windows::titleTextColor);
     }
-    void Test1022(Color bp_arg_arg0)
+    void Test1023(Color bp_arg_arg0)
     {
         // bp-node: api api:Windows:Windows::set_titleTextColor:Color
         Windows::titleTextColor = bp_arg_arg0;
     }
-    Color Test1023()
+    Color Test1024()
     {
         // bp-node: ret return
         return (Windows::borderColor);
     }
-    void Test1024(Color bp_arg_arg0)
+    void Test1025(Color bp_arg_arg0)
     {
         // bp-node: api api:Windows:Windows::set_borderColor:Color
         Windows::borderColor = bp_arg_arg0;
     }
-    bool Test1025()
+    bool Test1026()
     {
         // bp-node: ret return
         return (Windows::noBorder);
     }
-    void Test1026(bool bp_arg_arg0)
+    void Test1027(bool bp_arg_arg0)
     {
         // bp-node: api api:Windows:Windows::set_noBorder:bool
         Windows::noBorder = bp_arg_arg0;
     }
-    Corners Test1027()
+    Corners Test1028()
     {
         // bp-node: ret return
         return (Windows::corners);
     }
-    void Test1028(Corners bp_arg_arg0)
+    void Test1029(Corners bp_arg_arg0)
     {
         // bp-node: api api:Windows:Windows::set_corners:Corners
         Windows::corners = bp_arg_arg0;
     }
-    Backdrop Test1029()
+    Backdrop Test1030()
     {
         // bp-node: ret return
         return (Windows::backdrop);
     }
-    void Test1030(Backdrop bp_arg_arg0)
+    void Test1031(Backdrop bp_arg_arg0)
     {
         // bp-node: api api:Windows:Windows::set_backdrop:Backdrop
         Windows::backdrop = bp_arg_arg0;
     }
-    bool Test1031()
+    bool Test1032()
     {
         // bp-node: ret return
         return (Mac::available);
     }
-    string Test1032()
+    string Test1033()
     {
         // bp-node: ret return
         return (Mac::version);
     }
-    string Test1033()
+    string Test1034()
     {
         // bp-node: ret return
         return (Mac::computer);
     }
-    string Test1034()
+    string Test1035()
     {
         // bp-node: ret return
         return (Mac::user);
     }
-    bool Test1035(string bp_arg_arg0)
-    {
-        // bp-node: api api:Mac:Mac::open:string
-        bool bp_value_2 = Mac::open(bp_arg_arg0);
-        // bp-node: ret return
-        return bp_value_2;
-    }
     bool Test1036(string bp_arg_arg0)
     {
-        // bp-node: api api:Mac:Mac::reveal:string
-        bool bp_value_3 = Mac::reveal(bp_arg_arg0);
+        // bp-node: api api:Mac:Mac::open:string
+        bool bp_value_3 = Mac::open(bp_arg_arg0);
         // bp-node: ret return
         return bp_value_3;
     }
-    bool Test1037(string bp_arg_arg0, string bp_arg_arg1)
+    bool Test1037(string bp_arg_arg0)
     {
-        // bp-node: api api:Mac:Mac::run:string,string
-        bool bp_value_4 = Mac::run(bp_arg_arg0, bp_arg_arg1);
+        // bp-node: api api:Mac:Mac::reveal:string
+        bool bp_value_4 = Mac::reveal(bp_arg_arg0);
         // bp-node: ret return
         return bp_value_4;
     }
-    int Test1038()
+    bool Test1038(string bp_arg_arg0, string bp_arg_arg1)
+    {
+        // bp-node: api api:Mac:Mac::run:string,string
+        bool bp_value_5 = Mac::run(bp_arg_arg0, bp_arg_arg1);
+        // bp-node: ret return
+        return bp_value_5;
+    }
+    int Test1039()
     {
         // bp-node: ret return
         return (Mac::battery);
     }
-    bool Test1039()
+    bool Test1040()
     {
         // bp-node: ret return
         return (Mac::charging);
     }
-    bool Test1040()
+    bool Test1041()
     {
         // bp-node: ret return
         return (Mac::darkMode);
     }
-    string Test1041()
+    string Test1042()
     {
         // bp-node: ret return
         return (Mac::clipboard);
     }
-    void Test1042(string bp_arg_arg0)
+    void Test1043(string bp_arg_arg0)
     {
         // bp-node: api api:Mac:Mac::set_clipboard:string
         Mac::clipboard = bp_arg_arg0;
     }
-    bool Test1043()
+    bool Test1044()
     {
         // bp-node: ret return
         return (Linux::available);
     }
-    string Test1044()
+    string Test1045()
     {
         // bp-node: ret return
         return (Linux::distribution);
     }
-    string Test1045()
+    string Test1046()
     {
         // bp-node: ret return
         return (Linux::kernel);
     }
-    string Test1046()
+    string Test1047()
     {
         // bp-node: ret return
         return (Linux::desktop);
     }
-    string Test1047()
+    string Test1048()
     {
         // bp-node: ret return
         return (Linux::computer);
     }
-    string Test1048()
+    string Test1049()
     {
         // bp-node: ret return
         return (Linux::user);
     }
-    bool Test1049(string bp_arg_arg0)
+    bool Test1050(string bp_arg_arg0)
     {
         // bp-node: api api:Linux:Linux::open:string
-        bool bp_value_5 = Linux::open(bp_arg_arg0);
-        // bp-node: ret return
-        return bp_value_5;
-    }
-    bool Test1050(string bp_arg_arg0, string bp_arg_arg1)
-    {
-        // bp-node: api api:Linux:Linux::run:string,string
-        bool bp_value_6 = Linux::run(bp_arg_arg0, bp_arg_arg1);
+        bool bp_value_6 = Linux::open(bp_arg_arg0);
         // bp-node: ret return
         return bp_value_6;
     }
-    int Test1051()
+    bool Test1051(string bp_arg_arg0, string bp_arg_arg1)
+    {
+        // bp-node: api api:Linux:Linux::run:string,string
+        bool bp_value_7 = Linux::run(bp_arg_arg0, bp_arg_arg1);
+        // bp-node: ret return
+        return bp_value_7;
+    }
+    int Test1052()
     {
         // bp-node: ret return
         return (Linux::battery);
     }
-    bool Test1052()
+    bool Test1053()
     {
         // bp-node: ret return
         return (Linux::charging);
     }
-    Voice Test1053(Entity@ bp_arg_arg0, Sound@ bp_arg_arg1, float bp_arg_arg2, float bp_arg_arg3, bool bp_arg_arg4)
+    Voice Test1054(Entity@ bp_arg_arg0, Sound@ bp_arg_arg1, float bp_arg_arg2, float bp_arg_arg3, bool bp_arg_arg4)
     {
         // bp-node: api api:Entity:sound:Entity@,Sound@,float,float,bool
-        Voice bp_value_7 = (bp_arg_arg0).sound(bp_arg_arg1, bp_arg_arg2, bp_arg_arg3, bp_arg_arg4);
+        Voice bp_value_8 = (bp_arg_arg0).sound(bp_arg_arg1, bp_arg_arg2, bp_arg_arg3, bp_arg_arg4);
         // bp-node: ret return
-        return bp_value_7;
+        return bp_value_8;
     }
-    void Test1054(string bp_arg_arg0)
+    void Test1055(string bp_arg_arg0)
     {
         // bp-node: api api:Screens:Screens::push:string
         Screens::push(bp_arg_arg0);
-    }
-    void Test1055()
-    {
-        // bp-node: api api:Screens:Screens::pop:
-        Screens::pop();
     }
 }
 )BP",
 R"BP(// Generated by Nexgen Blueprint v1. Edit the .bp.json graph, not this file.
 class BP_Catalog1056 : Screen
 {
-    void Test1056(string bp_arg_arg0)
+    void Test1056()
+    {
+        // bp-node: api api:Screens:Screens::pop:
+        Screens::pop();
+    }
+    void Test1057(string bp_arg_arg0)
     {
         // bp-node: api api:Screens:Screens::replace:string
         Screens::replace(bp_arg_arg0);
     }
-    void Test1057()
+    void Test1058()
     {
         // bp-node: api api:Screens:Screens::home:
         Screens::home();
     }
-    uint Test1058()
+    uint Test1059()
     {
         // bp-node: ret return
         return (Screens::count);
     }
-    string Test1059(uint bp_arg_arg0)
+    string Test1060(uint bp_arg_arg0)
     {
         // bp-node: api api:Screens:Screens::id:uint
         string bp_value_0 = Screens::id(bp_arg_arg0);
         // bp-node: ret return
         return bp_value_0;
     }
-    string Test1060(uint bp_arg_arg0)
+    string Test1061(uint bp_arg_arg0)
     {
         // bp-node: api api:Screens:Screens::title:uint
         string bp_value_1 = Screens::title(bp_arg_arg0);
         // bp-node: ret return
         return bp_value_1;
     }
-    string Test1061(uint bp_arg_arg0)
+    string Test1062(uint bp_arg_arg0)
     {
         // bp-node: api api:Screens:Screens::description:uint
         string bp_value_2 = Screens::description(bp_arg_arg0);
         // bp-node: ret return
         return bp_value_2;
     }
-    string Test1062(uint bp_arg_arg0)
+    string Test1063(uint bp_arg_arg0)
     {
         // bp-node: api api:Screens:Screens::category:uint
         string bp_value_3 = Screens::category(bp_arg_arg0);
         // bp-node: ret return
         return bp_value_3;
     }
-    float Test1063()
+    float Test1064()
     {
         // bp-node: ret return
         return (App::time);
     }
-    double Test1064()
+    double Test1065()
     {
         // bp-node: ret return
         return (App::now);
     }
-    float Test1065()
+    float Test1066()
     {
         // bp-node: ret return
         return (App::fps);
     }
-    Pixels@ Test1066()
+    Pixels@ Test1067()
     {
         // bp-node: api api:App:App::screenshot:
         Pixels@ bp_value_4 = App::screenshot();
         // bp-node: ret return
         return bp_value_4;
     }
-    uint Test1067()
+    uint Test1068()
     {
         // bp-node: ret return
         return (App::draws);
     }
-    string Test1068()
+    string Test1069()
     {
         // bp-node: ret return
         return (App::platform);
     }
-    string Test1069()
+    string Test1070()
     {
         // bp-node: ret return
         return (App::gpu);
     }
-    uint Test1070()
+    uint Test1071()
     {
         // bp-node: ret return
         return (App::memoryKilobytes);
     }
-    uint Test1071()
+    uint Test1072()
     {
         // bp-node: ret return
         return (App::scriptKilobytes);
     }
-    uint Test1072()
+    uint Test1073()
     {
         // bp-node: ret return
         return (App::freeKilobytes);
     }
-    bool Test1073()
+    bool Test1074()
     {
         // bp-node: ret return
         return (App::development);
     }
-    void Test1074(bool bp_arg_arg0)
+    void Test1075(bool bp_arg_arg0)
     {
         // bp-node: api api:App:App::set_development:bool
         App::development = bp_arg_arg0;
     }
-    bool Test1075(uint bp_arg_arg0, bool bp_arg_arg1)
+    bool Test1076(uint bp_arg_arg0, bool bp_arg_arg1)
     {
         // bp-node: api api:App:App::debugger:uint,bool
         bool bp_value_5 = App::debugger(bp_arg_arg0, bp_arg_arg1);
         // bp-node: ret return
         return bp_value_5;
     }
-    bool Test1076()
+    bool Test1077()
     {
         // bp-node: ret return
         return (App::debugging);
     }
-    uint Test1077()
+    uint Test1078()
     {
         // bp-node: ret return
         return (App::reloads);
     }
-    float Test1078(Vec2 bp_arg_arg0, Vec2 bp_arg_arg1)
+    float Test1079(Vec2 bp_arg_arg0, Vec2 bp_arg_arg1)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).dot(bp_arg_arg1));
     }
-    float Test1079(Vec2 bp_arg_arg0, Vec2 bp_arg_arg1)
+    float Test1080(Vec2 bp_arg_arg0, Vec2 bp_arg_arg1)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).cross(bp_arg_arg1));
     }
-    float Test1080(Vec2 bp_arg_arg0)
+    float Test1081(Vec2 bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).length());
     }
-    Vec2 Test1081(Vec2 bp_arg_arg0)
+    Vec2 Test1082(Vec2 bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).normalized());
     }
-    float Test1082(Vec2 bp_arg_arg0, Vec2 bp_arg_arg1)
+    float Test1083(Vec2 bp_arg_arg0, Vec2 bp_arg_arg1)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).distance(bp_arg_arg1));
     }
-    float Test1083(Vec2 bp_arg_arg0)
+    float Test1084(Vec2 bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).angle());
     }
-    Vec2 Test1084(Vec2 bp_arg_arg0, float bp_arg_arg1)
+    Vec2 Test1085(Vec2 bp_arg_arg0, float bp_arg_arg1)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).rotated(bp_arg_arg1));
     }
-    Vec2 Test1085(Vec2 bp_arg_arg0)
+    Vec2 Test1086(Vec2 bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).perpendicular());
     }
-    float Test1086()
+    float Test1087()
     {
         // bp-node: api api:Maths:random:
         float bp_value_6 = random();
         // bp-node: ret return
         return bp_value_6;
     }
-    float Test1087(float bp_arg_arg0, float bp_arg_arg1)
+    float Test1088(float bp_arg_arg0, float bp_arg_arg1)
     {
         // bp-node: api api:Maths:random:float,float
         float bp_value_7 = random(bp_arg_arg0, bp_arg_arg1);
         // bp-node: ret return
         return bp_value_7;
     }
-    int Test1088(int bp_arg_arg0, int bp_arg_arg1)
+    int Test1089(int bp_arg_arg0, int bp_arg_arg1)
     {
         // bp-node: api api:Maths:randomInt:int,int
         int bp_value_8 = randomInt(bp_arg_arg0, bp_arg_arg1);
         // bp-node: ret return
         return bp_value_8;
     }
-    float Test1089(float bp_arg_arg0, float bp_arg_arg1, float bp_arg_arg2)
+    float Test1090(float bp_arg_arg0, float bp_arg_arg1, float bp_arg_arg2)
     {
         // bp-node: ret return
         return (lerp(bp_arg_arg0, bp_arg_arg1, bp_arg_arg2));
     }
-    float Test1090(float bp_arg_arg0, float bp_arg_arg1, float bp_arg_arg2)
+    float Test1091(float bp_arg_arg0, float bp_arg_arg1, float bp_arg_arg2)
     {
         // bp-node: ret return
         return (clamp(bp_arg_arg0, bp_arg_arg1, bp_arg_arg2));
     }
-    float Test1091(float bp_arg_arg0, float bp_arg_arg1)
+    float Test1092(float bp_arg_arg0, float bp_arg_arg1)
     {
         // bp-node: ret return
         return (min(bp_arg_arg0, bp_arg_arg1));
     }
-    float Test1092(float bp_arg_arg0, float bp_arg_arg1)
+    float Test1093(float bp_arg_arg0, float bp_arg_arg1)
     {
         // bp-node: ret return
         return (max(bp_arg_arg0, bp_arg_arg1));
     }
-    float Test1093(float bp_arg_arg0)
+    float Test1094(float bp_arg_arg0)
     {
         // bp-node: ret return
         return (smooth(bp_arg_arg0));
     }
-    float Test1094(float bp_arg_arg0)
+    float Test1095(float bp_arg_arg0)
     {
         // bp-node: ret return
         return (bounce(bp_arg_arg0));
     }
-    float Test1095(Tween bp_arg_arg0)
+    float Test1096(Tween bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).value);
     }
-    bool Test1096(Tween bp_arg_arg0)
+    bool Test1097(Tween bp_arg_arg0)
     {
         // bp-node: ret return
         return ((bp_arg_arg0).done);
     }
-    void Test1097(Tween bp_arg_arg0, float bp_arg_arg1, float bp_arg_arg2, Ease bp_arg_arg3)
+    void Test1098(Tween bp_arg_arg0, float bp_arg_arg1, float bp_arg_arg2, Ease bp_arg_arg3)
     {
         // bp-node: api api:Tween:go:Tween,float,float,Ease
         (bp_arg_arg0).go(bp_arg_arg1, bp_arg_arg2, bp_arg_arg3);
     }
-    float Test1098(Ease bp_arg_arg0, float bp_arg_arg1)
+    float Test1099(Ease bp_arg_arg0, float bp_arg_arg1)
     {
         // bp-node: api api:Tween:ease:Ease,float
         float bp_value_9 = ease(bp_arg_arg0, bp_arg_arg1);
         // bp-node: ret return
         return bp_value_9;
     }
-    Curve@ Test1099()
+    Curve@ Test1100()
     {
         // bp-node: api api:Curve:Curve:
         Curve@ bp_value_10 = Curve();
         // bp-node: ret return
         return bp_value_10;
     }
-    Curve@ Test1100(array<Vec2>@ bp_arg_arg0)
+    Curve@ Test1101(array<Vec2>@ bp_arg_arg0)
     {
         // bp-node: api api:Curve:Curve:array<Vec2>@
         Curve@ bp_value_11 = Curve(bp_arg_arg0);
         // bp-node: ret return
         return bp_value_11;
     }
-    Batch@ Test1101()
+    Batch@ Test1102()
     {
         // bp-node: api api:Batch:Batch:
         Batch@ bp_value_12 = Batch();
         // bp-node: ret return
         return bp_value_12;
     }
-    Batch@ Test1102(Texture@ bp_arg_arg0)
+    Batch@ Test1103(Texture@ bp_arg_arg0)
     {
         // bp-node: api api:Batch:Batch:Texture@
         Batch@ bp_value_13 = Batch(bp_arg_arg0);
         // bp-node: ret return
         return bp_value_13;
     }
-    Packed@ Test1103()
-    {
-        // bp-node: api api:Packed:Packed:
-        Packed@ bp_value_14 = Packed();
-        // bp-node: ret return
-        return bp_value_14;
-    }
 }
 )BP",
 R"BP(// Generated by Nexgen Blueprint v1. Edit the .bp.json graph, not this file.
 class BP_Catalog1104 : Screen
 {
-    Packed@ Test1104(string bp_arg_arg0)
+    Packed@ Test1104()
     {
-        // bp-node: api api:Packed:Packed:string
-        Packed@ bp_value_0 = Packed(bp_arg_arg0);
+        // bp-node: api api:Packed:Packed:
+        Packed@ bp_value_0 = Packed();
         // bp-node: ret return
         return bp_value_0;
     }
-    Zip@ Test1105()
+    Packed@ Test1105(string bp_arg_arg0)
     {
-        // bp-node: api api:Zip:Zip:
-        Zip@ bp_value_1 = Zip();
+        // bp-node: api api:Packed:Packed:string
+        Packed@ bp_value_1 = Packed(bp_arg_arg0);
         // bp-node: ret return
         return bp_value_1;
     }
-    Zip@ Test1106(string bp_arg_arg0)
+    Zip@ Test1106()
     {
-        // bp-node: api api:Zip:Zip:string
-        Zip@ bp_value_2 = Zip(bp_arg_arg0);
+        // bp-node: api api:Zip:Zip:
+        Zip@ bp_value_2 = Zip();
         // bp-node: ret return
         return bp_value_2;
     }
-    Thread@ Test1107(string bp_arg_arg0)
+    Zip@ Test1107(string bp_arg_arg0)
     {
-        // bp-node: api api:Thread:Thread:string
-        Thread@ bp_value_3 = Thread(bp_arg_arg0);
+        // bp-node: api api:Zip:Zip:string
+        Zip@ bp_value_3 = Zip(bp_arg_arg0);
         // bp-node: ret return
         return bp_value_3;
     }
-    Channel@ Test1108(string bp_arg_arg0)
+    Thread@ Test1108(string bp_arg_arg0)
     {
-        // bp-node: api api:Channel:Channel:string
-        Channel@ bp_value_4 = Channel(bp_arg_arg0);
+        // bp-node: api api:Thread:Thread:string
+        Thread@ bp_value_4 = Thread(bp_arg_arg0);
         // bp-node: ret return
         return bp_value_4;
     }
-    Samples@ Test1109(uint bp_arg_arg0, uint bp_arg_arg1, uint bp_arg_arg2)
+    Channel@ Test1109(string bp_arg_arg0)
     {
-        // bp-node: api api:Samples:Samples:uint,uint,uint
-        Samples@ bp_value_5 = Samples(bp_arg_arg0, bp_arg_arg1, bp_arg_arg2);
+        // bp-node: api api:Channel:Channel:string
+        Channel@ bp_value_5 = Channel(bp_arg_arg0);
         // bp-node: ret return
         return bp_value_5;
     }
-    AudioStream@ Test1110(uint bp_arg_arg0, uint bp_arg_arg1, float bp_arg_arg2)
+    Samples@ Test1110(uint bp_arg_arg0, uint bp_arg_arg1, uint bp_arg_arg2)
     {
-        // bp-node: api api:AudioStream:AudioStream:uint,uint,float
-        AudioStream@ bp_value_6 = AudioStream(bp_arg_arg0, bp_arg_arg1, bp_arg_arg2);
+        // bp-node: api api:Samples:Samples:uint,uint,uint
+        Samples@ bp_value_6 = Samples(bp_arg_arg0, bp_arg_arg1, bp_arg_arg2);
         // bp-node: ret return
         return bp_value_6;
     }
-    float Test1111(Canvas@ bp_arg_arg0, Font@ bp_arg_arg1, string bp_arg_arg2, float bp_arg_arg3, float bp_arg_arg4, float bp_arg_arg5, Color bp_arg_arg6)
+    AudioStream@ Test1111(uint bp_arg_arg0, uint bp_arg_arg1, float bp_arg_arg2)
     {
-        // bp-node: api api:Canvas:paragraph:Canvas@,Font@,string,float,float,float,Color
-        float bp_value_7 = (bp_arg_arg0).paragraph(bp_arg_arg1, bp_arg_arg2, bp_arg_arg3, bp_arg_arg4, bp_arg_arg5, bp_arg_arg6);
+        // bp-node: api api:AudioStream:AudioStream:uint,uint,float
+        AudioStream@ bp_value_7 = AudioStream(bp_arg_arg0, bp_arg_arg1, bp_arg_arg2);
         // bp-node: ret return
         return bp_value_7;
+    }
+    float Test1112(Canvas@ bp_arg_arg0, Font@ bp_arg_arg1, string bp_arg_arg2, float bp_arg_arg3, float bp_arg_arg4, float bp_arg_arg5, Color bp_arg_arg6)
+    {
+        // bp-node: api api:Canvas:paragraph:Canvas@,Font@,string,float,float,float,Color
+        float bp_value_8 = (bp_arg_arg0).paragraph(bp_arg_arg1, bp_arg_arg2, bp_arg_arg3, bp_arg_arg4, bp_arg_arg5, bp_arg_arg6);
+        // bp-node: ret return
+        return bp_value_8;
     }
 }
 )BP"

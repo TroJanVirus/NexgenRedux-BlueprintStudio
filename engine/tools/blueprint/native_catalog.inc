@@ -723,6 +723,7 @@
     {"api:Space:Space::get_triangles:", "Get triangles", "Space", "", "result:uint", "Space::get_triangles", "get", "", "pure", "uint", "", "", ""},
     {"api:Space:Space::get_contacts:", "Get contacts", "Space", "", "result:uint", "Space::get_contacts", "get", "", "pure", "uint", "", "", ""},
     {"api:Widget:column:Widget@,float", "column", "Widget", "in:exec|target:Widget@|gap:float", "then:exec|result:Widget@", "column", "", "member", "", "Widget@", "", "in:gap", "gap:float(12)"},
+    {"api:Widget:sizeBox:Widget@,float,float", "sizeBox", "Widget", "in:exec|target:Widget@|width:float|height:float", "then:exec|result:Widget@", "sizeBox", "", "member", "", "Widget@", "", "in:width|in:height", ""},
     {"api:Widget:row:Widget@,float", "row", "Widget", "in:exec|target:Widget@|gap:float", "then:exec|result:Widget@", "row", "", "member", "", "Widget@", "", "in:gap", "gap:float(12)"},
     {"api:Widget:grid:Widget@,uint,float", "grid", "Widget", "in:exec|target:Widget@|columns:uint|gap:float", "then:exec|result:Widget@", "grid", "", "member", "", "Widget@", "", "in:columns|in:gap", "gap:float(12)"},
     {"api:Widget:stack:Widget@", "stack", "Widget", "in:exec|target:Widget@", "then:exec|result:Widget@", "stack", "", "member", "", "Widget@", "", "", ""},

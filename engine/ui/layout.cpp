@@ -205,7 +205,7 @@ namespace nx
         {
             width = larger(width, most);
         }
-        width = w.width > 0 ? w.width : limited(w, width + pad);
+        width = w.sizeBox?limited(w,w.width>0?w.width:width+pad):(w.width > 0 ? w.width : limited(w, width + pad));
         return w.naturalW = width;
     }
 
@@ -478,6 +478,18 @@ namespace nx
                     child->y = top + (place == UiPlace::Center ? (innerH - tall) * 0.5f : place == UiPlace::End ? innerH - tall : 0);
                 }
                 giveHeight(*child, tall);
+            }
+        }
+        else if(w.sizeBox)
+        {
+            if(w.children.count())
+            {
+                auto& child=*w.children[0];
+                const auto place=across(w,child);
+                const float tall=child.visible?limitHeight(child,place==UiPlace::Stretch&&child.height<=0?innerH:smaller(child.naturalH,innerH)):0;
+                child.x=left+(place==UiPlace::Center?(innerW-child.w)*0.5f:place==UiPlace::End?innerW-child.w:0);
+                child.y=top+(place==UiPlace::Center?(innerH-tall)*0.5f:place==UiPlace::End?innerH-tall:0);
+                giveHeight(child,tall);
             }
         }
         else if (column(w))

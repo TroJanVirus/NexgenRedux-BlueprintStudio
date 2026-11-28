@@ -28,7 +28,7 @@ namespace nx
             Widget* child = w->add(kind, style);
             if (child == nullptr)
             {
-                scriptError("this widget's screen has closed");
+                scriptError(w->sizeBox&&w->children.count()?"a Size Box supports one child":"this widget's screen has closed");
             }
             return child;
         }
@@ -51,6 +51,14 @@ namespace nx
         {
             Widget* c = added(w, WidgetKind::Column);
             if (c) c->gap = gap;
+            return c;
+        }
+        Widget* addSizeBox(float width,float height,Widget* w)
+        {
+            if(!std::isfinite(width)||!std::isfinite(height)||width<0||height<0||width>100000||height>100000)
+            {scriptError("invalid Size Box dimensions");return nullptr;}
+            Widget* c=added(w,WidgetKind::Column);
+            if(c){c->sizeBox=true;c->width=width;c->height=height;c->gap=0;for(float& pad:c->padding)pad=0;}
             return c;
         }
         Widget* addRow(float gap, Widget* w)
@@ -469,6 +477,7 @@ namespace nx
         b.funcdef("void WidgetAnswer(int)", "Is told which of a dialog's buttons was pressed, or -1.");
         b.reopen("Widget");
         b.method("Widget@ column(float gap = 12)", NX_OBJ_LAST(addColumn), "Adds a container of things one under another.");
+        b.method("Widget@ sizeBox(float width, float height)", NX_OBJ_LAST(addSizeBox), "Adds a single-child Size Box with preferred width and height; zero uses content size.");
         b.method("Widget@ row(float gap = 12)", NX_OBJ_LAST(addRow), "One beside another.");
         b.method("Widget@ grid(uint columns, float gap = 12)", NX_OBJ_LAST(addGrid), "In rows of so many, each as wide as the rest.");
         b.method("Widget@ stack()", NX_OBJ_LAST(addStack), "One over another.");
