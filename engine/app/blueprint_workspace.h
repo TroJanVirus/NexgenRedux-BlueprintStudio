@@ -307,6 +307,15 @@ namespace nx
         float m_marqueeX=0,m_marqueeY=0,m_marqueeEndX=0,m_marqueeEndY=0;
         double m_wireClickTime=-1;
         float m_wireClickX=0,m_wireClickY=0;
+        size_t m_highlightWire=static_cast<size_t>(-1),m_moveWire=static_cast<size_t>(-1),m_lastClickedWire=static_cast<size_t>(-1);
+        bool m_moveWireOutput=false;
+        float m_moveWireX=0,m_moveWireY=0;
+        size_t hitWire(float x,float y,size_t* segment=nullptr) const;
+        std::string m_findText;
+        size_t m_findFirst=0;
+        struct FindResult {size_t graph,node;std::string label;};
+        std::vector<FindResult> findResults() const;
+        void openFindResult(const FindResult& result,Input& input);
         float m_dragX = 0, m_dragY = 0, m_grabX = 0, m_grabY = 0;
         float m_pressX = 0, m_pressY = 0;
         unsigned m_shortcuts = 0;
