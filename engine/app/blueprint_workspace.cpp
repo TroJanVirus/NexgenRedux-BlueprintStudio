@@ -5169,7 +5169,7 @@ namespace nx
         const auto& rows=m_deviceVariables?m_device.variables():m_device.rows();
         if(rows.empty())c.text(*m_font,m_deviceVariables?"Pause the remote script to inspect its locals.":"No measured telemetry. Older runtimes may not support counters.",140,318,muted);
         for(size_t i=0;i<rows.size()&&i<14;++i)
-        {const float x=140+500.f*(i/7),y=318+27.f*(i%7);c.clip(x,y,490,26);c.text(*m_font,rows[i].c_str(),x,y,text);c.noClip();}
+        {const float x=140+500.f*(i/7),y=314+23.f*(i%7);c.clip(x,y,490,26);c.text(*m_font,rows[i].c_str(),x,y,text);c.noClip();}
         c.clip(140,480,480,32);c.text(*m_font,(m_device.liveStatus().empty()?"Live Link: "+m_device.liveScreen():m_device.liveStatus()).c_str(),140,490,muted);c.noClip();
         c.roundRect(630,480,250,32,4,m_device.ready()&&m_device.actorsSupported()?Color{0.20f,0.32f,0.45f,1}:Color{0.20f,0.22f,0.25f,1});c.text(*m_font,"Live actors",755,486,text,Align::Center);
         c.roundRect(900,480,240,32,4,canPushLiveSource()?Color{0.20f,0.32f,0.45f,1}:Color{0.20f,0.22f,0.25f,1});
@@ -5190,7 +5190,8 @@ namespace nx
         if(click&&in(x,y,1000,600,1150,638)){cancel();m_focus=27;return;}
         if(!m_actorEditName.empty()&&(m_actorEditEpoch!=m_device.actorEpoch()||m_actorEditId!=m_device.selectedActor()||!m_device.ready()))cancel();
         const auto& actors=m_device.actors();const auto& props=m_device.actorProperties();
-        if(m_actorFirst>=actors.size())m_actorFirst=0;if(m_actorPropertyFirst>=props.size())m_actorPropertyFirst=0;
+        if(m_actorFirst>=actors.size())m_actorFirst=0;
+        if(m_actorPropertyFirst>=props.size())m_actorPropertyFirst=0;
         if(in(x,y,140,182,520,514))
         {
             if(input.wheel()<0&&m_actorFirst+9<actors.size())++m_actorFirst;

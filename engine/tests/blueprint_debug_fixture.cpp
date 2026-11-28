@@ -12,6 +12,21 @@ int main(int argc, char** argv)
     if (port < 1 || port > 65535) return 2;
     nx::test::Rig r;
     if (!r.ok) return 3;
+    r.platform.files["showcase/main/screen.json"]="{\"title\":\"Remote actors\"}";
+    r.platform.files["showcase/main/main.as"]=R"AS(class ActorFixture : Screen
+    {
+        void onEnter()
+        {
+            for(int i=0;i<50;i++)
+            {
+                Entity@ actor=Scene::spawn(Vec2(float(i),0));
+                actor.name="Actor"+i;
+            }
+        }
+    })AS";
+    if(!r.screens.init(r.services,"showcase","main"))return 8;
+    r.step(4);
+    if(r.screens.failed())return 9;
     const char* source = nx::test::blueprint::gameplay_debug;
     r.host.setSource("gameplay.as", "showcase/gameplay/main.as");
     if (!r.host.compile("blueprint", "gameplay.as", source, strlen(source))) return 4;

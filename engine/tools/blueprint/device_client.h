@@ -61,7 +61,7 @@ namespace nx
         const std::string& liveStatus()const{return m_liveStatus;}
         bool pushLive(const std::string& source,const std::string& token,double now)
         {
-            if(!m_ready||m_paused||!m_liveSupported||liveBusy()||m_liveScreen.empty()||
+            if(!m_ready||m_paused||!m_liveSupported||liveBusy()||actorBusy()||m_liveScreen.empty()||
                 !StudioLiveSource::validHash(m_liveFingerprint)||!studioLaunchIdentity(token)||
                 source.empty()||source.size()>StudioLiveSource::limit||m_out.size()>2048)return false;
             const auto hash=scriptFingerprint(source.data(),source.size());
@@ -217,7 +217,7 @@ namespace nx
                     const auto epoch=root["epoch"].exact(),offset=root["offset"].exact(),count=root["count"].exact();
                     if(!(epoch>0&&epoch<=4294967295.0&&offset>=0&&offset<=65536&&count>=0&&count<=65536))
                     {m_actorStatus="Invalid actor snapshot.";m_actors.clear();m_actorProperties.clear();m_actorEpoch=0;return;}
-                    if(m_actorEpoch!=static_cast<u32>(epoch)){m_actorProperties.clear();m_actorSelected=0;}
+                    if(m_actorEpoch!=static_cast<u32>(epoch)||m_actorOffset!=static_cast<u32>(offset)){m_actorProperties.clear();m_actorSelected=0;}
                     m_actorEpoch=static_cast<u32>(epoch);m_actorOffset=static_cast<u32>(offset);m_actorCount=static_cast<u32>(count);
                     m_actorScreen=root["screen"].text();m_actors.clear();
                     for(auto item=root["entities"].first();item.exists()&&m_actors.size()<48;item=item.next())
