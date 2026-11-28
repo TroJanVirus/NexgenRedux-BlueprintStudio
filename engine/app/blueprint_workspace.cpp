@@ -3438,6 +3438,20 @@ namespace nx
             return;
         }
         bool changed=false;
+        if(m_clipSource.empty()&&!m_toneEffects&&in(x,y,635,388,1000,410))
+        {
+            BlueprintDocument graph;const bool stream=x>=815;
+            if(!blueprintAudioGraph(m_tone,stream,graph,m_status))return;
+            std::string bytes;if(!graph.serialize(bytes,m_status))return;
+            for(unsigned i=1;i<=10000;++i)
+            {
+                const auto file=std::string(stream?"audio-stream-":"audio-synthesis-")+std::to_string(i)+".bp.json";
+                if(s.platform->fileTime(("own/"+file).c_str()))continue;
+                if(writeVerified(s,"own/"+file,bytes))m_status="Saved "+file+"; open it via Open. Effects are separate graph nodes.";
+                return;
+            }
+            m_status="No unused audio graph filename.";return;
+        }
         if(m_clipSource.empty()&&!m_toneEffects&&in(x,y,280,388,445,410))
         {m_tone.independentStereo=!m_tone.independentStereo;m_tone.channels=2;m_toneRight=false;changed=true;}
         if(m_clipSource.empty()&&!m_toneEffects&&m_tone.independentStereo&&in(x,y,455,388,625,410))
@@ -3609,6 +3623,7 @@ namespace nx
         {
             button(280,388,165,22,m_tone.independentStereo?"Dual oscillator":"Linked stereo",m_tone.independentStereo);
             if(m_tone.independentStereo)button(455,388,170,22,m_toneRight?"Editing right":"Editing left",true);
+            button(635,388,175,22,"Sample graph",false);button(815,388,185,22,"Stream graph",false);
         }
         const float waveTop=m_toneEffects||m_clipSource.empty()?414.f:388.f;
         const float middle=(waveTop+492)*0.5f,half=(492-waveTop)*0.5f-4;

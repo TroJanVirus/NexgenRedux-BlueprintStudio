@@ -59,6 +59,7 @@ namespace nx
         const BlueprintAudioClip& clip,const BlueprintClipEdit& edit,const BlueprintTone& output,
         std::string& relative,std::string& error);
     bool blueprintToneWave(const BlueprintTone& tone,std::string& wav,std::string& error);
+    bool blueprintAudioGraph(const BlueprintTone& tone,bool stream,BlueprintDocument& document,std::string& error);
     bool blueprintSaveTone(Platform& platform,const std::string& root,const std::string& screen,
         const BlueprintTone& tone,std::string& relative,std::string& error);
     bool blueprintPackageName(const std::string& file);

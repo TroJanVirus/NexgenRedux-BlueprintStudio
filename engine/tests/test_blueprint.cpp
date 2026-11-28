@@ -998,6 +998,25 @@ NX_TEST(nativeAudioEffectsAndPresetRoundTrip)
     tone.effects.echoFeedback=1.1f;NX_EXPECT(!blueprintToneWave(tone,again,error));
     tone.effects.echoFeedback=0.4f;tone.channels=0;NX_EXPECT(!blueprintToneWave(tone,again,error));
 }
+NX_TEST(nativeAudioGraphTemplatesCompileAndRun)
+{
+    BlueprintTone tone;tone.channels=2;tone.independentStereo=true;tone.rate=22050;
+    tone.rightFrequency=660;tone.seconds=0.5f;
+    for(bool stream:{false,true})
+    {
+        Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+        BlueprintDocument doc;std::string source,error,bytes;
+        if(!blueprintAudioGraph(tone,stream,doc,error)||!doc.serialize(bytes,error)||!compileBlueprint(doc,source,error))
+        {NX_ERROR("Audio template: %s",error.c_str());NX_EXPECT(false);return;}
+        NX_EXPECT(source.find(stream?"bp_audio_stream_stereo(":"bp_audio_render_channel(")!=std::string::npos);
+        r.platform.files["project/main/screen.json"]="{\"title\":\"Audio template\"}";
+        r.platform.files["project/main/main.as"]=source;
+        if(!r.screens.init(r.services,"project","main")){NX_EXPECT(false);return;}
+        r.step(10);NX_EXPECT(!r.screens.failed()&&r.audio.voicesInUse()==1);
+        r.step(40);NX_EXPECT(!r.screens.failed());
+        if(stream)NX_EXPECT(r.audio.voicesInUse()==1);
+    }
+}
 NX_TEST(nativeIndependentStereoOscillators)
 {
     Rig r;NX_EXPECT(r.ok);if(!r.ok)return;

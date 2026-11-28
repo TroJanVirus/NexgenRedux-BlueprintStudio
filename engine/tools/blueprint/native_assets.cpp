@@ -1,4 +1,5 @@
 #include "tools/blueprint/native_assets.h"
+#include "tools/blueprint/native_compile.h"
 #include "platform/platform.h"
 #include "base/json_tree.h"
 #include "base/json_value.h"
@@ -266,6 +267,79 @@ namespace nx
             }
         }
         return renderAudio(t,stereo,wav,error);
+    }
+    bool blueprintAudioGraph(const BlueprintTone& tone,bool stream,BlueprintDocument& document,std::string& error)
+    {
+        if(!toneValid(tone,error))return false;
+        const bool independent=tone.channels==2&&tone.independentStereo;
+        if(tone.wave==4||(independent&&tone.rightWave==4))
+        {error="Graph templates support sine, triangle, saw and square; bake noise as WAV.";return false;}
+        BlueprintDocument candidate;candidate.create();
+        candidate.name=stream?"Streaming oscillator":"Sample synthesis";
+        bool ok=true;
+        const auto add=[&](size_t g,const char* kind,float x,float y)
+        {const auto n=candidate.graphs[g].nodes.size();ok=ok&&candidate.addNode(g,kind,x,y,error);return n;};
+        const auto variable=[&](size_t g,const char* name,bool setter,float x,float y)
+        {const auto n=candidate.graphs[g].nodes.size();ok=ok&&candidate.addVariableNode(g,name,false,setter,x,y,error);return n;};
+        const auto wire=[&](size_t g,size_t from,const char* out,size_t to,const char* in)
+        {ok=ok&&candidate.connect(g,from,out,to,in,error);};
+        const auto input=[&](size_t g,size_t n,const char* pin,const std::string& value)
+        {ok=ok&&candidate.setInputValue(g,n,pin,value,error);};
+        const auto number=[](float v){std::ostringstream s;s.imbue(std::locale::classic());s<<std::setprecision(9)<<v;return s.str();};
+        constexpr unsigned shapes[]={0,3,2,1}; // editor's wave order differs from the script helper.
+        if(stream)
+        {
+            ok=candidate.editVariableDeclaration("Screen","field stream:AudioStream@",error)&&
+                candidate.editVariableDeclaration("Screen","field scratch:array<float>",error)&&
+                candidate.editVariableDeclaration("Screen","field phase:float=0",error)&&
+                candidate.editVariableDeclaration("Screen","field rightPhase:float=0",error);
+            const auto create=add(0,"api:AudioStream:AudioStream:uint,uint,float",300,60);
+            const auto keep=variable(0,"stream",true,680,60);
+            const auto play=add(0,"api:AudioStream:play:AudioStream@,float,float",1080,60);
+            input(0,create,"rate",std::to_string(tone.rate));input(0,create,"channels",std::to_string(tone.channels));input(0,create,"seconds","0.12");
+            wire(0,0,"then",create,"in");wire(0,create,"then",keep,"in");wire(0,create,"result",keep,"value");
+            wire(0,keep,"then",play,"in");wire(0,create,"result",play,"target");
+            const auto handle=variable(1,"stream",false,24,200),scratch=variable(1,"scratch",false,24,300);
+            const auto phase=variable(1,"phase",false,24,400),right=variable(1,"rightPhase",false,24,500);
+            const auto fill=add(1,"audio:stream-stereo",420,60);
+            wire(1,0,"then",fill,"in");wire(1,handle,"value",fill,"stream");wire(1,scratch,"value",fill,"scratch");
+            wire(1,phase,"value",fill,"phase");wire(1,right,"value",fill,"rightPhase");
+            input(1,fill,"shape",std::to_string(shapes[tone.wave]));
+            input(1,fill,"rightShape",std::to_string(shapes[independent?tone.rightWave:tone.wave]));
+            input(1,fill,"frequency",number(tone.frequency));input(1,fill,"rightFrequency",number(independent?tone.rightFrequency:tone.frequency));
+            input(1,fill,"gain",number(tone.amplitude));input(1,fill,"rightGain",number(independent?tone.rightAmplitude:tone.amplitude));
+            const auto savePhase=variable(1,"phase",true,960,60),saveRight=variable(1,"rightPhase",true,1270,60);
+            wire(1,fill,"then",savePhase,"in");wire(1,fill,"nextPhase",savePhase,"value");
+            wire(1,savePhase,"then",saveRight,"in");wire(1,fill,"nextRightPhase",saveRight,"value");
+        }
+        else
+        {
+            const unsigned frames=static_cast<unsigned>(std::round(tone.seconds*tone.rate));
+            const auto samples=add(0,"api:Samples:Samples:uint,uint,uint",300,60);
+            input(0,samples,"frames",std::to_string(frames));input(0,samples,"rate",std::to_string(tone.rate));
+            input(0,samples,"channels",std::to_string(tone.channels));wire(0,0,"then",samples,"in");
+            const auto repeat=add(0,"repeat",700,60);input(0,repeat,"count",std::to_string((frames+4095)/4096));
+            wire(0,samples,"then",repeat,"in");
+            const auto cast=add(0,"cast:int:uint",700,260),offset=add(0,"multiply:uint",1000,260);
+            wire(0,repeat,"index",cast,"a");wire(0,cast,"result",offset,"a");input(0,offset,"b","4096");
+            size_t previous=repeat;
+            for(unsigned ch=0;ch<tone.channels;++ch)
+            {
+                const bool right=ch==1&&independent;
+                const auto render=add(0,"audio:render-channel",1400+ch*530,60);
+                wire(0,previous,previous==repeat?"body":"then",render,"in");wire(0,samples,"result",render,"samples");wire(0,offset,"result",render,"start");
+                input(0,render,"channel",std::to_string(ch));input(0,render,"shape",std::to_string(shapes[right?tone.rightWave:tone.wave]));
+                input(0,render,"frequency",number(right?tone.rightFrequency:tone.frequency));input(0,render,"endFrequency",number(right?tone.rightEndFrequency:tone.endFrequency));
+                input(0,render,"gain",number(right?tone.rightAmplitude:tone.amplitude));input(0,render,"attack",number(right?tone.rightAttack:tone.attack));
+                input(0,render,"decay",number(right?tone.rightDecay:tone.decay));input(0,render,"sustain",number(right?tone.rightSustain:tone.sustain));input(0,render,"release",number(right?tone.rightRelease:tone.release));
+                previous=render;
+            }
+            const auto play=add(0,"api:Samples:play:Samples@,float,float,float,bool",1400,480);
+            wire(0,repeat,"then",play,"in");wire(0,samples,"result",play,"target");
+        }
+        std::string script;
+        if(!ok||!compileBlueprint(candidate,script,error))return false;
+        document=std::move(candidate);error.clear();return true;
     }
     bool blueprintAudioAsset(const std::string& relative)
     {

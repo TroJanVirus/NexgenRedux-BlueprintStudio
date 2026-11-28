@@ -1239,6 +1239,66 @@ uint bp_audio_stream(AudioStream@ s, array<float>@ scratch, uint frames,
     nextPhase = accepted == count ? p : bp_audio_phase(nextPhase + step * float(accepted));
     return accepted;
 }
+// Renders one channel independently. Start is absolute within Samples, so block boundaries
+// do not reset the sweep or ADSR. No extra runtime allocation.
+uint bp_audio_render_channel(Samples@ s, uint start, uint frames, uint channel, uint shape,
+    float frequency, float endFrequency, float gain, float attack, float decay, float sustain, float release)
+{
+    if (s is null || channel >= s.channels) return 0;
+    uint count = bp_audio_count(s.frames, start, frames);
+    if (count == 0) return 0;
+    float rate = float(s.rate);
+    frequency = bp_audio_limit(frequency, 0, rate * 0.5f);
+    endFrequency = bp_audio_limit(endFrequency, 0, rate * 0.5f);
+    gain = bp_audio_limit(gain, 0, 1);
+    attack = bp_audio_limit(attack, 0, 0.33f);
+    decay = bp_audio_limit(decay, 0, 0.33f);
+    sustain = bp_audio_limit(sustain, 0, 1);
+    release = bp_audio_limit(release, 0, 0.33f);
+    float last = s.frames > 1 ? float(s.frames - 1) : 1.0f;
+    for (uint i = 0; i < count; ++i)
+    {
+        uint frame = start + i;
+        float at = float(frame), progress = at / last;
+        float envelope = sustain;
+        if (attack > 0 && progress < attack) envelope = progress / attack;
+        else if (decay > 0 && progress < attack + decay) envelope = 1 - (1 - sustain) * (progress - attack) / decay;
+        else if (release > 0 && progress > 1 - release) envelope = sustain * (1 - progress) / release;
+        float ramp = min(1.0f, min(at, last - at) / (rate * 0.003f));
+        float phase = (frequency * at + (endFrequency - frequency) * at * (at - 1) / (2 * last)) / rate;
+        float sample = bp_audio_wave(phase, shape) * gain * envelope * ramp;
+        if (s.channels == 1) s.set(frame, sample);
+        else if (channel == 0) s.set(frame, sample, s.get(frame, 1));
+        else s.set(frame, s.get(frame, 0), sample);
+    }
+    return count;
+}
+uint bp_audio_stream_stereo(AudioStream@ s, array<float>@ scratch, uint frames, float phase, float rightPhase,
+    uint shape, uint rightShape, float frequency, float rightFrequency, float gain, float rightGain,
+    float &out nextPhase, float &out nextRightPhase)
+{
+    nextPhase = bp_audio_phase(phase); nextRightPhase = bp_audio_phase(rightPhase);
+    if (s is null || scratch is null) return 0;
+    uint count = bp_audio_count(s.room, 0, frames);
+    if (count == 0) return 0;
+    uint channels = s.channels;
+    float rate = float(s.rate);
+    float step = bp_audio_limit(frequency, 0, rate * 0.5f) / rate;
+    float rightStep = bp_audio_limit(rightFrequency, 0, rate * 0.5f) / rate;
+    gain = bp_audio_limit(gain, 0, 1); rightGain = bp_audio_limit(rightGain, 0, 1);
+    scratch.resize(count * channels);
+    float p = nextPhase, q = nextRightPhase;
+    for (uint i = 0; i < count; ++i)
+    {
+        scratch[i * channels] = bp_audio_wave(p, shape) * gain;
+        if (channels == 2) scratch[i * channels + 1] = bp_audio_wave(q, rightShape) * rightGain;
+        p = bp_audio_phase(p + step); q = bp_audio_phase(q + rightStep);
+    }
+    uint accepted = s.write(scratch);
+    nextPhase = accepted == count ? p : bp_audio_phase(nextPhase + step * float(accepted));
+    nextRightPhase = accepted == count ? q : bp_audio_phase(nextRightPhase + rightStep * float(accepted));
+    return accepted;
+}
 void bp_audio_write(Samples@ s, uint frame, float left, float right)
 {
     if (s.channels == 1) s.set(frame, left);
