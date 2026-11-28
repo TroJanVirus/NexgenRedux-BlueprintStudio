@@ -175,12 +175,12 @@ namespace nx
             ",\"contentY\":"+std::to_string(m_contentPanelY)+",\"contentWidth\":"+std::to_string(m_contentPanelWidth)+
             ",\"contentTop\":"+(m_contentDockTop?"true":"false")+",\"contentHeight\":"+std::to_string(m_contentPanelHeight)+
             ",\"graphTree\":"+(m_graphTree?"true":"false")+",\"contentSide\":"+std::to_string(m_contentDockSide)+
-            ",\"contentSideWidth\":"+std::to_string(m_contentSideWidth)+"}\n";
+            ",\"contentSideWidth\":"+std::to_string(m_contentSideWidth)+",\"minimap\":"+(m_minimap?"true":"false")+"}\n";
     }
     void BlueprintWorkspace::loadLayout(Services& s)
     {
         m_leftPanel=248;m_graphRightPanel=268;m_actorRightPanel=310;m_uiScale=0;m_actorCollapsed=0;m_contentDrawer=false;m_contentFloating=false;m_contentPanelX=0.25f;m_contentPanelY=0.65f;m_contentPanelWidth=620;m_contentDockTop=false;m_contentPanelHeight=174;m_contentDockSide=0;m_contentSideWidth=300;
-        m_graphTree=false;m_navigationFirst=0;m_navigationCollapsed.clear();
+        m_graphTree=false;m_minimap=m_minimapDragging=false;m_navigationFirst=0;m_navigationCollapsed.clear();
         FileData file;JsonTree tree;
         if(s.platform->readFile("own/blueprint-editor-layout.json",file,MemTag::General)&&file.size&&file.size<=4096&&
             tree.parse(reinterpret_cast<const char*>(file.data),file.size))
@@ -200,7 +200,7 @@ namespace nx
                 m_contentPanelX=bounded("contentX",0.25f,0,1);m_contentPanelY=bounded("contentY",0.65f,0,1);
                 m_contentPanelWidth=bounded("contentWidth",620,460,1000);
                 m_contentDockTop=root["contentTop"].flag();m_contentPanelHeight=bounded("contentHeight",174,174,510);
-                m_graphTree=root["graphTree"].flag();
+                m_graphTree=root["graphTree"].flag();m_minimap=root["minimap"].flag();
                 m_contentDockSide=static_cast<unsigned>(bounded("contentSide",0,0,2));
                 m_contentSideWidth=bounded("contentSideWidth",300,260,480);
                 NX_INFO("Blueprint Studio: restored editor layout");
@@ -687,6 +687,76 @@ namespace nx
     void BlueprintWorkspace::closePinMenu(Services& s)
     {
         m_pinMenu=false;m_rightDown=false;clearWire();s.input->setTyping(false);filterCatalogue();
+    }
+    bool BlueprintWorkspace::graphMap(GraphMap& map) const
+    {
+        if(!m_minimap||m_actorEditor||visualTabOpen()||m_graph>=m_document.graphs.size())return false;
+        const auto& graph=m_document.graphs[m_graph];if(graph.nodes.empty()||m_rows.size()!=graph.nodes.size())return false;
+        const float availableWidth=graphAreaRight()-graphAreaLeft(),availableHeight=tabTop()-graphAreaTop();
+        if(availableWidth<340||availableHeight<240)return false;
+        map.w=std::min(220.f,availableWidth*0.35f);map.h=120;
+        map.x=graphAreaRight()-map.w-12;map.y=tabTop()-map.h-12;
+        float loX=graph.nodes.front().x,loY=graph.nodes.front().y,hiX=loX+kNodeWidth,hiY=loY+kNodeHeight;
+        for(size_t i=0;i<graph.nodes.size();++i)
+        {
+            const auto& node=graph.nodes[i];
+            loX=std::min(loX,node.x);loY=std::min(loY,node.y);
+            hiX=std::max(hiX,node.x+kNodeWidth);hiY=std::max(hiY,node.y+m_rows[i].height);
+        }
+        for(const auto& link:graph.links)for(const auto& point:link.route)
+        {loX=std::min(loX,point.x);loY=std::min(loY,point.y);hiX=std::max(hiX,point.x);hiY=std::max(hiY,point.y);}
+        map.left=loX-24;map.top=loY-24;hiX+=24;hiY+=24;
+        const float width=hiX-map.left,height=hiY-map.top;
+        map.scale=std::min((map.w-12)/width,(map.h-32)/height);
+        map.ox=map.x+(map.w-width*map.scale)*0.5f;
+        map.oy=map.y+20+(map.h-20-height*map.scale)*0.5f;
+        return std::isfinite(map.scale)&&map.scale>0;
+    }
+    bool BlueprintWorkspace::updateGraphMap(float x,float y,bool left,bool click)
+    {
+        GraphMap map;
+        if(!graphMap(map)){m_minimapDragging=false;return false;}
+        if(!m_minimapDragging&&(!click||!in(x,y,map.x,map.y+20,map.x+map.w,map.y+map.h)))return false;
+        if(!left){m_minimapDragging=false;NX_INFO("Blueprint Studio: minimap navigation completed");return true;}
+        m_minimapDragging=true;clearWire();m_pan=false;
+        const float gx=map.left+(std::clamp(x,map.x,map.x+map.w)-map.ox)/map.scale;
+        const float gy=map.top+(std::clamp(y,map.y+20,map.y+map.h)-map.oy)/map.scale;
+        m_x=(graphAreaLeft()+graphAreaRight())*0.5f-kLeft-gx*m_zoom;
+        m_y=(graphAreaTop()+tabTop())*0.5f-kTop-gy*m_zoom;
+        m_status="Graph minimap navigation.";
+        return true;
+    }
+    void BlueprintWorkspace::drawGraphMap(Canvas& c)
+    {
+        GraphMap map;if(!graphMap(map))return;
+        const auto& graph=m_document.graphs[m_graph];
+        c.roundRect(map.x,map.y,map.w,map.h,4,{0.11f,0.12f,0.14f,0.97f});
+        c.roundLine(map.x,map.y,map.w,map.h,4,1,{0.42f,0.44f,0.47f,1});
+        c.rect(map.x+1,map.y+1,map.w-2,19,{0.24f,0.25f,0.27f,1});
+        c.clip(map.x+6,map.y+1,map.w-12,19);
+        c.text(*m_font,"GRAPH OVERVIEW",map.x+6,map.y+1,muted);c.noClip();
+        c.clip(map.x+2,map.y+20,map.w-4,map.h-22);
+        const auto px=[&](float v){return map.ox+(v-map.left)*map.scale;};
+        const auto py=[&](float v){return map.oy+(v-map.top)*map.scale;};
+        for(const auto& link:graph.links)
+        {
+            if(link.from>=graph.nodes.size()||link.to>=graph.nodes.size())continue;
+            const auto& from=graph.nodes[link.from];const auto& to=graph.nodes[link.to];
+            float x=px(from.x+kNodeWidth),y=py(from.y+24);
+            for(const auto& point:link.route){const float xx=px(point.x),yy=py(point.y);c.line(x,y,xx,yy,1,{0.46f,0.48f,0.52f,1});x=xx;y=yy;}
+            c.line(x,y,px(to.x),py(to.y+24),1,{0.46f,0.48f,0.52f,1});
+        }
+        for(size_t i=0;i<graph.nodes.size();++i)
+        {
+            const auto& node=graph.nodes[i];const bool selected=i==m_selection;
+            const auto* spec=blueprintSpec(node.kind);
+            const Color color=selected?accent:node.kind=="entry"||node.kind.rfind("event:",0)==0?Color{0.66f,0.29f,0.31f,1}:spec&&spec->pure?Color{0.32f,0.57f,0.39f,1}:Color{0.32f,0.47f,0.64f,1};
+            c.rect(px(node.x),py(node.y),std::max(2.f,kNodeWidth*map.scale),std::max(2.f,m_rows[i].height*map.scale),color);
+        }
+        const float left=px((graphAreaLeft()-kLeft-m_x)/m_zoom),top=py((graphAreaTop()-kTop-m_y)/m_zoom);
+        const float right=px((graphAreaRight()-kLeft-m_x)/m_zoom),bottom=py((tabTop()-kTop-m_y)/m_zoom);
+        c.roundLine(left,top,right-left,bottom-top,1,1.5f,{0.92f,0.85f,0.52f,1});
+        c.noClip();
     }
     void BlueprintWorkspace::fitGraph()
     {
@@ -3891,6 +3961,7 @@ namespace nx
             if(m_assetBrowser){if(m_visualInput){m_visualInput=0;m_visualText.clear();input.setTyping(false);m_status="Input cancelled.";return;}if(m_placementDragging){cancelVisualPlacement();m_status="Placement cancelled.";return;}if(m_visualPlacement){m_visualPlacement=false;return;}if(m_widgetDesigner){if(m_widgetPreviewDrag){m_widgetPreviewDrag=false;m_status="Widget drag cancelled.";return;}if(m_widgetDragging){m_widgetDragging=false;m_widgetDragId.clear();return;}m_widgetDesigner=false;releaseWidgetPreview();return;}m_assetBrowser=false;m_status="Asset browser closed.";return;}
             if(m_browsing){m_browsing=false;m_status="Open cancelled.";return;}
             if(m_focus){m_focus=0;input.setTyping(false);m_status="Input cancelled.";return;}
+            if(m_minimapDragging){m_minimapDragging=false;return;}
             if(m_layoutDragging||m_layoutMenu){m_layoutDragging=m_layoutMenu=false;m_status="Layout action cancelled.";return;}
             if(m_quickDrag||m_quickMenu){m_quickDrag=m_quickMenu=false;m_status="Variable placement cancelled.";return;}
             if(m_pinMenu){closePinMenu(s);m_status="Node search cancelled.";return;}
@@ -3927,7 +3998,7 @@ namespace nx
         if(visualTabOpen()&&!m_visualInput&&!m_placementDragging&&!m_widgetDragging&&!m_widgetPreviewDrag&&updateGraphTabs(s,x,y,click)){m_left=left;return;}
         if(!modalOpen()&&!m_focus&&!m_layoutDragging&&!m_layoutMenu&&!m_pinMenu&&!m_pinDrag&&!m_drag&&!m_quickDrag&&!m_quickMenu)
         {
-            if(updateContentDrawer(s,x,y,left,click)||updateGraphTabs(s,x,y,click)){m_left=left;return;}
+            if(updateContentDrawer(s,x,y,left,click)||updateGraphTabs(s,x,y,click)||updateGraphMap(x,y,left,click)){m_left=left;return;}
         }
         if(modalOpen()){x-=modalX();y-=modalY();}
         else if(!m_focus&&!m_layoutDragging&&!m_layoutMenu&&!m_pinMenu&&!m_pinDrag&&!m_drag&&!m_quickDrag&&!m_quickMenu&&resizePanels(x,y,left,click,false)){m_left=left;return;}
@@ -3997,7 +4068,8 @@ namespace nx
                     }
                 }
                 else if(in(x,y,300,395,550,425)){m_uiScale=(m_uiScale+1)%4;m_status="Changed desktop UI density (small windows fit automatically).";}
-                else if(in(x,y,300,425,550,455)){m_leftPanel=248;m_graphRightPanel=268;m_actorRightPanel=310;m_uiScale=0;m_actorCollapsed=0;m_actorDetailsScroll=0;m_contentDrawer=false;m_contentFloating=false;m_contentPanelX=0.25f;m_contentPanelY=0.65f;m_contentPanelWidth=620;m_contentDockTop=false;m_contentPanelHeight=174;m_contentDockSide=0;m_contentSideWidth=300;m_graphTree=false;m_navigationFirst=0;m_navigationCollapsed.clear();resizeWorkspace(canvas);fitGraph();m_status="Reset editor panel sizes and density.";}
+                else if(in(x,y,300,425,550,455)){m_leftPanel=248;m_graphRightPanel=268;m_actorRightPanel=310;m_uiScale=0;m_actorCollapsed=0;m_actorDetailsScroll=0;m_contentDrawer=false;m_contentFloating=false;m_contentPanelX=0.25f;m_contentPanelY=0.65f;m_contentPanelWidth=620;m_contentDockTop=false;m_contentPanelHeight=174;m_contentDockSide=0;m_contentSideWidth=300;m_graphTree=false;m_minimap=m_minimapDragging=false;m_navigationFirst=0;m_navigationCollapsed.clear();resizeWorkspace(canvas);fitGraph();m_status="Reset editor panel sizes and density.";}
+                else if(in(x,y,300,455,550,485)){m_minimap=!m_minimap;m_status=m_minimap?"Graph overview enabled. Click or drag to navigate.":"Graph overview hidden.";NX_INFO("Blueprint Studio: minimap %s",m_minimap?"enabled":"hidden");}
                 m_layoutMenu=false;
             }
             m_left=left;return;
@@ -5039,14 +5111,15 @@ namespace nx
             const char* state=!m_document.dirty()?"Saved / clean":recoveryProtected()?"Recovery protected":"Recovery pending";
             c.text(*m_font,state,kWidth-12,kBottom+26,recoveryProtected()?muted:Color{1.f,0.72f,0.22f,1.f},Align::Right);
         }
+        drawGraphMap(c);
         if(m_contentFloating){drawGraphTabs(c);drawContentDrawer(c);}else{drawContentDrawer(c);drawGraphTabs(c);}
         if(m_layoutMenu)
         {
-            c.roundRect(300,35,250,420,5,{0.16f,0.16f,0.17f,1});
-            const char* labels[]={"Arrange graph","Align selected left","Align selected top","Comment selection","Collapse to function","Rename function","Duplicate function","Open selected function","Back to caller",m_document.graphs[m_graph].inlineMacro?"Convert to function":"Convert to inline macro",m_document.graphs[m_graph].sharedLibrary?"Make library graph local":"Publish to project library","Export project library",m_uiScale==0?"UI scale: Auto":m_uiScale==1?"UI scale: 100%":m_uiScale==2?"UI scale: 125%":"UI scale: 150%","Reset editor layout"};
+            c.roundRect(300,35,250,450,5,{0.16f,0.16f,0.17f,1});
+            const char* labels[]={"Arrange graph","Align selected left","Align selected top","Comment selection","Collapse to function","Rename function","Duplicate function","Open selected function","Back to caller",m_document.graphs[m_graph].inlineMacro?"Convert to function":"Convert to inline macro",m_document.graphs[m_graph].sharedLibrary?"Make library graph local":"Publish to project library","Export project library",m_uiScale==0?"UI scale: Auto":m_uiScale==1?"UI scale: 100%":m_uiScale==2?"UI scale: 125%":"UI scale: 150%","Reset editor layout",m_minimap?"Hide graph overview":"Show graph overview"};
             const auto& activeGraph=m_document.graphs[m_graph];
             const bool hasSelection=m_selection<activeGraph.nodes.size()||!m_selectedNodes.empty();
-            for(size_t i=0;i<14;++i)
+            for(size_t i=0;i<15;++i)
             {
                 const bool enabled=i==0||i>=11||(i<=2&&m_selectedNodes.size()>=2)||((i==3||i==4)&&hasSelection)||((i==5||i==6)&&activeGraph.kind=="function")||
                     (i==7&&m_selection<activeGraph.nodes.size()&&(activeGraph.nodes[m_selection].kind=="call:function"||activeGraph.nodes[m_selection].kind=="call:library"))||(i==8&&!m_graphBack.empty())||((i==9||i==10)&&activeGraph.kind=="function");

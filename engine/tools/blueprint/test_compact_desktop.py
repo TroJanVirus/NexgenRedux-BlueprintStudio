@@ -94,6 +94,18 @@ with log.open("wb") as output:
         shot("graph-tree-collapsed-1920.png")
         click(208,492)
         wait_for(lambda:"graph navigator flat" in log.read_text(errors="replace"),"flat navigation restored")
+        before_overview=json.loads(project.read_text())
+        click(352,18)
+        click(425,470)
+        wait_for(lambda:"minimap enabled" in log.read_text(errors="replace"),"graph overview enabled")
+        shot("graph-overview-1920.png")
+        drag(1510,945,1570,965)
+        wait_for(lambda:"minimap navigation completed" in log.read_text(errors="replace"),"overview drag")
+        key("ctrl+s")
+        assert json.loads(project.read_text())==before_overview
+        click(352,18)
+        click(425,470)
+        wait_for(lambda:"minimap hidden" in log.read_text(errors="replace"),"graph overview hidden")
         # Centered legacy content modal has offset (320,180).
         click(1027,18)
         click(774,313)

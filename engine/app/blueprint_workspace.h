@@ -40,6 +40,11 @@ namespace nx
         std::vector<NavigationRow> navigationRows() const;
         void revealNavigationGraph(size_t index);
         bool m_graphTree=false;
+        bool m_minimap=false,m_minimapDragging=false;
+        struct GraphMap {float x=0,y=0,w=0,h=0,ox=0,oy=0,scale=1,left=0,top=0;};
+        bool graphMap(GraphMap& map) const;
+        bool updateGraphMap(float x,float y,bool left,bool click);
+        void drawGraphMap(Canvas& c);
         size_t m_navigationFirst=0;
         std::vector<std::string> m_navigationCollapsed;
         void fitGraph();

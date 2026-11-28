@@ -202,3 +202,8 @@ Scene framing now changes only the editor camera target, never the placement pla
 ## Cross-platform warning fix and scene navigation regression
 
 The Windows compiler rejected two ternary integer widths passed to Canvas::rect (C4244 with /WX). Use explicit float widths in the compact content header. Linux and macOS passed the earlier node-editing/navigation changes; Windows needs a fresh run of this combined revision. Added real X11 orbit, pan and zoom input with a saved-document equality assertion to verify camera navigation leaves authored graph data untouched. Perspective panning now clamps the target to a finite editor working range.
+
+
+## Verified visual baseline and graph overview
+
+Workflow 46090383210 succeeded across Windows x64, macOS ARM64, Linux native desktop and sanitizer/document jobs. Artifact 15240918803 contains actual graph, categorized navigation, four-edge docking, scene navigation, widget and actor captures. The optional Graph Overview minimap added after this baseline is a native canvas rendering of the active graph with selected nodes, links and viewport outline. Click/drag recentres the graph without authoring mutations; its visibility is persisted, it follows docking bounds, and it can be disabled from Layout. The new native desktop regression asserts graph JSON equality after navigation. Combined minimap verification is pending. Genuine detached OS windows and generic panel docking remain outstanding.
