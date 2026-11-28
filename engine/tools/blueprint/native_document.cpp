@@ -25,6 +25,8 @@ namespace nx
             {"literal:uint","Unsigned integer","Values","","value:uint"},
             {"literal:double","Double","Values","","value:double"},
             {"make:Vec2","Make Vec2","Values","x:float|y:float","result:Vec2"},
+            {"vec2:x","Get X (Vec2)","Math / Vector","target:Vec2","result:float","get_x","get","member","pure","float"},
+            {"vec2:y","Get Y (Vec2)","Math / Vector","target:Vec2","result:float","get_y","get","member","pure","float"},
             {"make:Vec3","Make Vec3","Values","x:float|y:float|z:float","result:Vec3"},
             {"make:Color","Make Color","Values","r:float|g:float|b:float|a:float","result:Color"},
             {"audio:wave","Oscillator (phase in cycles)","Audio / Synthesis","phase:float|shape:uint","result:float","bp_audio_wave","","","pure","float","","in:phase|in:shape","phase:float(0)|shape:uint(0)"},

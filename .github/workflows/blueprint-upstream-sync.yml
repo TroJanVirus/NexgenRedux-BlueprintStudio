@@ -1,4 +1,4 @@
-name: Verify upstream integration
+name: Verify upstream integration and editable curve demo
 on:
   workflow_dispatch:
   push:
