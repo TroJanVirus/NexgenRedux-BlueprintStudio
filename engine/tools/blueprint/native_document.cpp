@@ -1,6 +1,7 @@
 #include "tools/blueprint/native_document.h"
 #include "ui/grid_slot.h"
 #include "ui/navigation_rule.h"
+#include "ui/scale_box.h"
 #include "base/json_tree.h"
 #include "base/json_value.h"
 #include <algorithm>
@@ -777,7 +778,7 @@ namespace nx
     }
     namespace
     {
-        const char* const widgetKinds[]={"component","column","sizeBox","row","grid","stack","scroll","label","paragraph","image","button","toggle","slider","progress","choice","field","list","tabs","space","line","custom"};
+        const char* const widgetKinds[]={"component","column","sizeBox","scaleBox","row","grid","stack","scroll","label","paragraph","image","button","toggle","slider","progress","choice","field","list","tabs","space","line","custom"};
         const char* widgetKind(const JsonValue& item)
         {
             if(item.type()!=JsonValue::Type::Object)return nullptr;
@@ -789,7 +790,7 @@ namespace nx
             const char* kind=widgetKind(item);
             if(!kind)return nullptr;
             const std::string k=kind;
-            if(k!="column"&&k!="sizeBox"&&k!="row"&&k!="grid"&&k!="stack"&&k!="scroll"&&k!="button")return nullptr;
+            if(k!="column"&&k!="sizeBox"&&k!="scaleBox"&&k!="row"&&k!="grid"&&k!="stack"&&k!="scroll"&&k!="button")return nullptr;
             auto* children=item.find(kind);
             return children&&children->type()==JsonValue::Type::Array?children:nullptr;
         }
@@ -809,7 +810,7 @@ namespace nx
     }
     bool BlueprintDocument::appendVisualWidget(const std::string& id,const std::string& kind,const std::string& label,std::string& error,const std::string& parent)
     {
-        const bool container=kind=="column"||kind=="sizeBox"||kind=="row"||kind=="grid"||kind=="stack"||kind=="scroll";
+        const bool container=kind=="column"||kind=="sizeBox"||kind=="scaleBox"||kind=="row"||kind=="grid"||kind=="stack"||kind=="scroll";
         if(!container&&kind!="component"&&kind!="label"&&kind!="button"&&kind!="progress"&&kind!="toggle"&&kind!="slider"&&kind!="field"&&kind!="space")
         {error="Unsupported palette widget.";return false;}
         if(kind=="component"&&(!visualAsset(label)||visualAsset(label)->kind!="widget"||label==id))
@@ -828,7 +829,7 @@ namespace nx
                 WidgetMatch match;findVisualWidget(root,parent,match);
                 if(match.matches!=1||!(list=widgetChildren(*match.item)))
                 {error="Select a unique container widget or the page root.";return false;}
-                if(match.item->find("sizeBox")&&list->count()){error="A Size Box supports only one child.";return false;}
+                if((match.item->find("sizeBox")||match.item->find("scaleBox"))&&list->count()){error="A Size Box or Scale Box supports only one child.";return false;}
             }
             if(list->count()>=64){error="Container widget limit reached.";return false;}
             std::string widgetId;
@@ -845,6 +846,7 @@ namespace nx
                 auto* children=item.put(kind);if(!children)return false;children->setArray();
                 if(kind=="grid"&&!number(item,"columns",2))return false;
                 if(kind=="sizeBox"&&(!number(item,"width",160)||!number(item,"height",64)))return false;
+                if(kind=="scaleBox"&&(!number(item,"width",240)||!number(item,"height",120)))return false;
             }
             else if(kind=="progress"||kind=="slider")
             {
@@ -961,10 +963,17 @@ namespace nx
             WidgetMatch match;findVisualWidget(root,widget,match);
             if(match.matches!=1){error="Select a widget with a unique ID.";return false;}
             auto& item=*match.item;
-            const std::string allowed="|text|style|width|height|minWidth|maxWidth|minHeight|maxHeight|gridSlot|navUp|navDown|navLeft|navRight|gap|grow|padding|value|low|high|step|columnWidth|rowHeight|columns|count|align|justify|self|visible|enabled|checked|wrap|anchor|offset|";
+            const std::string allowed="|text|style|width|height|minWidth|maxWidth|minHeight|maxHeight|gridSlot|scaleMode|navUp|navDown|navLeft|navRight|gap|grow|padding|value|low|high|step|columnWidth|rowHeight|columns|count|align|justify|self|visible|enabled|checked|wrap|anchor|offset|";
             if(property.empty()||property.find('|')!=std::string::npos||allowed.find("|"+property+"|")==std::string::npos)
             {error="Unsupported widget property.";return false;}
-            if(uiNavigationIndex(property)>=0)
+            if(property=="scaleMode")
+            {
+                if(!item.find("scaleBox")){error="Scale mode requires a Scale Box.";return false;}
+                if(value.empty())item.remove("scaleMode");
+                else if(uiScaleMode(value.c_str())==UiScaleMode::None){error="Use fit or down-only.";return false;}
+                else if(!text(item,"scaleMode",value))return false;
+            }
+            else if(uiNavigationIndex(property)>=0)
             {
                 if(!uiNavigationTarget(value)){error="Navigation target must be a widget ID, @stop, or blank for automatic.";return false;}
                 if(value.empty()||value=="@auto")item.remove(property.c_str());
@@ -1197,12 +1206,12 @@ namespace nx
                 WidgetMatch to,descendant;findVisualWidget(root,parent,to);findVisualWidget(*from.item,parent,descendant);
                 if(descendant.matches||to.matches!=1||!(dest=widgetChildren(*to.item)))
                 {error="Drop onto a container outside the selected widget's subtree.";return false;}
-                stack=to.item->find("stack")!=nullptr;grid=to.item->find("grid")!=nullptr;sizeBox=to.item->find("sizeBox")!=nullptr;
+                stack=to.item->find("stack")!=nullptr;grid=to.item->find("grid")!=nullptr;sizeBox=to.item->find("sizeBox")!=nullptr||to.item->find("scaleBox")!=nullptr;
             }
             if(dest==from.siblings){error.clear();return true;}
             if(!stack&&from.item->find("anchor")){error="Clear the widget anchor before moving outside a Stack.";return false;}
             if(!grid&&from.item->find("gridSlot")){error="Clear the grid slot before moving outside a Grid.";return false;}
-            if(dest->count()>=64||(sizeBox&&dest->count())){error=sizeBox?"A Size Box supports only one child.":"Destination container is full.";return false;}
+            if(dest->count()>=64||(sizeBox&&dest->count())){error=sizeBox?"A Size Box or Scale Box supports only one child.":"Destination container is full.";return false;}
             auto* copy=dest->add();
             if(!copy||!copy->setCopy(*from.item)){error="Widget hierarchy nesting limit reached.";return false;}
             from.siblings->removeAt(from.index);

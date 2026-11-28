@@ -1770,10 +1770,10 @@ namespace nx
             return {};
         }
         struct DesignRow {std::string id,kind,label;unsigned depth;};
-        constexpr const char* designPalette[]={"column","sizeBox","row","grid","stack","scroll","label","button","toggle","slider","progress","field","space","component"};
+        constexpr const char* designPalette[]={"column","sizeBox","scaleBox","row","grid","stack","scroll","label","button","toggle","slider","progress","field","space","component"};
         constexpr const char* designEvents[]={"click","change","focus","done","draw","makeRow"};
         constexpr const char* navigationDesignProps[]={"navUp","navDown","navLeft","navRight"};
-        constexpr const char* designProps[]={"text","width","height","gap","padding","grow","align","justify","self","style","value","visible"};
+        constexpr const char* designProps[]={"text","width","height","gap","padding","grow","align","justify","self","style","value","visible","scaleMode"};
         constexpr const char* advancedDesignProps[]={"minWidth","maxWidth","columns","columnWidth","rowHeight","low","high","step","enabled","checked","wrap","count","minHeight","maxHeight","gridSlot"};
         void designRows(JsonTree::Value value,std::vector<DesignRow>& rows,unsigned depth)
         {
@@ -1785,7 +1785,7 @@ namespace nx
             }
             if(!value.isObject())return;
             const char* kind=nullptr;
-            for(const char* candidate:{"component","column","sizeBox","row","grid","stack","scroll","label","paragraph","image","button","toggle","slider","progress","choice","field","list","tabs","space","line","custom"})
+            for(const char* candidate:{"component","column","sizeBox","scaleBox","row","grid","stack","scroll","label","paragraph","image","button","toggle","slider","progress","choice","field","list","tabs","space","line","custom"})
                 if(value[candidate].exists()){kind=candidate;break;}
             if(!kind)return;
             const auto main=value[kind];
@@ -1918,7 +1918,7 @@ namespace nx
             {
                 const char* const names[]={"top-left","top-center","top-right","middle-left","center","middle-right","bottom-left","bottom-center","bottom-right"};
                 if(m_document.positionVisualWidget(m_visualSelection,m_widgetSelection,names[m_widgetDragAnchor],
-                    std::round(m_widgetBaseX+m_widgetPreviewDx),std::round(m_widgetBaseY+m_widgetPreviewDy),m_status))
+                    std::round(m_widgetBaseX+m_widgetPreviewDx/m_widgetDragScale),std::round(m_widgetBaseY+m_widgetPreviewDy/m_widgetDragScale),m_status))
                     m_status="Widget position updated. Ctrl+Z undoes the entire drag.";
             }
             else m_status="Widget drag cancelled or unchanged.";
@@ -1948,7 +1948,8 @@ namespace nx
             {
                 if(!item.visible)return nullptr;
                 float sx=0,sy=0;m_designUi->place(item,sx,sy);
-                if(!in(localX,localY,sx,sy,sx+item.w,sy+item.h))return nullptr;
+                const float factor=item.visualScale();
+                if(factor<=0||!in(localX,localY,sx,sy,sx+item.w*factor,sy+item.h*factor))return nullptr;
                 for(u32 j=item.children.count();j>0;--j)
                     if(auto* found=self(self,*item.children[j-1]))return found;
                 return !item.id.empty()?&item:nullptr;
@@ -1970,7 +1971,7 @@ namespace nx
                     m_widgetBaseX=item->anchor>=0?item->offsetX:item->x-parent.pad(0);
                     m_widgetBaseY=item->anchor>=0?item->offsetY:item->y-parent.pad(1);
                     m_widgetDragX=pointerX;m_widgetDragY=pointerY;m_widgetPreviewDx=m_widgetPreviewDy=0;
-                    m_widgetDragRevision=m_document.revision();m_widgetPreviewDrag=true;
+                    m_widgetDragRevision=m_document.revision();m_widgetDragScale=std::max(item->visualScale(),0.000001f);m_widgetPreviewDrag=true;
                     m_status="Drag to position; release to apply. Escape = Cancel.";
                 }
                 else m_status="Selected widget. Use a Stack container for free positioning.";
@@ -2087,7 +2088,7 @@ namespace nx
             }
             return;
         }
-        if(!m_widgetSelection.empty()&&in(x,y,630,439,1000,m_widgetAdvanced?619.f:583.f))
+        if(!m_widgetSelection.empty()&&in(x,y,630,439,1000,619))
         {
             const size_t column=static_cast<size_t>((x-630)/123.34f),row=static_cast<size_t>((y-439)/36);
             const size_t prop=row*3+column;if(prop>=(m_widgetAdvanced?sizeof(advancedDesignProps)/sizeof(advancedDesignProps[0]):sizeof(designProps)/sizeof(designProps[0])))return;
@@ -2109,7 +2110,7 @@ namespace nx
                 {if(!m_visualText.empty())m_visualText+=",";m_visualText+=std::to_string(part.exact());}
             if(m_visualProperty=="text"&&!field.exists())
                 for(const char* key:{"label","paragraph","button","toggle","field"})if(selected[key].isString()){m_visualText=selected[key].text();break;}
-            m_visualInput=4;s.input->setTyping(true);m_status=m_visualProperty=="padding"?"Padding: one number, X,Y, or left,top,right,bottom.":m_visualProperty=="grow"?"Slot size: 0 = Auto; positive = relative Fill weight.":m_visualProperty=="gridSlot"?"Grid: row,column,rowSpan,columnSpan (zero-based; blank = Auto).":"Edit property; blank uses default (except text).";
+            m_visualInput=4;s.input->setTyping(true);m_status=m_visualProperty=="padding"?"Padding: one number, X,Y, or left,top,right,bottom.":m_visualProperty=="grow"?"Slot size: 0 = Auto; positive = relative Fill weight.":m_visualProperty=="gridSlot"?"Grid: row,column,rowSpan,columnSpan (zero-based; blank = Auto).":m_visualProperty=="scaleMode"?"Scale Box: fit or down-only (blank = fit).":"Edit property; blank uses default (except text).";
         }
     }
     void BlueprintWorkspace::drawWidgetDesigner(Canvas& c)
@@ -2179,12 +2180,13 @@ namespace nx
             if(!m_widgetSelection.empty())if(auto* selected=m_designUi->find(m_widgetSelection.c_str()))
             {
                 float sx=0,sy=0;m_designUi->place(*selected,sx,sy);
-                c.roundLine(sx,sy,selected->w,selected->h,0,3,{0.25f,0.85f,0.55f,1});
+                const float selectedWidth=selected->w*selected->visualScale(),selectedHeight=selected->h*selected->visualScale();
+                c.roundLine(sx,sy,selectedWidth,selectedHeight,0,3,{0.25f,0.85f,0.55f,1});
                 if(m_widgetPreviewDrag)
                 {
                     const float gx=sx+m_widgetPreviewDx,gy=sy+m_widgetPreviewDy;
-                    c.rect(gx,gy,selected->w,selected->h,{0.25f,0.85f,0.55f,0.12f});
-                    c.roundLine(gx,gy,selected->w,selected->h,0,4,{0.35f,0.95f,0.65f,1});
+                    c.rect(gx,gy,selectedWidth,selectedHeight,{0.25f,0.85f,0.55f,0.12f});
+                    c.roundLine(gx,gy,selectedWidth,selectedHeight,0,4,{0.35f,0.95f,0.65f,1});
                 }
             }
             c.pop();

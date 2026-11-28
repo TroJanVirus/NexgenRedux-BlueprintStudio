@@ -234,7 +234,7 @@ namespace nx
         float m_widgetTimelineTime=0;
         double m_widgetTimelineLast=0;
         bool m_widgetDragging=false,m_widgetPreviewDrag=false;
-        float m_widgetPreviewDx=0,m_widgetPreviewDy=0,m_widgetBaseX=0,m_widgetBaseY=0;
+        float m_widgetPreviewDx=0,m_widgetPreviewDy=0,m_widgetBaseX=0,m_widgetBaseY=0,m_widgetDragScale=1;
         int m_widgetDragAnchor=0;
         size_t m_widgetDragRevision=0;
         float m_widgetDragX=0,m_widgetDragY=0;

@@ -213,6 +213,11 @@ namespace nx
     {
         w.w = width;
         const float inner = larger(width - w.pad(0) - w.pad(2), 0);
+        if(w.scaleMode!=UiScaleMode::None)
+        {
+            if(w.children.count()){auto& child=*w.children[0];giveWidth(child,child.visible?larger(child.naturalW,1):0);}
+            return;
+        }
         if (w.kind == WidgetKind::Row)
         {
             float fixed = 0, grow = 0, soft = 0;
@@ -355,6 +360,7 @@ namespace nx
     void Ui::giveHeight(Widget& w, float height)
     {
         w.h = height;
+        w.childScale=1;
         const float left = w.pad(0), top = w.pad(1);
         const float innerW = larger(w.w - left - w.pad(2), 0), innerH = larger(height - top - w.pad(3), 0);
         const float gap = w.space();
@@ -480,6 +486,22 @@ namespace nx
                 giveHeight(*child, tall);
             }
         }
+        else if(w.scaleMode!=UiScaleMode::None)
+        {
+            w.childScale=0;
+            if(w.children.count())
+            {
+                auto& child=*w.children[0];const float tall=child.naturalH;
+                const float factor=child.visible?fitUiChild(innerW,innerH,child.w,tall,w.scaleMode):0;
+                if(factor>0)
+                {
+                    const auto place=across(w,child);const float align=place==UiPlace::Start?0.f:place==UiPlace::End?1.f:0.5f;
+                    w.childScale=factor;child.x=(left+(innerW-child.w*factor)*align)/factor;child.y=(top+(innerH-tall*factor)*align)/factor;
+                    giveHeight(child,tall);
+                }
+                else {child.x=child.y=0;giveHeight(child,0);}
+            }
+        }
         else if(w.sizeBox)
         {
             if(w.children.count())
@@ -572,7 +594,7 @@ namespace nx
             if (layer.place == LayerPlace::Below && layer.anchor)
             {
                 corner(*layer.anchor, ax, ay);
-                wide = smaller(larger(wide, layer.anchor->w), width);
+                wide = smaller(larger(wide, layer.anchor->w*layer.anchor->visualScale()), width);
             }
             giveWidth(root, wide);
             naturalHeight(root);
@@ -580,7 +602,7 @@ namespace nx
             giveHeight(root, tall);
             if (layer.place == LayerPlace::Below && layer.anchor)
             {
-                const float below = ay + layer.anchor->h + 6;
+                const float below = ay + layer.anchor->h*layer.anchor->visualScale() + 6;
                 root.x = smaller(ax, safe + width - wide);
                 // Above it, if there is more room there.
                 root.y = below + tall <= safe + height ? below : larger(smaller(ay - 6 - tall, safe + height - tall), safe);

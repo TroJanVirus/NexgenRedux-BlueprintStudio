@@ -69,6 +69,19 @@ namespace nx
         destroy(this);
     }
 
+    float Widget::visualScale() const
+    {
+        float factor=1;
+        for(const Widget* p=parent;p;p=p->parent)factor*=p->childScale;
+        return factor;
+    }
+    bool Widget::setScaleMode(const std::string& mode)
+    {
+        if(!ui||scaleMode==UiScaleMode::None)return false;
+        const auto next=uiScaleMode(mode.c_str());if(next==UiScaleMode::None)return false;
+        scaleMode=next;changed();return true;
+    }
+
     bool Widget::setNavigation(const std::string& direction,const std::string& target)
     {
         const int index=uiNavigationIndex(direction);
@@ -486,8 +499,8 @@ namespace nx
         y = w.y+w.animationValues[1];
         for (const Widget* p = w.parent; p; p = p->parent)
         {
-            x += p->x+p->animationValues[0];
-            y += p->y+p->animationValues[1] - p->scroll;
+            x = p->x+p->animationValues[0]+x*p->childScale;
+            y = p->y+p->animationValues[1]+(y-p->scroll)*p->childScale;
         }
     }
 
@@ -514,7 +527,7 @@ namespace nx
     {
         for (const Widget* p = &w; p; p = p->parent)
         {
-            if (!p->visible || !p->enabled)
+            if (!p->visible || !p->enabled||(p!=&w&&p->childScale<=0))
             {
                 return false;
             }
@@ -528,7 +541,7 @@ namespace nx
 
     void Ui::collect(Widget& w, GrowArray<Widget*, MemTag::UI>& out) const
     {
-        if (!w.visible || !w.enabled)
+        if (!w.visible || !w.enabled||w.childScale<=0)
         {
             return;
         }
@@ -600,7 +613,7 @@ namespace nx
     // Scrolls whatever it is in until it can be seen.
     void Ui::reveal(Widget& w)
     {
-        float y = w.y;
+        float y = w.y,tall=w.h;
         for (Widget* p = w.parent; p; p = p->parent)
         {
             if (p->kind == WidgetKind::Scroll || p->kind == WidgetKind::List)
@@ -611,14 +624,14 @@ namespace nx
                 {
                     p->scrollTo = y - margin;
                 }
-                else if (y + w.h + margin > p->scrollTo + p->h)
+                else if (y + tall + margin > p->scrollTo + p->h)
                 {
-                    p->scrollTo = y + w.h + margin - p->h;
+                    p->scrollTo = y + tall + margin - p->h;
                 }
                 p->scrollTo = smaller(larger(p->scrollTo, 0), furthest);
                 y -= p->scrollTo;
             }
-            y += p->y;
+            y=p->y+y*p->childScale;tall*=p->childScale;
         }
     }
 
@@ -628,6 +641,7 @@ namespace nx
         collect(top(), all);
         float fx, fy;
         corner(from, fx, fy);
+        const float fromWidth=from.w*from.visualScale(),fromHeight=from.h*from.visualScale();
         Widget* best = nullptr;
         float bestScore = 1e9f;
         for (Widget* w : all)
@@ -638,24 +652,25 @@ namespace nx
             }
             float x, y;
             corner(*w, x, y);
+            const float wide=w->w*w->visualScale(),tall=w->h*w->visualScale();
             // How far along that way, edge to edge, and how far to the side, not counting what overlaps.
             float along, centre, side, sideways;
             const bool level = way == Action::Left || way == Action::Right;
             if (level)
             {
-                along = way == Action::Right ? x - (fx + from.w) : fx - (x + w->w);
-                centre = (x + w->w * 0.5f - fx - from.w * 0.5f) * (way == Action::Right ? 1.0f : -1.0f);
-                side = larger(larger(y - (fy + from.h), fy - (y + w->h)), 0);
-                sideways = fabsf(y + w->h * 0.5f - fy - from.h * 0.5f);
+                along = way == Action::Right ? x - (fx + fromWidth) : fx - (x + wide);
+                centre = (x + wide * 0.5f - fx - fromWidth * 0.5f) * (way == Action::Right ? 1.0f : -1.0f);
+                side = larger(larger(y - (fy + fromHeight), fy - (y + tall)), 0);
+                sideways = fabsf(y + tall * 0.5f - fy - fromHeight * 0.5f);
             }
             else
             {
-                along = way == Action::Down ? y - (fy + from.h) : fy - (y + w->h);
-                centre = (y + w->h * 0.5f - fy - from.h * 0.5f) * (way == Action::Down ? 1.0f : -1.0f);
-                side = larger(larger(x - (fx + from.w), fx - (x + w->w)), 0);
-                sideways = fabsf(x + w->w * 0.5f - fx - from.w * 0.5f);
+                along = way == Action::Down ? y - (fy + fromHeight) : fy - (y + tall);
+                centre = (y + tall * 0.5f - fy - fromHeight * 0.5f) * (way == Action::Down ? 1.0f : -1.0f);
+                side = larger(larger(x - (fx + fromWidth), fx - (x + wide)), 0);
+                sideways = fabsf(x + wide * 0.5f - fx - fromWidth * 0.5f);
             }
-            if (centre < 2 || along < -smaller(level ? w->w : w->h, level ? from.w : from.h) * 0.5f)
+            if (centre < 2 || along < -smaller(level ? wide : tall, level ? fromWidth : fromHeight) * 0.5f)
             {
                 continue;
             }
@@ -1174,13 +1189,21 @@ namespace nx
         }
         const float x = px+w.x+w.animationValues[0], y=py+w.y+w.animationValues[1];
         const bool within = mx >= x && my >= y && mx < x + w.w && my < y + w.h;
-        if (!within && (w.kind == WidgetKind::Scroll || w.kind == WidgetKind::List || &w == &top()))
+        if (!within && (w.kind == WidgetKind::Scroll || w.kind == WidgetKind::List || w.scaleMode!=UiScaleMode::None || &w == &top()))
         {
             return nullptr;
         }
         if (within && w.focusable())
         {
             return &w;
+        }
+        if(w.scaleMode!=UiScaleMode::None)
+        {
+            if(w.childScale>0&&mx>=x+w.pad(0)&&mx<x+w.w-w.pad(2)&&my>=y+w.pad(1)&&my<y+w.h-w.pad(3)&&w.children.count())
+            {
+                if(auto* found=hit(*w.children[0],0,-w.scroll,(mx-x)/w.childScale,(my-y)/w.childScale,focusableOnly))return found;
+            }
+            return within&&!focusableOnly?&w:nullptr;
         }
         for (u32 i = w.children.count(); i-- > 0;)
         {
@@ -1270,7 +1293,8 @@ namespace nx
         {
             float x, y;
             corner(*m_held, x, y);
-            const float left = x + m_held->pad(0) + 11, length = m_held->w - m_held->pad(0) - m_held->pad(2) - 22;
+            const float factor=m_held->visualScale();
+            const float left=x+(m_held->pad(0)+11)*factor,length=(m_held->w-m_held->pad(0)-m_held->pad(2)-22)*factor;
             slideTo(*m_held, m_held->low + (m_held->high - m_held->low) * (length > 0 ? smaller(larger((mx - left) / length, 0), 1) : 0));
         }
         else if (down && m_dragged)
@@ -1282,7 +1306,7 @@ namespace nx
             }
             if (m_held == nullptr && moved)
             {
-                m_dragged->scrollTo = smaller(larger(m_dragScroll - (my - m_dragFrom), 0), larger(m_dragged->contentH - m_dragged->h, 0));
+                m_dragged->scrollTo = smaller(larger(m_dragScroll - (my - m_dragFrom)/larger(m_dragged->visualScale(),0.000001f), 0), larger(m_dragged->contentH - m_dragged->h, 0));
             }
         }
         if (!down && m_mouseDown)
@@ -1290,7 +1314,7 @@ namespace nx
             if (m_dragged && m_held == nullptr && dt > 0)
             {
                 // It goes on a little.
-                m_dragged->scrollTo = smaller(larger(m_dragged->scrollTo - movedY * 8, 0), larger(m_dragged->contentH - m_dragged->h, 0));
+                m_dragged->scrollTo = smaller(larger(m_dragged->scrollTo - movedY * 8/larger(m_dragged->visualScale(),0.000001f), 0), larger(m_dragged->contentH - m_dragged->h, 0));
             }
             m_dragged = nullptr;
             Widget* pressed = m_held;
@@ -1301,8 +1325,8 @@ namespace nx
                 {
                     float x, y;
                     corner(*pressed, x, y);
-                    const float edge = pressed->pad(0) + 34;
-                    if (mx < x + edge || mx > x + pressed->w - edge)
+                    const float factor=pressed->visualScale(),edge=(pressed->pad(0)+34)*factor;
+                    if (mx < x + edge || mx > x + pressed->w*factor - edge)
                     {
                         step(*pressed, mx < x + edge ? -1 : 1);
                         m_mouseDown = down;

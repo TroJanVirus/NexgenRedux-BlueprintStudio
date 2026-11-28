@@ -18,7 +18,7 @@ namespace nx
     namespace
     {
         const struct { const char* name; WidgetKind kind; } kKinds[] = {
-            { "column", WidgetKind::Column }, { "sizeBox", WidgetKind::Column }, { "row", WidgetKind::Row }, { "grid", WidgetKind::Grid }, { "stack", WidgetKind::Stack }, { "scroll", WidgetKind::Scroll },
+            { "column", WidgetKind::Column }, { "sizeBox", WidgetKind::Column }, { "scaleBox", WidgetKind::Column }, { "row", WidgetKind::Row }, { "grid", WidgetKind::Grid }, { "stack", WidgetKind::Stack }, { "scroll", WidgetKind::Scroll },
             { "label", WidgetKind::Label }, { "paragraph", WidgetKind::Label }, { "image", WidgetKind::Image }, { "button", WidgetKind::Button }, { "toggle", WidgetKind::Toggle },
             { "slider", WidgetKind::Slider }, { "progress", WidgetKind::Progress }, { "choice", WidgetKind::Choice }, { "field", WidgetKind::Field }, { "list", WidgetKind::List },
             { "tabs", WidgetKind::Tabs }, { "space", WidgetKind::Space }, { "line", WidgetKind::Line }, { "custom", WidgetKind::Custom },
@@ -222,9 +222,10 @@ namespace nx
             return nullptr;
         }
         w->release();   // its parent has it
-        w->sizeBox=strcmp(kKinds[which].name,"sizeBox")==0;
+        if(strcmp(kKinds[which].name,"scaleBox")==0)w->scaleMode=UiScaleMode::Fit;
+        w->sizeBox=strcmp(kKinds[which].name,"sizeBox")==0||w->scaleMode!=UiScaleMode::None;
         if(w->sizeBox&&(!main.isArray()||main.count()>1))
-        {fail(file,v.line(),"requires an array of zero or one child","sizeBox");return nullptr;}
+        {fail(file,v.line(),"requires an array of zero or one child",kKinds[which].name);return nullptr;}
         w->wrap = strcmp(kKinds[which].name, "paragraph") == 0;
         w->gap = kind <= WidgetKind::Scroll && !v["style"].exists() ? 12.0f : -1.0f;
         if(w->sizeBox){w->gap=0;for(float& pad:w->padding)pad=0;}
@@ -370,6 +371,11 @@ namespace nx
             else if (strcmp(key, "columns") == 0) w->columns = static_cast<u32>(p.number());
             else if (strcmp(key, "limit") == 0) w->limit = static_cast<u32>(p.number());
             else if (strcmp(key, "tag") == 0) w->tag = static_cast<int>(p.number());
+            else if(strcmp(key,"scaleMode")==0)
+            {
+                if(!p.isString()||!w->setScaleMode(p.text()))
+                {fail(file,p.line(),"requires a Scale Box and fit or down-only","scaleMode");return nullptr;}
+            }
             else if (strcmp(key, "gridSlot") == 0)
             {
                 if(into.kind!=WidgetKind::Grid||!p.isArray()||p.count()!=4)

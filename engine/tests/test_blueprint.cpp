@@ -3769,3 +3769,31 @@ NX_TEST(nativeWidgetNavigationAndAnimationPlayback)
     NX_EXPECT(one->controlAnimation("stop",false));r.step();NX_EXPECT(one->animationTime==0&&one->animationValues[0]==0);
     NX_EXPECT(!one->controlAnimation("bad",false)&&!one->setNavigation("bad","two"));
 }
+
+NX_TEST(nativeScaleBoxGeometryAndInteraction)
+{
+    NX_EXPECT(fitUiChild(200,100,100,100,UiScaleMode::Fit)==1);
+    NX_EXPECT(fitUiChild(200,200,100,100,UiScaleMode::Fit)==2);
+    NX_EXPECT(fitUiChild(200,200,100,100,UiScaleMode::DownOnly)==1);
+    NX_EXPECT(fitUiChild(0,100,100,100,UiScaleMode::Fit)==0);
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    BlueprintDocument doc;doc.create();std::string error,source;
+    const std::string page=R"SCALE([{"scaleBox":[{"slider":0,"id":"slider","width":400,"height":100,"low":0,"high":1,"step":0}],"id":"box","width":200,"height":100},{"scaleBox":[{"button":"Nested","id":"nested","width":100,"height":40}],"id":"second","width":200,"height":80,"scaleMode":"down-only"}])SCALE";
+    NX_EXPECT(doc.replaceVisualAssets({{"widget-1","widget","Scale Box test",page,{}}},error));
+    if(!doc.connectVisualWidget("Screen","widget-1",error)||!compileBlueprint(doc,source,error))
+    {NX_ERROR("Scale Box: %s",error.c_str());NX_EXPECT(false);return;}
+    r.platform.files["showcase/main/screen.json"]="{\"title\":\"Scale Box\"}";r.platform.files["showcase/main/main.as"]=source;
+    if(!r.screens.init(r.services,"showcase","main")){NX_EXPECT(false);return;}r.step(4);
+    NX_EXPECT(!r.screens.failed());if(!r.services.ui)return;
+    auto& ui=*r.services.ui;auto* box=ui.find("box");auto* slider=ui.find("slider");auto* second=ui.find("second");auto* nested=ui.find("nested");
+    NX_EXPECT(box&&slider&&second&&nested);if(!box||!slider||!second||!nested)return;
+    NX_EXPECT(fabsf(box->childScale-0.5f)<0.001f&&fabsf(slider->visualScale()-0.5f)<0.001f);
+    NX_EXPECT(fabsf(second->childScale-1)<0.001f&&second->setScaleMode("fit"));
+    r.step(2);NX_EXPECT(fabsf(nested->visualScale()-2)<0.001f);
+    float x=0,y=0;ui.place(*slider,x,y);
+    NX_EXPECT(fabsf(slider->w*slider->visualScale()-200)<0.1f);
+    float bx=0,by=0;ui.place(*box,bx,by);NX_EXPECT(fabsf(x-bx)<0.1f&&fabsf(y-by-25)<0.1f);
+    NX_EXPECT(!box->setScaleMode("bad")&&!slider->setScaleMode("fit"));
+    NX_EXPECT(box->add(WidgetKind::Label,"")==nullptr);
+    ui.focus(slider);r.press(Action::Down);NX_EXPECT(ui.focused()==nested);
+}

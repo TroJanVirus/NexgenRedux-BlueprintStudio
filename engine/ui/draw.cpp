@@ -327,6 +327,17 @@ namespace nx
         default:
             break;
         }
+        if(w.scaleMode!=UiScaleMode::None)
+        {
+            if(w.childScale>0&&w.children.count())
+            {
+                c.push();c.clip(left,top,inner,innerH);
+                c.translate(x,y);c.scale(w.childScale,w.childScale);
+                drawWidget(c,*w.children[0],0,-w.scroll,alpha);c.pop();
+            }
+            if(scaled)c.pop();
+            return;
+        }
         const bool clips = w.kind == WidgetKind::Scroll || w.kind == WidgetKind::List;
         if (clips)
         {

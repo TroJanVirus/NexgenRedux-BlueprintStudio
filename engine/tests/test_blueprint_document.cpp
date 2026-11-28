@@ -39,7 +39,7 @@ NX_TEST(nativeDeleteSelectedNodesIsAtomic)
 }
 NX_TEST(nativeCatalogueContainsReferenceAPI)
 {
-    NX_EXPECT(blueprintCatalogue().size()==1557);
+    NX_EXPECT(blueprintCatalogue().size()==1559);
     const auto* save=blueprintSpec("api:Save:Save::set:string,string");
     NX_EXPECT(save&&save->inputs.size()==3&&save->outputs.size()==1);
     if(save&&save->inputs.size()==3)NX_EXPECT(save->inputs[0].type=="exec"&&save->inputs[2].type=="string");
@@ -2403,3 +2403,16 @@ NX_TEST(nativeStudioLaunchPathValidation)
     NX_EXPECT(!studioLaunchIdentity(std::string(32,'z')));
 }
 
+
+NX_TEST(nativeScaleBoxDocumentAndMode)
+{
+    BlueprintDocument doc;doc.create();std::string page,error,bytes;
+    NX_EXPECT(doc.createVisualAsset("widget",page,error)&&doc.appendVisualWidget(page,"scaleBox","",error));
+    NX_EXPECT(doc.appendVisualWidget(page,"button","Child",error,"item-1"));
+    NX_EXPECT(!doc.appendVisualWidget(page,"button","Second",error,"item-1"));
+    NX_EXPECT(doc.setVisualWidgetProperty(page,"item-1","scaleMode","down-only",error));
+    NX_EXPECT(!doc.setVisualWidgetProperty(page,"item-1","scaleMode","invalid",error));
+    NX_EXPECT(!doc.setVisualWidgetProperty(page,"item-2","scaleMode","fit",error));
+    NX_EXPECT(doc.serialize(bytes,error));BlueprintDocument copy;
+    NX_EXPECT(copy.load(bytes.data(),bytes.size(),error)&&copy.visualAsset(page)->source==doc.visualAsset(page)->source);
+}

@@ -61,6 +61,15 @@ namespace nx
             if(c){c->sizeBox=true;c->width=width;c->height=height;c->gap=0;for(float& pad:c->padding)pad=0;}
             return c;
         }
+        Widget* addScaleBox(float width,float height,const std::string& mode,Widget* w)
+        {
+            const auto scaling=uiScaleMode(mode.c_str());
+            if(scaling==UiScaleMode::None){scriptError("invalid Scale Box mode");return nullptr;}
+            Widget* c=addSizeBox(width,height,w);
+            if(c)c->scaleMode=scaling;
+            return c;
+        }
+        bool widgetScaleMode(const std::string& mode,Widget* w){return w->setScaleMode(mode);}
         Widget* addRow(float gap, Widget* w)
         {
             Widget* c = added(w, WidgetKind::Row);
@@ -386,7 +395,7 @@ namespace nx
             if (w->ui) w->ui->place(*w, out.x, out.y);
             return out;
         }
-        Vec2 getSize(const Widget* w) { return { w->w, w->h }; }
+        Vec2 getSize(const Widget* w) { const float s=w->visualScale();return { w->w*s, w->h*s }; }
         bool getFocused(const Widget* w) { return w->ui && w->ui->focused() == w; }
         bool getAlive(const Widget* w) { return w->ui != nullptr; }
         Widget* getParent(Widget* w) { return held(w->parent); }
@@ -482,6 +491,8 @@ namespace nx
         b.reopen("Widget");
         b.method("Widget@ column(float gap = 12)", NX_OBJ_LAST(addColumn), "Adds a container of things one under another.");
         b.method("Widget@ sizeBox(float width, float height)", NX_OBJ_LAST(addSizeBox), "Adds a single-child Size Box with preferred width and height; zero uses content size.");
+        b.method("Widget@ scaleBox(float width, float height, const string &in mode)", NX_OBJ_LAST(addScaleBox), "Adds a single-child Scale Box; mode fit or down-only preserves content aspect ratio.");
+        b.method("bool setScaleMode(const string &in mode)", NX_OBJ_LAST(widgetScaleMode), "Changes a Scale Box mode to fit or down-only, returning false for other widgets or invalid modes.");
         b.method("Widget@ row(float gap = 12)", NX_OBJ_LAST(addRow), "One beside another.");
         b.method("Widget@ grid(uint columns, float gap = 12)", NX_OBJ_LAST(addGrid), "In rows of so many, each as wide as the rest.");
         b.method("Widget@ stack()", NX_OBJ_LAST(addStack), "One over another.");

@@ -2,6 +2,7 @@
 
 #include "audio/audio.h"
 #include "ui/grid_slot.h"
+#include "ui/scale_box.h"
 #include "base/grow_array.h"
 #include "base/json_tree.h"
 #include "canvas/canvas.h"
@@ -45,6 +46,10 @@ namespace nx
 
         bool visible = true, enabled = true;
         bool sizeBox = false; // Column wrapper with zero or one child
+        UiScaleMode scaleMode=UiScaleMode::None;
+        float childScale=1; // Scale Box transform, inherited by descendants
+        float visualScale() const;
+        bool setScaleMode(const std::string& mode);
         bool checked = false;        // a toggle
         bool wrap = false;           // text
         bool secret = false;         // a field's text is hidden
