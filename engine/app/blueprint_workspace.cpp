@@ -1108,7 +1108,8 @@ namespace nx
         });
         m_files.erase(std::unique(m_files.begin(),m_files.end()),m_files.end());
         m_browsing=true;clearWire();cancelDrag();
-        m_status=m_document.dirty()?"Save or Save copy before opening or creating another project.":"Choose a template or open an existing project." ;
+        m_status=m_document.dirty()?"Save or Save copy before opening or creating another project.":"Choose a template or open an existing project.";
+        NX_INFO("Blueprint Studio: project library opened");
     }
     std::string BlueprintWorkspace::assetScreen() const
     {
@@ -4781,6 +4782,15 @@ namespace nx
         }
         if(m_browsing)
         {
+            std::string file;
+            if(s.platform->takeDropped(file))
+            {
+                if(blueprintFileName(file)||blueprintPackageName(file))openFile(s,file,false);
+                else if(standaloneSourceName(file))importSource(s,file);
+                else m_status="Drop a Blueprint project, portable ZIP or AngelScript source.";
+                if(!m_browsing){m_projectCreate=0;input.setTyping(false);}
+                m_left=left;return;
+            }
             const auto selectTemplate=[&](unsigned kind)
             {
                 m_projectCreate=kind;m_projectName=kind==1?"":"First Person";
