@@ -3363,8 +3363,8 @@ namespace nx
                 const auto& target=m_document.target();
                 const float w=static_cast<float>(target.width()),h=static_cast<float>(target.height()),aspect=target.pixelAspect();
                 const float scale=std::min(130.f/(w*aspect),62.f/h);
-                const float width=w*aspect*scale,height=h*scale,px=x+70-width*0.5f,py=y+5+(62-height)*0.5f;
-                c.push();c.clip(px,py,width,height);c.translate(px,py);c.scale(scale*aspect,scale);
+                const float thumbWidth=w*aspect*scale,thumbHeight=h*scale,px=x+70-thumbWidth*0.5f,py=y+5+(62-thumbHeight)*0.5f;
+                c.push();c.clip(px,py,thumbWidth,thumbHeight);c.translate(px,py);c.scale(scale*aspect,scale);
                 preview->ui->drawDesign(c,0,0,w,h);
                 c.pop();
             }
