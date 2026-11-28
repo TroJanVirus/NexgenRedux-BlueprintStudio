@@ -1,5 +1,6 @@
 #include "test.h"
 
+#include "base/thread.h"
 #include "base/json_value.h"
 #include "rig.h"
 
@@ -285,6 +286,171 @@ NX_TEST(scriptsHavePixelsDataAndRandom)
              "Pixels p(4, 4); p.save(\"saved:../a.png\");" })
     {
         Rig bad;
+        open(bad, (std::string("class A : Screen { void onEnter() { ") + code + " } }").c_str());
+        NX_EXPECT(bad.screens.failed());
+    }
+}
+
+NX_TEST(scriptsMakeSound)
+{
+    Rig r;
+    open(r, R"(
+        class A : Screen
+        {
+            void check(bool good) { if (!good) { array<int> nope; nope[1] = 0; } }
+            void onEnter()
+            {
+                // A tone made one sample at a time, and read back.
+                Samples beep(4800, 48000, 1);
+                for (uint i = 0; i < beep.frames; i++)
+                    beep.set(i, sin(float(i) * 6.2831853f * 440 / 48000) * 0.5f);
+                check(beep.channels == 1 && abs(beep.seconds - 0.1f) < 0.001f && abs(beep.get(12) - sin(12 * 6.2831853f * 440 / 48000) * 0.5f) < 0.001f);
+                check(beep.get(99999) == 0);
+                beep.play(0.5f);
+                Samples stereo(10, 22050, 2);
+                stereo.set(3, -0.5f, 0.25f);
+                check(abs(stereo.get(3, 0) + 0.5f) < 0.001f && abs(stereo.get(3, 1) - 0.25f) < 0.001f);
+
+                // A sound's own samples.
+                Samples@ coin = Assets::samples("global:sound/coin.wav");
+                check(coin !is null && coin.frames > 1000 && coin.rate > 0);
+                check(Assets::samples("global:sound/none.wav") is null);
+
+                // A stream takes as much as there is room for.
+                AudioStream stream(48000, 2, 0.1f);
+                check(stream.room == 4800 && stream.queued == 0 && stream.channels == 2);
+                array<float> chunk(2000 * 2, 0.1f);
+                check(stream.write(chunk) == 2000 && stream.queued == 2000);
+                stream.write(chunk);
+                check(stream.write(chunk) == 800 && stream.room == 0);
+                stream.clear();
+                stream.play(0.8f);
+
+                // Every effect, and none.
+                Audio::bandPass(BusEffects, 1000, 1);
+                Audio::distortion(BusEffects, 0.5f);
+                Audio::chorus(BusMusic, 0.5f);
+                Audio::flanger(BusMusic, 0.5f, 0.3f, 0.6f, 1);
+                Audio::compressor(BusInterface, -12, 4);
+                Audio::equalizer(BusInterface, 3, -2, 6, 0.5f);
+                Audio::clearEffects(0.2f);
+                Save::set("done", "y");
+            }
+        }
+    )");
+    NX_EXPECT(!r.screens.failed() && strcmp(r.save.get("done", ""), "y") == 0);
+
+    for (const char* code : { "Samples s(0);", "Samples s(10, 48000, 3);", "AudioStream s(48000, 5);", "Samples s(10, 10);" })
+    {
+        Rig bad;
+        open(bad, (std::string("class A : Screen { void onEnter() { ") + code + " } }").c_str());
+        NX_EXPECT(bad.screens.failed());
+    }
+}
+
+NX_TEST(scriptsAskTheWindowAndSystem)
+{
+    Rig r;
+    open(r, R"(
+        class A : Screen
+        {
+            void check(bool good) { if (!good) { array<int> nope; nope[1] = 0; } }
+            void onEnter()
+            {
+                // No window to change here, and nothing goes wrong asking.
+                check(!Window::available);
+                Window::fullscreen = true;
+                Window::title = "Changed";
+                check(Window::title == "Changed" && !Window::resize(800, 600));
+                Window::vsync = false;
+                check(!Window::vsync);
+                Window::vsync = true;
+                Window::pointer = PointerHand;
+                check(Window::pointer == PointerHand && Window::focused);
+                check(!Window::message("Hello", "there") && !Window::ask("Well?", "Yes or no"));
+
+                // A clipboard of the game's own, where the system has none.
+                System::clipboard = "copied text";
+                check(System::clipboard == "copied text");
+                check(System::processors >= 1 && System::locale.length() >= 2 && System::language.findFirst("-") < 0);
+                check(!System::open(""));
+                check(System::battery >= -1);
+                Save::set("done", "y");
+            }
+        }
+    )");
+    NX_EXPECT(!r.screens.failed() && strcmp(r.save.get("done", ""), "y") == 0);
+}
+
+NX_TEST(scriptsRunOnThreads)
+{
+    Rig r;
+    r.platform.files["showcase/shapes/asset/square.as"] = R"(
+        void main()
+        {
+            Channel jobs("jobs"), results("results");
+            Json totals;
+            while (!Worker::stopping)
+            {
+                string job = jobs.demand(5);
+                if (job == "end" || job.isEmpty()) break;
+                double n = parseFloat(job);
+                results.push(formatFloat(n * n, "", 0, 0));
+            }
+            results.push("done " + Data::sha1("abc").substr(0, 6));
+        }
+    )";
+    r.platform.files["showcase/shapes/asset/broken.as"] = "void main() { array<int> a; a[3] = 1; }";
+    r.platform.files["showcase/shapes/asset/forever.as"] = "void main() { uint n = 0; while (true) { n++; if (n % 1000 == 0) Worker::sleep(0); } }";
+    open(r, R"(
+        class A : Screen
+        {
+            Thread@ squares = Thread("asset:square.as");
+            Thread@ broken = Thread("asset:broken.as");
+            Thread@ forever = Thread("asset:forever.as");
+            Channel jobs("jobs"), results("results");
+            array<string> got;
+            void check(bool good) { if (!good) { array<int> nope; nope[1] = 0; } }
+            void onEnter()
+            {
+                check(!squares.started && squares.start() && squares.started);
+                for (int i = 1; i <= 5; i++) jobs.push("" + i);
+                jobs.push("end");
+                broken.start();
+                forever.start();
+                check(!Worker::inThread);
+            }
+            void update(float dt)
+            {
+                string value;
+                while (results.pop(value)) got.insertLast(value);
+                if (got.length() == 6 && !squares.running && !broken.running)
+                {
+                    check(got[0] == "1" && got[1] == "4" && got[4] == "25" && got[5] == "done a9993e");
+                    check(broken.error.findFirst("Index out of bounds") >= 0 && squares.error.isEmpty());
+                    check(forever.running);
+                    forever.stop();
+                    forever.wait();
+                    check(!forever.running && forever.error.isEmpty());
+                    Save::set("done", "y");
+                }
+            }
+        }
+    )");
+    for (int i = 0; i < 3000 && strcmp(r.save.get("done", ""), "y") != 0 && !r.screens.failed(); i++)
+    {
+        r.step();
+        sleepMilliseconds(1);
+    }
+    NX_EXPECT(!r.screens.failed() && strcmp(r.save.get("done", ""), "y") == 0);
+
+    // What can't be: no such file, no main(), a mistake in it, and the screen sleeping or waiting.
+    r.platform.files["showcase/shapes/asset/nomain.as"] = "void other() {}";
+    r.platform.files["showcase/shapes/asset/wrong.as"] = "void main() { nonsense(); }";
+    for (const char* code : { "Thread t(\"asset:none.as\");", "Thread t(\"asset:nomain.as\");", "Thread t(\"asset:wrong.as\");", "Worker::sleep(1);", "Channel c(\"x\"); c.demand(1);" })
+    {
+        Rig bad;
+        bad.platform.files = r.platform.files;
         open(bad, (std::string("class A : Screen { void onEnter() { ") + code + " } }").c_str());
         NX_EXPECT(bad.screens.failed());
     }
