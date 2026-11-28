@@ -38,6 +38,9 @@ namespace nx
         char folder[96] = {};  // of the screen whose script is running
         double time = 0;
         float fps = 0;
+        // Measured CPU-side wall time (may include driver/IO waits), not CPU utilisation.
+        float updateMs=0,submitMs=0;
+        bool frameTimingValid=false;
         u32 draws = 0;
         u32 reloads = 0;
         bool sceneEditorAssets = false; // trusted native scene tool may write only project scene JSON

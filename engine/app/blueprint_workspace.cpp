@@ -5177,6 +5177,36 @@ namespace nx
     void BlueprintWorkspace::updateDeviceManager(Services& s,float x,float y,bool click)
     {
         auto& input=*s.input;
+        if(m_deviceWatchEditing)
+        {
+            bool apply=click&&in(x,y,930,402,1140,440);
+            if(click&&in(x,y,710,402,920,440)){m_deviceWatchEditing=false;input.setTyping(false);return;}
+            for(u32 i=0;i<input.typedCount();++i)
+            {const auto ch=input.typed(i);if(ch==13)apply=true;else if(ch==8&&!m_deviceWatchDraft.empty())m_deviceWatchDraft.pop_back();else if(ch>=32&&ch<127)appendCharacter(m_deviceWatchDraft,ch,1164);}
+            if(apply)
+            {
+                std::vector<std::string> names;std::string name;
+                for(char ch:m_deviceWatchDraft+",")
+                {
+                    if(ch==','||ch==' '){if(!name.empty()){names.push_back(name);name.clear();}}
+                    else name+=ch;
+                }
+                if(m_document.setDebugWatches(names,m_deviceFeedback)){m_deviceWatchEditing=false;input.setTyping(false);m_deviceFeedback="Watch list saved in project. Values refresh at the next pause.";}
+            }
+            return;
+        }
+        if(in(x,y,140,310,1140,474))
+        {
+            const auto& rows=m_deviceView==1?m_device.variables():m_device.rows();
+            if(m_deviceView!=2)
+            {if(input.wheel()<0&&m_deviceFirst+14<rows.size())++m_deviceFirst;if(input.wheel()>0&&m_deviceFirst)--m_deviceFirst;}
+            if(m_deviceView==2&&click&&in(x,y,940,450,1140,474))
+            {
+                m_deviceWatchDraft.clear();
+                for(const auto& name:m_document.debugWatches()){if(!m_deviceWatchDraft.empty())m_deviceWatchDraft+=", ";m_deviceWatchDraft+=name;}
+                m_deviceWatchEditing=true;m_deviceAddressEditing=false;input.setTyping(true);return;
+            }
+        }
         bool attach=click&&in(x,y,730,150,900,190);
         if(click&&in(x,y,140,150,710,190)){m_deviceAddressEditing=true;input.setTyping(true);}
         if(m_deviceAddressEditing)for(u32 i=0;i<input.typedCount();++i)
@@ -5202,7 +5232,7 @@ namespace nx
         if(in(x,y,900,480,1140,512)){pushLiveSource(s);return;}
         if(in(x,y,140,600,340,638)){if(!m_device.liveBusy())syncDeviceBreakpoints();return;}
         if(in(x,y,350,600,550,638)){m_deviceAddressEditing=false;input.setTyping(false);locateDeviceNode();return;}
-        if(in(x,y,560,600,760,638)){m_deviceVariables=!m_deviceVariables;return;}
+        if(in(x,y,560,600,760,638)){m_deviceView=(m_deviceView+1)%3;m_deviceFirst=0;return;}
         if(in(x,y,770,600,990,638))
         {
             m_focus=28;m_deviceAddressEditing=false;input.setTyping(false);return;
@@ -5223,10 +5253,31 @@ namespace nx
         c.text(*m_font,("Project target: "+m_document.target().label()).c_str(),140,233,muted);
         constexpr const char* actions[]={"Pause","Continue","Step over","Step into","Step out"};
         for(unsigned i=0;i<5;++i)button(140+200.f*i,258,190,actions[i],m_device.ready()&&(i==0?!m_device.paused():m_device.paused()));
-        const auto& rows=m_deviceVariables?m_device.variables():m_device.rows();
-        if(rows.empty())c.text(*m_font,m_deviceVariables?"Pause the remote script to inspect its locals.":"No measured telemetry. Older runtimes may not support counters.",140,318,muted);
-        for(size_t i=0;i<rows.size()&&i<14;++i)
-        {const float x=140+500.f*(i/7),y=314+23.f*(i%7);c.clip(x,y,490,26);c.text(*m_font,rows[i].c_str(),x,y,text);c.noClip();}
+        if(m_deviceWatchEditing)
+        {
+            c.text(*m_font,"WATCH LIST / up to 12 VM names separated by commas",140,318,accent);
+            c.rect(140,350,1000,40,{0.24f,0.35f,0.48f,1});c.clip(146,350,988,40);
+            const auto tail=m_deviceWatchDraft.size()>100?m_deviceWatchDraft.substr(m_deviceWatchDraft.size()-100):m_deviceWatchDraft;
+            c.text(*m_font,tail.c_str(),150,360,text);c.noClip();
+            button(710,402,210,"Cancel",true);button(930,402,210,"Save watches",true);
+        }
+        else
+        {
+            std::vector<std::string> watchRows;
+            if(m_deviceView==2)
+            {
+                watchRows=m_device.watchRows();
+                if(watchRows.empty())for(const auto& name:m_document.debugWatches())watchRows.push_back(name+" = (pause to read)");
+            }
+            const auto& rows=m_deviceView==2?watchRows:m_deviceView==1?m_device.variables():m_device.rows();
+            if(rows.empty())c.text(*m_font,m_deviceView==2?"Add variable names to watch at breakpoints.":m_deviceView==1?"Pause the remote script to inspect its locals.":"No measured telemetry. Older runtimes may not support counters.",140,318,muted);
+            const size_t first=m_deviceView==2?0:std::min(m_deviceFirst,rows.size());
+            const size_t capacity=m_deviceView==2?12:14;
+            const size_t perColumn=m_deviceView==2?6:7;
+            for(size_t i=0;i+first<rows.size()&&i<capacity;++i)
+            {const float x=140+500.f*static_cast<float>(i/perColumn),y=314+23.f*static_cast<float>(i%perColumn);c.clip(x,y,490,26);c.text(*m_font,rows[first+i].c_str(),x,y,text);c.noClip();}
+            if(m_deviceView==2){c.rect(940,450,200,24,{0.20f,0.32f,0.45f,1});c.text(*m_font,"Edit watches",1040,452,text,Align::Center);}
+        }
         c.clip(140,480,230,32);c.text(*m_font,(m_device.liveStatus().empty()?"Live Link: "+m_device.liveScreen():m_device.liveStatus()).c_str(),140,490,muted);c.noClip();
         c.roundRect(380,480,240,32,4,m_device.ready()&&m_device.previewSupported()?Color{0.20f,0.32f,0.45f,1}:Color{0.20f,0.22f,0.25f,1});c.text(*m_font,"Console preview",500,486,text,Align::Center);
         c.roundRect(630,480,250,32,4,m_device.ready()&&m_device.actorsSupported()?Color{0.20f,0.32f,0.45f,1}:Color{0.20f,0.22f,0.25f,1});c.text(*m_font,"Live actors",755,486,text,Align::Center);
@@ -5234,10 +5285,10 @@ namespace nx
         c.text(*m_font,m_device.liveBusy()?"Updating...":"Push live script",1020,486,canPushLiveSource()?text:muted,Align::Center);
         c.clip(140,520,1000,24);c.text(*m_font,m_device.file().empty()?"Script location: none":(m_device.file()+":"+std::to_string(m_device.line())).c_str(),140,520,accent);c.noClip();
         c.clip(140,550,1000,24);c.text(*m_font,("Last log: "+m_device.log()).c_str(),140,550,muted);c.noClip();
-        c.clip(140,576,1000,24);c.text(*m_font,m_deviceFeedback.empty()?"Tracked allocations are not total physical memory use.":m_deviceFeedback.c_str(),140,578,muted);c.noClip();
+        c.clip(140,576,1000,24);c.text(*m_font,m_deviceFeedback.empty()?"Scroll counters. CPU-side timings include waits; not CPU utilisation.":m_deviceFeedback.c_str(),140,578,muted);c.noClip();
         button(140,600,200,"Sync watches",m_device.ready()&&m_device.sourceIdentity());
         button(350,600,200,"Locate node",m_device.paused()&&!m_device.fingerprint().empty());
-        button(560,600,200,m_deviceVariables?"Show telemetry":"Show locals",true);
+        button(560,600,200,m_deviceView==0?"Show locals":m_deviceView==1?"Show watches":"Show telemetry",true);
         button(770,600,220,"Play on Xbox",m_document.target().xbox());
         button(1000,600,150,"Back",true);
     }
@@ -5765,7 +5816,7 @@ namespace nx
     void BlueprintWorkspace::update(Services& s)
     {
         auto& input = *s.input;
-        m_device.update(s.platform->seconds());updateRemoteGraph(s.platform->seconds());pollXboxDeploy(s);
+        m_device.setWatchNames(m_document.debugWatches());m_device.update(s.platform->seconds());updateRemoteGraph(s.platform->seconds());pollXboxDeploy(s);
         resizeWorkspace(*s.canvas);
         rememberVisualTab();refreshWidgetPreview(s);refreshPlacementPreview(s);refreshContentPreviews(s);
         if (input.pressed(Action::Menu))
@@ -5782,7 +5833,7 @@ namespace nx
             if(m_focus==30){releaseRemotePreview(s);m_focus=27;return;}
             if(m_focus==29){m_actorEditName.clear();m_actorEditValue.clear();input.setTyping(false);m_focus=27;return;}
             if(m_focus==28){m_deployField=-1;m_deployPassword.clear();input.setTyping(false);m_focus=27;return;}
-            if(m_focus==27){m_deviceAddressEditing=false;input.setTyping(false);m_focus=24;return;}
+            if(m_focus==27){if(m_deviceWatchEditing){m_deviceWatchEditing=false;input.setTyping(false);return;}m_deviceAddressEditing=false;input.setTyping(false);m_focus=24;return;}
             if(m_focus==22&&m_sceneNaming){m_sceneNaming=false;input.setTyping(false);return;}
             if(m_focus){if(m_focus==25){m_deleteSelection.clear();m_skipDeleteConfirmation=false;}m_focus=0;input.setTyping(false);m_status="Input cancelled.";return;}
             if(m_marquee){m_marquee=false;m_selectedNodes=m_marqueeBase;m_selection=m_selectedNodes.empty()?static_cast<size_t>(-1):m_selectedNodes.back();m_left=input.raw().mouseButtons[0];return;}
@@ -7572,7 +7623,7 @@ namespace nx
             else if(m_focus==31)
             {
                 c.roundRect(330,250,620,210,8,{0.16f,0.18f,0.22f,1});c.text(*m_font,"BREAKPOINT CONDITION",350,265,accent);
-                c.text(*m_font,"Boolean VM local/global name, !name, or blank (always).",350,300,text);
+                c.text(*m_font,"VM boolean local/member/global, !name, or blank.",350,300,text);
                 c.rect(350,332,580,38,{0.24f,0.35f,0.48f,1});c.clip(356,332,568,38);c.text(*m_font,m_edit.c_str(),360,340,text);c.noClip();
                 c.text(*m_font,"Cancel",710,413,text,Align::Center);c.roundRect(790,400,140,40,4,{0.19f,0.4f,0.3f,1});c.text(*m_font,"Apply",860,411,text,Align::Center);
             }

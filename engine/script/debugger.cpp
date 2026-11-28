@@ -355,6 +355,8 @@ namespace nx
             reply.put("studioActors")->setFlag(true);
             reply.put("studioPins")->setFlag(true);
             reply.put("conditionalBreakpoints")->setFlag(true);
+            reply.put("studioWatches")->setFlag(true);
+            reply.put("telemetryHeartbeat")->setFlag(true);
             const auto* svc=m_host&&m_host->engine()?static_cast<const Services*>(m_host->engine()->GetUserData()):nullptr;
             reply.put("studioPreview")->setFlag(svc&&svc->development&&svc->device&&svc->device->previewCaptureSupported());
             if(!m_launchId.empty()){putText(reply,"launchId",m_launchId);reply.put("liveSource")->setFlag(true);}
@@ -404,6 +406,7 @@ namespace nx
                 putNumber(*t,"physicalBytes",static_cast<double>(s->platform->totalMemory()));
                 putNumber(*t,"freeBytes",static_cast<double>(s->platform->freeMemory()));
                 putNumber(*t,"fps",s->fps);putNumber(*t,"draws",s->draws);
+                if(s->frameTimingValid){putNumber(*t,"updateMs",s->updateMs);putNumber(*t,"submitMs",s->submitMs);}
                 if(s->audio)putNumber(*t,"voices",s->audio->voicesInUse());
             }
             const auto total=memStatsTotal();
@@ -448,6 +451,24 @@ namespace nx
         {
             const JsonValue* on = ask.find("on");
             profile(id, on && on->flag());
+        }
+        else if(name=="studioWatches")
+        {
+            JsonValue reply;putNumber(reply,"id",id);auto* list=reply.put("watches");list->setArray();
+            const auto* names=ask.find("names");
+            for(u32 i=0;m_paused&&m_stopped&&names&&i<names->count()&&i<12;++i)
+            {
+                const auto* item=names->at(i);if(!item||item->type()!=JsonValue::Type::String)continue;
+                const auto& label=item->text();if(label.empty()||label[0]=='!'||!validBreakpointCondition(label))continue;
+                auto* row=list->add();int type=0;void* address=nullptr;
+                if(!readDebuggerValue(m_stopped,label,type,address)||!address)
+                {putText(*row,"name",label);putText(*row,"value","out of scope");continue;}
+                if(type==m_stringType||(type>=asTYPEID_BOOL&&type<=asTYPEID_DOUBLE))
+                    describe(*row,label.c_str(),type,address);
+                else
+                {putText(*row,"name",label);putText(*row,"value","object (not evaluated)");}
+            }
+            send(reply.write(true));
         }
         else if(name=="studioPins"){studioPins(id);}
         else if(name=="studioPreview"){studioPreview(id);}

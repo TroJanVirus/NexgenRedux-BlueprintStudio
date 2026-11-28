@@ -713,6 +713,7 @@ namespace
                     }
                     const double updated = platform.seconds();
                     updating += updated - now;
+                    const double updateMs=(updated-now)*1000.0;
                     if (device->beginFrame({ 0, 0, 0, 1 }))
                     {
                         canvas.begin();
@@ -740,7 +741,12 @@ namespace
                             demo.caption(services);
                         }
                         canvas.end();
-                        drawing += platform.seconds() - updated;
+                        const double submitted=platform.seconds();
+                        drawing += submitted - updated;
+                        const double submitMs=(submitted-updated)*1000.0;
+                        // Exclude long stalls (such as a suspended debugger) from the last-frame sample.
+                        if(updateMs>=0&&updateMs<=250&&submitMs>=0&&submitMs<=250)
+                        {services.updateMs=static_cast<float>(updateMs);services.submitMs=static_cast<float>(submitMs);services.frameTimingValid=true;}
                         device->endFrame();
                         services.draws = canvas.draws();
                         if (options.record && !recording.frame(*device, audio))

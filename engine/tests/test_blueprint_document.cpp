@@ -2510,3 +2510,15 @@ NX_TEST(nativeBreakpointConditionPersistsAndUndoes)
     NX_EXPECT(doc.undo()&&!doc.graphs[0].nodes[0].watch);
     NX_EXPECT(doc.redo()&&doc.graphs[0].nodes[0].watchCondition=="!ready");
 }
+
+NX_TEST(nativeDebugWatchListPersistsAndUndoes)
+{
+    BlueprintDocument doc;doc.create();std::string error,bytes;
+    NX_EXPECT(doc.setDebugWatches({"bp_var_health","bp_global_score"},error));
+    NX_EXPECT(!doc.setDebugWatches({"bad()"},error));
+    NX_EXPECT(!doc.setDebugWatches({"same","same"},error));
+    NX_EXPECT(doc.serialize(bytes,error));BlueprintDocument copy;
+    NX_EXPECT(copy.load(bytes.data(),bytes.size(),error)&&copy.debugWatches()==doc.debugWatches());
+    NX_EXPECT(doc.undo()&&doc.debugWatches().empty());
+    NX_EXPECT(doc.redo()&&doc.debugWatches().size()==2);
+}

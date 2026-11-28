@@ -386,7 +386,10 @@ namespace nx
         std::string m_deviceAddress;
         bool m_deviceAddressEditing=false;
         std::string m_deviceFeedback,m_deviceExport;
-        bool m_deviceVariables=false;
+        unsigned m_deviceView=0;
+        size_t m_deviceFirst=0;
+        bool m_deviceWatchEditing=false;
+        std::string m_deviceWatchDraft;
         void updateRemoteActors(Services& s,float x,float y,bool click);
         void drawRemoteActors(Canvas& c);
         void updateRemotePreview(Services& s,float x,float y,bool click);

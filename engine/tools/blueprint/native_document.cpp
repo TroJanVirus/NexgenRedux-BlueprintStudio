@@ -2388,6 +2388,19 @@ namespace nx
         {error="Expected native Blueprint version 2. Browser prototypes are not supported.";return false;}
         BlueprintDocument candidate;candidate.name=root["name"].text();
         candidate.assetRoot=root["assetRoot"].text();
+        const auto watches=root["debugWatches"];
+        if(watches.exists())
+        {
+            if(!watches.isArray()||watches.count()>12){error="Invalid debug watch list.";return false;}
+            for(auto item=watches.first();item.exists();item=item.next())
+            {
+                const std::string value=item.text();
+                if(!item.isString()||value.empty()||value[0]=='!'||!validBreakpointCondition(value)||
+                    std::find(candidate.m_debugWatches.begin(),candidate.m_debugWatches.end(),value)!=candidate.m_debugWatches.end())
+                {error="Invalid or duplicate debug watch name.";return false;}
+                candidate.m_debugWatches.push_back(value);
+            }
+        }
         const auto target=root["target"];
         if(target.exists())
         {
@@ -2694,6 +2707,11 @@ namespace nx
         auto fail=[&](){error="Not enough memory to serialize Blueprint.";return false;};
         JsonValue root;
         if(!number(root,"version",2)||!text(root,"kind","NativeBlueprint")||!text(root,"name",name)||!text(root,"assetRoot",assetRoot))return fail();
+        if(!m_debugWatches.empty())
+        {
+            auto* watches=root.put("debugWatches");if(!watches)return fail();watches->setArray();
+            for(const auto& name:m_debugWatches){auto* item=watches->add();if(!item)return fail();item->setText(name);}
+        }
         auto* target=root.put("target");
         if(!m_target.valid()||!target||!number(*target,"platform",m_target.platform)||!number(*target,"ram",m_target.ram)||!number(*target,"resolution",m_target.resolution))return fail();
         if(!manifests.empty())
@@ -3610,6 +3628,19 @@ namespace nx
         error.clear();return true;
     }
 
+    bool BlueprintDocument::setDebugWatches(const std::vector<std::string>& names,std::string& error)
+    {
+        if(names.size()>12){error="Maximum 12 watched VM names.";return false;}
+        std::vector<std::string> seen;
+        for(const auto& name:names)
+        {
+            if(name.empty()||name[0]=='!'||!validBreakpointCondition(name)||std::find(seen.begin(),seen.end(),name)!=seen.end())
+            {error="Use unique VM variable names only.";return false;}
+            seen.push_back(name);
+        }
+        if(names!=m_debugWatches){recordGraphList();m_debugWatches=names;}
+        error.clear();return true;
+    }
     bool BlueprintDocument::setTarget(const BlueprintTarget& target)
     {
         if(!target.valid())return false;
@@ -3619,7 +3650,7 @@ namespace nx
     void BlueprintDocument::recordGraphList()
     {
         if(m_undo.size()>=kHistory)m_undo.erase(m_undo.begin());
-        m_undo.push_back({static_cast<size_t>(-1),{},m_revision,graphs,manifests,m_visualAssets,m_target});
+        m_undo.push_back({static_cast<size_t>(-1),{},m_revision,graphs,manifests,m_visualAssets,m_target,m_debugWatches});
         m_redo.clear();m_revision=++m_nextRevision;
     }
     const BlueprintDocument::Graph* BlueprintDocument::function(const std::string& owner,const std::string& functionName) const
@@ -4265,7 +4296,7 @@ namespace nx
         auto e=std::move(m_undo.back());m_undo.pop_back();
         if(e.graph==static_cast<size_t>(-1))
         {
-            m_redo.push_back({e.graph,{},m_revision,std::move(graphs),std::move(manifests),std::move(m_visualAssets),m_target});graphs=std::move(e.all);manifests=std::move(e.manifests);m_visualAssets=std::move(e.visualAssets);m_target=e.target;
+            m_redo.push_back({e.graph,{},m_revision,std::move(graphs),std::move(manifests),std::move(m_visualAssets),m_target,std::move(m_debugWatches)});graphs=std::move(e.all);manifests=std::move(e.manifests);m_visualAssets=std::move(e.visualAssets);m_target=e.target;m_debugWatches=std::move(e.debugWatches);
         }
         else
         {
@@ -4279,7 +4310,7 @@ namespace nx
         auto e=std::move(m_redo.back());m_redo.pop_back();
         if(e.graph==static_cast<size_t>(-1))
         {
-            m_undo.push_back({e.graph,{},m_revision,std::move(graphs),std::move(manifests),std::move(m_visualAssets),m_target});graphs=std::move(e.all);manifests=std::move(e.manifests);m_visualAssets=std::move(e.visualAssets);m_target=e.target;
+            m_undo.push_back({e.graph,{},m_revision,std::move(graphs),std::move(manifests),std::move(m_visualAssets),m_target,std::move(m_debugWatches)});graphs=std::move(e.all);manifests=std::move(e.manifests);m_visualAssets=std::move(e.visualAssets);m_target=e.target;m_debugWatches=std::move(e.debugWatches);
         }
         else
         {

@@ -22,6 +22,9 @@ namespace nx
         bool paused()const{return m_paused;}
         bool sourceIdentity()const{return m_sourceIdentity;}
         bool conditionalBreakpoints()const{return m_conditionalBreakpoints;}
+        bool watchesSupported()const{return m_watchesSupported;}
+        const std::vector<std::string>& watchRows()const{return m_watchRows;}
+        void setWatchNames(const std::vector<std::string>& names){if(names!=m_watchNames){m_watchNames=names;m_watchRows.clear();m_watchDirty=true;m_watchOutstanding=0;}}
         bool traceSupported()const{return m_traceSupported;}
         struct Actor {u32 id=0,parent=0;std::string name;bool spatial=false;};
         struct ActorProperty {std::string name,value;bool editable=false;};
@@ -119,7 +122,7 @@ namespace nx
         void disconnect()
         {
             m_socket.close();if(m_network)netStop();m_network=m_ready=m_paused=m_hello=m_sourceIdentity=m_traceSupported=m_tracing=m_traceOutstanding=m_traceGap=false;m_hits.clear();
-            m_in.clear();m_out.clear();m_conditionalBreakpoints=false;m_telemetryOutstanding=false;m_rows.clear();m_log.clear();m_file.clear();m_fingerprint.clear();m_variables.clear();m_line=0;
+            m_in.clear();m_out.clear();m_conditionalBreakpoints=false;m_telemetryOutstanding=false;m_heartbeatSupported=false;m_watchesSupported=false;m_watchRows.clear();m_watchDirty=true;m_watchOutstanding=0;m_rows.clear();m_log.clear();m_file.clear();m_fingerprint.clear();m_variables.clear();m_line=0;
             m_previewSupported=m_previewBusy=false;m_previewPixels.clear();m_previewWidth=m_previewHeight=0;m_previewStatus.clear();++m_previewSequence;
             m_pinsSupported=m_pinsCapped=false;m_pinValues.clear();m_actorsSupported=false;m_actorRequest=0;m_actorEpoch=m_actorOffset=m_actorCount=m_actorSelected=0;m_actors.clear();m_actorProperties.clear();m_actorScreen.clear();m_actorStatus.clear();
             m_status="Disconnected";m_launchId.clear();m_address.clear();m_liveSupported=false;m_liveStage=0;m_liveScreen.clear();m_liveFingerprint.clear();std::string().swap(m_liveBytes);
@@ -155,7 +158,21 @@ namespace nx
             if(m_previewBusy&&now>m_previewDeadline){fail("Preview response timed out.");return;}
             if(actorBusy()&&now>m_actorDeadline){fail("Actor request timed out; reconnect to refresh.");return;}
             if(liveBusy()&&now>m_liveDeadline){m_liveStatus="Live Link timed out; reconnect to inspect actual running source.";fail("Live Link response timed out.");return;}
-            if(m_telemetryOutstanding&&now>m_telemetryDeadline&&!liveBusy()){fail("Device telemetry timed out; reconnect to recover.");return;}
+            if(m_telemetryOutstanding&&now>m_telemetryDeadline&&!liveBusy())
+            {if(m_heartbeatSupported){fail("Device telemetry timed out; reconnect to recover.");return;}m_telemetryOutstanding=false;}
+            if(m_watchOutstanding&&now>m_watchDeadline){m_watchOutstanding=0;m_watchRows={"Watch response timed out; pause again to retry."};}
+            if(m_ready&&m_paused&&m_watchesSupported&&m_watchDirty&&!m_watchOutstanding&&m_out.size()<4096)
+            {
+                m_watchDirty=false;m_watchRows.clear();
+                if(!m_watchNames.empty())
+                {
+                    if(++m_watchSequence>1000000)m_watchSequence=1000;
+                    JsonValue request;request.put("cmd")->setText("studioWatches");request.put("id")->setNumber(m_watchSequence);
+                    auto* names=request.put("names");names->setArray();
+                    for(const auto& name:m_watchNames)names->add()->setText(name);
+                    queue(request.write(true));m_watchOutstanding=m_watchSequence;m_watchDeadline=now+5;
+                }
+            }
             if(m_ready&&!liveBusy()&&!m_telemetryOutstanding&&now>=m_poll&&m_out.size()<4096)
             {m_poll=now+1;m_telemetryDeadline=now+12;m_telemetryOutstanding=true;queue("{\"cmd\":\"telemetry\",\"id\":4}");if(m_liveSupported)queue("{\"cmd\":\"liveInfo\",\"id\":10}");}
             if(m_ready&&!liveBusy()&&m_tracing&&!m_traceOutstanding&&now>=m_tracePoll){m_tracePoll=now+0.25;m_traceOutstanding=true;queue("{\"cmd\":\"traceDrain\",\"id\":7}");}
@@ -212,18 +229,18 @@ namespace nx
             if(event=="hello"&&id==1&&!m_ready)
             {
                 if(root["version"].exact()!=1){fail("Unsupported debugger protocol.");return;}
-                m_sourceIdentity=root["sourceIdentity"].flag();m_conditionalBreakpoints=root["conditionalBreakpoints"].flag();m_traceSupported=root["remoteTrace"].flag();m_actorsSupported=root["studioActors"].flag();m_pinsSupported=root["studioPins"].flag();m_previewSupported=root["studioPreview"].flag();m_launchId=root["launchId"].text();if(!studioLaunchIdentity(m_launchId))m_launchId.clear();m_liveSupported=root["liveSource"].flag()&&!m_launchId.empty();m_ready=true;m_poll=now;m_status="Connected; waiting for device telemetry.";
+                m_sourceIdentity=root["sourceIdentity"].flag();m_conditionalBreakpoints=root["conditionalBreakpoints"].flag();m_watchesSupported=root["studioWatches"].flag();m_heartbeatSupported=root["telemetryHeartbeat"].flag();m_traceSupported=root["remoteTrace"].flag();m_actorsSupported=root["studioActors"].flag();m_pinsSupported=root["studioPins"].flag();m_previewSupported=root["studioPreview"].flag();m_launchId=root["launchId"].text();if(!studioLaunchIdentity(m_launchId))m_launchId.clear();m_liveSupported=root["liveSource"].flag()&&!m_launchId.empty();m_ready=true;m_poll=now;m_status="Connected; waiting for device telemetry.";
                 queue("{\"cmd\":\"ready\",\"id\":2}");
             }
             else if(event=="stopped"&&m_ready)
             {
-                m_paused=true;m_pinValues.clear();m_pinsCapped=false;m_status=std::string("Stopped: ")+root["reason"].text();m_file.clear();m_fingerprint.clear();m_variables.clear();m_line=0;
+                m_paused=true;m_watchRows.clear();m_watchDirty=true;m_watchOutstanding=0;m_pinValues.clear();m_pinsCapped=false;m_status=std::string("Stopped: ")+root["reason"].text();m_file.clear();m_fingerprint.clear();m_variables.clear();m_line=0;
                 queue("{\"cmd\":\"stack\",\"id\":3}");
                 queue("{\"cmd\":\"variables\",\"id\":5,\"frame\":0,\"scope\":\"locals\",\"limit\":12}");
                 if(m_pinsSupported)queue("{\"cmd\":\"studioPins\",\"id\":14}");
             }
             else if(event=="continued")
-            {m_paused=false;m_pinValues.clear();m_pinsCapped=false;m_status="Running";m_file.clear();m_fingerprint.clear();m_variables.clear();m_line=0;}
+            {m_paused=false;m_watchRows.clear();m_watchOutstanding=0;m_watchDirty=true;m_pinValues.clear();m_pinsCapped=false;m_status="Running";m_file.clear();m_fingerprint.clear();m_variables.clear();m_line=0;}
             else if(event=="launchFailed"){m_launchStatus=root["text"].text();}
             else if(id==8){m_launchStatus=root["message"].text();}
             else if(id>=11&&id<=13&&id==m_actorRequest)
@@ -303,6 +320,12 @@ namespace nx
                 m_previewWidth=static_cast<u32>(w);m_previewHeight=static_cast<u32>(h);++m_previewSequence;
                 m_previewStatus="Last captured console frame (RGB565).";
             }
+            else if(m_watchOutstanding&&id==m_watchOutstanding&&m_paused)
+            {
+                m_watchOutstanding=0;m_watchRows.clear();
+                for(auto item=root["watches"].first();item.exists()&&m_watchRows.size()<12;item=item.next())
+                    m_watchRows.push_back(std::string(item["name"].text()).substr(0,96)+" = "+std::string(item["value"].text()).substr(0,120));
+            }
             else if(id==14&&m_paused)
             {
                 m_pinValues.clear();m_pinsCapped=false;
@@ -342,6 +365,7 @@ namespace nx
                 };
                 m_rows.emplace_back(std::string("Device: ")+t["platform"].text("unknown"));
                 number("FPS (last reported)","fps",1,"");number("Draws (last frame)","draws",1,"");
+                number("CPU-side update","updateMs",1," ms");number("CPU-side draw submit","submitMs",1," ms");
                 if(t["physicalBytes"].exact()>0)number("Physical RAM","physicalBytes",1048576," MiB");
                 else m_rows.emplace_back("Physical RAM: unknown");
                 if(t["physicalBytes"].exact()>0&&t["freeBytes"].isNumber())number("Free RAM","freeBytes",1048576," MiB");
@@ -375,7 +399,10 @@ namespace nx
         std::string m_liveScreen,m_liveFingerprint,m_liveStatus,m_liveBytes;
         double m_tracePoll=0;
         std::vector<RemoteHit> m_hits;
-        bool m_telemetryOutstanding=false,m_conditionalBreakpoints=false;
+        bool m_telemetryOutstanding=false,m_conditionalBreakpoints=false,m_heartbeatSupported=false,m_watchesSupported=false,m_watchDirty=true;
+        unsigned m_watchSequence=1000,m_watchOutstanding=0;
+        double m_watchDeadline=0;
+        std::vector<std::string> m_watchNames,m_watchRows;
         double m_deadline=0,m_poll=0,m_telemetryDeadline=0;
         std::string m_in,m_out,m_status="Disconnected",m_log,m_file,m_fingerprint,m_launchId,m_launchStatus,m_address;
         unsigned m_line=0;
