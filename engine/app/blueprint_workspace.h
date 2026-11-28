@@ -342,7 +342,7 @@ namespace nx
         std::vector<std::string> m_inspectorDraft;
         std::vector<bool> m_inspectorChanged;
         bool m_inspectorReplace=false,m_inspectorLiteral=false;
-        unsigned m_inspectorColour=0,m_commentColour=0;
+        unsigned m_inspectorColour=0,m_commentColour=0,m_pinColour=0;
         bool m_rgbOpen=false,m_rgbReplace=true;
         std::string m_rgbText;
         bool updateRGB(Input& input,float x,float y,bool left,bool click,unsigned& colour);

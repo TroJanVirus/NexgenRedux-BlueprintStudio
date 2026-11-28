@@ -370,6 +370,7 @@ namespace nx
     bool blueprintInputComponents(const std::string& type,const std::string& value,std::vector<std::string>& components)
     {
         const auto labels=blueprintInputComponentLabels(type);
+        if(type=="Color"){unsigned rgb;if(blueprintParseRGB(value,rgb)){components={std::to_string(static_cast<float>((rgb>>16)&255u)/255.f),std::to_string(static_cast<float>((rgb>>8)&255u)/255.f),std::to_string(static_cast<float>(rgb&255u)/255.f),"1"};return true;}}
         if(labels.empty()||value.size()>270)return false;
         std::vector<std::string> result;
         size_t start=0;
@@ -403,7 +404,8 @@ namespace nx
     {
         if(!colour)return {};
         constexpr unsigned legacy[]={0x34577A,0x963B3D,0x407850,0xA1672C,0x594D91,0x2E7A82,0x8A4A75,0x595E66};
-        if(colour<8)colour=legacy[colour];char out[7];snprintf(out,sizeof(out),"%06X",colour&0xFFFFFFu);return out;
+        if(colour<8)colour=legacy[colour];
+        char out[7];snprintf(out,sizeof(out),"%06X",colour&0xFFFFFFu);return out;
     }
     bool blueprintVariableType(const std::string& type){return type=="Entity@"||blueprintLiteralType(type)||!blueprintArrayElement(type).empty()||type=="Playlist@"||type=="WebSocket@"||type=="Widget@"||type=="Thread@"||type=="Channel@"||type=="Samples@"||type=="AudioStream@"||type=="Voice"||type=="Sound@"||type=="Curve@"||type=="Batch@"||type=="Packed@"||type=="Zip@"||type=="Font@"||type=="Texture@"||type=="BP_MapInt"||type=="BP_MapString"||type=="BP_SetInt"||type=="BP_SetString"||customTypeName(type)||classTypeName(type);}
     bool blueprintLosslessConversion(const std::string& from,const std::string& to)
@@ -2287,7 +2289,7 @@ namespace nx
                 Node node{n["id"].text(),kind,ref,x,y};
                 if(n["watch"].exists()&&n["watch"].type()!=JsonTree::Type::Bool){error="Invalid node watch flag.";return false;}
                 node.watch=n["watch"].flag();
-                for(const char* key:{"displayName","comment"})if(n[key].exists()&&(!n[key].isString()||n[key].text().size()>(std::string(key)=="displayName"?96u:256u)||n[key].text().find('\0')!=std::string::npos)){error="Invalid node annotation.";return false;}
+                for(const char* key:{"displayName","comment"})if(n[key].exists()){const std::string annotation=n[key].text();if(!n[key].isString()||annotation.size()>(std::string(key)=="displayName"?96u:256u)){error="Invalid node annotation.";return false;}}
                 node.displayName=n["displayName"].text();node.comment=n["comment"].text();
                 if(n["colour"].exists())
                 {
@@ -2894,12 +2896,14 @@ namespace nx
         else {record(graph);graphs[graph]=std::move(staged.graphs[graph]);}
         error.clear();return true;
     }
-    bool BlueprintDocument::setInputValue(size_t graph,size_t node,const std::string& pin,const std::string& value,std::string& error)
+    bool BlueprintDocument::setInputValue(size_t graph,size_t node,const std::string& pin,const std::string& rawValue,std::string& error)
     {
+        std::string value=rawValue;
         if(graph>=graphs.size()||node>=graphs[graph].nodes.size()){error="Invalid node.";return false;}
         auto& n=graphs[graph].nodes[node];
         BlueprintNodeSpec spec;
         const auto* input=nodeSpec(graphs[graph],n,spec)?findPin(spec.inputs,pin):nullptr;
+        if(input&&input->type=="Color"){unsigned rgb;if(blueprintParseRGB(value,rgb))value=blueprintRGBHex(rgb);}
         if(!input||!inputLiteral(input->type,value))
         {error="Invalid value for input "+pin+".";return false;}
         if(n.kind=="actor:spawn-asset"&&pin=="id")

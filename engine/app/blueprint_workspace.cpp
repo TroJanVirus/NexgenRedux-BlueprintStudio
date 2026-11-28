@@ -372,7 +372,7 @@ namespace nx
         revealTab(static_cast<size_t>(found-m_graphTabs.begin()));
         cancelDrag();clearWire();m_nodeClickTime=m_wireClickTime=-1;m_diagnostic={};
         m_quickDrag=m_quickMenu=m_pinMenu=m_rightDown=false;m_quickVariableFirst=0;
-        m_nodeContext=false;m_layoutMenu=m_layoutDragging=false;m_layoutComment=m_layoutLink=static_cast<size_t>(-1);m_selectedNodes.clear();
+        m_nodeContext=false;m_rgbOpen=false;m_commentResize=0;m_layoutMenu=m_layoutDragging=false;m_layoutComment=m_layoutLink=static_cast<size_t>(-1);m_selectedNodes.clear();
         m_graph = index; m_selection = static_cast<size_t>(-1);
         rebuildPins();fitGraph();filterCatalogue();
         if(found->viewed){m_x=found->x;m_y=found->y;m_zoom=found->zoom;}
@@ -2283,6 +2283,7 @@ namespace nx
                 const auto property=m_visualProperty.rfind("sound",0)==0?
                     tree.root()["sounds"][m_visualProperty=="soundMove"?"move":m_visualProperty=="soundAccept"?"accept":m_visualProperty=="soundBack"?"back":"change"]:state[m_visualProperty.c_str()];
                 m_visualText=property.isNumber()?std::to_string(property.exact()):property.text();
+                if(themeColorProperty(m_visualProperty)&&!m_visualText.empty()&&m_visualText.front()=='#')m_visualText.erase(0,1);
                 if(themeMediaProperty(m_visualProperty))
                 {
                     m_themeMediaFiles.clear();m_themeMediaFirst=0;std::vector<std::string> available;std::string error;
@@ -4410,7 +4411,7 @@ namespace nx
         }
         c.roundRect(410,398,460,38,4,{0.24f,0.35f,0.48f,1});c.text(*m_font,("HEX  "+m_rgbText).c_str(),420,407,text);
         c.text(*m_font,"Enter = Apply | Escape = Cancel",410,438,muted);
-        c.roundRect(410,462,120,38,4,{0.22f,0.31f,0.43f,1});c.text(*m_font,"Default",470,471,text,Align::Center);
+        c.roundRect(410,462,120,38,4,{0.22f,0.31f,0.43f,1});c.text(*m_font,m_focus==6?"Reset RGB":"Default",470,471,text,Align::Center);
         c.roundRect(620,462,120,38,4,{0.19f,0.4f,0.3f,1});c.text(*m_font,"Apply",680,471,text,Align::Center);
         c.roundRect(750,462,120,38,4,{0.22f,0.31f,0.43f,1});c.text(*m_font,"Cancel",810,471,text,Align::Center);
     }
@@ -4995,7 +4996,7 @@ namespace nx
             }
             m_left=left;return;
         }
-        if(m_rgbOpen&&(m_focus==15||m_focus==11)){auto& colour=m_focus==15?m_inspectorColour:m_commentColour;const auto before=colour;updateRGB(input,x,y,left,click,colour);if(m_focus==15&&colour!=before)m_inspectorColourChanged=true;m_left=left;return;}
+        if(m_rgbOpen&&(m_focus==15||m_focus==11||m_focus==6)){auto& colour=m_focus==15?m_inspectorColour:m_focus==11?m_commentColour:m_pinColour;const auto before=colour;updateRGB(input,x,y,left,click,colour);if(m_focus==15&&colour!=before)m_inspectorColourChanged=true;if(m_focus==6&&!m_rgbOpen&&colour!=before){const auto alpha=m_inputComponents[3];blueprintInputComponents("Color",colour?blueprintRGBHex(colour):"FFFFFF",m_inputComponents);m_inputComponents[3]=alpha;}m_left=left;return;}
         if(click&&((m_focus==10&&!in(x,y,150,100,1130,625))||(m_focus==17&&!in(x,y,210,100,1070,620))||(m_focus==15&&!in(x,y,160,68,1140,652))||(m_focus==6&&!in(x,y,340,226,940,m_inputChoices.empty()?450.f:628.f))||(m_focus==5&&!in(x,y,340,240,940,445))||(m_focus==9&&!in(x,y,200,226,1080,466))||(m_focus>=11&&m_focus<=14&&!in(x,y,260,230,1020,450))))
         {m_focus=0;input.setTyping(false);m_left=left;return;}
         if(m_focus==10)
@@ -5183,6 +5184,7 @@ namespace nx
         if(m_focus==6&&click&&in(x,y,790,391,920,430)){m_focus=0;input.setTyping(false);m_left=left;return;}
         if(m_focus==6&&!m_inputComponents.empty())
         {
+            if(m_editType=="Color"&&m_inputComponents.size()==4&&click&&in(x,y,550,391,640,430)){const auto byte=[](const std::string& v){return static_cast<unsigned>(std::round(std::clamp(std::strtof(v.c_str(),nullptr),0.f,1.f)*255.f));};m_pinColour=0x1000000u|(byte(m_inputComponents[0])<<16)|(byte(m_inputComponents[1])<<8)|byte(m_inputComponents[2]);m_rgbText=blueprintRGBHex(m_pinColour);m_rgbOpen=true;m_rgbReplace=true;m_left=left;return;}
             if(click&&in(x,y,360,285,920,341))
             {m_inputComponent=std::min(m_inputComponents.size()-1,static_cast<size_t>((x-360)/(560.f/static_cast<float>(m_inputComponents.size()))));m_inputReplace=true;}
             for(u32 i=0;i<input.typedCount()+(inputApply?1u:0u);++i)
@@ -6309,6 +6311,7 @@ namespace nx
                 }
                 c.paragraph(*m_font,m_status.c_str(),360,345,560,muted);
                 c.roundRect(360,391,180,39,4,{0.22f,0.31f,0.43f,1});c.text(*m_font,"Reset value",450,400,text,Align::Center);
+                if(m_editType=="Color"){c.roundRect(550,391,90,39,4,{0.22f,0.31f,0.43f,1});c.text(*m_font,"RGB / Hex",595,400,text,Align::Center);}
                 c.roundRect(650,391,130,39,4,{0.19f,0.4f,0.3f,1});c.text(*m_font,"Apply",715,400,text,Align::Center);
                 c.roundRect(790,391,130,39,4,{0.22f,0.31f,0.43f,1});c.text(*m_font,"Cancel",855,400,text,Align::Center);
                 c.text(*m_font,"Enter = Apply | Escape = Cancel",360,431,muted);

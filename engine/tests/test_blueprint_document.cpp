@@ -250,6 +250,7 @@ NX_TEST(nativeResizableCommentAndRGBRoundTrip)
     unsigned colour=0,black=0;NX_EXPECT(blueprintParseRGB("#a1b2c3",colour)&&blueprintRGBHex(colour)=="A1B2C3");
     NX_EXPECT(blueprintParseRGB("000000",black)&&black!=0&&blueprintRGBHex(black)=="000000");
     NX_EXPECT(!blueprintParseRGB("#XYZ123",colour));
+    std::vector<std::string> components;NX_EXPECT(blueprintInputComponents("Color","#FF8000",components)&&components.size()==4&&components[0]=="1.000000"&&components[3]=="1");
     NX_EXPECT(doc.addComment(0,{0},"Group",error)&&doc.resizeComment(0,0,-32,-16,600,300));
     NX_EXPECT(doc.editComment(0,0,"Group",colour,error)&&doc.serialize(bytes,error));
     BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error));
