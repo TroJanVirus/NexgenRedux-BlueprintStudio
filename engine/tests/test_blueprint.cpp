@@ -1426,6 +1426,32 @@ NX_TEST(nativeDebuggerLocalTraceUsesRealStatementCallbacksWithoutNetwork)
 #endif
 
 #ifdef NX_DESKTOP_BLUEPRINT
+NX_TEST(nativeWorkspacePlayControlsPauseStepAndRestart)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    r.platform.workspaceFiles=true;
+    r.platform.files["showcase/main/screen.json"]="{\"title\":\"Home\"}";
+    r.platform.files["showcase/main/main.as"]="class Home : Screen {}";
+    if(!r.screens.init(r.services,"showcase","main")){NX_EXPECT(false);return;}
+    r.step(3);r.screens.setDevelopmentPaused(true);
+    BlueprintDocument doc;doc.create();std::string error,bytes;
+    const bool authored=doc.addNode(1,"var:set:int",350,240,error)&&doc.setInputValue(1,1,"value","5",error)&&doc.connect(1,0,"then",1,"in",error)&&doc.serialize(bytes,error);
+    NX_EXPECT(authored);if(!authored)return;
+    r.platform.files["own/play-controls.bp.json"]=bytes;
+    BlueprintWorkspace studio;studio.open(r.services);NX_EXPECT(studio.active());if(!studio.active())return;
+    auto& state=r.platform.state;state.hasMouse=true;
+    auto frame=[&](){r.assets.finish();r.input.update(state,1.0f/60);r.platform.now+=1.0/60;if(studio.previewing())studio.updatePreview(r.services,1.0f/60);else studio.update(r.services);r.device->beginFrame({});r.canvas.begin();if(!studio.previewing()||studio.tracePaused()||studio.playPaused())studio.draw(r.canvas);else r.screens.draw();if(studio.previewing())studio.drawPreviewOverlay(r.canvas);r.canvas.end();r.device->endFrame();};
+    auto chord=[&](Key key){state.keys[static_cast<size_t>(Key::Control)]=true;state.keys[static_cast<size_t>(key)]=true;frame();state.keys[static_cast<size_t>(key)]=false;state.keys[static_cast<size_t>(Key::Control)]=false;frame();};
+    frame();r.platform.dropped="play-controls.bp.json";frame();state.mouseX=553;state.mouseY=53;state.mouseButtons[0]=true;frame();state.mouseButtons[0]=false;frame();
+    for(int i=0;i<10&&studio.previewing();++i)frame();
+    NX_EXPECT(studio.previewing());if(studio.previewing())
+    {
+        chord(Key::P);NX_EXPECT(studio.playPaused());const auto paused=r.host.runs();frame();frame();NX_EXPECT(r.host.runs()==paused);
+        chord(Key::N);NX_EXPECT(studio.playPaused()&&r.host.runs()>paused);const auto stepped=r.host.runs();frame();NX_EXPECT(r.host.runs()==stepped);
+        chord(Key::R);NX_EXPECT(studio.previewing()&&!studio.playPaused()&&r.services.save!=&r.save);
+    }
+    studio.stopPreview(r.services);studio.close(r.services);NX_EXPECT(!studio.previewing()&&r.services.save==&r.save);
+}
 NX_TEST(nativeWorkspaceWatchPausesAtBoundaryAndStepsWithoutRunningWhilePaused)
 {
     Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
@@ -2475,7 +2501,8 @@ NX_TEST(nativeBlueprintCameraOrbitKeepsCubeCenteredAndReturnsToStart)
 NX_TEST(nativeCameraSequencerFollowsActorAndDispatchesMarkersOnce)
 {
     BlueprintDocument doc;std::string error,source,manifest,id;
-    NX_EXPECT(blueprint_orbit::author(doc,error,0));
+    // The timeline fixture renders without setting another camera in Draw.
+    NX_EXPECT(blueprint_orbit::author(doc,error,1));
     auto& update=doc.graphs[1];update.nodes.resize(1);update.links.clear();
     const std::string encoded="0,0,2,8,0,0,0,60,0;0.5,4,2,8,0,0,0,50,2@Reveal;2,0,2,4,0,0,0,60,1";
     std::vector<BlueprintCameraKey> keys;

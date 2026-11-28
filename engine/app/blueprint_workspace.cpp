@@ -3982,13 +3982,42 @@ namespace nx
         s.input->consume();s.screens->setDevelopmentPaused(false);
     }
 
+    bool BlueprintWorkspace::launchCompiledPreview(Services& s,const std::string& owner)
+    {
+        std::vector<Screens::PreviewScreen> screens;
+        for(const auto& output:m_previewOutputs)
+        {
+            Screens::PreviewScreen item;
+            snprintf(item.info.id,sizeof(item.info.id),"%s",output.id.c_str());
+            snprintf(item.info.title,sizeof(item.info.title),"%s",output.id.c_str());
+            item.source=output.source;item.manifest=output.manifest;screens.push_back(std::move(item));
+        }
+        if(!startTrace(s)){focusPreviewError(m_status);return false;}
+        s.platform->setEditorChrome(false);
+        if(!s.screens->startProjectPreview(screens,owner,m_status,m_document.assetRoot))
+        {
+            s.platform->setEditorChrome(true);stopTrace();focusPreviewError(m_status);
+            s.input->setWantsPointer(true);s.input->setTyping(false);return false;
+        }
+        m_playing=true;m_playPaused=false;m_previewStart=owner;clearWire();
+        m_status="Playing "+owner+". Ctrl+P pauses; Ctrl+R restarts; Escape stops.";
+        NX_INFO("Blueprint Studio: preview started: %s",owner.c_str());return true;
+    }
+    void BlueprintWorkspace::setPlayPaused(Services& s,bool paused)
+    {
+        if(m_playPaused==paused)return;
+        if(paused){m_playPointer=s.input->wantsPointer();m_playTyping=s.input->typing();s.input->setWantsPointer(true);s.input->setTyping(false);s.platform->lockMouse(false);}
+        else {s.input->setWantsPointer(m_playPointer);s.input->setTyping(m_playTyping);}
+        m_playPaused=paused;s.screens->setDevelopmentPaused(paused);s.input->consume();
+        m_left=s.input->raw().mouseButtons[0];
+    }
     void BlueprintWorkspace::stopPreview(Services& s)
     {
         if(!m_playing)return;
         const bool scene=m_sceneEditor;
         stopTrace();
         s.screens->stopPreview();
-        m_playing=false;m_sceneEditor=false;m_sceneExit=false;
+        m_playing=false;m_sceneEditor=false;m_sceneExit=false;m_playPaused=false;m_playPauseKey=m_playStepKey=m_playRestartKey=false;
         s.platform->setEditorChrome(true);
         s.input->setWantsPointer(true);
         s.input->setTyping(false);
@@ -4042,7 +4071,32 @@ namespace nx
         }
         else if(s.input->pressed(Action::Menu)||s.input->raw().keys[static_cast<size_t>(Key::Escape)])
         {stopPreview(s);return;}
-        else if(m_traceDebugger)
+        if(!m_sceneEditor&&!m_tracePaused)
+        {
+            const auto& raw=s.input->raw();const bool ctrl=raw.keys[static_cast<size_t>(Key::Control)];
+            const bool p=ctrl&&raw.keys[static_cast<size_t>(Key::P)],n=ctrl&&raw.keys[static_cast<size_t>(Key::N)],r=ctrl&&raw.keys[static_cast<size_t>(Key::R)];
+            const bool pause=p&&!m_playPauseKey,step=n&&!m_playStepKey,restart=r&&!m_playRestartKey;
+            m_playPauseKey=p;m_playStepKey=n;m_playRestartKey=r;
+            bool resumeClick=false,stepClick=false,restartClick=false,stopClick=false;
+            if(m_playPaused)
+            {
+                const bool left=raw.mouseButtons[0],click=left&&!m_left;m_left=left;
+                const auto& canvas=*s.canvas;const float scale=std::min(canvas.pixelWidth()/kBaseWidth,canvas.pixelHeight()/kBaseHeight);
+                const float x=scale>0?(raw.mouseX-(canvas.pixelWidth()-kBaseWidth*scale)*0.5f)/scale:0;
+                const float y=scale>0?(raw.mouseY-(canvas.pixelHeight()-kBaseHeight*scale)*0.5f)/scale:0;
+                resumeClick=click&&in(x,y,220,624,416,660);stepClick=click&&in(x,y,428,624,624,660);
+                restartClick=click&&in(x,y,636,624,832,660);stopClick=click&&in(x,y,844,624,1040,660);
+            }
+            if(stopClick){stopPreview(s);return;}
+            if(restart||restartClick){const auto owner=m_previewStart;stopPreview(s);m_playRestartKey=r;launchCompiledPreview(s,owner);return;}
+            if(pause||resumeClick){setPlayPaused(s,!m_playPaused);return;}
+            if(m_playPaused)
+            {
+                if(step||stepClick){setPlayPaused(s,false);s.screens->update(dt);setPlayPaused(s,true);if(s.screens->failed()){const std::string error=s.screens->error();stopPreview(s);m_status="Preview error: "+error;focusPreviewError(error);}}
+                return;
+            }
+        }
+        if(!m_sceneEditor&&m_traceDebugger)
         {
             const auto& raw=s.input->raw();
             const bool key=raw.keys[static_cast<size_t>(Key::Control)]&&raw.keys[static_cast<size_t>(Key::T)];
@@ -4121,6 +4175,16 @@ namespace nx
             c.noClip();
             for(float x:{270.f,462.f,682.f})c.roundRect(x,624,x==270.f?180.f:208.f,36,4,{0.19f,0.33f,0.50f,1});
             c.text(*m_font,"Continue",360,631,text,Align::Center);c.text(*m_font,"Step update",566,631,text,Align::Center);c.text(*m_font,"Stop preview",786,631,text,Align::Center);
+            return;
+        }
+        if(playPaused()&&m_font)
+        {
+            c.design(kBaseWidth,kBaseHeight);c.noClip();
+            c.roundRect(192,565,876,106,8,{0.10f,0.14f,0.20f,0.98f});
+            c.text(*m_font,"PLAY TEST PAUSED / simulation halted",220,578,accent);
+            c.text(*m_font,"Ctrl+P resume | Ctrl+N one update | Ctrl+R restart | Esc stop",220,601,muted);
+            const char* labels[]={"Resume","Step update","Restart","Stop"};
+            for(unsigned i=0;i<4;++i){const float x=220.f+208.f*static_cast<float>(i);c.roundRect(x,624,196,36,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,labels[i],x+98,631,text,Align::Center);}
             return;
         }
         if(!m_sceneEditor||!m_sceneExit||!m_font)return;
@@ -5618,39 +5682,12 @@ namespace nx
                 if(!compileBlueprintProject(m_document,m_previewOutputs,m_status,&location))focusDiagnostic(location);
                 else if(validateProject(s,m_previewOutputs))
                 {
-                    std::vector<Screens::PreviewScreen> screens;
-                    for(const auto& output:m_previewOutputs)
-                    {
-                        Screens::PreviewScreen item;
-                        snprintf(item.info.id,sizeof(item.info.id),"%s",output.id.c_str());
-                        snprintf(item.info.title,sizeof(item.info.title),"%s",output.id.c_str());
-                        item.source=output.source;item.manifest=output.manifest;screens.push_back(std::move(item));
-                    }
                     const auto selected=m_document.graphs[m_graph].owner;
                     const auto scope=m_document.moduleForOwner(selected);
                     const auto owner=scope.empty()?m_document.screens().front():scope;
                     if(!m_document.assetRoot.empty()&&!s.platform->fileTime(("own/"+m_document.assetRoot).c_str()))
                         m_status="Project asset folder is missing. Restore it before play testing.";
-                    else if(startTrace(s))
-                    {
-                        s.platform->setEditorChrome(false);
-                        if(s.screens->startProjectPreview(screens,owner,m_status,m_document.assetRoot))
-                        {
-                            m_playing=true;clearWire();m_status="Playing "+owner+(m_traceDebugger?". Ctrl+T pauses trace; Escape stops.":". Escape returns to Studio.");
-                            NX_INFO("Blueprint Studio: preview started: %s",owner.c_str());
-                        }
-                        else
-                        {
-                            s.platform->setEditorChrome(true);
-                            stopTrace();focusPreviewError(m_status);
-                            s.input->setWantsPointer(true);s.input->setTyping(false);
-                        }
-                    }
-                    else
-                    {
-                        focusPreviewError(m_status);
-                        s.input->setWantsPointer(true);s.input->setTyping(false);
-                    }
+                    else launchCompiledPreview(s,owner);
                 }
                 m_left=left;return;
             }

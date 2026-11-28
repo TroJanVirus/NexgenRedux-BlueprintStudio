@@ -26,6 +26,7 @@ namespace nx
         void update(Services& services);
         bool previewing() const { return m_playing; }
         bool tracePaused() const { return m_playing&&m_tracePaused; }
+        bool playPaused() const { return m_playing&&m_playPaused; }
         void updatePreview(Services& services, float dt);
         void stopPreview(Services& services);
         void draw(Canvas& canvas);
@@ -290,6 +291,10 @@ namespace nx
         BlueprintLocation m_traceLocation;
         std::vector<std::string> m_traceValues;
         std::vector<BlueprintScreenOutput> m_previewOutputs;
+        std::string m_previewStart;
+        bool m_playPaused=false,m_playPauseKey=false,m_playStepKey=false,m_playRestartKey=false,m_playPointer=false,m_playTyping=false;
+        void setPlayPaused(Services& s,bool paused);
+        bool launchCompiledPreview(Services& s,const std::string& owner);
         BlueprintLocation m_diagnostic;
         void cancelDrag() { m_drag = false; m_marquee=false; }
         struct NodePins { std::vector<std::string> inputs, outputs, inputTypes, outputTypes; float height = 72, width = 196; std::string title; std::vector<std::string> fieldValue; std::vector<float> fieldX,fieldW; float literalFieldW=0; };
