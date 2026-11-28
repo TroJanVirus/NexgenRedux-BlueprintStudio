@@ -998,6 +998,31 @@ NX_TEST(nativeAudioEffectsAndPresetRoundTrip)
     tone.effects.echoFeedback=1.1f;NX_EXPECT(!blueprintToneWave(tone,again,error));
     tone.effects.echoFeedback=0.4f;tone.channels=0;NX_EXPECT(!blueprintToneWave(tone,again,error));
 }
+NX_TEST(nativeFirstPersonTemplateCompilesAndRuns)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    r.platform.workspaceFiles=true;
+    BlueprintDocument doc;std::string source,error,bytes;
+    if(!blueprintProjectTemplate("first-person",doc,error)||!compileBlueprint(doc,source,error)||!doc.serialize(bytes,error))
+    {NX_ERROR("First-person template: %s",error.c_str());NX_EXPECT(false);return;}
+    NX_EXPECT(doc.graphs.size()==12&&source.find("bp_player_motion(")!=std::string::npos);
+    for(const auto& g:doc.graphs)NX_EXPECT(!g.comments.empty());
+    NX_EXPECT(blueprintCreateAssetRoot(r.platform,doc.assetRoot,error));
+    NX_EXPECT(blueprintStageTemplateMedia(r.platform,doc.assetRoot,"first-person",error));
+    NX_EXPECT(r.platform.files.count("own/"+doc.assetRoot+"/_global/model/robot.glb")==1);
+    r.platform.files["project/main/screen.json"]="{\"title\":\"First person\"}";
+    r.platform.files["project/main/main.as"]=source;
+    if(!r.screens.init(r.services,"project","main")){NX_EXPECT(false);return;}
+    r.step(120);NX_EXPECT(!r.screens.failed());
+    NX_EXPECT(r.services.world!=nullptr);if(!r.services.world)return;
+    // Exercise the real native input path and world update, not just script compilation.
+    r.input.simulate(Action::Up);r.step(10);NX_EXPECT(!r.screens.failed());
+    r.input.simulate(Action::Accept);r.step(10);NX_EXPECT(!r.screens.failed());
+    NX_EXPECT(blueprintExportPackage(r.platform,doc,"first-person.bp.zip",error));
+    BlueprintDocument restored;
+    NX_EXPECT(blueprintImportPackage(r.platform,"first-person.bp.zip",restored,error));
+    NX_EXPECT(compileBlueprint(restored,source,error));
+}
 NX_TEST(nativeAudioGraphTemplatesCompileAndRun)
 {
     BlueprintTone tone;tone.channels=2;tone.independentStereo=true;tone.rate=22050;

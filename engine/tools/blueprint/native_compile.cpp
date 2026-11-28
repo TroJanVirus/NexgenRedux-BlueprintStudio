@@ -1160,6 +1160,43 @@ namespace nx
         for(const auto& graph:document.graphs)for(const auto& node:graph.nodes)
             if(node.kind=="curve:cubic")usesCubic=true;
         if(usesCubic)result+="\nCurve@ bp_curve_cubic(Vec2 p0, Vec2 p1, Vec2 p2, Vec2 p3)\n{\n    Curve@ c = Curve();\n    c.add(p0); c.add(p1); c.add(p2); c.add(p3);\n    return c;\n}\n";
+        bool usesPlayer=false;
+        for(const auto& graph:document.graphs)for(const auto& node:graph.nodes)
+            if(node.kind.rfind("player:",0)==0)usesPlayer=true;
+        if(usesPlayer)result+=R"BP_PLAYER(
+// First-person math helpers, adapted from Redux's Blocks demonstration.
+// All gameplay state belongs to the graph; these functions have no side effects.
+float bp_player_yaw(float yaw, Vec2 mouse, Vec2 pad, float dt, float mouseSensitivity, float padSpeed)
+{
+    float next = yaw + mouse.x * mouseSensitivity + pad.x * padSpeed * dt;
+    return next - floor(next / 360.0f) * 360.0f;
+}
+float bp_player_pitch(float pitch, Vec2 mouse, Vec2 pad, float dt, float mouseSensitivity, float padSpeed)
+{
+    return clamp(pitch - mouse.y * mouseSensitivity + pad.y * padSpeed * dt, -85, 85);
+}
+Vec3 bp_player_motion(Vec3 motion, Vec2 move, float yaw, float dt, bool grounded, bool jump,
+    float speed, float jumpSpeed, float groundGrip, float airGrip)
+{
+    float a = yaw * 0.0174532925f;
+    float magnitude = sqrt(move.x * move.x + move.y * move.y);
+    if (magnitude > 1) move = move / magnitude;
+    Vec3 ahead(sin(a), 0, -cos(a)), side(cos(a), 0, sin(a));
+    Vec3 wanted = (ahead * -move.y + side * move.x) * max(0.0f, speed);
+    float grip = clamp((grounded ? groundGrip : airGrip) * dt, 0, 1);
+    motion.x += (wanted.x - motion.x) * grip;
+    motion.z += (wanted.z - motion.z) * grip;
+    if (grounded && jump) motion.y = max(0.0f, jumpSpeed);
+    return motion;
+}
+Vec3 bp_player_eye(Vec3 feet, float height) { return feet + Vec3(0, height, 0); }
+Vec3 bp_player_target(Vec3 eye, float yaw, float pitch)
+{
+    float a = yaw * 0.0174532925f, p = pitch * 0.0174532925f;
+    return eye + Vec3(sin(a) * cos(p), sin(p), -cos(a) * cos(p));
+}
+Vec3 bp_player_angles(float yaw) { return Vec3(0, -yaw, 0); }
+)BP_PLAYER";
         bool usesAudio=false;
         for(const auto& graph:document.graphs)for(const auto& node:graph.nodes)
             if(node.kind.rfind("audio:",0)==0)usesAudio=true;
