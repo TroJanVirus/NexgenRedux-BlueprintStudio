@@ -973,6 +973,14 @@ NX_TEST(nativeSceneEditorSessionUsesInstalledScriptAndWritesOnlyProjectScenes)
     NX_EXPECT(strcmp(r.services.save->get("loose",""),"hidden")==0);
     NX_EXPECT(strstr(r.services.save->get("scene_loaded",""),"entities")!=nullptr);
     NX_EXPECT(r.platform.files[base+"scene.json"]=="{\"ground\":2}");
+    std::string preview;unsigned omitted=0;
+    const auto preservedScene=r.platform.files[base+"scene.json"];
+    r.platform.files[base+"scene.json"]=R"({"entities":[{"shape":"box","place":[1,2,3],"behaviour":"Bad","sound":"bad.wav","camera":60,"emit":{}},{"camera":60}]})";
+    const auto beforePreview=r.platform.files[base+"scene.json"];
+    NX_EXPECT(blueprintScenePreview(r.platform,root,"Screen",preview,omitted,error));
+    NX_EXPECT(omitted==1&&preview.find("box")!=std::string::npos&&preview.find("behaviour")==std::string::npos&&preview.find("camera")==std::string::npos&&preview.find("sound")==std::string::npos&&preview.find("emit")==std::string::npos);
+    NX_EXPECT(r.platform.files[base+"scene.json"]==beforePreview);
+    r.platform.files[base+"scene.json"]=preservedScene;
     NX_EXPECT(r.platform.files.count(base+".scene.json.backup")&&r.platform.files.count(base+"other.json")==0);
     NX_EXPECT(r.platform.kept["Screen.scene"]=="old-host");
     r.screens.stopPreview();

@@ -1052,7 +1052,7 @@ namespace nx
     }
     void BlueprintWorkspace::releasePlacementPreview()
     {
-        m_placementRoots.clear();m_sceneOrbit=m_scenePan=false;
+        m_placementRoots.clear();m_sceneNativeEntities.clear();m_sceneNativeShown=m_sceneNativeOmitted=0;m_sceneNativeError.clear();m_sceneOrbit=m_scenePan=false;
         if(m_placementWorld){destroy(m_placementWorld);m_placementWorld=nullptr;}
         m_placementReady=false;m_placementRevision=static_cast<size_t>(-1);m_placementScreen.clear();m_actorPreviewId.clear();m_actorPreviewRoot=0;
     }
@@ -1142,6 +1142,21 @@ namespace nx
             if(m_actorPreviewRoot)NX_INFO("Blueprint Studio: Actor class preview ready: %s",previewId.c_str());
             return;
         }
+        if(s.platform)
+        {
+            std::string nativeJson;
+            if(blueprintScenePreview(*s.platform,m_document.assetRoot,owner,nativeJson,m_sceneNativeOmitted,m_sceneNativeError))
+            {
+                JsonTree nativeTree;
+                if(nativeTree.parse(nativeJson.data(),nativeJson.size())&&nativeTree.root().isArray())
+                    for(auto entity=nativeTree.root().first();entity.exists();entity=entity.next())
+                    {
+                        const auto id=space.make(entity,folder.c_str(),{0,0,0});
+                        if(id){m_sceneNativeEntities.push_back(id);++m_sceneNativeShown;}else ++m_sceneNativeOmitted;
+                    }
+                if(m_sceneNativeShown)NX_INFO("Blueprint Studio: native scene context ready: %u entities",m_sceneNativeShown);
+            }
+        }
         for(const auto& marker:actorMarkers(m_document,owner))
         {
             if(shown>=120){++failed;continue;}
@@ -1201,7 +1216,8 @@ namespace nx
                 for(unsigned depth=0;depth<64;++depth)
                 {const auto parent=world.parentOf(root);if(!parent)break;root=parent;}
                 const auto item=std::find_if(m_placementRoots.begin(),m_placementRoots.end(),[&](const auto& entry){return entry.first==root;});
-                if(item==m_placementRoots.end()||(!m_placementSelectedId.empty()&&item->second!=m_placementSelectedId))return;
+                const bool nativeContext=m_placementSelectedId.empty()&&std::find(m_sceneNativeEntities.begin(),m_sceneNativeEntities.end(),root)!=m_sceneNativeEntities.end();
+                if(!nativeContext&&(item==m_placementRoots.end()||(!m_placementSelectedId.empty()&&item->second!=m_placementSelectedId)))return;
                 if(const auto* spatial=space.getSpatial(id))
                 {
                     const auto pos=space.worldPlace(id);const auto& w=spatial->world;
@@ -1528,7 +1544,9 @@ namespace nx
             const char* labels[]={"Orbit L","Orbit R","Zoom +","Zoom -","Frame"};
             for(unsigned i=0;i<5;++i){const float x=630+74*static_cast<float>(i);c.rect(x,551,71,22,{0.19f,0.33f,0.50f,1});c.text(*m_font,labels[i],x+35,552,text,Align::Center);}
             c.text(*m_font,"Height -",635,575,text);c.text(*m_font,"Height +",925,575,text);
-            if(layout.wide){c.text(*m_font,("Plane Y: "+std::to_string(m_placementHeight)).c_str(),1010,551,muted);c.text(*m_font,"Right drag: orbit | Middle drag: pan | Wheel: zoom",1010,575,muted);}
+            if(layout.wide){c.text(*m_font,("Plane Y: "+std::to_string(m_placementHeight)).c_str(),1010,551,muted);c.text(*m_font,"Right drag: orbit | Middle drag: pan | Wheel: zoom",1010,575,muted);
+                const auto context=m_sceneNativeError.empty()?"Native scene context: "+std::to_string(m_sceneNativeShown)+" visible / "+std::to_string(m_sceneNativeOmitted)+" omitted (read-only)":m_sceneNativeError;
+                c.clip(1010,526,std::max(1.f,layout.right-layout.toolsDx-1010),22);c.text(*m_font,context.c_str(),1010,528,muted);c.noClip();}
             c.text(*m_font,m_gizmoMode==0?"Move XYZ":m_gizmoMode==1?"Rotate XYZ":"Scale XYZ",815,575,accent,Align::Center);
         }
         else

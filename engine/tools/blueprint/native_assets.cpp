@@ -1,6 +1,8 @@
 #include "tools/blueprint/native_assets.h"
 #include "platform/platform.h"
 #include "base/json_tree.h"
+#include "base/json_value.h"
+#include <cmath>
 #include <algorithm>
 #include <cstring>
 #include <ctime>
@@ -170,6 +172,52 @@ namespace nx
         if(!p.readFile(manifest.c_str(),check,MemTag::General)||check.size!=list.size()||std::memcmp(check.data,list.data(),list.size())!=0)
         {error="Could not verify native scene list.";return false;}
         error.clear();return true;
+    }
+    bool blueprintScenePreview(Platform& p,const std::string& root,const std::string& screen,std::string& json,unsigned& omitted,std::string& error)
+    {
+        json="[]";omitted=0;error.clear();
+        if(!blueprintAssetRoot(root)||!folderId(screen)){error="Invalid scene preview path.";return false;}
+        const auto base="own/"+root+"/"+screen+"/asset/";
+        std::string name="scene";
+        FileData manifest;
+        if(p.readFile((base+"scenes.json").c_str(),manifest,MemTag::General))
+        {
+            JsonTree tree;
+            if(manifest.size>1024*1024||!tree.parse(reinterpret_cast<const char*>(manifest.data),manifest.size))
+            {error="Invalid scene preview manifest.";return false;}
+            const auto scenes=tree.root()["scenes"],last=tree.root()["last"];
+            const double index=last.isNumber()?last.exact():0;
+            if(!scenes.isArray()||!scenes.count()||scenes.count()>12||!std::isfinite(index)||index<0||index>=scenes.count()||std::floor(index)!=index)
+            {error="Invalid selected native scene.";return false;}
+            name=scenes[static_cast<u32>(index)]["file"].text();
+            if(name!="scene"&&!(name.size()>5&&name.size()<=11&&name.rfind("scene",0)==0&&name.find_first_not_of("0123456789",5)==std::string::npos))
+            {error="Unsafe native scene filename.";return false;}
+        }
+        FileData file;
+        if(!p.readFile((base+name+".json").c_str(),file,MemTag::General))return true;
+        JsonTree tree;
+        if(file.size>1024*1024||!tree.parse(reinterpret_cast<const char*>(file.data),file.size)||!tree.root().isObject())
+        {error="Invalid native scene preview.";return false;}
+        const auto entities=tree.root()["entities"];
+        if(!entities.exists())return true;
+        if(!entities.isArray()){error="Native scene entities are invalid.";return false;}
+        JsonValue out;out.setArray();
+        for(u32 i=0;i<entities.count();++i)
+        {
+            const auto entity=entities[i];
+            if(i>=512||!entity.isObject()||(!entity["model"].isString()&&!entity["shape"].isString()&&!entity["sprite"].isString())){++omitted;continue;}
+            // Explicit allowlist: no behaviour, cameras, sounds, physics, scripts,
+            // triggers, emitters or arbitrary asset-loading callbacks.
+            JsonValue safe;
+            for(auto field=entity.first();field.exists();field=field.next())
+            {
+                const std::string key=field.key();
+                if(key!="place"&&key!="angles"&&key!="size"&&key!="model"&&key!="skin"&&key!="sprite"&&key!="shape"&&key!="color"&&key!="shine"&&key!="glowing"&&key!="twoSided"&&key!="shadow"&&key!="views"&&key!="frames")continue;
+                if(auto* value=safe.put(key))value->read(field);
+            }
+            if(auto* entry=out.add())entry->setCopy(safe);
+        }
+        json=out.write(true);return true;
     }
     std::string blueprintAssetImportPath(const std::string& file)
     {

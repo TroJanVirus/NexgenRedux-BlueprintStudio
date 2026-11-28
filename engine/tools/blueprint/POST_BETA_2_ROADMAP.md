@@ -207,3 +207,8 @@ The Windows compiler rejected two ternary integer widths passed to Canvas::rect 
 ## Verified visual baseline and graph overview
 
 Workflow 46090383210 succeeded across Windows x64, macOS ARM64, Linux native desktop and sanitizer/document jobs. Artifact 15240918803 contains actual graph, categorized navigation, four-edge docking, scene navigation, widget and actor captures. The optional Graph Overview minimap added after this baseline is a native canvas rendering of the active graph with selected nodes, links and viewport outline. Click/drag recentres the graph without authoring mutations; its visibility is persisted, it follows docking bounds, and it can be disabled from Layout. The new native desktop regression asserts graph JSON equality after navigation. Combined minimap verification is pending. Genuine detached OS windows and generic panel docking remain outstanding.
+
+
+## Native scene context integration
+
+The placement viewport now reads the selected saved Redux scene from scenes.json and renders up to 512 supported visual entities as read-only context in the same preview World as linked Blueprint actor instances. The loader never writes the original scene, validates scene filenames, filters through a visual-only field allowlist and excludes behaviour, audio, physics, cameras and emitters. Native context participates in frame-all without becoming a selectable Blueprint instance. Unsupported entities are counted rather than silently converted. A runtime test verifies the filtered data and original bytes. Native terrain, triggers, direct editing of the original scene from the placement tab, and a true unified scene undo stack remain unimplemented; the original editor remains the authority for native scene edits. Verification pending.

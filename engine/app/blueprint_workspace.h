@@ -191,7 +191,9 @@ namespace nx
         bool m_sceneOrbit=false,m_scenePan=false;
         float m_scenePointerX=0,m_scenePointerY=0,m_placementMoveHeight=0;
         void frameScenePlacement();
-        unsigned m_placementOmitted=0;
+        unsigned m_placementOmitted=0,m_sceneNativeShown=0,m_sceneNativeOmitted=0;
+        std::string m_sceneNativeError;
+        std::vector<unsigned> m_sceneNativeEntities;
         void releasePlacementPreview();
         void refreshPlacementPreview(Services& s);
         bool m_actorConstructionPreview=false,m_actorConstructionApplied=false;

@@ -9,6 +9,8 @@ namespace nx
     bool blueprintCopySharedAssets(Platform& platform,const std::string& source,const std::string& destination,std::string& error);
     bool blueprintCopyAssets(Platform& platform,const std::string& source,const std::string& destination,const std::string& screen,std::string& error);
     bool blueprintPrepareSceneEditor(Platform& platform,const std::string& root,const std::string& screen,std::string& error);
+    // Read only the last selected native scene's renderable entities. Never write or execute it.
+    bool blueprintScenePreview(Platform& platform,const std::string& root,const std::string& screen,std::string& json,unsigned& omitted,std::string& error);
     std::string blueprintAssetImportPath(const std::string& file);
     // Recognize explicitly staged projects and native export folders.
     bool blueprintImportProjectFolderName(const std::string& folder);
