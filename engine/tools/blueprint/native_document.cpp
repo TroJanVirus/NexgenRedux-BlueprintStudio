@@ -2565,7 +2565,7 @@ namespace nx
             std::vector<BlueprintPin> vars;
             if(typedGlobal(kind)){for(const auto& f:moduleGlobals(g.owner))vars.push_back({f.name,f.type});}
             else if(!variables(vars,error,g.owner))return false;
-            const auto it=std::find_if(vars.begin(),vars.end(),[&](const BlueprintPin& p){return (functionTarget.empty()||p.name==functionTarget)&&(customTypeName(p.type)||classTypeName(p.type));});
+            const auto it=std::find_if(vars.begin(),vars.end(),[&](const BlueprintPin& p){return (functionTarget.empty()||p.name==functionTarget)&&(customTypeName(p.type)||classTypeName(p.type)||p.type=="Thread@"||p.type=="Channel@"||p.type=="Samples@"||p.type=="AudioStream@");});
             if(it==vars.end()){error="Declare a custom typed variable first.";return false;}value=it->name;
         }
         if(typeNode(kind))
@@ -3132,7 +3132,7 @@ namespace nx
             std::vector<BlueprintPin> vars;std::string why;
             if(typedGlobal(node.kind)){for(const auto& f:moduleGlobals(graph.owner))vars.push_back({f.name,f.type});}
             else if(!variables(vars,why,graph.owner))return false;
-            const auto p=std::find_if(vars.begin(),vars.end(),[&](const BlueprintPin& v){return v.name==node.ref&&(customTypeName(v.type)||classTypeName(v.type));});
+            const auto p=std::find_if(vars.begin(),vars.end(),[&](const BlueprintPin& v){return v.name==node.ref&&(customTypeName(v.type)||classTypeName(v.type)||v.type=="Thread@"||v.type=="Channel@"||v.type=="Samples@"||v.type=="AudioStream@");});
             if(p==vars.end())return false;
             if(node.kind.ends_with(":set"))spec.inputs.push_back({"value",p->type});
             else {spec.outputs={{"value",p->type}};spec.pure=true;spec.result=p->type;}
