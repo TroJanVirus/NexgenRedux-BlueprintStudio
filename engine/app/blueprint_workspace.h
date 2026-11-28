@@ -69,7 +69,16 @@ namespace nx
         void openActorViewport(const std::string& id);
         bool updateContentDrawer(Services& s,float x,float y,bool left,bool click);
         void drawContentDrawer(Canvas& c);
-        bool m_contentDrawer=false;
+        bool m_contentDrawer=false,m_contentFloating=false,m_contentPanelDrag=false;
+        float m_contentPanelX=0.25f,m_contentPanelY=0.65f,m_contentPanelWidth=620,m_contentGrabX=0,m_contentGrabY=0;
+        struct ContentBounds {float left,top,right,bottom;};
+        ContentBounds contentBounds() const;
+        struct ContentPreview {std::string id;World* world=nullptr;};
+        std::vector<ContentPreview> m_contentPreviews;
+        size_t m_contentPreviewRevision=static_cast<size_t>(-1);
+        std::string m_contentPreviewScreen;
+        void refreshContentPreviews(Services& s);
+        void releaseContentPreviews();
         size_t m_contentFirst=0;
         std::string m_contentDrag;
         float m_contentDragX=0,m_contentDragY=0;

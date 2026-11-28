@@ -154,6 +154,12 @@ with log.open("wb") as output:
         click(285,660)
         click(1200,688)
         shot("graph-content-drawer.png")
+        wait_for(lambda:"native content preview ready" in log.read_text(errors="replace"),"native thumbnail")
+        click(850,514)
+        shot("content-floating.png")
+        # Floating default bounds: x=171, y=351, right=791. Dock button is near x=629.
+        click(629,365)
+        shot("content-redocked.png")
         click(310,560)
         shot("actor-from-drawer.png")
         drag(970,470,940,470)
