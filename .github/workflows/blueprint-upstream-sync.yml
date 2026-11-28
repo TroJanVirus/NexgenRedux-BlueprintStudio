@@ -1,4 +1,4 @@
-name: Verify upstream clock nodes and stereo authoring
+name: Verify upstream clock, audio graphs and joint authoring
 on:
   workflow_dispatch:
   pull_request:
