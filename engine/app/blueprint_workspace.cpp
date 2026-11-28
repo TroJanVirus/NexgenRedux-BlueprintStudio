@@ -172,11 +172,12 @@ namespace nx
             ",\"actorRight\":"+std::to_string(m_actorRightPanel)+",\"scale\":"+std::to_string(m_uiScale)+
             ",\"collapsed\":"+std::to_string(m_actorCollapsed)+",\"content\":"+(m_contentDrawer?"true":"false")+
             ",\"contentFloating\":"+(m_contentFloating?"true":"false")+",\"contentX\":"+std::to_string(m_contentPanelX)+
-            ",\"contentY\":"+std::to_string(m_contentPanelY)+",\"contentWidth\":"+std::to_string(m_contentPanelWidth)+"}\n";
+            ",\"contentY\":"+std::to_string(m_contentPanelY)+",\"contentWidth\":"+std::to_string(m_contentPanelWidth)+
+            ",\"contentTop\":"+(m_contentDockTop?"true":"false")+",\"contentHeight\":"+std::to_string(m_contentPanelHeight)+"}\n";
     }
     void BlueprintWorkspace::loadLayout(Services& s)
     {
-        m_leftPanel=248;m_graphRightPanel=268;m_actorRightPanel=310;m_uiScale=0;m_actorCollapsed=0;m_contentDrawer=false;m_contentFloating=false;m_contentPanelX=0.25f;m_contentPanelY=0.65f;m_contentPanelWidth=620;
+        m_leftPanel=248;m_graphRightPanel=268;m_actorRightPanel=310;m_uiScale=0;m_actorCollapsed=0;m_contentDrawer=false;m_contentFloating=false;m_contentPanelX=0.25f;m_contentPanelY=0.65f;m_contentPanelWidth=620;m_contentDockTop=false;m_contentPanelHeight=174;
         FileData file;JsonTree tree;
         if(s.platform->readFile("own/blueprint-editor-layout.json",file,MemTag::General)&&file.size&&file.size<=4096&&
             tree.parse(reinterpret_cast<const char*>(file.data),file.size))
@@ -195,6 +196,7 @@ namespace nx
                 m_contentDrawer=root["content"].flag();m_contentFloating=root["contentFloating"].flag();
                 m_contentPanelX=bounded("contentX",0.25f,0,1);m_contentPanelY=bounded("contentY",0.65f,0,1);
                 m_contentPanelWidth=bounded("contentWidth",620,460,1000);
+                m_contentDockTop=root["contentTop"].flag();m_contentPanelHeight=bounded("contentHeight",174,174,510);
                 NX_INFO("Blueprint Studio: restored editor layout");
             }
         }
@@ -202,7 +204,7 @@ namespace nx
     }
     void BlueprintWorkspace::saveLayout(Services& s)
     {
-        if(m_splitter||m_contentPanelDrag)return; // persist the final divider position, not every intermediate frame.
+        if(m_splitter||m_contentPanelDrag||m_contentResize)return; // persist the final divider position, not every intermediate frame.
         const auto bytes=layoutBytes();if(bytes==m_layoutBaseline)return;
         const auto previous=m_status;
         if(writeVerified(s,"own/blueprint-editor-layout.json",bytes))m_layoutBaseline=bytes;
@@ -223,7 +225,7 @@ namespace nx
         if(std::abs(logicalWidth-kWidth)>0.5f||std::abs(logicalHeight-kHeight)>0.5f)
         {
             cancelDrag();clearWire();m_layoutDragging=m_quickDrag=m_quickMenu=m_pan=false;
-            cancelVisualPlacement();cancelActorDrag();m_contentDrag.clear();m_contentPanelDrag=false;m_splitter=0;m_actorOrbit=false;m_widgetPreviewDrag=m_widgetDragging=false;m_placementReady=false;
+            cancelVisualPlacement();cancelActorDrag();m_contentDrag.clear();m_contentPanelDrag=m_contentResize=false;m_splitter=0;m_actorOrbit=false;m_widgetPreviewDrag=m_widgetDragging=false;m_placementReady=false;
         }
         kWidth=logicalWidth;kHeight=logicalHeight;kLeft=m_leftPanel;kRight=kWidth-m_graphRightPanel;kBottom=kHeight-46;
         const float extra=std::max(0.f,kHeight-kBaseHeight);
@@ -366,7 +368,9 @@ namespace nx
     float BlueprintWorkspace::tabRight() const
     {return m_actorEditor?kWidth-m_actorRightPanel:kRight;}
     float BlueprintWorkspace::tabTop() const
-    {return kBottom-(!m_actorEditor&&!visualTabOpen()&&m_contentDrawer&&!m_contentFloating?174.f:0.f)-30.f;}
+    {return kBottom-(!m_actorEditor&&!visualTabOpen()&&m_contentDrawer&&!m_contentFloating&&!m_contentDockTop?contentBounds().bottom-contentBounds().top:0.f)-30.f;}
+    float BlueprintWorkspace::graphAreaTop() const
+    {return !m_actorEditor&&!visualTabOpen()&&m_contentDrawer&&!m_contentFloating&&m_contentDockTop?contentBounds().bottom:kTop;}
     void BlueprintWorkspace::revealTab(size_t index)
     {
         const size_t visible=static_cast<size_t>(std::max(1.f,(tabRight()-kLeft-8)/146.f));
@@ -626,8 +630,8 @@ namespace nx
         }
         for(const auto& l:graph.links)for(const auto& p:l.route){left=std::min(left,p.x-6);top=std::min(top,p.y-6);right=std::max(right,p.x+6);bottom=std::max(bottom,p.y+6);}
         if(!graph.comments.empty()){left-=18;top-=44;right+=18;bottom+=18;}
-        m_zoom=std::clamp(std::min((kRight-kLeft-48)/(right-left),(kBottom-kTop-48)/(bottom-top)),0.25f,1.0f);
-        m_x=24-left*m_zoom;m_y=24-top*m_zoom;
+        m_zoom=std::clamp(std::min((kRight-kLeft-48)/(right-left),(tabTop()-graphAreaTop()-48)/(bottom-top)),0.25f,1.0f);
+        m_x=24-left*m_zoom;m_y=graphAreaTop()-kTop+24-top*m_zoom;
     }
 
     bool BlueprintWorkspace::writeVerified(Services& s,const std::string& path,const std::string& bytes)
@@ -2498,12 +2502,17 @@ namespace nx
     }
     BlueprintWorkspace::ContentBounds BlueprintWorkspace::contentBounds() const
     {
-        if(!m_contentFloating)return {kLeft,kBottom-174,kRight,kBottom};
-        const float width=std::min(m_contentPanelWidth,kWidth-24),height=174;
+        const float height=std::min(m_contentPanelHeight,std::max(174.f,kBottom-kTop-160));
+        if(!m_contentFloating)return m_contentDockTop?ContentBounds{kLeft,kTop,kRight,kTop+height}:ContentBounds{kLeft,kBottom-height,kRight,kBottom};
+        const float width=std::min(m_contentPanelWidth,kWidth-24);
         const float x=12+m_contentPanelX*std::max(0.f,kWidth-width-24);
         const float y=kTop+m_contentPanelY*std::max(0.f,kBottom-kTop-height);
         return {x,y,x+width,y+height};
     }
+    size_t BlueprintWorkspace::contentColumns(const ContentBounds& bounds) const
+    {return static_cast<size_t>(std::max(1.f,std::floor((bounds.right-bounds.left-16)/148.f)));}
+    size_t BlueprintWorkspace::contentRows(const ContentBounds& bounds) const
+    {return static_cast<size_t>(std::max(1.f,std::floor((bounds.bottom-bounds.top-58)/112.f)));}
     void BlueprintWorkspace::releaseContentPreviews()
     {
         for(auto& preview:m_contentPreviews){if(preview.world)destroy(preview.world);if(preview.ui)destroy(preview.ui);}
@@ -2520,9 +2529,9 @@ namespace nx
             const auto screens=m_document.screens();if(!screens.empty())screen=screens.front();
         }
         const auto bounds=contentBounds();const auto& assets=m_document.visualAssets();
-        const size_t columns=static_cast<size_t>(std::max(1.f,(bounds.right-bounds.left-16)/148.f));
+        const size_t capacity=contentColumns(bounds)*contentRows(bounds);
         std::vector<std::string> visible;
-        for(size_t i=0;i<columns&&m_contentFirst+i<assets.size()&&visible.size()<4;++i)
+        for(size_t i=0;i<capacity&&m_contentFirst+i<assets.size()&&visible.size()<4;++i)
             if(assets[m_contentFirst+i].kind=="actor"||assets[m_contentFirst+i].kind=="widget")visible.push_back(assets[m_contentFirst+i].id);
         if(m_contentPreviewRevision==m_document.revision()&&m_contentPreviewScreen==screen&&visible.size()==m_contentPreviews.size()&&
             std::equal(visible.begin(),visible.end(),m_contentPreviews.begin(),[](const std::string& id,const ContentPreview& p){return id==p.id;}))return;
@@ -2593,6 +2602,17 @@ namespace nx
     bool BlueprintWorkspace::updateContentDrawer(Services& s,float x,float y,bool left,bool click)
     {
         auto bounds=contentBounds();
+        if(m_contentResize)
+        {
+            if(left)
+            {
+                if(m_contentFloating)m_contentPanelWidth=std::clamp(m_contentStartWidth+x-m_contentResizeX,460.f,1000.f);
+                const float delta=y-m_contentResizeY;
+                m_contentPanelHeight=std::clamp(m_contentStartHeight+(!m_contentFloating&&!m_contentDockTop?-delta:delta),174.f,510.f);
+            }
+            else m_contentResize=false;
+            return true;
+        }
         if(m_contentPanelDrag)
         {
             if(left)
@@ -2600,13 +2620,18 @@ namespace nx
                 m_contentFloating=true;
                 const float width=std::min(m_contentPanelWidth,kWidth-24);
                 m_contentPanelX=std::clamp((x-m_contentGrabX-12)/std::max(1.f,kWidth-width-24),0.f,1.f);
-                m_contentPanelY=std::clamp((y-m_contentGrabY-kTop)/std::max(1.f,kBottom-kTop-174),0.f,1.f);
+                m_contentPanelY=std::clamp((y-m_contentGrabY-kTop)/std::max(1.f,kBottom-kTop-(bounds.bottom-bounds.top)),0.f,1.f);
             }
             else
             {
                 m_contentPanelDrag=false;
-                if(y>kBottom-38&&x>=kLeft&&x<=kRight)m_contentFloating=false;
-                m_status=m_contentFloating?"Content panel floating inside Studio. Drag its title to the bottom to dock.":"Content panel docked.";
+                if(x>=kLeft&&x<=kRight)
+                {
+                    if(y>kBottom-38){m_contentFloating=false;m_contentDockTop=false;}
+                    else if(y<kTop+38){m_contentFloating=false;m_contentDockTop=true;}
+                }
+                m_status=m_contentFloating?"Content panel floating. Drag its title to the top or bottom to dock.":m_contentDockTop?"Content panel docked at top.":"Content panel docked at bottom.";
+                NX_INFO("Blueprint Studio: %s",m_status.c_str());
             }
             return true;
         }
@@ -2615,7 +2640,7 @@ namespace nx
             if(left)return true;
             const auto id=m_contentDrag;m_contentDrag.clear();
             if(m_contentDragRevision!=m_document.revision()||!m_document.visualAsset(id))return true;
-            if(!in(x,y,bounds.left,bounds.top,bounds.right,bounds.bottom)&&in(x,y,kLeft,kTop,kRight,tabTop())&&std::hypot(x-m_contentDragX,y-m_contentDragY)>8)
+            if(!in(x,y,bounds.left,bounds.top,bounds.right,bounds.bottom)&&in(x,y,kLeft,graphAreaTop(),kRight,tabTop())&&std::hypot(x-m_contentDragX,y-m_contentDragY)>8)
             {
                 const auto screen=assetScreen();
                 if(screen.empty())m_status="Open a screen graph before placing an actor instance.";
@@ -2627,11 +2652,19 @@ namespace nx
         if(click&&in(x,y,kWidth-150,kBottom+2,kWidth-8,kBottom+24))
         {m_contentDrawer=!m_contentDrawer;return true;}
         if(!m_contentDrawer||!in(x,y,bounds.left,bounds.top,bounds.right,bounds.bottom))return false;
-        const auto& assets=m_document.visualAssets();const size_t columns=static_cast<size_t>(std::max(1.f,(bounds.right-bounds.left-16)/148.f));
-        if(s.input->wheel()<0&&m_contentFirst+columns<assets.size())m_contentFirst+=columns;
+        const auto& assets=m_document.visualAssets();const size_t columns=contentColumns(bounds),rows=contentRows(bounds),capacity=columns*rows;
+        if(m_contentFirst>=assets.size())m_contentFirst=0;
+        if(s.input->wheel()<0&&m_contentFirst+capacity<assets.size())m_contentFirst+=columns;
         if(s.input->wheel()>0)m_contentFirst=m_contentFirst>=columns?m_contentFirst-columns:0;
         if(click)
         {
+            const bool resize=m_contentFloating?in(x,y,bounds.right-14,bounds.bottom-14,bounds.right,bounds.bottom):
+                m_contentDockTop?y>=bounds.bottom-5:y<bounds.top+4;
+            if(resize)
+            {
+                m_contentResize=true;m_contentResizeX=x;m_contentResizeY=y;
+                m_contentStartWidth=bounds.right-bounds.left;m_contentStartHeight=bounds.bottom-bounds.top;return true;
+            }
             if(in(x,y,bounds.right-110,bounds.top+3,bounds.right-8,bounds.top+28)){browseAssets(s);return true;}
             if(in(x,y,bounds.right-208,bounds.top+3,bounds.right-116,bounds.top+28))
             {
@@ -2642,11 +2675,13 @@ namespace nx
                 m_contentPanelDrag=true;m_contentGrabX=std::clamp(x-bounds.left,0.f,300.f);m_contentGrabY=y-bounds.top;
                 return true;
             }
-            if(y>=bounds.top+37&&y<bounds.top+145)
+            if(y>=bounds.top+37&&y<bounds.top+37+112.f*rows)
             {
                 if(x<bounds.left+8)return true;
-                const auto index=m_contentFirst+static_cast<size_t>((x-bounds.left-8)/148.f);
-                if(index<assets.size()&&index<m_contentFirst+columns)
+                const auto column=static_cast<size_t>((x-bounds.left-8)/148.f),row=static_cast<size_t>((y-bounds.top-37)/112.f);
+                if(column>=columns||row>=rows)return true;
+                const auto index=m_contentFirst+row*columns+column;
+                if(index<assets.size()&&index<m_contentFirst+capacity)
                 {
                     const auto& asset=assets[index];
                     if(asset.kind=="actor")
@@ -2677,16 +2712,17 @@ namespace nx
         c.text(*m_font,m_contentDrawer?"Hide content":"Content drawer",kWidth-79,kBottom+4,text,Align::Center);
         if(!m_contentDrawer)return;
         const auto bounds=contentBounds();const float top=bounds.top,left=bounds.left,right=bounds.right;
-        if(m_contentFloating)c.rect(left+5,top+5,right-left,174,{0,0,0,0.6f});
-        c.rect(left,top,right-left,174,{0.16f,0.16f,0.17f,1});
+        const float height=bounds.bottom-top;
+        if(m_contentFloating)c.rect(left+5,top+5,right-left,height,{0,0,0,0.6f});
+        c.rect(left,top,right-left,height,{0.16f,0.16f,0.17f,1});
         c.rect(left,top,right-left,30,{0.24f,0.24f,0.26f,1});
         c.clip(left+8,top,right-left-216,30);c.text(*m_font,"CONTENT / PROJECT ASSETS",left+10,top+6,text);c.noClip();
         c.rect(right-110,top+3,102,25,{0.30f,0.30f,0.32f,1});c.text(*m_font,"Manage",right-59,top+5,text,Align::Center);
         c.rect(right-208,top+3,92,25,{0.30f,0.30f,0.32f,1});c.text(*m_font,m_contentFloating?"Dock":"Float",right-162,top+5,text,Align::Center);
-        const auto& assets=m_document.visualAssets();const size_t columns=static_cast<size_t>(std::max(1.f,(right-left-16)/148.f));
-        for(size_t i=0;i<columns&&m_contentFirst+i<assets.size();++i)
+        const auto& assets=m_document.visualAssets();const size_t columns=contentColumns(bounds),capacity=columns*contentRows(bounds);
+        for(size_t i=0;i<capacity&&m_contentFirst+i<assets.size();++i)
         {
-            const auto& asset=assets[m_contentFirst+i];const float x=left+8+148.f*static_cast<float>(i),y=top+37;
+            const auto& asset=assets[m_contentFirst+i];const float x=left+8+148.f*static_cast<float>(i%columns),y=top+37+112.f*static_cast<float>(i/columns);
             c.rect(x,y,140,108,asset.id==m_contentDrag?Color{0.34f,0.31f,0.20f,1}:Color{0.22f,0.22f,0.24f,1});
             c.rect(x+5,y+5,130,62,{0.12f,0.12f,0.14f,1});
             const float cx=x+70,cy=y+35;const Color ink={0.66f,0.70f,0.76f,1};
@@ -2709,7 +2745,18 @@ namespace nx
             else {c.rect(cx-23,cy-17,46,34,ink);c.rect(cx-20,cy-14,40,28,{0.12f,0.12f,0.14f,1});c.line(cx-15,cy-5,cx+15,cy-5,2,ink);c.line(cx-15,cy+5,cx+8,cy+5,2,ink);}
             c.clip(x+5,y+68,130,36);c.text(*m_font,asset.title.c_str(),x+8,y+69,text);c.text(*m_font,asset.kind.c_str(),x+8,y+86,muted);c.noClip();
         }
-        c.clip(left+8,bounds.bottom-26,right-left-16,26);c.text(*m_font,assets.empty()?"Create a reusable asset using Manage.":"Click actor to edit; drag to graph to link. Scroll for more.",left+10,bounds.bottom-23,muted);c.noClip();
+        c.clip(left+8,bounds.bottom-26,right-left-24,26);c.text(*m_font,assets.empty()?"Create a reusable asset using Manage.":"Click to edit; drag actor to graph. Scroll for more.",left+10,bounds.bottom-23,muted);c.noClip();
+        if(m_contentFloating)
+        {
+            c.line(right-12,bounds.bottom-3,right-3,bounds.bottom-12,1,muted);
+            c.line(right-7,bounds.bottom-3,right-3,bounds.bottom-7,1,muted);
+            if(m_contentPanelDrag)
+            {
+                c.roundLine(kLeft,kTop,kRight-kLeft,32,0,2,accent);
+                c.roundLine(kLeft,kBottom-32,kRight-kLeft,32,0,2,accent);
+            }
+        }
+        else c.rect(left,m_contentDockTop?bounds.bottom-3:top,right-left,3,{0.36f,0.36f,0.39f,1});
     }
     void BlueprintWorkspace::drawVisualLibrary(Canvas& c)
     {
@@ -3541,7 +3588,7 @@ namespace nx
         rememberVisualTab();refreshWidgetPreview(s);refreshPlacementPreview(s);refreshContentPreviews(s);
         if (input.pressed(Action::Menu))
         {
-            if(m_contentPanelDrag){m_contentPanelDrag=false;m_status="Content panel move ended.";return;}
+            if(m_contentPanelDrag||m_contentResize){m_contentPanelDrag=m_contentResize=false;m_status="Content panel move ended.";return;}
             if(!m_contentDrag.empty()){m_contentDrag.clear();m_status="Content drag cancelled.";return;}
             if(m_actorEditor){if(m_visualInput){m_visualInput=0;m_visualText.clear();input.setTyping(false);}else if(m_actorDragAxis>=0){cancelActorDrag();m_status="Component drag cancelled.";}else{leaveActorViewport(true);}return;}
             if(m_assetBrowser){if(m_visualInput){m_visualInput=0;m_visualText.clear();input.setTyping(false);m_status="Input cancelled.";return;}if(m_placementDragging){cancelVisualPlacement();m_status="Placement cancelled.";return;}if(m_visualPlacement){m_visualPlacement=false;return;}if(m_widgetDesigner){if(m_widgetPreviewDrag){m_widgetPreviewDrag=false;m_status="Widget drag cancelled.";return;}if(m_widgetDragging){m_widgetDragging=false;m_widgetDragId.clear();return;}m_widgetDesigner=false;releaseWidgetPreview();return;}m_assetBrowser=false;m_status="Asset browser closed.";return;}
@@ -3570,7 +3617,7 @@ namespace nx
         if (!(scale > 0)) return;
         float x = (raw.mouseX - (canvas.pixelWidth()-kWidth*scale)*0.5f)/scale;
         float y = (raw.mouseY - (canvas.pixelHeight()-kHeight*scale)*0.5f)/scale;
-        const bool over = in(x,y,kLeft,kTop,kRight,kBottom);
+        const bool over = in(x,y,kLeft,graphAreaTop(),kRight,tabTop());
         const bool left = raw.mouseButtons[0], pan = raw.mouseButtons[1] || raw.mouseButtons[2];
         const auto held=[&](Key key){return raw.keys[static_cast<size_t>(key)];};
         const bool control=held(Key::Control);
@@ -3653,7 +3700,7 @@ namespace nx
                     }
                 }
                 else if(in(x,y,300,395,550,425)){m_uiScale=(m_uiScale+1)%4;m_status="Changed desktop UI density (small windows fit automatically).";}
-                else if(in(x,y,300,425,550,455)){m_leftPanel=248;m_graphRightPanel=268;m_actorRightPanel=310;m_uiScale=0;m_actorCollapsed=0;m_actorDetailsScroll=0;m_contentDrawer=false;m_contentFloating=false;m_contentPanelX=0.25f;m_contentPanelY=0.65f;m_contentPanelWidth=620;resizeWorkspace(canvas);fitGraph();m_status="Reset editor panel sizes and density.";}
+                else if(in(x,y,300,425,550,455)){m_leftPanel=248;m_graphRightPanel=268;m_actorRightPanel=310;m_uiScale=0;m_actorCollapsed=0;m_actorDetailsScroll=0;m_contentDrawer=false;m_contentFloating=false;m_contentPanelX=0.25f;m_contentPanelY=0.65f;m_contentPanelWidth=620;m_contentDockTop=false;m_contentPanelHeight=174;resizeWorkspace(canvas);fitGraph();m_status="Reset editor panel sizes and density.";}
                 m_layoutMenu=false;
             }
             m_left=left;return;
@@ -4349,7 +4396,7 @@ namespace nx
         c.rect(0,kTop,kLeft,kBottom-kTop,{0.17f,0.17f,0.18f,1});
         c.rect(kRight,kTop,kWidth-kRight,kBottom-kTop,{0.17f,0.17f,0.18f,1});
         c.rect(kLeft-2,kTop,4,kBottom-kTop,{0.32f,0.32f,0.34f,1});c.rect(kRight-2,kTop,4,kBottom-kTop,{0.32f,0.32f,0.34f,1});
-        c.clip(kLeft,kTop,kRight-kLeft,kBottom-kTop);
+        c.clip(kLeft,graphAreaTop(),kRight-kLeft,std::max(1.f,tabTop()-graphAreaTop()));
         const float step=32*m_zoom;
         for(float gx=kLeft+std::fmod(m_x,step);gx<kRight;gx+=step)
             c.line(gx,kTop,gx,kBottom,1,{0.14f,0.14f,0.15f,1});

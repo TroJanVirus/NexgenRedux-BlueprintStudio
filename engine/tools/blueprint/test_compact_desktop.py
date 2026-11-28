@@ -145,6 +145,10 @@ with log.open("wb") as output:
         click(128,54)
         time.sleep(0.4)
         shot("actor-returned-tab.png")
+        click(1154,18)
+        wait_for(lambda:"isolated Construction preview ready" in log.read_text(errors="replace"),"isolated Construction execution")
+        shot("actor-construction-preview.png")
+        click(1154,18)
         click(81,54)
         click(930,133)
         # Open two graph tabs and return to the original by its tab.
@@ -160,6 +164,12 @@ with log.open("wb") as output:
         # Floating default bounds: x=171, y=351, right=791. Dock button is near x=629.
         click(629,365)
         shot("content-redocked.png")
+        # Dock the content panel at the top, then restore bottom docking.
+        drag(410,515,410,90)
+        wait_for(lambda:"Content panel docked at top." in log.read_text(errors="replace"),"top dock")
+        shot("content-top-docked.png")
+        drag(410,90,410,650)
+        wait_for(lambda:"Content panel docked at bottom." in log.read_text(errors="replace"),"bottom dock")
         click(310,560)
         shot("actor-from-drawer.png")
         drag(970,470,940,470)
