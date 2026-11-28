@@ -5002,6 +5002,65 @@ namespace nx
         }
         m_deviceFeedback="No mapped Blueprint node at the remote script location.";
     }
+    BlueprintLocation BlueprintWorkspace::mapRemoteLocation(const std::string& file,const std::string& fingerprint,unsigned line) const
+    {
+        if(fingerprint.empty()||!line)return {};
+        for(size_t i=0;i<m_remoteMaps.size();++i)
+            if(file=="showcase/"+m_remoteMaps[i].id+"/main.as"&&fingerprint==m_remoteFingerprints[i])
+                return blueprintSourceLocation(m_remoteMaps[i].map,line);
+        return {};
+    }
+    void BlueprintWorkspace::toggleRemoteTrace()
+    {
+        if(!m_device.ready()||!m_device.traceSupported()){m_deviceFeedback="Matching runtime with remote trace is required.";return;}
+        m_device.setTrace(!m_device.tracing());m_remoteGraphHits.clear();m_remoteGap=false;
+        m_deviceFeedback=m_device.tracing()?"Bounded remote trace enabled.":"Remote trace disabled.";
+    }
+    void BlueprintWorkspace::updateRemoteGraph(double now)
+    {
+        m_remoteNow=now;
+        if(!m_device.ready())
+        {m_remoteGraphHits.clear();m_remoteMaps.clear();m_remoteFingerprints.clear();m_remoteRevision=static_cast<size_t>(-1);m_remotePaused={};m_remoteStopKey.clear();return;}
+        if(m_remoteRevision!=m_document.revision()||m_remoteDocumentName!=m_document.name||m_remoteAssetRoot!=m_document.assetRoot)
+        {
+            m_remoteRevision=m_document.revision();m_remoteDocumentName=m_document.name;m_remoteAssetRoot=m_document.assetRoot;
+            m_remoteMaps.clear();m_remoteFingerprints.clear();m_remoteGraphHits.clear();m_remotePaused={};m_remoteStopKey.clear();
+            std::string error;
+            if(compileBlueprintProject(m_document,m_remoteMaps,error))
+                for(auto& output:m_remoteMaps){m_remoteFingerprints.push_back(scriptFingerprint(output.source.data(),output.source.size()));output.source.clear();}
+        }
+        bool gap=false;const auto hits=m_device.takeTrace(gap);if(!hits.empty())m_remoteGap=gap;
+        for(const auto& hit:hits)
+        {
+            const auto location=mapRemoteLocation(hit.file,hit.fingerprint,hit.line);
+            if(location.graph>=m_document.graphs.size()||location.node>=m_document.graphs[location.graph].nodes.size())continue;
+            m_remoteGraphHits.push_back({location,now});
+            if(m_remoteGraphHits.size()>64)m_remoteGraphHits.erase(m_remoteGraphHits.begin());
+        }
+        while(!m_remoteGraphHits.empty()&&now-m_remoteGraphHits.front().time>0.8)m_remoteGraphHits.erase(m_remoteGraphHits.begin());
+        if(!m_device.paused()){m_remotePaused={};m_remoteStopKey.clear();return;}
+        m_remotePaused=mapRemoteLocation(m_device.file(),m_device.fingerprint(),m_device.line());
+        if(m_remotePaused.graph>=m_document.graphs.size()||m_remotePaused.node>=m_document.graphs[m_remotePaused.graph].nodes.size())return;
+        // Do not steal focus from a modal, text field, asset tab, or a graph drag.
+        const auto key=m_device.file()+":"+std::to_string(m_device.line())+":"+m_device.fingerprint();
+        if(m_remoteFollow&&m_remoteStopKey!=key&&!m_focus&&!modalOpen()&&!m_actorEditor&&!visualTabOpen()&&!m_drag&&!m_marquee&&!m_pinMenu&&!m_quickMenu&&!m_left)
+        {
+            m_remoteStopKey=key;focusDiagnostic(m_remotePaused);m_diagnostic={};
+            m_status="Remote paused at verified Blueprint node.";
+        }
+    }
+    void BlueprintWorkspace::drawRemoteControls(Canvas& c)
+    {
+        if(!m_device.ready()||!m_recoveryWarning.empty())return;
+        const float y=kBottom+24;
+        const char* labels[]={m_device.paused()?"Resume":"Pause","Over","Into","Out",m_device.tracing()?"Trace on":"Trace off",m_remoteFollow?"Follow on":"Follow off","Locate","Device"};
+        for(unsigned i=0;i<8;++i)
+        {
+            const float x=12+100.f*static_cast<float>(i);
+            c.roundRect(x,y,96,21,3,{0.20f,0.32f,0.45f,1});c.text(*m_font,labels[i],x+48,y+1,text,Align::Center);
+        }
+        if(kWidth>1120)c.text(*m_font,m_remoteGap?"Trace capped / gaps":"Remote debug",824,y+1,muted);
+    }
     void BlueprintWorkspace::updateDeviceManager(Services& s,float x,float y,bool click)
     {
         auto& input=*s.input;
@@ -5300,7 +5359,7 @@ namespace nx
     void BlueprintWorkspace::update(Services& s)
     {
         auto& input = *s.input;
-        m_device.update(s.platform->seconds());
+        m_device.update(s.platform->seconds());updateRemoteGraph(s.platform->seconds());
         resizeWorkspace(*s.canvas);
         rememberVisualTab();refreshWidgetPreview(s);refreshPlacementPreview(s);refreshContentPreviews(s);
         if (input.pressed(Action::Menu))
@@ -5488,7 +5547,18 @@ namespace nx
         {
             if(updateContentDrawer(s,x,y,left,click)||updateGraphTabs(s,x,y,click)||updateGraphMap(x,y,left,click)){m_left=left;return;}
         }
-        if(!modalOpen()&&!m_focus&&click&&in(x,y,kWidth*0.56f,kBottom+2,kWidth-12,kBottom+26))
+        if(m_device.ready()&&!m_focus&&!modalOpen()&&!visualTabOpen()&&m_recoveryWarning.empty()&&click&&in(x,y,12,kBottom+24,812,kBottom+45))
+        {
+            const auto action=static_cast<unsigned>((x-12)/100.f);
+            if(action==0)m_device.control(m_device.paused()?1:0);
+            else if(action<4)m_device.control(action+1);
+            else if(action==4)toggleRemoteTrace();
+            else if(action==5)m_remoteFollow=!m_remoteFollow;
+            else if(action==6)locateDeviceNode();
+            else if(action==7)m_focus=27;
+            m_left=left;return;
+        }
+        if(!modalOpen()&&!m_focus&&click&&in(x,y,kWidth*0.56f,kBottom+2,kWidth-12,kBottom+24))
         {m_focus=27;m_left=left;return;}
         if(modalOpen()){x-=modalX();y-=modalY();}
         if(m_focus==26)
@@ -6739,7 +6809,13 @@ namespace nx
                 else {c.line(ix-3*m_zoom,iy-4*m_zoom,ix+3*m_zoom,iy,1.5f*m_zoom,text);c.line(ix+3*m_zoom,iy,ix-3*m_zoom,iy+4*m_zoom,1.5f*m_zoom,text);}
                 if(n.watch)c.circle(x+w-12*m_zoom,y+12*m_zoom,5*m_zoom,{1,0.72f,0.22f,1});
                 if(liveTraceView()){float pulse=0;for(const auto& hit:m_traceHits)if(hit.location.graph==m_graph&&hit.location.node==i)pulse=std::max(pulse,static_cast<float>(std::clamp(1.0-(m_liveTraceClock-hit.time)/0.8,0.0,1.0)));if(pulse>0)c.roundLine(x,y,w,h,5,2+pulse,{1,0.72f,0.22f,pulse});}
-                if(tracePaused()&&m_traceLocation.graph==m_graph&&m_traceLocation.node==i)c.roundLine(x,y,w,h,5,3,{1,0.72f,0.22f,1});
+                if(m_device.tracing())
+                {
+                    float recent=0;for(const auto& hit:m_remoteGraphHits)if(hit.location.graph==m_graph&&hit.location.node==i)recent=std::max(recent,static_cast<float>(std::clamp(1.0-(m_remoteNow-hit.time)/0.8,0.0,1.0)));
+                    if(recent>0)c.roundLine(x,y,w,h,5,2+recent,{0.20f,0.85f,0.78f,recent});
+                }
+                if(m_device.paused()&&m_remotePaused.graph==m_graph&&m_remotePaused.node==i)c.roundLine(x,y,w,h,5,3,{0.20f,0.85f,0.78f,1});
+                else if(tracePaused()&&m_traceLocation.graph==m_graph&&m_traceLocation.node==i)c.roundLine(x,y,w,h,5,3,{1,0.72f,0.22f,1});
                 else if(m_diagnostic.graph==m_graph&&m_diagnostic.node==i)c.roundLine(x,y,w,h,5,3,{0.98f,0.35f,0.38f,1});
                 else if(i==m_selection||std::find(m_selectedNodes.begin(),m_selectedNodes.end(),i)!=m_selectedNodes.end())c.roundLine(x,y,w,h,5,2,accent);
                 // Draw only the visible rows of tall nodes.
@@ -6930,9 +7006,13 @@ namespace nx
             c.text(*m_font,shorten(m_recoveryWarning,105).c_str(),12,kBottom+26,{1.f,0.72f,0.22f,1.f});
         else
         {
-            c.clip(12,kBottom+24,900,22);
-            c.text(*m_font,"Drag empty space: select | Shift+drag: snap | Q: align | Double-click wire: reroute",12,kBottom+26,muted);
-            c.noClip();
+            if(m_device.ready())drawRemoteControls(c);
+            else
+            {
+                c.clip(12,kBottom+24,900,22);
+                c.text(*m_font,"Drag empty space: select | Shift+drag: snap | Q: align | Double-click wire: reroute",12,kBottom+26,muted);
+                c.noClip();
+            }
             const char* state=!m_document.dirty()?"Saved / clean":recoveryProtected()?"Recovery protected":"Recovery pending";
             c.text(*m_font,state,kWidth-12,kBottom+26,recoveryProtected()?muted:Color{1.f,0.72f,0.22f,1.f},Align::Right);
         }

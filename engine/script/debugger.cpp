@@ -125,6 +125,7 @@ namespace nx
         g_debugger = nullptr;
         m_host->setWatcher(nullptr);
         m_host = nullptr;
+        resetRemoteTrace();
         m_client.close();
         m_listener.close();
         netStop();
@@ -157,6 +158,7 @@ namespace nx
             {
                 // A new one starts with nothing set.
                 m_breakpoints.clear();
+                resetRemoteTrace();
                 m_files.clear();
                 m_mode = Mode::Run;
                 m_in.clear();
@@ -200,6 +202,7 @@ namespace nx
         {
             // Gone: nothing is to stop the scripts any more.
             m_breakpoints.clear();
+            resetRemoteTrace();
             m_files.clear();
             m_mode = Mode::Run;
             m_resume = true;
@@ -289,9 +292,20 @@ namespace nx
             putText(reply, "event", "hello");
             putNumber(reply, "version", 1);
             reply.put("sourceIdentity")->setFlag(true);
+            reply.put("remoteTrace")->setFlag(true);
             putText(reply, "angelscript", ScriptHost::version());
             putNumber(reply, "id", id);
             send(reply.write(true));
+        }
+        else if (name == "trace")
+        {
+            resetRemoteTrace();
+            const auto* on=ask.find("on");m_remoteTrace=on&&on->flag();
+            JsonValue reply;putNumber(reply,"id",id);reply.put("tracing")->setFlag(m_remoteTrace);send(reply.write(true));
+        }
+        else if(name=="traceDrain")
+        {
+            drainRemoteTrace(id);
         }
         else if (name == "telemetry")
         {
@@ -456,6 +470,35 @@ namespace nx
     }
 #endif
 
+    void ScriptDebugger::resetRemoteTrace()
+    {
+        m_remoteTrace=false;m_remoteTraceGap=false;m_remoteTraceHits.clear();
+    }
+    void ScriptDebugger::recordRemoteTrace(const Where& here)
+    {
+        // Drop the remainder of a busy interval after 32 transitions.
+        // No JSON generation or network sends in the script line callback.
+        if(m_remoteTraceHits.size()>=kRemoteTraceLimit){m_remoteTraceGap=true;return;}
+        const auto* function=here.context->GetFunction(0);
+        const char* identity=function?m_host->compiledFingerprint(function->GetModuleName(),here.section):"";
+        const char* file=m_host->sourceOf(here.section);
+        // Unmapped helper calls are explicit gaps, not inferred graph edges.
+        if(!*identity||!file||strlen(file)>192||here.line<=0)
+        {m_remoteTraceGap=true;return;}
+        m_remoteTraceHits.push_back({file,identity,here.run,here.depth,here.line});
+    }
+    void ScriptDebugger::drainRemoteTrace(int id)
+    {
+        JsonValue reply;putNumber(reply,"id",id);
+        reply.put("gap")->setFlag(m_remoteTraceGap);
+        auto* hits=reply.put("trace");hits->setArray();
+        for(const auto& hit:m_remoteTraceHits)
+        {
+            auto* item=hits->add();putText(*item,"file",hit.file);putText(*item,"fingerprint",hit.fingerprint);
+            putNumber(*item,"run",hit.run);putNumber(*item,"depth",hit.depth);putNumber(*item,"line",hit.line);
+        }
+        m_remoteTraceHits.clear();m_remoteTraceGap=false;send(reply.write(true));
+    }
     void ScriptDebugger::line(asIScriptContext* context)
     {
 #ifdef NX_DESKTOP_BLUEPRINT
@@ -481,7 +524,7 @@ namespace nx
         {
             sample(context);
         }
-        if (m_mode == Mode::Run && m_breakpoints.empty())
+        if (m_mode == Mode::Run && m_breakpoints.empty() && !m_remoteTrace)
         {
             return;
         }
@@ -492,6 +535,7 @@ namespace nx
         here.run = m_host->runs();
         // A line with several statements is stopped at once; so is one that is come back to in a loop.
         const bool moved = here.line != m_last.line || here.section != m_last.section || here.depth != m_last.depth || here.context != m_last.context;
+        if(m_remoteTrace&&(moved||here.run!=m_last.run))recordRemoteTrace(here);
         m_last = here;
         const bool fresh = here.line != m_from.line || here.section != m_from.section || here.depth != m_from.depth || here.context != m_from.context || here.run != m_from.run;
         // Past the end of what was stopped in, into the next call the engine makes.

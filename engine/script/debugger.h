@@ -61,7 +61,7 @@ namespace nx
 
         void line(asIScriptContext* context) override;
         void exception(asIScriptContext* context) override;
-        void compiled() override { m_files.clear(); }
+        void compiled() override { m_files.clear();m_last=Where();m_remoteTraceHits.clear();m_remoteTraceGap=true; }
 
     private:
         enum class Mode : u8 { Run, Pause, StepIn, StepOver, StepOut };
@@ -109,6 +109,18 @@ namespace nx
         bool lookUp(u32 frame, const std::string& name, Ref& out);
         void children(JsonValue& out, const Ref& of);
         void sample(asIScriptContext* context);
+        void recordRemoteTrace(const Where& here);
+        void drainRemoteTrace(int id);
+        void resetRemoteTrace();
+        struct RemoteTraceHit
+        {
+            std::string file,fingerprint;
+            u32 run=0,depth=0;
+            int line=0;
+        };
+        bool m_remoteTrace=false,m_remoteTraceGap=false;
+        static constexpr u32 kRemoteTraceLimit=32;
+        std::vector<RemoteTraceHit> m_remoteTraceHits;
         void profile(int id, bool on);
         bool callGetter(void* object, asIScriptFunction* getter, Ref& out);
         void forget();

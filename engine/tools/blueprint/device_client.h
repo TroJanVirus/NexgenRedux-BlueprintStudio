@@ -16,6 +16,11 @@ namespace nx
         bool ready()const{return m_ready;}
         bool paused()const{return m_paused;}
         bool sourceIdentity()const{return m_sourceIdentity;}
+        bool traceSupported()const{return m_traceSupported;}
+        bool tracing()const{return m_tracing;}
+        struct RemoteHit {std::string file,fingerprint;unsigned line=0,run=0,depth=0;};
+        std::vector<RemoteHit> takeTrace(bool& gap){gap=m_traceGap;m_traceGap=false;std::vector<RemoteHit> result;result.swap(m_hits);return result;}
+        void setTrace(bool on){if(!m_ready||!m_traceSupported)return;m_tracing=on;m_hits.clear();m_traceGap=false;m_traceOutstanding=false;queue(on?"{\"cmd\":\"trace\",\"on\":true,\"id\":6}":"{\"cmd\":\"trace\",\"on\":false,\"id\":6}");}
         const std::string& fingerprint()const{return m_fingerprint;}
         const std::vector<std::string>& variables()const{return m_variables;}
         bool sendBreakpoints(const std::string& commands){if(!m_ready||!m_sourceIdentity||m_out.size()+commands.size()>8192)return false;m_out+=commands;return true;}
@@ -26,7 +31,7 @@ namespace nx
         unsigned line()const{return m_line;}
         void disconnect()
         {
-            m_socket.close();if(m_network)netStop();m_network=m_ready=m_paused=m_hello=m_sourceIdentity=false;
+            m_socket.close();if(m_network)netStop();m_network=m_ready=m_paused=m_hello=m_sourceIdentity=m_traceSupported=m_tracing=m_traceOutstanding=m_traceGap=false;m_hits.clear();
             m_in.clear();m_out.clear();m_rows.clear();m_log.clear();m_file.clear();m_fingerprint.clear();m_variables.clear();m_line=0;
             m_status="Disconnected";
         }
@@ -59,6 +64,7 @@ namespace nx
             if(state!=TcpState::Open)return;
             if(!m_hello){m_hello=true;queue("{\"cmd\":\"hello\",\"id\":1}");}
             if(m_ready&&now>=m_poll){m_poll=now+1;queue("{\"cmd\":\"telemetry\",\"id\":4}");}
+            if(m_ready&&m_tracing&&!m_traceOutstanding&&now>=m_tracePoll){m_tracePoll=now+0.25;m_traceOutstanding=true;queue("{\"cmd\":\"traceDrain\",\"id\":7}");}
             if(!m_out.empty())
             {
                 const auto sent=m_socket.send(m_out.data(),m_out.size());m_out.erase(0,sent);
@@ -93,7 +99,7 @@ namespace nx
             if(event=="hello"&&id==1&&!m_ready)
             {
                 if(root["version"].exact()!=1){fail("Unsupported debugger protocol.");return;}
-                m_sourceIdentity=root["sourceIdentity"].flag();m_ready=true;m_poll=now;m_status="Connected; waiting for device telemetry.";
+                m_sourceIdentity=root["sourceIdentity"].flag();m_traceSupported=root["remoteTrace"].flag();m_ready=true;m_poll=now;m_status="Connected; waiting for device telemetry.";
                 queue("{\"cmd\":\"ready\",\"id\":2}");
             }
             else if(event=="stopped"&&m_ready)
@@ -118,6 +124,18 @@ namespace nx
                 m_variables.clear();
                 for(auto item=root["variables"].first();item.exists()&&m_variables.size()<12;item=item.next())
                     m_variables.push_back(std::string(item["name"].text()).substr(0,64)+" : "+std::string(item["type"].text()).substr(0,64)+" = "+std::string(item["value"].text()).substr(0,96));
+            }
+            else if(id==7)
+            {
+                m_traceOutstanding=false;
+                if(!m_tracing)return;
+                m_traceGap=root["gap"].flag();
+                for(auto item=root["trace"].first();item.exists()&&m_hits.size()<64;item=item.next())
+                {
+                    const auto line=item["line"].exact(),run=item["run"].exact(),depth=item["depth"].exact();
+                    if(line<1||line>1000000||run<0||run>4294967295.0||depth<0||depth>1000000){m_traceGap=true;continue;}
+                    m_hits.push_back({std::string(item["file"].text()).substr(0,192),std::string(item["fingerprint"].text()).substr(0,32),static_cast<unsigned>(line),static_cast<unsigned>(run),static_cast<unsigned>(depth)});
+                }
             }
             else if(id==4&&root["telemetry"].isObject())
             {
@@ -145,6 +163,9 @@ namespace nx
         }
         TcpSocket m_socket;
         bool m_network=false,m_ready=false,m_paused=false,m_hello=false,m_sourceIdentity=false;
+        bool m_traceSupported=false,m_tracing=false,m_traceOutstanding=false,m_traceGap=false;
+        double m_tracePoll=0;
+        std::vector<RemoteHit> m_hits;
         double m_deadline=0,m_poll=0;
         std::string m_in,m_out,m_status="Disconnected",m_log,m_file,m_fingerprint;
         unsigned m_line=0;
