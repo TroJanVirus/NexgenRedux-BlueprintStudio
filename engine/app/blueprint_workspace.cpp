@@ -2124,6 +2124,11 @@ namespace nx
         auto& input=*s.input;
         if(m_visualInput)
         {
+            const bool colorPicker=m_visualInput==7&&themeColorProperty(m_visualProperty),mediaPicker=m_visualInput==7&&themeMediaProperty(m_visualProperty);
+            const float dialogTop=colorPicker?250.f:mediaPicker?265.f:286.f,footer=colorPicker?445.f:mediaPicker?505.f:379.f;
+            const bool applyClick=click&&in(x,y,650,footer,745,footer+32);
+            if(click&&(!in(x,y,420,dialogTop,860,footer+37)||in(x,y,750,footer,840,footer+32)))
+            {m_visualInput=0;m_visualText.clear();input.setTyping(false);return;}
             if(m_visualInput==7&&themeColorProperty(m_visualProperty)&&click&&in(x,y,500,320,820,432))
             {
                 Color color=themePickerColor(m_visualText);const int channel=static_cast<int>((y-320)/28);
@@ -2142,9 +2147,9 @@ namespace nx
                     return;
                 }
             }
-            for(u32 i=0;i<input.typedCount();++i)
+            for(u32 i=0;i<input.typedCount()+(applyClick?1u:0u);++i)
             {
-                const auto ch=input.typed(i);
+                const auto ch=i<input.typedCount()?input.typed(i):13u;
                 if(ch==8&&!m_visualText.empty())
                 {
                     size_t end=m_visualText.size()-1;
@@ -2604,9 +2609,13 @@ namespace nx
         }
         if(m_visualInput)
         {
-            for(u32 i=0;i<input.typedCount();++i)
+            const float dialogX=(kWidth-560)*0.5f,dialogY=(kHeight-160)*0.5f;
+            const bool applyClick=click&&in(x,y,dialogX+324,dialogY+104,dialogX+424,dialogY+140);
+            if(click&&(!in(x,y,dialogX,dialogY,dialogX+560,dialogY+160)||in(x,y,dialogX+434,dialogY+104,dialogX+544,dialogY+140)))
+            {m_visualInput=0;m_actorAxis=-1;input.setTyping(false);return;}
+            for(u32 i=0;i<input.typedCount()+(applyClick?1u:0u);++i)
             {
-                const auto ch=input.typed(i);
+                const auto ch=i<input.typedCount()?input.typed(i):13u;
                 if(ch==13)
                 {
                     std::string value=m_visualText;
@@ -2953,7 +2962,9 @@ namespace nx
             const auto label=m_visualProperty+(m_actorAxis>=0?std::string(" / ")+"XYZ"[m_actorAxis]:"");
             c.roundRect(x,y,560,160,5,{0.18f,0.18f,0.19f,1});c.text(*m_font,label.c_str(),x+16,y+16,accent);
             c.rect(x+16,y+50,528,38,{0.28f,0.28f,0.30f,1});c.clip(x+20,y+50,520,38);c.text(*m_font,m_visualText.c_str(),x+24,y+60,text);c.noClip();
-            c.text(*m_font,"Enter = Apply / Escape = Cancel",x+16,y+112,muted);
+            c.text(*m_font,"Enter = Apply | Escape = Cancel",x+16,y+112,muted);
+            c.roundRect(x+324,y+104,100,36,4,{0.19f,0.4f,0.3f,1});c.text(*m_font,"Apply",x+374,y+111,text,Align::Center);
+            c.roundRect(x+434,y+104,110,36,4,{0.22f,0.31f,0.43f,1});c.text(*m_font,"Cancel",x+489,y+111,text,Align::Center);
         }
     }
     BlueprintWorkspace::ContentBounds BlueprintWorkspace::contentBounds() const
@@ -3435,11 +3446,11 @@ namespace nx
                 }
                 c.rect(500+320.f*channels[i]-2,y,4,20,{1,1,1,1});
             }
-            c.text(*m_font,"Click channels or type hex; Enter = Apply.",440,445,muted);
+            c.text(*m_font,"Enter = Apply",440,443,muted);c.text(*m_font,"Escape = Cancel",440,459,muted);c.roundRect(650,445,95,32,4,{0.19f,0.4f,0.3f,1});c.text(*m_font,"Apply",697.5f,450,text,Align::Center);c.roundRect(750,445,90,32,4,{0.22f,0.31f,0.43f,1});c.text(*m_font,"Cancel",795,450,text,Align::Center);
         }
         else if(m_visualInput==7&&themeMediaProperty(m_visualProperty))
         {
-            c.roundRect(420,265,440,270,6,{0.08f,0.12f,0.18f,1});
+            c.roundRect(420,265,440,277,6,{0.08f,0.12f,0.18f,1});
             c.text(*m_font,m_visualProperty.c_str(),440,275,accent);
             c.clip(440,305,400,30);c.text(*m_font,m_visualText.empty()?"Default / enter asset: or global: path":m_visualText.c_str(),440,305,text);c.noClip();
             for(size_t i=0;i<5&&m_themeMediaFirst+i<m_themeMediaFiles.size();++i)
@@ -3448,14 +3459,14 @@ namespace nx
                 c.clip(446,y,388,28);c.text(*m_font,m_themeMediaFiles[m_themeMediaFirst+i].c_str(),446,y+4,text);c.noClip();
             }
             if(m_themeMediaFiles.empty())c.text(*m_font,"No matching imported media on this screen.",440,365,muted);
-            c.text(*m_font,"Select or type path; Enter = Apply.",440,505,muted);
+            c.text(*m_font,"Enter = Apply",440,503,muted);c.text(*m_font,"Escape = Cancel",440,519,muted);c.roundRect(650,505,95,32,4,{0.19f,0.4f,0.3f,1});c.text(*m_font,"Apply",697.5f,510,text,Align::Center);c.roundRect(750,505,90,32,4,{0.22f,0.31f,0.43f,1});c.text(*m_font,"Cancel",795,510,text,Align::Center);
         }
         else if(m_visualInput)
         {
             c.roundRect(420,286,440,130,6,{0.08f,0.12f,0.18f,1});
             c.text(*m_font,m_visualInput==1?"RENAME ASSET":m_visualInput==5?"THEME ASSET ID":m_visualInput==6?"STYLE NAME":m_visualInput>=3?m_visualProperty.c_str():"NEXT WIDGET TEXT",440,300,accent);
             c.clip(440,330,400,34);c.text(*m_font,m_visualText.c_str(),440,336,text);c.noClip();
-            c.text(*m_font,"Enter = Apply; Escape = Cancel.",440,379,muted);
+            c.text(*m_font,"Enter = Apply",440,377,muted);c.text(*m_font,"Escape = Cancel",440,393,muted);c.roundRect(650,379,95,32,4,{0.19f,0.4f,0.3f,1});c.text(*m_font,"Apply",697.5f,384,text,Align::Center);c.roundRect(750,379,90,32,4,{0.22f,0.31f,0.43f,1});c.text(*m_font,"Cancel",795,384,text,Align::Center);
         }
     }
     void BlueprintWorkspace::launchSceneEditor(Services& s)
@@ -5918,7 +5929,7 @@ namespace nx
             if(n.kind=="curve:cubic")
             {c.roundRect(kRight+8,kTop+456+kPaletteExtra,kWidth-kRight-16,30,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Edit curve", (kWidth+kRight)*0.5f,kTop+461+kPaletteExtra,text,Align::Center);}
             if(m_selection<m_document.graphs[m_graph].nodes.size())
-            {c.roundRect(kRight+8,kTop+520+kPaletteExtra,kWidth-kRight-16,32,5,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Edit node", (kWidth+kRight)*0.5f,kTop+526+kPaletteExtra,text,Align::Center);}
+            {c.roundRect(kRight+8,kTop+520+kPaletteExtra,kWidth-kRight-16,32,5,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Edit Node", (kWidth+kRight)*0.5f,kTop+526+kPaletteExtra,text,Align::Center);}
             c.roundRect(kRight+8,kBottom-40,kWidth-kRight-16,32,5,{0.38f,0.19f,0.23f,1});
             c.text(*m_font,"Delete selected", (kWidth+kRight)*0.5f,kBottom-34,text,Align::Center);
         }

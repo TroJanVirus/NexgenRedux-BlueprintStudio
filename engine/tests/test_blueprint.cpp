@@ -634,6 +634,9 @@ NX_TEST(nativeBlueprintWorkspaceAuthorsSavesAndRunsThroughMouseAndKeyboard)
     click(468,138);click(630,353);
     click(630,375);type("workspace_key");
     click(630,397);type("first");
+    // Double-click the node header and stage an edit; Cancel preserves original values.
+    click(650,330);click(650,330);click(500,215);
+    state.type('x');frame();click(1055,620);
     click(840,18);click(755,133);type("Workspace Test");
     const std::string path="own/blueprint-project-Workspace Test.bp.json";
     auto found=r.platform.files.find(path);

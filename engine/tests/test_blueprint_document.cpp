@@ -211,6 +211,22 @@ NX_TEST(nativeInputValuesAreTypedUndoableAndWiresTakePrecedence)
     NX_EXPECT(copy.addNode(0,"repeat",0,0,error)&&!copy.setInputValue(0,3,"count","1.5",error)&&copy.setInputValue(0,3,"count","5",error));
 }
 
+NX_TEST(nativeNodeEditorAppliesAllValuesAsOneTransaction)
+{
+    BlueprintDocument doc;doc.create();std::string error,source;
+    NX_EXPECT(doc.addNode(0,"api:Save:Save::set:string,string",0,0,error)&&doc.connect(0,0,"then",1,"in",error));
+    NX_EXPECT(doc.setInputValue(0,1,"key","original",error)&&doc.setInputValue(0,1,"value","old",error));
+    const auto revision=doc.revision();
+    NX_EXPECT(!doc.editNodeValues(0,1,{{"key","discard"},{"unknown","invalid"}},nullptr,error)&&doc.revision()==revision);
+    NX_EXPECT(compileBlueprint(doc,source,error)&&source.find("Save::set(\"original\", \"old\")")!=std::string::npos);
+    NX_EXPECT(doc.editNodeValues(0,1,{{"key","changed"},{"value","new"}},nullptr,error));
+    NX_EXPECT(compileBlueprint(doc,source,error)&&source.find("Save::set(\"changed\", \"new\")")!=std::string::npos);
+    NX_EXPECT(doc.undo()&&doc.revision()==revision&&compileBlueprint(doc,source,error)&&source.find("Save::set(\"original\", \"old\")")!=std::string::npos);
+    NX_EXPECT(doc.addNode(0,"literal:float",0,0,error));const std::string invalid="bad",valid="2.5";
+    NX_EXPECT(!doc.editNodeValues(0,2,{},&invalid,error));
+    NX_EXPECT(doc.editNodeValues(0,2,{},&valid,error)&&doc.graphs[0].nodes[2].ref=="2.5");
+}
+
 NX_TEST(nativeCompilerDiagnosticsAndSourceMapLocateExactGraphNodes)
 {
     BlueprintDocument doc;doc.create();std::string error,source="unchanged";
