@@ -3383,7 +3383,36 @@ namespace nx
         m_toneVoices=s.audio?s.audio->voicesInUse():0;
         if(!click)return;
         if(in(x,y,860,116,1000,150)){stopTone(s);m_audioEditor=false;m_status="Audio editor closed.";return;}
+        if(in(x,y,550,116,650,150)){m_toneEffects=false;return;}
+        if(in(x,y,650,116,750,150)){m_toneEffects=true;return;}
+        if(in(x,y,750,116,850,150))
+        {
+            std::string relative;
+            if(blueprintSaveTonePreset(*s.platform,m_document.assetRoot,assetScreen(),m_tone,relative,m_status)&&
+                blueprintListAssets(*s.platform,m_document.assetRoot,assetScreen(),m_assetFiles,m_status))
+                m_status="Saved editable preset:"+relative;
+            return;
+        }
         bool changed=false;
+        if(in(x,y,830,497,1000,525)){m_tone.channels=m_tone.channels==1?2:1;changed=true;}
+        if(m_toneEffects)
+        {
+            unsigned i=0;
+            for(const auto& f:blueprintEffectControls)
+            {
+                const float xx=280.f+360.f*(i%2),yy=157.f+25.f*(i/2);
+                if(in(x,y,xx+150,yy,xx+344,yy+24))
+                {
+                    m_tone.effects.*f.field=f.lo+(f.hi-f.lo)*std::clamp((x-xx-150)/194.f,0.f,1.f);
+                    changed=true;
+                }
+                ++i;
+            }
+            if(in(x,y,430,382,624,407)){m_tone.tail=2*std::clamp((x-430)/194.f,0.f,1.f);changed=true;}
+            if(in(x,y,640,382,1000,407)){m_tone.effects=BusEffectSettings{};changed=true;}
+        }
+        else
+        {
         if(in(x,y,280,158,1000,190))
         {
             const auto index=static_cast<unsigned>((x-280)/144);
@@ -3409,7 +3438,8 @@ namespace nx
                 changed=true;
             }
         }
-        if(changed){stopTone(s);refreshTone();m_status="Tone updated. Preview or save to the project.";return;}
+        }
+        if(changed){stopTone(s);refreshTone();if(!m_toneWav.empty())m_status="Tone updated. Preview or save to the project.";return;}
         if(in(x,y,280,530,445,565))
         {
             stopTone(s);
@@ -3442,8 +3472,26 @@ namespace nx
             c.text(*m_font,name,x+width/2,y+6,text,Align::Center);
         };
         c.roundRect(260,100,760,525,9,{0.16f,0.16f,0.17f,1});
-        c.text(*m_font,"AUDIO SYNTHESIS / MONO SFX",280,122,accent);
-        button(860,116,140,34,"Back",false);
+        c.text(*m_font,"AUDIO SYNTHESIS",280,122,accent);
+        button(550,116,96,34,"Synth",!m_toneEffects);button(650,116,96,34,"Effects",m_toneEffects);
+        button(750,116,100,34,"Preset +",false);button(860,116,140,34,"Back",false);
+        if(m_toneEffects)
+        {
+            unsigned i=0;
+            for(const auto& f:blueprintEffectControls)
+            {
+                const float value=m_tone.effects.*f.field,x=280.f+360.f*(i%2),y=157.f+25.f*(i/2);
+                char label[64];std::snprintf(label,sizeof(label),"%s %.2f",f.name,static_cast<double>(value));
+                c.clip(x,y,148,24);c.text(*m_font,label,x,y+2,text);c.noClip();
+                c.rect(x+150,y+8,194,7,normal);
+                c.rect(x+150,y+8,194*(value-f.lo)/(f.hi-f.lo),7,accent);++i;
+            }
+            char tail[64];std::snprintf(tail,sizeof(tail),"Tail %.2f s",static_cast<double>(m_tone.tail));
+            c.text(*m_font,tail,280,385,text);c.rect(430,390,194,7,normal);
+            c.rect(430,390,97*m_tone.tail,7,accent);button(640,382,360,25,"Clear effects",false);
+        }
+        else
+        {
         const char* waves[]={"Sine","Triangle","Saw","Square","Noise"};
         for(unsigned i=0;i<5;++i)button(280.f+i*144,158,138,32,waves[i],m_tone.wave==i);
         const unsigned rates[]={11025,22050,44100,48000};
@@ -3462,9 +3510,12 @@ namespace nx
             c.rect(x+150,y+10,194,8,normal);
             c.rect(x+150,y+10,194*(item.value-item.lo)/(item.hi-item.lo),8,accent);
         }
-        c.rect(280,388,720,104,{0.09f,0.12f,0.16f,1});
-        c.line(280,440,1000,440,1,muted);
-        const size_t frames=m_toneWav.size()>44?(m_toneWav.size()-44)/2:0;
+        }
+        const float waveTop=m_toneEffects?410.f:388.f;
+        const float middle=(waveTop+492)*0.5f,half=(492-waveTop)*0.5f-4;
+        c.rect(280,waveTop,720,492-waveTop,{0.09f,0.12f,0.16f,1});
+        c.line(280,middle,1000,middle,1,muted);
+        const size_t frames=m_toneWav.size()>44?(m_toneWav.size()-44)/(2*m_tone.channels):0;
         const auto sample=[&](size_t i)
         {
             const unsigned v=static_cast<unsigned char>(m_toneWav[44+2*i])|
@@ -3475,13 +3526,15 @@ namespace nx
         {
             const size_t begin=i*frames/360,end=std::min(frames,std::max(begin+1,(i+1)*frames/360));
             float lo=1,hi=-1;
-            for(size_t j=begin;j<end;++j){const float v=sample(j);lo=std::min(lo,v);hi=std::max(hi,v);}
+            for(size_t j=begin;j<end;++j)for(unsigned ch=0;ch<m_tone.channels;++ch)
+            {const float v=sample(j*m_tone.channels+ch);lo=std::min(lo,v);hi=std::max(hi,v);}
             const float x=281.f+2.f*static_cast<float>(i);
-            c.line(x,440-hi*48,x,440-lo*48,1,accent);
+            c.line(x,middle-hi*half,x,middle-lo*half,1,accent);
         }
-        const auto budget="Xbox: "+std::to_string((frames*2+1023)/1024)+" KiB PCM / 6144 KiB default sound cache | "+
-            std::to_string(m_toneVoices)+"/32 voices (desktop preview)";
-        c.text(*m_font,budget.c_str(),280,501,muted);
+        const auto budget="Xbox: "+std::to_string((frames*2*m_tone.channels+1023)/1024)+" KiB / 6144 KiB cache | "+
+            std::to_string(m_toneVoices)+"/32 desktop voices";
+        c.clip(280,497,545,28);c.text(*m_font,budget.c_str(),280,501,muted);c.noClip();
+        button(830,497,170,28,m_tone.channels==1?"Mono / toggle":"Stereo / toggle",true);
         button(280,530,165,35,"Preview",true);button(455,530,145,35,"Stop",false);
         button(610,530,215,35,"Save WAV asset",true);button(835,530,165,35,"Reset",false);
         c.clip(280,575,720,42);c.text(*m_font,m_status.c_str(),280,580,text);c.noClip();
@@ -4378,13 +4431,23 @@ namespace nx
         {
             if(m_audioEditor){updateTone(s,x,y,click);m_left=left;return;}
             if(m_assetLibrary){updateVisualLibrary(s,x,y,left,click,pressed);m_left=left;return;}
-            if(click&&in(x,y,280,116,380,150)){m_audioEditor=true;refreshTone();m_status="Create a sound effect, then save a native WAV asset.";m_left=left;return;}
+            if(click&&in(x,y,280,116,380,150)){m_audioEditor=true;m_toneEffects=false;refreshTone();m_status="Create a sound effect, then save a native WAV asset.";m_left=left;return;}
             if(click&&in(x,y,384,116,524,150)){m_assetLibrary=true;m_visualInput=0;m_visualText.clear();m_visualFirst=0;m_status="Project-wide reusable actors and widget pages.";m_left=left;return;}
             if(input.wheel()<0&&m_assetFirst+10<m_assetFiles.size())++m_assetFirst;
             if(input.wheel()>0&&m_assetFirst)--m_assetFirst;
             if(click&&in(x,y,860,116,1000,150))m_assetBrowser=false;
             if(click&&in(x,y,704,116,850,150))browseAssets(s);
             if(click&&in(x,y,534,116,694,150))launchSceneEditor(s);
+            if(click&&in(x,y,280,190,1000,550))
+            {
+                const auto row=m_assetFirst+static_cast<size_t>((y-190)/36);
+                if(row<m_assetFiles.size()&&m_assetFiles[row].ends_with(".bptone.json"))
+                {
+                    BlueprintTone candidate;
+                    if(blueprintLoadTonePreset(*s.platform,m_document.assetRoot,assetScreen(),m_assetFiles[row],candidate,m_status))
+                    {stopTone(s);m_tone=candidate;m_audioEditor=true;m_toneEffects=false;refreshTone();if(!m_toneWav.empty())m_status="Loaded editable audio preset.";}
+                }
+            }
             m_left=left;return;
         }
         if(m_browsing)

@@ -1,4 +1,4 @@
-name: Verify portable Blueprint projects and audio synthesis
+name: Verify portable Blueprint projects, audio effects and presets
 on:
   workflow_dispatch:
   push:

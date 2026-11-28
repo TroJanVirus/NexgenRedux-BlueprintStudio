@@ -1,15 +1,35 @@
 #pragma once
 #include "tools/blueprint/native_document.h"
+#include "audio/effects.h"
 namespace nx
 {
     class Platform;
-    // Desktop authoring only: bounded mono PCM, played by the original mixer.
+    // Desktop authoring only: bounded PCM, played by the original mixer.
     struct BlueprintTone
     {
         unsigned wave=0,rate=22050;
         float seconds=0.6f,frequency=440,endFrequency=440,amplitude=0.65f;
         float attack=0.04f,decay=0.15f,sustain=0.65f,release=0.25f;
+        unsigned channels=1;
+        float tail=1.f;
+        BusEffectSettings effects;
     };
+    struct BlueprintEffectControl {const char* name;float BusEffectSettings::*field;float lo,hi;};
+    inline constexpr BlueprintEffectControl blueprintEffectControls[]={
+        {"Low pass",&BusEffectSettings::lowPass,20,20000},{"High pass",&BusEffectSettings::highPass,0,20000},
+        {"Distortion",&BusEffectSettings::distortion,0,1},{"Threshold",&BusEffectSettings::threshold,-60,0},
+        {"Ratio",&BusEffectSettings::ratio,1,20},{"Reverb",&BusEffectSettings::reverb,0,1},
+        {"Room",&BusEffectSettings::room,0,1},{"Echo",&BusEffectSettings::echo,0,1},
+        {"Delay",&BusEffectSettings::echoDelay,0.02f,0.75f},{"Feedback",&BusEffectSettings::echoFeedback,0,0.9f},
+        {"Chorus",&BusEffectSettings::chorus,0,1},{"Chorus Hz",&BusEffectSettings::chorusRate,0.05f,10},
+        {"Flanger",&BusEffectSettings::flanger,0,1},{"Flanger Hz",&BusEffectSettings::flangerRate,0.02f,5},
+        {"Flanger fb",&BusEffectSettings::flangerFeedback,0,0.9f},{"Low EQ",&BusEffectSettings::low,-24,24},
+        {"Mid EQ",&BusEffectSettings::mid,-24,24},{"High EQ",&BusEffectSettings::high,-24,24}
+    };
+    bool blueprintSaveTonePreset(Platform& platform,const std::string& root,const std::string& screen,
+        const BlueprintTone& tone,std::string& relative,std::string& error);
+    bool blueprintLoadTonePreset(Platform& platform,const std::string& root,const std::string& screen,
+        const std::string& relative,BlueprintTone& tone,std::string& error);
     bool blueprintToneWave(const BlueprintTone& tone,std::string& wav,std::string& error);
     bool blueprintSaveTone(Platform& platform,const std::string& root,const std::string& screen,
         const BlueprintTone& tone,std::string& relative,std::string& error);

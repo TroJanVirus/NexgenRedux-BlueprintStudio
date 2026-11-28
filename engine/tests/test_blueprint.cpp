@@ -941,6 +941,36 @@ NX_TEST(nativeAudioSynthesisProducesPlayablePortableWav)
     BlueprintDocument restored;NX_EXPECT(blueprintImportPackage(r.platform,"tone.bp.zip",restored,error));
     NX_EXPECT(r.platform.files["own/"+restored.assetRoot+"/Screen/asset/sound/synth-1.wav"]==wav);
 }
+NX_TEST(nativeAudioEffectsAndPresetRoundTrip)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    r.platform.workspaceFiles=true;
+    BlueprintTone tone;std::string dry,wet,again,error,relative;
+    NX_EXPECT(blueprintToneWave(tone,dry,error));
+    tone.channels=2;tone.effects.reverb=0.4f;tone.effects.echo=0.5f;tone.effects.distortion=0.3f;
+    tone.effects.chorus=0.2f;tone.effects.flanger=0.1f;tone.effects.low=-3;
+    tone.tail=0.5f;
+    NX_EXPECT(blueprintToneWave(tone,wet,error));
+    NX_EXPECT(blueprintToneWave(tone,again,error)&&again==wet&&wet!=dry);
+    auto* sound=loadSound(reinterpret_cast<const u8*>(wet.data()),wet.size());
+    NX_EXPECT(sound!=nullptr);if(!sound)return;
+    NX_EXPECT(sound->channels==2&&sound->rate==22050&&sound->frames==24255);
+    freeSound(sound);
+    NX_EXPECT(r.audio.effects(Bus::Effects).reverb==0&&r.audio.effects(Bus::Effects).echo==0);
+    BlueprintDocument doc;doc.create();
+    NX_EXPECT(blueprintCreateAssetRoot(r.platform,doc.assetRoot,error));
+    NX_EXPECT(blueprintSaveTonePreset(r.platform,doc.assetRoot,"Screen",tone,relative,error));
+    BlueprintTone loaded;NX_EXPECT(blueprintLoadTonePreset(r.platform,doc.assetRoot,"Screen",relative,loaded,error));
+    NX_EXPECT(blueprintToneWave(loaded,again,error)&&again==wet);
+    NX_EXPECT(!blueprintLoadTonePreset(r.platform,doc.assetRoot,"Screen","sound/../bad.bptone.json",loaded,error));
+    NX_EXPECT(loaded.channels==2);
+    NX_EXPECT(blueprintExportPackage(r.platform,doc,"preset.bp.zip",error));
+    BlueprintDocument restored;NX_EXPECT(blueprintImportPackage(r.platform,"preset.bp.zip",restored,error));
+    NX_EXPECT(blueprintLoadTonePreset(r.platform,restored.assetRoot,"Screen",relative,loaded,error));
+    NX_EXPECT(blueprintToneWave(loaded,again,error)&&again==wet);
+    tone.effects.echoFeedback=1.1f;NX_EXPECT(!blueprintToneWave(tone,again,error));
+    tone.effects.echoFeedback=0.4f;tone.channels=0;NX_EXPECT(!blueprintToneWave(tone,again,error));
+}
 NX_TEST(nativeBitmapFontImportsCompanionAndRejectsInvalidPairs)
 {
     Rig r;NX_EXPECT(r.ok);if(!r.ok)return;

@@ -5,6 +5,8 @@
 #include "assets/decode.h"
 #include "assets/bitmap_font.h"
 #include "assets/formats.h"
+#include "audio/audio.h"
+#include <memory>
 #include <unordered_set>
 #include <cmath>
 #include <algorithm>
@@ -81,7 +83,7 @@ namespace nx
             return true;
         }
     }
-    bool blueprintToneWave(const BlueprintTone& t,std::string& wav,std::string& error)
+    static bool dryToneWave(const BlueprintTone& t,std::string& wav,std::string& error)
     {
         const auto between=[](float v,float lo,float hi){return std::isfinite(v)&&v>=lo&&v<=hi;};
         if(t.wave>4||(t.rate!=11025&&t.rate!=22050&&t.rate!=44100&&t.rate!=48000)||
@@ -126,26 +128,166 @@ namespace nx
         }
         wav.swap(result);error.clear();return true;
     }
+    namespace
+    {
+        struct ToneField {const char* name;float BlueprintTone::*field;float lo,hi;};
+        constexpr ToneField toneFields[]={
+            {"seconds",&BlueprintTone::seconds,0.05f,4},{"frequency",&BlueprintTone::frequency,20,4000},
+            {"endFrequency",&BlueprintTone::endFrequency,20,4000},{"amplitude",&BlueprintTone::amplitude,0,1},
+            {"attack",&BlueprintTone::attack,0,0.33f},{"decay",&BlueprintTone::decay,0,0.33f},
+            {"sustain",&BlueprintTone::sustain,0,1},{"release",&BlueprintTone::release,0,0.33f},
+            {"tail",&BlueprintTone::tail,0,2}
+        };
+        bool toneValid(const BlueprintTone& t,std::string& error)
+        {
+            const auto valid=[](double v,double lo,double hi){return std::isfinite(v)&&v>=lo&&v<=hi;};
+            if(t.wave>4||(t.channels!=1&&t.channels!=2)||
+                (t.rate!=11025&&t.rate!=22050&&t.rate!=44100&&t.rate!=48000))
+            {error="Invalid waveform, channel count or sample rate.";return false;}
+            for(const auto& f:toneFields)if(!valid(t.*f.field,f.lo,f.hi))
+            {error="Invalid tone parameter: "+std::string(f.name);return false;}
+            for(const auto& f:blueprintEffectControls)if(!valid(t.effects.*f.field,f.lo,f.hi))
+            {error="Invalid effect parameter: "+std::string(f.name);return false;}
+            return true;
+        }
+        bool newToneAsset(Platform& p,const std::string& root,const std::string& screen,const std::string& suffix,
+            const std::string& bytes,std::string& relative,std::string& error)
+        {
+            if(!blueprintAssetRoot(root)){error="Invalid project asset root.";return false;}
+            if(!blueprintEnsureAssetFolder(p,root,screen,error))return false;
+            const auto folder=root+"/"+screen+"/asset/sound";
+            if(!ensure(p,folder)){error="Cannot create sound folder.";return false;}
+            for(unsigned i=1;i<=4096;++i)
+            {
+                const auto name="synth-"+std::to_string(i)+suffix,path="own/"+folder+"/"+name;
+                if(p.fileTime(path.c_str()))continue;
+                if(!p.writeFile(path.c_str(),bytes.data(),bytes.size())){error="Cannot write audio asset.";return false;}
+                FileData check;
+                if(!p.readFile(path.c_str(),check,MemTag::General)||check.size!=bytes.size()||
+                    std::memcmp(check.data,bytes.data(),bytes.size())!=0)
+                {error="Audio asset verification failed.";return false;}
+                relative="sound/"+name;error.clear();return true;
+            }
+            error="No unused audio asset name.";return false;
+        }
+    }
+    bool blueprintToneWave(const BlueprintTone& t,std::string& wav,std::string& error)
+    {
+        if(!toneValid(t,error))return false;
+        BusEffects processor;
+        processor.set(t.effects,0);
+        // Preserve the exact original mono output when no effect is requested.
+        if(!processor.busy()&&t.channels==1)return dryToneWave(t,wav,error);
+        const auto& fx=t.effects;
+        // Isolated copies: never change the live mixer's bus or its effect state.
+        std::unique_ptr<ReverbMemory,decltype(&destroyReverbMemory)> reverb(fx.reverb>0?createReverbMemory():nullptr,destroyReverbMemory);
+        std::unique_ptr<EchoMemory,decltype(&destroyEchoMemory)> echo(fx.echo>0?createEchoMemory():nullptr,destroyEchoMemory);
+        std::unique_ptr<WaverMemory,decltype(&destroyWaverMemory)> waver((fx.chorus>0||fx.flanger>0)?createWaverMemory():nullptr,destroyWaverMemory);
+        if((fx.reverb>0&&!reverb)||(fx.echo>0&&!echo)||((fx.chorus>0||fx.flanger>0)&&!waver))
+        {error="Not enough memory for audio effects.";return false;}
+        processor.giveReverb(reverb.get());processor.giveEcho(echo.get());processor.giveWaver(waver.get());
+        BlueprintTone dry=t;dry.rate=kMixRate;
+        std::string pcm;
+        if(!dryToneWave(dry,pcm,error))return false;
+        const unsigned inputFrames=static_cast<unsigned>((pcm.size()-44)/2);
+        const unsigned tailFrames=(fx.reverb>0||fx.echo>0||fx.chorus>0||fx.flanger>0)?
+            static_cast<unsigned>(std::round(t.tail*kMixRate)):0;
+        const unsigned total=inputFrames+tailFrames;
+        std::vector<float> stereo(static_cast<size_t>(total)*2,0);
+        for(unsigned i=0;i<inputFrames;++i)
+        {
+            const unsigned v=static_cast<unsigned char>(pcm[44+2*i])|
+                (static_cast<unsigned>(static_cast<unsigned char>(pcm[45+2*i]))<<8);
+            stereo[2*i]=stereo[2*i+1]=static_cast<float>(v>=32768?static_cast<int>(v)-65536:static_cast<int>(v));
+        }
+        for(unsigned at=0;at<total;at+=256)
+            processor.process(stereo.data()+2*at,std::min(256u,total-at));
+        const unsigned frames=static_cast<unsigned>(std::round(static_cast<double>(total)*t.rate/kMixRate));
+        const unsigned payload=frames*2*t.channels;
+        std::string result;result.reserve(44+payload);
+        const auto le16=[&](unsigned v){result+=static_cast<char>(v&255);result+=static_cast<char>((v>>8)&255);};
+        const auto le32=[&](unsigned v){le16(v);le16(v>>16);};
+        result+="RIFF";le32(36+payload);result+="WAVEfmt ";le32(16);
+        le16(1);le16(t.channels);le32(t.rate);le32(t.rate*2*t.channels);le16(2*t.channels);le16(16);
+        result+="data";le32(payload);
+        // The native effect unit runs at 48 kHz. Average the covered source
+        // sample intervals when reducing rate; no claim of studio-grade resampling.
+        const double stride=static_cast<double>(kMixRate)/t.rate;
+        for(unsigned i=0;i<frames;++i)
+        {
+            const double start=i*stride,end=std::min(static_cast<double>(total),(i+1)*stride);
+            float sums[2]={};
+            for(unsigned j=static_cast<unsigned>(start);j<total&&j<end;++j)
+            {
+                const float weight=static_cast<float>(std::min(end,static_cast<double>(j+1))-std::max(start,static_cast<double>(j)));
+                sums[0]+=stereo[2*j]*weight;sums[1]+=stereo[2*j+1]*weight;
+            }
+            const float scale=static_cast<float>(1.0/std::max(0.001,end-start))*
+                std::min(1.f,static_cast<float>(frames-1-i)/(t.rate*0.01f));
+            for(unsigned ch=0;ch<t.channels;++ch)
+            {
+                float v=(t.channels==1?(sums[0]+sums[1])*0.5f:sums[ch])*scale;
+                if(!std::isfinite(v)){error="Non-finite audio effect result.";return false;}
+                le16(static_cast<unsigned>(static_cast<int>(std::round(std::clamp(v,-32767.f,32767.f)))));
+            }
+        }
+        wav.swap(result);error.clear();return true;
+    }
+    bool blueprintSaveTonePreset(Platform& p,const std::string& root,const std::string& screen,
+        const BlueprintTone& tone,std::string& relative,std::string& error)
+    {
+        if(!toneValid(tone,error))return false;
+        JsonValue json;
+        json.put("version")->setNumber(1);json.put("wave")->setNumber(tone.wave);
+        json.put("rate")->setNumber(tone.rate);json.put("channels")->setNumber(tone.channels);
+        for(const auto& f:toneFields)json.put(f.name)->setNumber(tone.*f.field);
+        auto* fx=json.put("effects");
+        for(const auto& f:blueprintEffectControls)fx->put(f.name)->setNumber(tone.effects.*f.field);
+        return newToneAsset(p,root,screen,".bptone.json",json.write(false),relative,error);
+    }
+    bool blueprintLoadTonePreset(Platform& p,const std::string& root,const std::string& screen,
+        const std::string& relative,BlueprintTone& tone,std::string& error)
+    {
+        if(!blueprintAssetRoot(root)||!folderId(screen)||relative.rfind("sound/",0)!=0||
+            !relative.ends_with(".bptone.json")||!blueprintAssetName(relative.substr(6)))
+        {error="Invalid audio preset path.";return false;}
+        FileData file;JsonTree json;
+        if(!p.readFile(("own/"+root+"/"+screen+"/asset/"+relative).c_str(),file,MemTag::General)||
+            file.size>16384||!json.parse(reinterpret_cast<const char*>(file.data),file.size)||!json.root().isObject())
+        {error="Cannot read audio preset.";return false;}
+        const auto obj=json.root();
+        if(!obj["version"].isNumber()||obj["version"].exact()!=1)
+        {error="Unsupported audio preset version.";return false;}
+        BlueprintTone candidate;
+        const auto number=[](JsonTree::Value v,double lo,double hi,double& out)
+        {if(!v.isNumber()||!std::isfinite(v.exact())||v.exact()<lo||v.exact()>hi)return false;out=v.exact();return true;};
+        double value=0;
+        const auto integer=[&](const char* name,unsigned lo,unsigned hi,unsigned& out)
+        {if(!number(obj[name],lo,hi,value)||std::floor(value)!=value)return false;out=static_cast<unsigned>(value);return true;};
+        if(!integer("wave",0,4,candidate.wave)||!integer("rate",11025,48000,candidate.rate)||
+            !integer("channels",1,2,candidate.channels))
+        {error="Invalid audio preset format.";return false;}
+        for(const auto& f:toneFields)
+        {
+            // A stored decimal can differ by the last float bit at the bound.
+            if(!number(obj[f.name],f.lo-0.000001,f.hi+0.000001,value))
+            {error="Invalid preset parameter: "+std::string(f.name);return false;}
+            candidate.*f.field=std::clamp(static_cast<float>(value),f.lo,f.hi);
+        }
+        for(const auto& f:blueprintEffectControls)
+        {
+            if(!number(obj["effects"][f.name],f.lo-0.000001,f.hi+0.000001,value))
+            {error="Invalid preset effect: "+std::string(f.name);return false;}
+            candidate.effects.*f.field=std::clamp(static_cast<float>(value),f.lo,f.hi);
+        }
+        if(!toneValid(candidate,error))return false;
+        tone=candidate;error.clear();return true;
+    }
     bool blueprintSaveTone(Platform& p,const std::string& root,const std::string& screen,
         const BlueprintTone& tone,std::string& relative,std::string& error)
     {
         std::string wav;
-        if(!blueprintToneWave(tone,wav,error)||!blueprintAssetRoot(root)||
-            !blueprintEnsureAssetFolder(p,root,screen,error))return false;
-        const auto folder=root+"/"+screen+"/asset/sound";
-        if(!ensure(p,folder)){error="Cannot create sound folder.";return false;}
-        for(unsigned i=1;i<=4096;++i)
-        {
-            const auto name="synth-"+std::to_string(i)+".wav",path="own/"+folder+"/"+name;
-            if(p.fileTime(path.c_str()))continue;
-            if(!p.writeFile(path.c_str(),wav.data(),wav.size())){error="Cannot write generated WAV.";return false;}
-            FileData check;
-            if(!p.readFile(path.c_str(),check,MemTag::General)||check.size!=wav.size()||
-                std::memcmp(check.data,wav.data(),wav.size())!=0)
-            {error="Generated WAV verification failed.";return false;}
-            relative="sound/"+name;error.clear();return true;
-        }
-        error="No unused synthesized sound name.";return false;
+        return blueprintToneWave(tone,wav,error)&&newToneAsset(p,root,screen,".wav",wav,relative,error);
     }
     bool blueprintCreateAssetRoot(Platform& p,std::string& root,std::string& error)
     {

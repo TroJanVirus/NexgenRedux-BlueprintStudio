@@ -249,7 +249,7 @@ namespace nx
         bool publishVisualWidget(Services& services);
         std::vector<std::string> m_assetFiles;
         size_t m_assetFirst=0;
-        bool m_audioEditor=false;
+        bool m_audioEditor=false,m_toneEffects=false;
         BlueprintTone m_tone;
         std::string m_toneWav;
         Voice m_toneVoice;
