@@ -2239,6 +2239,17 @@ namespace nx
         {error="Expected native Blueprint version 2. Browser prototypes are not supported.";return false;}
         BlueprintDocument candidate;candidate.name=root["name"].text();
         candidate.assetRoot=root["assetRoot"].text();
+        const auto target=root["target"];
+        if(target.exists())
+        {
+            if(!target.isObject()){error="Invalid project target.";return false;}
+            const auto platform=target["platform"],ram=target["ram"],resolution=target["resolution"];
+            const auto validInteger=[](JsonTree::Value v){return v.isNumber()&&v.exact()>=0&&v.exact()<=256&&std::floor(v.exact())==v.exact();};
+            if(!validInteger(platform)||!validInteger(ram)||!validInteger(resolution))
+            {error="Invalid target profile values.";return false;}
+            candidate.m_target={static_cast<unsigned>(platform.exact()),static_cast<unsigned>(ram.exact()),static_cast<unsigned>(resolution.exact())};
+            if(!candidate.m_target.valid()){error="Unsupported target profile.";return false;}
+        }
         if(!candidate.assetRoot.empty()&&!blueprintAssetRoot(candidate.assetRoot)){error="Invalid project asset directory.";return false;}
         const auto serialValue=root["visualSerial"];
         if(serialValue.exists())
@@ -2532,6 +2543,8 @@ namespace nx
         auto fail=[&](){error="Not enough memory to serialize Blueprint.";return false;};
         JsonValue root;
         if(!number(root,"version",2)||!text(root,"kind","NativeBlueprint")||!text(root,"name",name)||!text(root,"assetRoot",assetRoot))return fail();
+        auto* target=root.put("target");
+        if(!m_target.valid()||!target||!number(*target,"platform",m_target.platform)||!number(*target,"ram",m_target.ram)||!number(*target,"resolution",m_target.resolution))return fail();
         if(!manifests.empty())
         {
             auto* metadata=root.put("manifests");if(!metadata)return fail();metadata->setArray();
@@ -3434,10 +3447,16 @@ namespace nx
         error.clear();return true;
     }
 
+    bool BlueprintDocument::setTarget(const BlueprintTarget& target)
+    {
+        if(!target.valid())return false;
+        if(target==m_target)return true;
+        recordGraphList();m_target=target;return true;
+    }
     void BlueprintDocument::recordGraphList()
     {
         if(m_undo.size()>=kHistory)m_undo.erase(m_undo.begin());
-        m_undo.push_back({static_cast<size_t>(-1),{},m_revision,graphs,manifests,m_visualAssets});
+        m_undo.push_back({static_cast<size_t>(-1),{},m_revision,graphs,manifests,m_visualAssets,m_target});
         m_redo.clear();m_revision=++m_nextRevision;
     }
     const BlueprintDocument::Graph* BlueprintDocument::function(const std::string& owner,const std::string& functionName) const
@@ -4083,7 +4102,7 @@ namespace nx
         auto e=std::move(m_undo.back());m_undo.pop_back();
         if(e.graph==static_cast<size_t>(-1))
         {
-            m_redo.push_back({e.graph,{},m_revision,std::move(graphs),std::move(manifests),std::move(m_visualAssets)});graphs=std::move(e.all);manifests=std::move(e.manifests);m_visualAssets=std::move(e.visualAssets);
+            m_redo.push_back({e.graph,{},m_revision,std::move(graphs),std::move(manifests),std::move(m_visualAssets),m_target});graphs=std::move(e.all);manifests=std::move(e.manifests);m_visualAssets=std::move(e.visualAssets);m_target=e.target;
         }
         else
         {
@@ -4097,7 +4116,7 @@ namespace nx
         auto e=std::move(m_redo.back());m_redo.pop_back();
         if(e.graph==static_cast<size_t>(-1))
         {
-            m_undo.push_back({e.graph,{},m_revision,std::move(graphs),std::move(manifests),std::move(m_visualAssets)});graphs=std::move(e.all);manifests=std::move(e.manifests);m_visualAssets=std::move(e.visualAssets);
+            m_undo.push_back({e.graph,{},m_revision,std::move(graphs),std::move(manifests),std::move(m_visualAssets),m_target});graphs=std::move(e.all);manifests=std::move(e.manifests);m_visualAssets=std::move(e.visualAssets);m_target=e.target;
         }
         else
         {

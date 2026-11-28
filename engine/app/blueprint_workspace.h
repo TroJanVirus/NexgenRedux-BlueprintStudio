@@ -225,6 +225,7 @@ namespace nx
         float m_placementGrabWorldX=0,m_placementGrabWorldZ=0;
         void cancelVisualPlacement(){m_placementGrabWorldX=m_placementGrabWorldZ=0;m_gizmoAxis=-1;m_placementDragging=false;m_placementAsset.clear();m_placementGraph=m_placementNode=static_cast<size_t>(-1);}
         bool m_widgetDesigner=false,m_widgetPalette=false,m_widgetFourThree=false,m_widgetEvents=false,m_widgetUnbind=false,m_widgetAnchors=false;
+        bool m_targetResolutionMenu=false;
         bool m_widgetTimeline=false,m_widgetTimelinePlay=false;
         unsigned m_widgetTimelineTrack=0;
         float m_widgetTimelineTime=0;
@@ -246,7 +247,7 @@ namespace nx
         {
             bool wide=false;
             float leftDx=0,leftDy=0,rightDx=0,rightDy=0,propsDy=0,headerDx=0,headerDy=0;
-            float previewX=0,previewY=0,previewWidth=0,previewHeight=208,previewScale=208.f/720.f;
+            float previewX=0,previewY=0,previewWidth=0,previewHeight=208,previewScale=208.f/720.f,previewScaleX=208.f/720.f;
         };
         WidgetLayout widgetLayout() const;
         int m_visualInput=0; // 1 rename asset, 2 palette label, 3 actor property, 4 widget property

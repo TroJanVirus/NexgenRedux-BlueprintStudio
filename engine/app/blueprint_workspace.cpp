@@ -1818,9 +1818,12 @@ namespace nx
     BlueprintWorkspace::WidgetLayout BlueprintWorkspace::widgetLayout() const
     {
         WidgetLayout layout;
-        const float designWidth=m_widgetFourThree?960.f:1280.f;
-        layout.previewWidth=designWidth*layout.previewScale;
-        layout.previewX=815-layout.previewWidth*0.5f;layout.previewY=207;
+        const auto& target=m_document.target();
+        const float designWidth=target.width()*target.pixelAspect(),designHeight=static_cast<float>(target.height());
+        layout.previewScale=std::min(370.f/designWidth,208.f/designHeight);
+        layout.previewScaleX=layout.previewScale*target.pixelAspect();
+        layout.previewWidth=designWidth*layout.previewScale;layout.previewHeight=designHeight*layout.previewScale;
+        layout.previewX=815-layout.previewWidth*0.5f;layout.previewY=207+(208-layout.previewHeight)*0.5f;
         if(kWidth<1500||kHeight<720)return layout;
         layout.wide=true;
         const float ox=modalX(),oy=modalY();
@@ -1829,8 +1832,9 @@ namespace nx
         layout.propsDy=layout.rightDy-218;
         layout.headerDx=kWidth-12-ox-1000;layout.headerDy=12-oy-116;
         const float l=354-ox,r=kWidth-394-ox,t=112-oy,b=kBottom-48-oy;
-        layout.previewScale=std::max(0.01f,std::min((r-l-20)/designWidth,(b-t-20)/720.f));
-        layout.previewWidth=designWidth*layout.previewScale;layout.previewHeight=720*layout.previewScale;
+        layout.previewScale=std::max(0.01f,std::min((r-l-20)/designWidth,(b-t-20)/designHeight));
+        layout.previewScaleX=layout.previewScale*target.pixelAspect();
+        layout.previewWidth=designWidth*layout.previewScale;layout.previewHeight=designHeight*layout.previewScale;
         layout.previewX=(l+r-layout.previewWidth)*0.5f;layout.previewY=(t+b-layout.previewHeight)*0.5f;
         return layout;
     }
@@ -1841,6 +1845,17 @@ namespace nx
         JsonTree tree;if(!tree.parse(page->source.data(),page->source.size()))return;
         const auto layout=widgetLayout();
         const float pointerX=x,pointerY=y;
+        if(m_targetResolutionMenu&&click)
+        {
+            m_targetResolutionMenu=false;
+            const float menuX=630+layout.rightDx,menuY=194+layout.rightDy;
+            if(in(x,y,menuX,menuY,menuX+370,menuY+4*36))
+            {
+                auto target=m_document.target();target.resolution=static_cast<unsigned>((y-menuY)/36);
+                if(m_document.setTarget(target))m_status=target.warning();
+            }
+            return;
+        }
         if(layout.wide)
         {
             if(in(x,y,280+layout.leftDx,156+layout.leftDy,610+layout.leftDx,582+layout.leftDy))
@@ -1874,7 +1889,7 @@ namespace nx
         const float previewX=layout.previewX,previewY=layout.previewY;
         if(m_widgetPreviewDrag)
         {
-            m_widgetPreviewDx=(pointerX-m_widgetDragX)/previewScale;
+            m_widgetPreviewDx=(pointerX-m_widgetDragX)/layout.previewScaleX;
             m_widgetPreviewDy=(pointerY-m_widgetDragY)/previewScale;
             if(left)return;
             m_widgetPreviewDrag=false;
@@ -1906,7 +1921,7 @@ namespace nx
         if(!m_widgetPalette&&m_designUi&&m_designPreviewError.empty()&&
             in(pointerX,pointerY,previewX,previewY,previewX+previewWidth,previewY+previewHeight))
         {
-            const float localX=(pointerX-previewX)/previewScale,localY=(pointerY-previewY)/previewScale;
+            const float localX=(pointerX-previewX)/layout.previewScaleX,localY=(pointerY-previewY)/previewScale;
             // Walk in reverse painting order, taking the deepest visible widget
             // with a stable ID. Bounds use native layout, not a second renderer.
             const auto hit=[&](auto&& self,Widget& item)->Widget*
@@ -1946,7 +1961,7 @@ namespace nx
         if(in(x,y,510,156,610,189)){m_widgetPreviewState=m_widgetPreviewState>=5?-1:m_widgetPreviewState+1;return;}
         if(in(x,y,280,156,500,189)){m_widgetPalette=!m_widgetPalette;m_widgetFirst=0;return;}
         if(in(x,y,630,156,810,189)){m_widgetDesigner=false;releaseWidgetPreview();return;}
-        if(in(x,y,820,156,1000,189)){m_widgetFourThree=!m_widgetFourThree;return;}
+        if(in(x,y,820,156,1000,189)){m_targetResolutionMenu=true;return;}
         if(in(x,y,280,202,610,522))
         {
             const auto row=m_widgetFirst+static_cast<size_t>((y-202)/40);
@@ -2094,21 +2109,32 @@ namespace nx
         c.rect(502,524,108,21,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Timeline",556,525,text,Align::Center);
         c.pop();
         c.push();c.translate(layout.rightDx,layout.rightDy);
-        button(630,156,180,"Back to content");button(820,156,180,m_widgetFourThree?"4:3 / switch":"16:9 / switch");
+        button(630,156,180,"Back to content");button(820,156,180,(std::to_string(m_document.target().width())+" x "+std::to_string(m_document.target().height())+" v").c_str());
         c.pop();
-        const float width=m_widgetFourThree?960.f:1280.f,scale=layout.previewScale,screenWidth=layout.previewWidth;
+        const auto& target=m_document.target();
+        const float width=static_cast<float>(target.width()),height=static_cast<float>(target.height()),scale=layout.previewScale,screenWidth=layout.previewWidth;
+        const auto resolutionMenu=[&](){
+            if(!m_targetResolutionMenu)return;
+            c.push();c.translate(layout.rightDx,layout.rightDy);
+            for(unsigned i=0;i<BlueprintTarget::resolutionCount;++i)
+            {
+                auto option=target;option.resolution=i;
+                button(630,194+36.f*i,370,(std::string(option.resolutionName())+(option.highResolutionWarning()?" / poor performance risk":"")).c_str());
+            }
+            c.pop();
+        };
         const float px=layout.previewX,py=layout.previewY;
         if(layout.wide)
         {
             c.rect(354-modalX(),112-modalY(),kWidth-748,kBottom-160,{0.065f,0.065f,0.07f,1});
-            c.text(*m_font,m_widgetFourThree?"DESIGN PREVIEW  /  960 x 720":"DESIGN PREVIEW  /  1280 x 720",366-modalX(),92-modalY(),muted);
+            c.text(*m_font,(std::string("DESIGN PREVIEW / ")+target.resolutionName()).c_str(),366-modalX(),92-modalY(),muted);
             c.rect(px-1,py-1,screenWidth+2,layout.previewHeight+2,{0.34f,0.36f,0.39f,1});
         }
         c.rect(layout.wide?px:630,layout.wide?py:202,layout.wide?screenWidth:370,layout.wide?layout.previewHeight:219,{0.055f,0.075f,0.105f,1});
         if(m_designUi&&m_designPreviewError.empty())
         {
-            c.push();c.clip(px,py,screenWidth,layout.previewHeight);c.translate(px,py);c.scale(scale,scale);
-            m_designUi->drawDesign(c,0,0,width,720,m_widgetSelection.c_str(),m_widgetPreviewState,m_widgetTimeline?m_widgetTimelineTime:0);
+            c.push();c.clip(px,py,screenWidth,layout.previewHeight);c.translate(px,py);c.scale(layout.previewScaleX,scale);
+            m_designUi->drawDesign(c,0,0,width,height,m_widgetSelection.c_str(),m_widgetPreviewState,m_widgetTimeline?m_widgetTimelineTime:0);
             if(!m_widgetSelection.empty())if(auto* selected=m_designUi->find(m_widgetSelection.c_str()))
             {
                 float sx=0,sy=0;m_designUi->place(*selected,sx,sy);
@@ -2143,7 +2169,7 @@ namespace nx
             snprintf(label,sizeof(label),"%.2fs / %.2fs",m_widgetTimelineTime,duration);c.text(*m_font,label,815,493,text,Align::Center);
             button(630,512,115,a["loop"].flag()?"Loop on":"Loop off");button(752,512,118,m_widgetTimelinePlay?"Pause":"Play");button(877,512,123,"Set key");
             button(630,548,180,"Delete key");button(820,548,180,"Rewind");
-            c.pop();return;
+            c.pop();resolutionMenu();return;
         }
         if(m_widgetAnchors)
         {
@@ -2160,7 +2186,7 @@ namespace nx
         }
         else for(size_t i=0;i<sizeof(designProps)/sizeof(designProps[0]);++i)
             button(630+123.34f*static_cast<float>(i%3),439+36*static_cast<float>(i/3),119,i==0&&std::any_of(rows.begin(),rows.end(),[&](const DesignRow& row){return row.id==m_widgetSelection&&row.kind=="component";})?"Unlink":designProps[i]);
-        c.pop();
+        c.pop();resolutionMenu();
     }
     void BlueprintWorkspace::updateVisualLibrary(Services& s,float x,float y,bool left,bool click,unsigned pressed)
     {
@@ -2878,7 +2904,7 @@ namespace nx
         const auto button=[&](float x,float y,float w,const char* label)
         {c.rect(x,y,w,30,{0.24f,0.24f,0.26f,1});c.text(*m_font,label,x+w*0.5f,y+6,text,Align::Center);};
         c.clip(12,0,kWidth-270,38);
-        c.text(*m_font,("BLUEPRINT CLASS / "+selected->title+(m_document.dirty()?" *":"")).c_str(),12,10,text);c.noClip();
+        c.text(*m_font,("BLUEPRINT CLASS / "+selected->title+(m_document.dirty()?" *":"")+" / "+m_document.target().label()).c_str(),12,10,text);c.noClip();
         button(kWidth-244,5,236,m_actorConstructionPreview?"Construction preview: ON":"Construction preview: OFF");
         if(m_actorConstructionPreview&&!m_actorConstructionStatus.empty())
         {
@@ -3324,6 +3350,7 @@ namespace nx
         {c.roundRect(x,y,w,33,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,label,x+w*0.5f,y+7,text,Align::Center);};
         if(wide)c.text(*m_font,(m_visualPlacement?"SCENE PLACEMENT / "+assetScreen():"WIDGET DESIGNER / "+(current?current->title:std::string())).c_str(),12-modalX(),18-modalY(),text);
         else c.text(*m_font,"CONTENT / PROJECT LIBRARY",280,122,accent);
+        if(m_widgetDesigner||m_visualPlacement){const auto info=m_document.target().label();c.clip(wide?12-modalX():280,wide?36-modalY():142,wide?kWidth-30:720,16);c.text(*m_font,info.c_str(),wide?12-modalX():280,wide?36-modalY():142,muted);c.noClip();}
         if(!m_widgetDesigner&&!m_visualPlacement)button(566,116,129,"New theme");
         c.push();if(wide)c.translate(layout.headerDx,layout.headerDy);
         button(704,116,146,"Media");button(860,116,140,"Close");c.pop();
@@ -4178,7 +4205,7 @@ namespace nx
         std::snprintf(line,sizeof(line),"Host FPS %.1f | draws %u",static_cast<double>(s.fps),static_cast<unsigned>(s.draws));m_profileRows.emplace_back(line);
         std::snprintf(line,sizeof(line),"Last update %.2f ms | script calls %u",updateMs,scriptRuns);m_profileRows.emplace_back(line);
         std::snprintf(line,sizeof(line),"Tracked RAM %.2f MiB | peak %.2f",mib(mem.bytes),mib(mem.peak));m_profileRows.emplace_back(line);
-        std::snprintf(line,sizeof(line),"64 MiB reference: %.1f%% (not Xbox usage)",100.0*mib(mem.bytes)/64.0);m_profileRows.emplace_back(line);
+        if(m_document.target().xbox()){std::snprintf(line,sizeof(line),"%u MiB reference: %.1f%% (not Xbox usage)",m_document.target().ram,100.0*mib(mem.bytes)/m_document.target().ram);m_profileRows.emplace_back(line);}
         std::snprintf(line,sizeof(line),"Host free RAM %.1f MiB",mib(s.platform->freeMemory()));m_profileRows.emplace_back(line);
         std::snprintf(line,sizeof(line),"Texture %.2f | buffers %.2f MiB",mib(memStats(MemTag::Texture).bytes),mib(memStats(MemTag::Buffer).bytes));m_profileRows.emplace_back(line);
         std::snprintf(line,sizeof(line),"Scene %.2f | script %.2f MiB",mib(memStats(MemTag::Scene).bytes),mib(memStats(MemTag::Script).bytes));m_profileRows.emplace_back(line);
@@ -4754,13 +4781,22 @@ namespace nx
     {
         if(!click)return;
         if(in(x,y,1000,600,1150,638)){m_focus=22;return;}
+        if(in(x,y,140,420,470,455)||in(x,y,480,420,790,455)||in(x,y,800,420,1140,455))
+        {
+            auto target=m_document.target();
+            if(x<470)target.platform=(target.platform+1)%BlueprintTarget::platformCount;
+            else if(x<790){if(!target.xbox())return;target.ram=target.ram==64?128:target.ram==128?256:64;}
+            else target.resolution=(target.resolution+1)%BlueprintTarget::resolutionCount;
+            if(m_document.setTarget(target))m_status=target.warning();
+            return;
+        }
         if(in(x,y,140,275,1140,330)){compileAndExport(s);return;}
         const bool validate=in(x,y,140,195,1140,250),package=in(x,y,140,355,1140,410);
         if(!validate&&!package)return;
         std::vector<BlueprintScreenOutput> outputs;BlueprintLocation location;m_diagnostic={};
         if(!compileBlueprintProject(m_document,outputs,m_status,&location)){focusDiagnostic(location);m_focus=0;return;}
         if(!validateProject(s,outputs)){m_focus=0;return;}
-        if(validate){m_status="Validated "+std::to_string(outputs.size())+" scene script(s) with the native compiler and AngelScript.";return;}
+        if(validate){m_status="Script integrity passed ("+std::to_string(outputs.size())+" scenes). Target runtime fit UNVERIFIED; "+m_document.target().warning();return;}
         std::string file;
         for(unsigned i=1;i<=10000;++i){const auto candidate="blueprint-package-"+std::to_string(i)+".bp.zip";if(!s.platform->fileTime(("own/"+candidate).c_str())){file=candidate;break;}}
         if(file.empty())m_status="No free project package name.";
@@ -4775,8 +4811,15 @@ namespace nx
         row(195,"Validate project","Compile every scene and verify generated AngelScript.");
         row(275,"Compile & export native project","Export native screen manifests, generated scripts and project media into a new folder.");
         row(355,"Validate & package editable project","Export a portable Blueprint ZIP containing the document and media.");
-        c.text(*m_font,"Exports are Redux projects, not cooked executable builds.",140,458,accent);
-        c.text(*m_font,"Use the Redux platform cooker for target executables and hardware testing.",140,484,muted);
+        const auto& target=m_document.target();
+        const auto setting=[&](float x,float width,const std::string& label){c.roundRect(x,420,width,35,4,{0.20f,0.32f,0.45f,1});c.clip(x+5,420,width-10,35);c.text(*m_font,label.c_str(),x+width/2,428,text,Align::Center);c.noClip();};
+        setting(140,330,std::string(target.platformName())+" >");
+        setting(480,310,target.xbox()?std::to_string(target.ram)+" MiB RAM >":"Platform RAM / n/a");
+        setting(800,340,std::string(target.resolutionName())+" >");
+        char estimate[160];std::snprintf(estimate,sizeof(estimate),"Example render surfaces: %.2f MiB (2 x RGBA8 + 1 x D32; not total runtime RAM)",static_cast<double>(target.surfaceBytes())/1048576.0);
+        c.text(*m_font,estimate,140,460,muted);
+        c.text(*m_font,target.warning().c_str(),140,484,{1.f,0.72f,0.22f,1.f});
+        c.text(*m_font,"Exports are source/media. Actual target runtime integrity and performance remain unverified.",140,508,muted);
         c.roundRect(1000,600,150,38,4,{0.20f,0.32f,0.45f,1});c.text(*m_font,"Back",1075,609,text,Align::Center);
         c.clip(120,535,1030,58);c.paragraph(*m_font,m_status.c_str(),120,540,1020,text);c.noClip();
     }
@@ -6637,7 +6680,8 @@ namespace nx
         }
         }
         c.rect(0,kBottom,kWidth,kHeight-kBottom,{0.16f,0.16f,0.17f,1});
-        c.text(*m_font,shorten(m_status,110).c_str(),12,kBottom+6,text);
+        c.clip(12,kBottom+2,kWidth*0.55f,24);c.text(*m_font,shorten(m_status,110).c_str(),12,kBottom+6,text);c.noClip();
+        c.clip(kWidth*0.56f,kBottom+2,kWidth*0.43f,24);c.text(*m_font,m_document.target().label().c_str(),kWidth-12,kBottom+6,muted,Align::Right);c.noClip();
         if(!m_recoveryWarning.empty())
             c.text(*m_font,shorten(m_recoveryWarning,105).c_str(),12,kBottom+26,{1.f,0.72f,0.22f,1.f});
         else
@@ -6771,7 +6815,7 @@ namespace nx
                 }
                 if(m_files.empty())c.text(*m_font,"No saved projects yet. Choose a template to begin.",760,330,muted,Align::Center);
                 c.rect(0,625,1280,95,{0.13f,0.16f,0.21f,1});
-                c.text(*m_font,("Active: "+m_document.name+(m_document.dirty()?"  /  Unsaved changes":"")).c_str(),28,638,accent);
+                c.text(*m_font,("Active: "+m_document.name+(m_document.dirty()?"  /  Unsaved changes":"")+" / "+m_document.target().label()).c_str(),28,638,accent);
                 c.clip(28,665,1220,40);c.text(*m_font,m_status.c_str(),28,673,text);c.noClip();
             }
             else if(m_focus==26)

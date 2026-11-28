@@ -1,4 +1,5 @@
 #pragma once
+#include "tools/blueprint/target_profile.h"
 #include <cstddef>
 #include <string>
 #include <vector>
@@ -73,6 +74,8 @@ namespace nx
             std::string moduleOwner{}; // optional screen scope on Behaviour start graph
             std::string parentBehaviour{}; // shared parent class, on start only
         };
+        const BlueprintTarget& target()const{return m_target;}
+        bool setTarget(const BlueprintTarget& target);
         std::string name;
         std::string assetRoot; // external project directory, separate from graph history
         std::vector<Graph> graphs;
@@ -223,9 +226,10 @@ namespace nx
         size_t revision()const{return m_revision;}
         void markRecovered(){m_revision=++m_nextRevision;}
     private:
-        struct Edit { size_t graph; Graph state; size_t revision; std::vector<Graph> all; std::vector<ScreenManifest> manifests{}; std::vector<VisualAsset> visualAssets{}; };
+        struct Edit { size_t graph; Graph state; size_t revision; std::vector<Graph> all; std::vector<ScreenManifest> manifests{}; std::vector<VisualAsset> visualAssets{}; BlueprintTarget target{}; };
         void record(size_t graph);
         void recordGraphList();
+        BlueprintTarget m_target;
         std::vector<VisualAsset> m_visualAssets;
         std::vector<Edit> m_undo,m_redo;
         size_t m_revision=0,m_savedRevision=0,m_nextRevision=0;

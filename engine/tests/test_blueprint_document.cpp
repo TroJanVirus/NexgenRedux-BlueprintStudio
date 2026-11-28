@@ -2297,3 +2297,19 @@ NX_TEST(nativeImportWindowsFrameEnumProperties)
     NX_EXPECT(source.find("Windows::backdrop = BackdropMica")!=std::string::npos);
     NX_EXPECT(source.find("Window::pointer = PointerHand")!=std::string::npos);
 }
+
+NX_TEST(nativeProjectTargetProfileRoundTrip)
+{
+    BlueprintDocument doc;doc.create();std::string error,source;
+    NX_EXPECT(doc.target().xbox()&&doc.target().ram==64&&doc.target().width()==640&&doc.target().height()==480);
+    NX_EXPECT(doc.target().surfaceBytes()==3686400u);
+    auto target=doc.target();target.ram=256;target.resolution=3;
+    NX_EXPECT(doc.setTarget(target)&&doc.dirty()&&doc.target().highResolutionWarning());
+    NX_EXPECT(doc.undo()&&doc.target().ram==64&&!doc.dirty());
+    NX_EXPECT(doc.redo()&&doc.target()==target);
+    NX_EXPECT(doc.serialize(source,error));BlueprintDocument copy;
+    NX_EXPECT(copy.load(source.data(),source.size(),error)&&copy.target()==target);
+    target.ram=512;NX_EXPECT(!copy.setTarget(target));
+    target.ram=128;target.resolution=1;NX_EXPECT(copy.setTarget(target)&&copy.target().pixelAspect()>1.f);
+    target.platform=5;NX_EXPECT(copy.setTarget(target)&&!copy.target().xbox());
+}
