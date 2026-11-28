@@ -1999,11 +1999,11 @@ namespace nx
         if(!m_widgetPalette&&in(x,y,450,584,610,617))
         {
             if(!m_designUi||!m_designPreviewError.empty()){m_status="Widget preview unavailable.";return;}
-            const auto count=[&](auto&& self,const Widget& widget)->size_t
+            const auto countWidgets=[&](auto&& self,const Widget& widget)->size_t
             {
                 size_t total=1;for(const auto* child:widget.children)total+=self(self,*child);return total;
             };
-            const auto widgets=count(count,m_designUi->root())-1;
+            const auto widgets=countWidgets(countWidgets,m_designUi->root())-1;
             const auto uiBytes=memStats(MemTag::UI).bytes;
             m_status=std::to_string(widgets)+" expanded preview widgets / "+std::to_string(uiBytes/1024)+" KiB tracked UI heap (editor total) / "+std::to_string(m_document.target().surfaceBytes()/1024)+" KiB estimated target surfaces. Runtime memory and draws: Device Manager.";
             return;

@@ -2710,7 +2710,7 @@ namespace nx
         if(!m_debugWatches.empty())
         {
             auto* watches=root.put("debugWatches");if(!watches)return fail();watches->setArray();
-            for(const auto& name:m_debugWatches){auto* item=watches->add();if(!item)return fail();item->setText(name);}
+            for(const auto& watchName:m_debugWatches){auto* item=watches->add();if(!item)return fail();item->setText(watchName);}
         }
         auto* target=root.put("target");
         if(!m_target.valid()||!target||!number(*target,"platform",m_target.platform)||!number(*target,"ram",m_target.ram)||!number(*target,"resolution",m_target.resolution))return fail();
@@ -3632,11 +3632,11 @@ namespace nx
     {
         if(names.size()>12){error="Maximum 12 watched VM names.";return false;}
         std::vector<std::string> seen;
-        for(const auto& name:names)
+        for(const auto& watchName:names)
         {
-            if(name.empty()||name[0]=='!'||!validBreakpointCondition(name)||std::find(seen.begin(),seen.end(),name)!=seen.end())
+            if(watchName.empty()||watchName[0]=='!'||!validBreakpointCondition(watchName)||std::find(seen.begin(),seen.end(),watchName)!=seen.end())
             {error="Use unique VM variable names only.";return false;}
-            seen.push_back(name);
+            seen.push_back(watchName);
         }
         if(names!=m_debugWatches){recordGraphList();m_debugWatches=names;}
         error.clear();return true;
