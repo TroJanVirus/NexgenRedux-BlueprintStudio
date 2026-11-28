@@ -672,7 +672,12 @@ namespace
                         u32 screenWidth = 0, screenHeight = 0;
                         device->size(screenWidth, screenHeight);
                         input.setScreen(static_cast<float>(screenWidth), static_cast<float>(screenHeight));
-                        input.update(platform.input(), kStep);
+                        if(debugger.remoteInputActive(now))
+                        {
+                            InputState combined=platform.input();
+                            debugger.applyRemoteInput(combined,now);input.update(combined,kStep);
+                        }
+                        else input.update(platform.input(), kStep);
                         services.time += kStep;
 #ifdef NX_DESKTOP_BLUEPRINT
                         if (studio.active())

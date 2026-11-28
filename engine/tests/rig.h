@@ -163,7 +163,7 @@ namespace nx::test
     struct Rig
     {
         TestPlatform platform;
-        gpu::Device* device = gpu::createNullDevice(1280, 720);
+        gpu::Device* device;
         Assets assets;
         Canvas canvas;
         SolidMeshes solids;
@@ -178,7 +178,7 @@ namespace nx::test
         u32 documented = 0;
         bool ok = false;
 
-        explicit Rig(size_t budget = 64 * 1024 * 1024)
+        explicit Rig(size_t budget = 64 * 1024 * 1024,u32 width=1280,u32 height=720):device(gpu::createNullDevice(width,height))
         {
             services.platform = &platform;
             services.device = device;

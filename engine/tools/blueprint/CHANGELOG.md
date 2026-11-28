@@ -1,5 +1,14 @@
 # Changes
 
+## Beta 7 debugger and UMG hardening (development)
+
+- Conditional breakpoints accept a boolean VM local, script member or global (optional `!`); arbitrary expressions and getters are not executed. Conditions persist per node. Right-click an execution node to configure, then Sync watches on a matching development runtime.
+- Device Manager cycles telemetry, locals and a project-persistent list of up to 12 read-only VM variable watches. Inspect values while stopped; unsupported objects are not evaluated.
+- Remote CPU-side update/draw submission timings are measured wall-clock values, not a CPU utilisation percentage. UI memory is tracked separately; scroll telemetry to view all counters.
+- Console preview offers short authenticated virtual controller pulses for the installed development title. Physical pads take precedence, and pulses expire after 150 ms; no system/menu buttons or arbitrary remote commands. Trusted LAN only.
+- UMG duplication creates fresh subtree IDs, retains shared event functions and remaps internal navigation links. Controller navigation shows explicit links; timeline cursor snaps to existing keys. UI report shows expanded widget count, editor-wide tracked UI memory and estimated target surface bytes.
+- Designer and runtime use the same viewport-fitting helper; regression coverage exercises independent previews at 640x480, 720x480 anamorphic, 1280x720 and 1920x1080. Xbox hardware performance is not certified by these tests.
+
 ## Cook release packages
 
 - Use the original Nexgen Cook to prepare images and sounds for desktop or original Xbox when exporting a release. Keep source media and scripts untouched, preserve paths, and refuse failed or conflicting conversions. Models are copied unchanged; use the native tool separately for model dependencies. The same export is available in the command-line tool.

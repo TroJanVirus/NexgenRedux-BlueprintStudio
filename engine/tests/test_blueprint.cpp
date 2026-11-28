@@ -1,5 +1,6 @@
 #include "script/debugger_numbers.h"
 #include "script/breakpoint_value.h"
+#include "script/studio_input.h"
 #include "script/source_fingerprint.h"
 #include "test.h"
 #include "script/source_fingerprint.h"
@@ -3861,3 +3862,58 @@ NX_TEST(debuggerBooleanConditionsReadOnlyActualVmLocals)
     debugger.stopLocalTrace();
 }
 #endif
+
+NX_TEST(studioRemotePadPreservesPhysicalControllersAndExpires)
+{
+    StudioPadPulse pulse;InputState state;
+    state.pads[0].connected=true;state.pads[0].buttons=1u<<static_cast<unsigned>(Button::B);
+    NX_EXPECT(!pulse.start(studioPadCount,1));
+    NX_EXPECT(pulse.start(4,1)&&!pulse.start(5,1.01));
+    NX_EXPECT(pulse.apply(state,1.05)&&state.pads[0].down(Button::B)&&state.pads[1].down(Button::A));
+    InputState neutral;NX_EXPECT(pulse.apply(neutral,1.2)&&neutral.pads[0].connected&&!neutral.pads[0].buttons);
+    InputState all;for(auto& p:all.pads)p.connected=true;
+    NX_EXPECT(!pulse.apply(all,1.3));
+    InputState expired;NX_EXPECT(!pulse.apply(expired,3.1)&&!expired.pads[0].connected);
+    NX_EXPECT(pulse.start(12,3.1)&&pulse.apply(expired,3.11)&&expired.pads[0].leftY==1);
+    pulse.clear();NX_EXPECT(!pulse.active(3.12));
+}
+
+NX_TEST(nativeDesignerAndRuntimeAgreeAtAllXboxResolutions)
+{
+    for(unsigned resolution=0;resolution<uiDesignResolutionCount;++resolution)
+    {
+        const auto size=uiDesignSize(resolution);
+        Rig r(64*1024*1024,size.width,size.height);NX_EXPECT(r.ok);if(!r.ok)return;
+        BlueprintDocument doc;doc.create();std::string id,error,source,page;
+        auto target=doc.target();target.resolution=resolution;
+        const bool ok=doc.setTarget(target)&&doc.createVisualAsset("widget",id,error)&&
+            doc.appendVisualWidget(id,"stack","",error)&&doc.setVisualWidgetProperty(id,"item-1","grow","1",error)&&
+            doc.appendVisualWidget(id,"button","Centered",error,"item-1")&&
+            doc.setVisualWidgetProperty(id,"item-2","width","100",error)&&doc.setVisualWidgetProperty(id,"item-2","height","40",error)&&
+            doc.setVisualWidgetProperty(id,"item-2","anchor","center",error)&&
+            doc.appendVisualWidget(id,"button","Other",error,"item-1")&&
+            doc.setVisualWidgetProperty(id,"item-3","width","100",error)&&doc.setVisualWidgetProperty(id,"item-3","height","40",error)&&
+            doc.setVisualWidgetProperty(id,"item-3","anchor","top-left",error)&&
+            doc.visualWidgetPage(id,page,error)&&doc.connectVisualWidget("Screen",id,error)&&compileBlueprint(doc,source,error);
+        NX_EXPECT(ok);if(!ok)return;
+        r.platform.files["showcase/main/screen.json"]="{\"title\":\"Resolution test\"}";
+        r.platform.files["showcase/main/main.as"]=source;
+        if(!r.screens.init(r.services,"showcase","main")){NX_EXPECT(false);return;}
+        r.step(4);NX_EXPECT(!r.screens.failed());if(!r.services.ui)return;
+        auto& runtime=*r.services.ui;auto* center=runtime.find("item-2");auto* other=runtime.find("item-3");
+        NX_EXPECT(center&&other);if(!center||!other)return;
+        NX_EXPECT(runtime.root().w==static_cast<float>(size.width)&&runtime.root().h==static_cast<float>(size.height));
+        float x=0,y=0;runtime.place(*center,x,y);
+        {
+            Ui design(r.canvas,r.assets,r.audio,r.input,r.host,r.platform,"showcase/main");
+            NX_EXPECT(design.loadPage(page.data(),page.size(),design.root(),nullptr,"designer",true));
+            r.device->beginFrame({});r.canvas.begin();design.drawDesign(r.canvas,0,0,static_cast<float>(size.width),static_cast<float>(size.height));r.canvas.end();r.device->endFrame();
+            const auto* item=design.find("item-2");NX_EXPECT(item);if(!item)return;
+            float dx=0,dy=0;design.place(*item,dx,dy);
+            NX_EXPECT(fabsf(dx-x)<0.01f&&fabsf(dy-y)<0.01f&&fabsf(item->w-center->w)<0.01f&&fabsf(item->h-center->h)<0.01f);
+        }
+        runtime.focus(other);r.step();
+        r.platform.state.hasMouse=true;r.platform.state.mouseX=static_cast<float>(size.width)*0.5f;r.platform.state.mouseY=static_cast<float>(size.height)*0.5f;r.step(2);
+        NX_EXPECT(runtime.focused()==center);
+    }
+}

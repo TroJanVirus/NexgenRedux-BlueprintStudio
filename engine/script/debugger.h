@@ -1,5 +1,6 @@
 #pragma once
 #include "script/studio_live_source.h"
+#include "script/studio_input.h"
 
 #include "base/types.h"
 #include "base/thread.h"
@@ -47,6 +48,8 @@ namespace nx
         }
         // Each frame: takes questions and passes the log on.
         void update();
+        bool remoteInputActive(double now)const{return connected()&&!m_paused&&m_remotePad.active(now);}
+        void applyRemoteInput(InputState& state,double now)const{if(remoteInputActive(now))m_remotePad.apply(state,now);}
         // Until a debugger has connected and said it is ready, so that the first lines can be stopped at too.
         void waitForReady();
         bool connected() const { return m_client.state() == TcpState::Open; }
@@ -71,6 +74,7 @@ namespace nx
         void entities(int id);
         void studioActors(int id,const std::string& command,const JsonValue& ask);
         bool m_actorFrame=false;
+        StudioPadPulse m_remotePad;
         void entity(int id, const JsonValue& ask,bool studio=false);
         void setEntity(int id, const JsonValue& ask,bool studio=false);
 

@@ -5,6 +5,7 @@
 #include "script/studio_launch.h"
 #include "script/studio_live_source.h"
 #include "script/studio_preview.h"
+#include "script/studio_input.h"
 #include <algorithm>
 #include <string>
 #include <vector>
@@ -23,6 +24,14 @@ namespace nx
         bool sourceIdentity()const{return m_sourceIdentity;}
         bool conditionalBreakpoints()const{return m_conditionalBreakpoints;}
         bool watchesSupported()const{return m_watchesSupported;}
+        bool inputSupported()const{return m_inputSupported;}
+        const std::string& inputStatus()const{return m_inputStatus;}
+        bool pulseInput(unsigned control,const std::string& token,double now)
+        {
+            if(!m_ready||!m_inputSupported||m_paused||liveBusy()||m_inputBusy||control>=studioPadCount||!studioLaunchIdentity(token)||m_out.size()>4096||now<m_inputNext)return false;
+            JsonValue req;req.put("cmd")->setText("studioInput");req.put("id")->setNumber(17);req.put("token")->setText(token);req.put("control")->setNumber(control);
+            queue(req.write(true));m_inputBusy=true;m_inputDeadline=now+3;m_inputNext=now+0.2;m_inputStatus="Sending controller pulse...";return true;
+        }
         const std::vector<std::string>& watchRows()const{return m_watchRows;}
         void setWatchNames(const std::vector<std::string>& names){if(names!=m_watchNames){m_watchNames=names;m_watchRows.clear();m_watchDirty=true;m_watchOutstanding=0;}}
         bool traceSupported()const{return m_traceSupported;}
@@ -122,7 +131,7 @@ namespace nx
         void disconnect()
         {
             m_socket.close();if(m_network)netStop();m_network=m_ready=m_paused=m_hello=m_sourceIdentity=m_traceSupported=m_tracing=m_traceOutstanding=m_traceGap=false;m_hits.clear();
-            m_in.clear();m_out.clear();m_conditionalBreakpoints=false;m_telemetryOutstanding=false;m_heartbeatSupported=false;m_watchesSupported=false;m_watchRows.clear();m_watchDirty=true;m_watchOutstanding=0;m_rows.clear();m_log.clear();m_file.clear();m_fingerprint.clear();m_variables.clear();m_line=0;
+            m_in.clear();m_out.clear();m_conditionalBreakpoints=false;m_telemetryOutstanding=false;m_heartbeatSupported=false;m_watchesSupported=false;m_inputSupported=m_inputBusy=false;m_inputStatus.clear();m_inputNext=0;m_watchRows.clear();m_watchDirty=true;m_watchOutstanding=0;m_rows.clear();m_log.clear();m_file.clear();m_fingerprint.clear();m_variables.clear();m_line=0;
             m_previewSupported=m_previewBusy=false;m_previewPixels.clear();m_previewWidth=m_previewHeight=0;m_previewStatus.clear();++m_previewSequence;
             m_pinsSupported=m_pinsCapped=false;m_pinValues.clear();m_actorsSupported=false;m_actorRequest=0;m_actorEpoch=m_actorOffset=m_actorCount=m_actorSelected=0;m_actors.clear();m_actorProperties.clear();m_actorScreen.clear();m_actorStatus.clear();
             m_status="Disconnected";m_launchId.clear();m_address.clear();m_liveSupported=false;m_liveStage=0;m_liveScreen.clear();m_liveFingerprint.clear();std::string().swap(m_liveBytes);
@@ -155,6 +164,7 @@ namespace nx
             if(!m_ready&&now>m_deadline){fail("Redux debugger handshake timed out.");return;}
             if(state!=TcpState::Open)return;
             if(!m_hello){m_hello=true;queue("{\"cmd\":\"hello\",\"id\":1}");}
+            if(m_inputBusy&&now>m_inputDeadline){m_inputBusy=false;m_inputStatus="Input response timed out." ;}
             if(m_previewBusy&&now>m_previewDeadline){fail("Preview response timed out.");return;}
             if(actorBusy()&&now>m_actorDeadline){fail("Actor request timed out; reconnect to refresh.");return;}
             if(liveBusy()&&now>m_liveDeadline){m_liveStatus="Live Link timed out; reconnect to inspect actual running source.";fail("Live Link response timed out.");return;}
@@ -229,7 +239,7 @@ namespace nx
             if(event=="hello"&&id==1&&!m_ready)
             {
                 if(root["version"].exact()!=1){fail("Unsupported debugger protocol.");return;}
-                m_sourceIdentity=root["sourceIdentity"].flag();m_conditionalBreakpoints=root["conditionalBreakpoints"].flag();m_watchesSupported=root["studioWatches"].flag();m_heartbeatSupported=root["telemetryHeartbeat"].flag();m_traceSupported=root["remoteTrace"].flag();m_actorsSupported=root["studioActors"].flag();m_pinsSupported=root["studioPins"].flag();m_previewSupported=root["studioPreview"].flag();m_launchId=root["launchId"].text();if(!studioLaunchIdentity(m_launchId))m_launchId.clear();m_liveSupported=root["liveSource"].flag()&&!m_launchId.empty();m_ready=true;m_poll=now;m_status="Connected; waiting for device telemetry.";
+                m_sourceIdentity=root["sourceIdentity"].flag();m_conditionalBreakpoints=root["conditionalBreakpoints"].flag();m_watchesSupported=root["studioWatches"].flag();m_inputSupported=root["studioInput"].flag();m_heartbeatSupported=root["telemetryHeartbeat"].flag();m_traceSupported=root["remoteTrace"].flag();m_actorsSupported=root["studioActors"].flag();m_pinsSupported=root["studioPins"].flag();m_previewSupported=root["studioPreview"].flag();m_launchId=root["launchId"].text();if(!studioLaunchIdentity(m_launchId))m_launchId.clear();m_liveSupported=root["liveSource"].flag()&&!m_launchId.empty();m_ready=true;m_poll=now;m_status="Connected; waiting for device telemetry.";
                 queue("{\"cmd\":\"ready\",\"id\":2}");
             }
             else if(event=="stopped"&&m_ready)
@@ -308,6 +318,7 @@ namespace nx
                 m_fingerprint=std::string(top["fingerprint"].text()).substr(0,32);
                 const auto at=top["line"].exact();if(at>0&&at<1000000)m_line=static_cast<unsigned>(at);
             }
+            else if(id==17&&m_inputBusy){m_inputBusy=false;m_inputStatus=root["message"].text();}
             else if(id==15&&m_previewBusy)
             {
                 m_previewBusy=false;
@@ -382,7 +393,9 @@ namespace nx
         bool m_traceSupported=false,m_tracing=false,m_traceOutstanding=false,m_traceGap=false;
         bool m_liveSupported=false,m_actorsSupported=false,m_pinsSupported=false,m_pinsCapped=false;
         std::vector<PinValue> m_pinValues;
-        bool m_previewSupported=false,m_previewBusy=false;
+        bool m_previewSupported=false,m_previewBusy=false,m_inputSupported=false,m_inputBusy=false;
+        std::string m_inputStatus;
+        double m_inputDeadline=0,m_inputNext=0;
         double m_previewDeadline=0;
         u32 m_previewWidth=0,m_previewHeight=0,m_previewSequence=0;
         std::vector<u8> m_previewPixels;

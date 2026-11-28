@@ -173,7 +173,7 @@ namespace nx
     {
         if (!active()) return;
         stopPreview(s);
-        releaseRemotePreview(s);m_device.disconnect();m_deviceAddressEditing=false;m_deployPassword.clear();m_deployField=-1;
+        releaseRemotePreview(s);m_device.disconnect();m_deviceAddressEditing=m_deviceWatchEditing=false;m_deployPassword.clear();m_deployField=-1;
         stopTone(s);m_audioEditor=false;m_toneWav.clear();m_clipSource.clear();m_audioClip=BlueprintAudioClip{};
         s.platform->setEditorChrome(false);
         saveActorTab();cancelActorDrag();m_actorOrbit=false;m_splitter=0;m_actorEditor=false;m_contentDrag.clear();m_contentPanelDrag=false;releaseContentPreviews();
@@ -1828,11 +1828,12 @@ namespace nx
     {
         WidgetLayout layout;
         const auto& target=m_document.target();
-        const float designWidth=target.width()*target.pixelAspect(),designHeight=static_cast<float>(target.height());
-        layout.previewScale=std::min(370.f/designWidth,208.f/designHeight);
-        layout.previewScaleX=layout.previewScale*target.pixelAspect();
-        layout.previewWidth=designWidth*layout.previewScale;layout.previewHeight=designHeight*layout.previewScale;
-        layout.previewX=815-layout.previewWidth*0.5f;layout.previewY=207+(208-layout.previewHeight)*0.5f;
+        const auto apply=[&](const UiDesignRect& fit)
+        {
+            layout.previewScale=fit.scaleY;layout.previewScaleX=fit.scaleX;
+            layout.previewWidth=fit.w;layout.previewHeight=fit.h;layout.previewX=fit.x;layout.previewY=fit.y;
+        };
+        apply(fitUiDesign(630,207,370,208,uiDesignSize(target.resolution)));
         if(kWidth<1500||kHeight<720)return layout;
         layout.wide=true;
         const float ox=modalX(),oy=modalY();
@@ -1841,10 +1842,7 @@ namespace nx
         layout.propsDy=layout.rightDy-218;
         layout.headerDx=kWidth-12-ox-1000;layout.headerDy=12-oy-116;
         const float l=354-ox,r=kWidth-394-ox,t=112-oy,b=kBottom-48-oy;
-        layout.previewScale=std::max(0.01f,std::min((r-l-20)/designWidth,(b-t-20)/designHeight));
-        layout.previewScaleX=layout.previewScale*target.pixelAspect();
-        layout.previewWidth=designWidth*layout.previewScale;layout.previewHeight=designHeight*layout.previewScale;
-        layout.previewX=(l+r-layout.previewWidth)*0.5f;layout.previewY=(t+b-layout.previewHeight)*0.5f;
+        apply(fitUiDesign(l+10,t+10,r-l-20,b-t-20,uiDesignSize(target.resolution)));
         return layout;
     }
     void BlueprintWorkspace::updateWidgetDesigner(Services& s,float x,float y,bool left,bool click)
@@ -1998,7 +1996,19 @@ namespace nx
             else {m_widgetSelection=row?rows[row-1].id:"";if(!m_widgetSelection.empty()){m_widgetDragging=true;m_widgetDragId=m_widgetSelection;m_widgetDragX=x;m_widgetDragY=y;}}
             return;
         }
-        if(!m_widgetPalette&&!m_widgetSelection.empty()&&in(x,y,280,584,610,617))
+        if(!m_widgetPalette&&in(x,y,450,584,610,617))
+        {
+            if(!m_designUi||!m_designPreviewError.empty()){m_status="Widget preview unavailable.";return;}
+            const auto count=[&](auto&& self,const Widget& widget)->size_t
+            {
+                size_t total=1;for(const auto* child:widget.children)total+=self(self,*child);return total;
+            };
+            const auto widgets=count(count,m_designUi->root())-1;
+            const auto uiBytes=memStats(MemTag::UI).bytes;
+            m_status=std::to_string(widgets)+" expanded preview widgets / "+std::to_string(uiBytes/1024)+" KiB tracked UI heap (editor total) / "+std::to_string(m_document.target().surfaceBytes()/1024)+" KiB estimated target surfaces. Runtime memory and draws: Device Manager.";
+            return;
+        }
+        if(!m_widgetPalette&&!m_widgetSelection.empty()&&in(x,y,280,584,440,617))
         {
             std::string created;
             if(m_document.duplicateVisualWidget(m_visualSelection,m_widgetSelection,created,m_status))
@@ -2157,7 +2167,7 @@ namespace nx
         }
         if(m_widgetAnchors){button(280,548,106,"Fill X");button(390,548,106,"Fill Y");button(500,548,110,"Fill both");}
         else {button(280,548,160,"Move up");button(450,548,160,"Move down");}
-        if(!m_widgetPalette&&!m_widgetSelection.empty())button(280,584,330,"Duplicate widget");
+        if(!m_widgetPalette){if(!m_widgetSelection.empty())button(280,584,160,"Duplicate");button(450,584,160,"UI report");}
         c.rect(280,524,220,21,{0.19f,0.33f,0.50f,1});c.text(*m_font,m_widgetAnchors?"Back to properties":"Anchors / offset",390,525,text,Align::Center);
         c.rect(502,524,108,21,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Timeline",556,525,text,Align::Center);
         c.pop();
@@ -5295,7 +5305,7 @@ namespace nx
     void BlueprintWorkspace::releaseRemotePreview(Services& s)
     {
         if(m_remotePreviewTexture)s.assets->release(m_remotePreviewTexture);
-        m_remotePreviewTexture=nullptr;m_remotePreviewOn=false;m_remotePreviewSequence=0;
+        m_remotePreviewTexture=nullptr;m_remotePreviewOn=m_remotePadOpen=false;m_remotePreviewSequence=0;
     }
     void BlueprintWorkspace::updateRemotePreview(Services& s,float x,float y,bool click)
     {
@@ -5303,6 +5313,13 @@ namespace nx
         if(click&&in(x,y,1000,600,1150,638)){releaseRemotePreview(s);m_focus=27;return;}
         if(!m_device.ready()){releaseRemotePreview(s);return;}
         if(click&&in(x,y,140,600,350,638)){m_remotePreviewOn=!m_remotePreviewOn;m_remotePreviewNext=now;}
+        if(click&&in(x,y,580,600,820,638)&&m_device.inputSupported()){m_remotePadOpen=!m_remotePadOpen;return;}
+        if(m_remotePadOpen&&click&&in(x,y,815,195,1135,420)&&canPushLiveSource())
+        {
+            const auto control=static_cast<unsigned>((y-195)/45)*4+static_cast<unsigned>((x-815)/80);
+            if(control<studioPadCount)for(const auto& key:m_deployLaunchKeys)if(key.first==m_device.launchId())
+            {m_device.pulseInput(control,key.second,now);break;}
+        }
         if(click&&in(x,y,360,600,570,638)&&now>=m_remotePreviewNext)
         {if(m_device.requestPreview(now))m_remotePreviewNext=now+1;}
         if(m_remotePreviewOn&&now>=m_remotePreviewNext&&m_device.requestPreview(now))m_remotePreviewNext=now+1;
@@ -5321,21 +5338,36 @@ namespace nx
         c.roundRect(100,64,1080,594,8,{0.15f,0.17f,0.20f,1});
         c.text(*m_font,"CONSOLE PREVIEW / LOW BANDWIDTH",120,78,accent);
         c.text(*m_font,"Opt-in front-buffer thumbnails. Maximum one capture per second; not a video stream.",140,110,muted);
-        c.rect(140,144,1000,420,{0.025f,0.025f,0.03f,1});
+        const float previewWidth=m_remotePadOpen?660.f:1000.f,center=140+previewWidth*0.5f;
+        c.rect(140,144,previewWidth,420,{0.025f,0.025f,0.03f,1});
         if(m_remotePreviewTexture)
         {
             const float w=static_cast<float>(m_remotePreviewTexture->width),h=static_cast<float>(m_remotePreviewTexture->height);
-            const float scale=std::min(1000.f/w,420.f/h);
+            const float scale=std::min(previewWidth/w,420.f/h);
             c.push();c.setFilter(gpu::Filter::Nearest);
-            c.image(*m_remotePreviewTexture,640-w*scale/2,354-h*scale/2,w*scale,h*scale,{1,1,1,1});c.pop();
+            c.image(*m_remotePreviewTexture,center-w*scale/2,354-h*scale/2,w*scale,h*scale,{1,1,1,1});c.pop();
         }
-        else c.text(*m_font,"Start preview or capture a single frame.",640,340,muted,Align::Center);
+        else c.text(*m_font,"Start preview or capture a single frame.",center,340,muted,Align::Center);
+        if(m_remotePadOpen)
+        {
+            c.roundRect(810,144,330,420,4,{0.16f,0.20f,0.25f,1});c.text(*m_font,"REMOTE GAMEPAD / 150 ms",820,158,accent);
+            const bool enabled=canPushLiveSource();
+            for(unsigned i=0;i<studioPadCount;++i)
+            {
+                const float bx=815+80.f*static_cast<float>(i%4),by=195+45.f*static_cast<float>(i/4);
+                c.roundRect(bx,by,75,40,4,enabled?Color{0.20f,0.32f,0.45f,1}:Color{0.20f,0.22f,0.25f,1});
+                c.text(*m_font,studioPadLabels[i],bx+37.5f,by+10,enabled?text:muted,Align::Center);
+            }
+            c.paragraph(*m_font,enabled?"Click a control to send one short pulse. Physical pads take priority.":"Attach to the current installed development title and resume.",820,435,305,muted);
+            c.clip(820,500,305,52);c.paragraph(*m_font,m_device.inputStatus().c_str(),820,500,305,text);c.noClip();
+        }
         const std::string status=m_device.paused()?"Paused: last frame held.":m_device.previewStatus();
         c.clip(140,570,1000,26);c.text(*m_font,status.c_str(),140,573,muted);c.noClip();
         const auto button=[&](float x,float w,const char* label,bool enabled)
         {c.roundRect(x,600,w,38,4,enabled?Color{0.20f,0.32f,0.45f,1}:Color{0.20f,0.22f,0.25f,1});c.text(*m_font,label,x+w/2,608,enabled?text:muted,Align::Center);};
         button(140,210,m_remotePreviewOn?"Stop preview":"Start preview",m_device.ready());
         button(360,210,"Capture frame",m_device.ready()&&!m_device.paused()&&!m_device.previewBusy());
+        button(580,240,m_remotePadOpen?"Hide gamepad":"Remote gamepad",m_device.inputSupported());
         button(1000,150,"Back",true);
     }
     void BlueprintWorkspace::updateRemoteActors(Services& s,float x,float y,bool click)

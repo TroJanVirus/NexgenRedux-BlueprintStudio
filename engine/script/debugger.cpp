@@ -137,7 +137,7 @@ namespace nx
         m_host->setWatcher(nullptr);
         m_host = nullptr;
         m_pendingLaunch.clear();m_launchKey.clear();m_launchId.clear();m_liveUpload.clear();
-        resetRemoteTrace();resetProfiler();
+        resetRemoteTrace();resetProfiler();m_remotePad.clear();
         m_client.close();
         m_listener.close();
         netStop();
@@ -184,7 +184,7 @@ namespace nx
                 // A new one starts with nothing set.
                 m_pendingLaunch.clear();m_liveUpload.clear();
                 m_breakpoints.clear();
-                resetProfiler();m_last=Where();m_from=Where();
+                resetProfiler();m_remotePad.clear();m_last=Where();m_from=Where();
                 resetRemoteTrace();
                 m_files.clear();
                 m_mode = Mode::Run;
@@ -245,7 +245,7 @@ namespace nx
         {
             // Gone: nothing is to stop the scripts any more.
             m_breakpoints.clear();
-            resetProfiler();m_last=Where();m_from=Where();
+            resetProfiler();m_remotePad.clear();m_last=Where();m_from=Where();
             resetRemoteTrace();
             m_files.clear();
             m_mode = Mode::Run;
@@ -359,7 +359,7 @@ namespace nx
             reply.put("telemetryHeartbeat")->setFlag(true);
             const auto* svc=m_host&&m_host->engine()?static_cast<const Services*>(m_host->engine()->GetUserData()):nullptr;
             reply.put("studioPreview")->setFlag(svc&&svc->development&&svc->device&&svc->device->previewCaptureSupported());
-            if(!m_launchId.empty()){putText(reply,"launchId",m_launchId);reply.put("liveSource")->setFlag(true);}
+            if(!m_launchId.empty()){putText(reply,"launchId",m_launchId);reply.put("liveSource")->setFlag(true);reply.put("studioInput")->setFlag(svc&&svc->development); }
             putText(reply, "angelscript", ScriptHost::version());
             putNumber(reply, "id", id);
             send(reply.write(true));
@@ -451,6 +451,26 @@ namespace nx
         {
             const JsonValue* on = ask.find("on");
             profile(id, on && on->flag());
+        }
+        else if(name=="studioInput")
+        {
+            JsonValue reply;putNumber(reply,"id",id);
+            const auto* svc=m_host&&m_host->engine()?static_cast<const Services*>(m_host->engine()->GetUserData()):nullptr;
+            const auto* token=ask.find("token");const std::string supplied=token?token->text():"";
+            unsigned difference=0;
+            if(supplied.size()==32&&m_launchKey.size()==32)
+                for(size_t i=0;i<32;++i)difference|=static_cast<unsigned>(supplied[i]^m_launchKey[i]);
+            else difference=1;
+            u32 control=0;bool ok=false;const char* message="Remote input requires the installed development key and a running title.";
+            if(!difference&&svc&&svc->development&&svc->platform&&m_actorFrame&&!m_paused&&!m_liveApplying&&!m_liveUpload.ready&&m_pendingLaunch.empty())
+            {
+                bool free=false;for(const auto& pad:svc->platform->input().pads)if(!pad.connected){free=true;break;}
+                if(!free)message="All controller slots are occupied; physical pads take priority.";
+                else if(!debuggerUnsigned(ask.find("control"),control)||control>=studioPadCount)message="Unsupported controller input.";
+                else if(!m_remotePad.start(control,svc->platform->seconds()))message="Previous pulse is still active.";
+                else {ok=true;message="Controller pulse accepted (150 ms).";}
+            }
+            reply.put("inputOk")->setFlag(ok);putText(reply,"message",message);send(reply.write(true));
         }
         else if(name=="studioWatches")
         {
@@ -633,7 +653,7 @@ namespace nx
         auto* s=m_host&&m_host->engine()?static_cast<Services*>(m_host->engine()->GetUserData()):nullptr;
         m_liveApplying=true;
         // Reload may call onExit/onEnter; no suspended VM inside the transaction.
-        m_breakpoints.clear();m_files.clear();m_last=Where();resetRemoteTrace();
+        m_remotePad.clear();m_breakpoints.clear();m_files.clear();m_last=Where();resetRemoteTrace();
         std::string error;
         const bool ok=s&&s->screens&&s->screens->applyLiveSource(m_liveUpload.screen,m_liveUpload.expected,m_liveUpload.source,error);
         m_liveApplying=false;m_liveUpload.clear();
@@ -774,6 +794,7 @@ namespace nx
 
     void ScriptDebugger::stopHere(asIScriptContext* context, const char* reason, const char* text)
     {
+        m_remotePad.clear();
         m_paused = true;
         m_resume = false;
         m_stopped = context;

@@ -396,7 +396,7 @@ namespace nx
         void drawRemotePreview(Canvas& c);
         void releaseRemotePreview(Services& s);
         Asset* m_remotePreviewTexture=nullptr;
-        bool m_remotePreviewOn=false;
+        bool m_remotePreviewOn=false,m_remotePadOpen=false;
         double m_remotePreviewNext=0;
         u32 m_remotePreviewSequence=0;
         size_t m_actorFirst=0,m_actorPropertyFirst=0;
