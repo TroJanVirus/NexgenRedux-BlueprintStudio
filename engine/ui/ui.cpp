@@ -613,7 +613,7 @@ namespace nx
     // Scrolls whatever it is in until it can be seen.
     void Ui::reveal(Widget& w)
     {
-        float y = w.y,tall=w.h;
+        float y = w.y+w.animationValues[1],tall=w.h;
         for (Widget* p = w.parent; p; p = p->parent)
         {
             if (p->kind == WidgetKind::Scroll || p->kind == WidgetKind::List)
@@ -631,7 +631,7 @@ namespace nx
                 p->scrollTo = smaller(larger(p->scrollTo, 0), furthest);
                 y -= p->scrollTo;
             }
-            y=p->y+y*p->childScale;tall*=p->childScale;
+            y=p->y+p->animationValues[1]+y*p->childScale;tall*=p->childScale;
         }
     }
 
@@ -1183,7 +1183,7 @@ namespace nx
 
     Widget* Ui::hit(Widget& w, float px, float py, float mx, float my, bool focusableOnly)
     {
-        if (!w.visible)
+        if (!w.visible || !w.enabled)
         {
             return nullptr;
         }
@@ -1230,6 +1230,10 @@ namespace nx
         m_mouseX = mx;
         m_mouseY = my;
         const bool down = raw.mouseButtons[0];
+        // A hierarchy may be disabled or hidden during a mouse capture.
+        // Cancel the capture before dispatching any more slider/scroll events.
+        if(m_held&&!reachable(*m_held))m_held=nullptr;
+        if(m_dragged&&!reachable(*m_dragged))m_dragged=nullptr;
         Widget* under = hit(top(), 0, 0, mx, my, true);
         if (moved || down != m_mouseDown)
         {

@@ -4,6 +4,7 @@
 #include "screens/screens.h"
 #include "script/studio_actor_value.h"
 #include "script/studio_preview.h"
+#include "script/debugger_numbers.h"
 #include "bindings/script_refs.h"
 #include "scene/space.h"
 #include "scene/world.h"
@@ -280,7 +281,9 @@ namespace nx
         }
         const JsonValue* cmd = ask.find("cmd");
         const JsonValue* idValue = ask.find("id");
-        const int id = idValue ? static_cast<int>(idValue->number()) : 0;
+        u32 requestId=0;
+        if(idValue&&(!debuggerUnsigned(idValue,requestId)||requestId>2147483647u))return;
+        const int id=static_cast<int>(requestId);
         const std::string name = cmd ? cmd->text() : std::string();
         if (name == "clearBreakpoints")
         {
@@ -313,7 +316,9 @@ namespace nx
             if(fingerprint&&these->fingerprint.empty())these->fingerprint="invalid";
             for (u32 i = 0; lines && i < lines->count(); i++)
             {
-                these->lines.push_back(static_cast<int>(lines->at(i)->number()));
+                u32 line=0;
+                if(debuggerUnsigned(lines->at(i),line)&&line>0&&line<=2147483647u)
+                    these->lines.push_back(static_cast<int>(line));
             }
             m_files.clear();
             JsonValue reply;
@@ -1084,7 +1089,8 @@ namespace nx
         const JsonValue* ref = ask.find("ref");
         const JsonValue* scope = ask.find("scope");
         const JsonValue* frameValue = ask.find("frame");
-        const u32 frame = frameValue ? static_cast<u32>(frameValue->number()) : 0;
+        u32 frame=0;
+        if(frameValue&&!debuggerUnsigned(frameValue,frame))frame=0xffffffffu;
         const auto* requestedLimit=ask.find("limit");
         const double limitValue=requestedLimit?requestedLimit->number():0;
         const u32 limit=limitValue>=1&&limitValue<=100?static_cast<u32>(limitValue):0;
@@ -1093,8 +1099,8 @@ namespace nx
         }
         else if (ref)
         {
-            const size_t at = static_cast<size_t>(ref->number());
-            if (at >= 1 && at <= m_refs.size())
+            u32 at=0;
+            if (debuggerUnsigned(ref,at) && at >= 1 && at <= m_refs.size())
             {
                 const Ref of = m_refs[at - 1];
                 children(*list, of);
@@ -1248,7 +1254,8 @@ namespace nx
         putNumber(reply, "id", id);
         const JsonValue* expr = ask.find("expr");
         const JsonValue* frameValue = ask.find("frame");
-        const u32 frame = frameValue ? static_cast<u32>(frameValue->number()) : 0;
+        u32 frame=0;
+        if(frameValue&&!debuggerUnsigned(frameValue,frame))frame=0xffffffffu;
         // Names joined by dots, and [n] into arrays: no more than that is worked out.
         std::string text = expr ? expr->text() : std::string();
         std::vector<std::string> names;
@@ -1385,9 +1392,7 @@ namespace nx
         const auto epoch=screens->liveWorldEpoch();
         const auto integer=[&](const char* key,u32& out)
         {
-            const auto* item=ask.find(key);if(!item)return false;
-            const auto n=item->number();if(!(n>=0&&n<=4294967295.0))return false;
-            out=static_cast<u32>(n);return n==static_cast<double>(out);
+            return debuggerUnsigned(ask.find(key),out);
         };
         if(command=="studioActors")
         {
@@ -1422,11 +1427,11 @@ namespace nx
         const auto* svc=m_host&&m_host->engine()?static_cast<const Services*>(m_host->engine()->GetUserData()):nullptr;
         World* world = studio&&svc&&svc->screens?svc->screens->liveWorld():worldOf(m_host);
         const JsonValue* which = ask.find("entity");
-        const World::Entity* e = world && which ? world->find(static_cast<u32>(which->number())) : nullptr;
-        if(studio){reply.put("actorOk")->setFlag(e!=nullptr);putNumber(reply,"epoch",svc->screens->liveWorldEpoch());putNumber(reply,"entity",which->number());}
+        u32 entity=0;
+        const World::Entity* e = world && debuggerUnsigned(which,entity) ? world->find(entity) : nullptr;
+        if(studio){reply.put("actorOk")->setFlag(e!=nullptr);putNumber(reply,"epoch",svc->screens->liveWorldEpoch());putNumber(reply,"entity",entity);}
         if (e)
         {
-            const u32 entity = static_cast<u32>(which->number());
             Space& space = world->space();
             property(*list, "name", e->name, false);
             property(*list, "shown", e->visible ? "true" : "false", true);
@@ -1490,11 +1495,11 @@ namespace nx
         const JsonValue* which = ask.find("entity");
         const JsonValue* name = ask.find("property");
         const JsonValue* value = ask.find("value");
-        World::Entity* e = world && which && name && value ? world->find(static_cast<u32>(which->number())) : nullptr;
+        u32 entity=0;
+        World::Entity* e = world && name && value && debuggerUnsigned(which,entity) ? world->find(entity) : nullptr;
         bool done = false;
         if (e)
         {
-            const u32 entity = static_cast<u32>(which->number());
             const std::string& what = name->text();
             const std::string& text = value->text();
             float v[4] = {};

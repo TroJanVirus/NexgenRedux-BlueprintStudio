@@ -276,3 +276,32 @@ NX_TEST(uiScriptsMayPullTheRugOut)
     NX_EXPECT(!w.screens.failed() && named(w, "new"));
     NX_EXPECT(w.services.ui->focused() == named(w, "new"));
 }
+
+NX_TEST(uiDisabledHierarchyBlocksMouseAndCancelsCapture)
+{
+    Rig w;
+    if(!openPage(w, "Widget@ p = Ui::root; Widget@ r = p.row(10); r.id = \"group\"; r.button(\"nested\", WidgetEvent(this.hit)).id = \"nested\"; r.slider(0, 0, 100).id = \"slider\"; p.button(\"other\").id = \"other\";", "void hit(Widget@ x) { note(\"hit\", x.id); }"))
+    {NX_EXPECT(false);return;}
+    auto* group=named(w,"group");auto* slider=named(w,"slider");
+    NX_EXPECT(group&&slider);if(!group||!slider)return;
+    float x=0,y=0;at(w,"nested",x,y);
+    group->enabled=false;group->changed();
+    w.platform.state.hasMouse=true;w.platform.state.mouseX=x;w.platform.state.mouseY=y;
+    w.step();w.platform.state.mouseButtons[0]=true;w.step(2);
+    w.platform.state.mouseButtons[0]=false;w.step(2);
+    NX_EXPECT(is(w,"hit",""));
+    group->enabled=true;group->changed();w.step();
+    at(w,"slider",x,y);w.platform.state.mouseX=x;w.platform.state.mouseY=y;
+    w.platform.state.mouseButtons[0]=true;w.step(2);
+    const float before=slider->value;
+    NX_EXPECT(near(before,50));
+    group->enabled=false;group->changed();
+    w.platform.state.mouseX=x+slider->w*0.35f;w.step(2);
+    NX_EXPECT(near(slider->value,before));
+    w.platform.state.mouseButtons[0]=false;w.step(2);
+    group->enabled=true;group->changed();w.step();
+    at(w,"nested",x,y);w.platform.state.mouseX=x;w.platform.state.mouseY=y;
+    w.platform.state.mouseButtons[0]=true;w.step(2);
+    w.platform.state.mouseButtons[0]=false;w.step(2);
+    NX_EXPECT(is(w,"hit","nested"));
+}

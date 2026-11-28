@@ -1,3 +1,4 @@
+#include "script/debugger_numbers.h"
 #include "script/source_fingerprint.h"
 #include "test.h"
 #include "script/source_fingerprint.h"
@@ -3826,4 +3827,18 @@ NX_TEST(runtimeLiveSourceRestartsScreenWithoutChangingDisk)
     r.step(4);
     NX_EXPECT(r.screens.liveFingerprint()==oldHash);
     NX_EXPECT(strcmp(r.save.get("live_result","missing"),"original")==0);
+}
+
+NX_TEST(debuggerRejectsMalformedNumericIdentifiers)
+{
+    JsonValue value;u32 result=123;
+    NX_EXPECT(!debuggerUnsigned(nullptr,result)&&result==123);
+    value.setText("42");NX_EXPECT(!debuggerUnsigned(&value,result)&&result==123);
+    value.setFlag(true);NX_EXPECT(!debuggerUnsigned(&value,result)&&result==123);
+    value.setNumber(-1);NX_EXPECT(!debuggerUnsigned(&value,result)&&result==123);
+    value.setNumber(1.5);NX_EXPECT(!debuggerUnsigned(&value,result)&&result==123);
+    value.setNumber(4294967296.0);NX_EXPECT(!debuggerUnsigned(&value,result)&&result==123);
+    value.setNumber(4294967295.0);NX_EXPECT(debuggerUnsigned(&value,result)&&result==0xffffffffu);
+    value.setNumber(0);NX_EXPECT(debuggerUnsigned(&value,result)&&result==0);
+    value.setNumber(42);NX_EXPECT(debuggerUnsigned(&value,result)&&result==42);
 }
