@@ -1,4 +1,4 @@
-name: Verify wide integer and native object import
+name: Verify wide integer, native import and visual cubic curves
 on:
   workflow_dispatch:
   push:

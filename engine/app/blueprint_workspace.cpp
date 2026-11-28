@@ -11,6 +11,7 @@
 #include "assets/assets.h"
 #include "base/log.h"
 #include "base/json_tree.h"
+#include "base/curve.h"
 #include "base/json_value.h"
 #include "scene/world.h"
 #include "ui/ui.h"
@@ -264,7 +265,7 @@ namespace nx
         return true;
     }
     bool BlueprintWorkspace::modalOpen() const
-    {return m_assetBrowser||m_browsing||m_focus==5||m_focus==6||m_focus==9||m_focus==10||m_focus==11||m_focus==12||m_focus==13||m_focus==14||m_focus==15;}
+    {return m_assetBrowser||m_browsing||m_focus==5||m_focus==6||m_focus==9||m_focus==10||m_focus==11||m_focus==12||m_focus==13||m_focus==14||m_focus==15||m_focus==17;}
     void BlueprintWorkspace::resetGraphTabs()
     {
         releaseContentPreviews();m_graphTabs.clear();m_actorTabs.clear();m_visualTabs.clear();m_activeVisualTab={};m_activeTab={};m_tabFirst=0;
@@ -3973,6 +3974,26 @@ namespace nx
         }
         if(n.kind=="camera:orbit-timed"&&m_editPin=="name")m_inputChoices=namedSceneTargets();
     }
+    bool BlueprintWorkspace::beginCurveEditor(Input& input)
+    {
+        std::vector<std::string> values;
+        if(!m_document.cubicPoints(m_graph,m_selection,values,m_status))return false;
+        float minX=0,maxX=0,minY=0,maxY=0;
+        for(size_t i=0;i<4;++i)
+        {
+            std::vector<std::string> parts;
+            if(!blueprintInputComponents("Vec2",values[i],parts))return false;
+            const float x=std::strtof(parts[0].c_str(),nullptr),y=std::strtof(parts[1].c_str(),nullptr);
+            if(std::abs(x)>1000000||std::abs(y)>1000000){m_status="Visual editor supports coordinates within +/-1,000,000. Use the input inspector for larger values.";return false;}
+            m_curveX[i]=x;m_curveY[i]=y;
+            if(i==0){minX=maxX=x;minY=maxY=y;}
+            else {minX=std::min(minX,x);maxX=std::max(maxX,x);minY=std::min(minY,y);maxY=std::max(maxY,y);}
+        }
+        m_curveCenterX=(minX+maxX)*0.5f;m_curveCenterY=(minY+maxY)*0.5f;
+        m_curveScale=std::min(650.f/std::max(1.f,maxX-minX),330.f/std::max(1.f,maxY-minY));
+        m_curveDrag=-1;m_curveChanged=false;m_focus=17;input.setTyping(false);clearWire();
+        m_status="Drag the four control points. Apply saves all four in one undo step.";return true;
+    }
     void BlueprintWorkspace::update(Services& s)
     {
         auto& input = *s.input;
@@ -4304,6 +4325,38 @@ namespace nx
             const auto count=variableRows().size();m_variableFirst=std::min(m_variableFirst,count>10?count-10:0);
             m_left=left;return;
         }
+        if(m_focus==17)
+        {
+            if(click&&in(x,y,940,555,1050,595)){m_focus=0;m_curveDrag=-1;m_status="Curve edit cancelled.";}
+            else if(click&&in(x,y,810,555,930,595))
+            {
+                std::vector<std::string> points;
+                for(size_t i=0;i<4;++i){char pair[96];snprintf(pair,sizeof(pair),"%.9g,%.9g",m_curveX[i],m_curveY[i]);points.emplace_back(pair);}
+                if(!m_curveChanged||m_document.setCubicPoints(m_graph,m_selection,points,m_status))
+                {m_focus=0;m_curveDrag=-1;m_diagnostic={};m_status="Curve points applied.";}
+            }
+            else
+            {
+                if(click&&in(x,y,240,165,1040,535))
+                {
+                    float best=225;m_curveDrag=-1;
+                    for(int i=0;i<4;++i)
+                    {
+                        const float dx=x-(640+(m_curveX[i]-m_curveCenterX)*m_curveScale),dy=y-(350+(m_curveY[i]-m_curveCenterY)*m_curveScale);
+                        const float distance=dx*dx+dy*dy;if(distance<=best){best=distance;m_curveDrag=i;}
+                    }
+                }
+                if(left&&m_curveDrag>=0)
+                {
+                    const auto i=m_curveDrag;
+                    const float px=m_curveCenterX+(std::clamp(x,250.f,1030.f)-640)/m_curveScale;
+                    const float py=m_curveCenterY+(std::clamp(y,175.f,525.f)-350)/m_curveScale;
+                    if(px!=m_curveX[i]||py!=m_curveY[i]){m_curveX[i]=px;m_curveY[i]=py;m_curveChanged=true;}
+                }
+                if(!left)m_curveDrag=-1;
+            }
+            m_left=left;return;
+        }
         if(m_focus==16)
         {
             // Editing remains a draft until Enter; cancelling never changes the document.
@@ -4604,7 +4657,9 @@ namespace nx
             if(click&&m_selection<m_document.graphs[m_graph].nodes.size())
             {
                 const auto& n=m_document.graphs[m_graph].nodes[m_selection];
-                if(in(x,y,kRight+8,kTop+456+kPaletteExtra,kWidth-8,kTop+486+kPaletteExtra)&&(n.kind.rfind("literal:",0)==0||n.kind.rfind("var:",0)==0||n.kind.rfind("global:",0)==0||n.kind.rfind("capture:",0)==0||blueprintNamedCall(n.kind)||blueprintBehaviourReference(n.kind)||n.kind.rfind("data:",0)==0||n.kind.rfind("typed:",0)==0))
+                if(n.kind=="curve:cubic"&&in(x,y,kRight+8,kTop+456+kPaletteExtra,kWidth-8,kTop+486+kPaletteExtra))
+                {beginCurveEditor(input);}
+                else if(in(x,y,kRight+8,kTop+456+kPaletteExtra,kWidth-8,kTop+486+kPaletteExtra)&&(n.kind.rfind("literal:",0)==0||n.kind.rfind("var:",0)==0||n.kind.rfind("global:",0)==0||n.kind.rfind("capture:",0)==0||blueprintNamedCall(n.kind)||blueprintBehaviourReference(n.kind)||n.kind.rfind("data:",0)==0||n.kind.rfind("typed:",0)==0))
                 {m_edit=n.ref;m_focus=n.kind.rfind("literal:",0)==0?2:3;input.setTyping(true);}
                 else if(in(x,y,kRight+8,kTop+520+kPaletteExtra,kWidth-8,kTop+552+kPaletteExtra)&&!inputDetails(m_selection).empty())
                 {m_inspectorFirst=0;m_focus=15;input.setTyping(false);m_status="Inspect all input values, including defaults and wires.";}
@@ -5125,6 +5180,8 @@ namespace nx
                 c.text(*m_font,((m_focus==2||m_focus==3)?m_edit:n.ref).c_str(),kRight+14,kTop+461+kPaletteExtra,text);c.noClip();
                 c.text(*m_font,"Click to edit, Enter confirms",kRight+12,kTop+490+kPaletteExtra,muted);
             }
+            if(n.kind=="curve:cubic")
+            {c.roundRect(kRight+8,kTop+456+kPaletteExtra,kWidth-kRight-16,30,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Edit curve", (kWidth+kRight)*0.5f,kTop+461+kPaletteExtra,text,Align::Center);}
             if(!inputDetails(m_selection).empty())
             {c.roundRect(kRight+8,kTop+520+kPaletteExtra,kWidth-kRight-16,32,5,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Inspect inputs", (kWidth+kRight)*0.5f,kTop+526+kPaletteExtra,text,Align::Center);}
             c.roundRect(kRight+8,kBottom-40,kWidth-kRight-16,32,5,{0.38f,0.19f,0.23f,1});
@@ -5221,6 +5278,30 @@ namespace nx
                 }
                 if(m_files.empty())c.text(*m_font,"No projects, archives, source or project folders in own/.",640,330,muted,Align::Center);
                 c.clip(280,603,720,22);c.text(*m_font,shorten(m_status,90).c_str(),280,603,muted);c.noClip();
+            }
+            else if(m_focus==17)
+            {
+                c.roundRect(210,100,860,520,9,{0.16f,0.16f,0.17f,1});
+                c.text(*m_font,"CUBIC BEZIER / CONTROL POINTS",235,119,accent);
+                c.text(*m_font,"Drag endpoints or handles. The path uses Redux's native Curve.",235,141,muted);
+                c.rect(240,165,800,370,{0.10f,0.12f,0.15f,1});
+                c.push();c.clip(240,165,800,370);
+                for(int i=0;i<=20;++i)c.line(240+40*i,165,240+40*i,535,1,{0.18f,0.21f,0.25f,1});
+                for(int i=0;i<=9;++i)c.line(240,170+40*i,1040,170+40*i,1,{0.18f,0.21f,0.25f,1});
+                Curve preview;Vec2 controlPoints[4];
+                for(int i=0;i<4;++i){controlPoints[i]={640+(m_curveX[i]-m_curveCenterX)*m_curveScale,350+(m_curveY[i]-m_curveCenterY)*m_curveScale};preview.add(controlPoints[i]);}
+                for(int i=1;i<4;++i)c.line(controlPoints[i-1].x,controlPoints[i-1].y,controlPoints[i].x,controlPoints[i].y,1.5f,muted);
+                Vec2 samples[65];preview.points(65,samples);c.polyline(samples,65,3,accent);
+                for(int i=0;i<4;++i)
+                {
+                    const auto p=controlPoints[i];c.circle(p.x,p.y,7,(i==0||i==3)?Color{0.28f,0.85f,0.6f,1}:accent);c.ring(p.x,p.y,9,1.5f,text);
+                    char label[80];snprintf(label,sizeof(label),"P%d (%.2f, %.2f)",i,m_curveX[i],m_curveY[i]);
+                    c.text(*m_font,label,p.x+12,p.y-20,text);
+                }
+                c.pop();
+                c.clip(235,558,560,38);c.text(*m_font,m_status.c_str(),235,565,muted);c.noClip();
+                c.roundRect(810,555,120,40,4,{0.19f,0.4f,0.3f,1});c.text(*m_font,"Apply",870,565,text,Align::Center);
+                c.roundRect(940,555,110,40,4,{0.22f,0.31f,0.43f,1});c.text(*m_font,"Cancel",995,565,text,Align::Center);
             }
             else if(m_focus==10)
             {

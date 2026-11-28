@@ -3170,3 +3170,23 @@ NX_TEST(nativePackedWideIntegerRoundTrip)
     NX_EXPECT(strcmp(r.save.get("wide_exact",""),"yes")==0);
     NX_EXPECT(strcmp(r.save.get("wide_max",""),"yes")==0);
 }
+
+NX_TEST(nativeCubicCurveAuthoringRunsNativeCurve)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    BlueprintDocument doc;doc.create();std::string error,source;
+    bool ok=doc.addNode(0,"curve:cubic",0,0,error)&&doc.connect(0,0,"then",1,"in",error)&&
+        doc.setCubicPoints(0,1,{"0,0","0,100","100,100","100,0"},error)&&
+        doc.addNode(0,"api:Curve:at:Curve@,float",0,0,error)&&doc.connect(0,1,"then",2,"in",error)&&
+        doc.connect(0,1,"result",2,"target",error)&&doc.setInputValue(0,2,"t","0.5",error)&&
+        doc.addNode(0,"vec2:y",0,0,error)&&doc.connect(0,2,"result",3,"target",error)&&
+        doc.addNode(0,"equal:float",0,0,error)&&doc.connect(0,3,"result",4,"a",error)&&doc.setInputValue(0,4,"b","75",error)&&
+        doc.addNode(0,"branch",0,0,error)&&doc.connect(0,2,"then",5,"in",error)&&doc.connect(0,4,"result",5,"condition",error)&&
+        doc.addNode(0,"api:Save:Save::set:string,string",0,0,error)&&doc.connect(0,5,"true",6,"in",error)&&
+        doc.setInputValue(0,6,"key","curve_midpoint",error)&&doc.setInputValue(0,6,"value","yes",error)&&compileBlueprint(doc,source,error);
+    if(!ok){NX_ERROR("Cubic curve graph: %s",error.c_str());NX_EXPECT(false);return;}
+    r.platform.files["project/main/screen.json"]="{\"title\":\"Cubic curve\"}";
+    r.platform.files["project/main/main.as"]=source;
+    if(!r.screens.init(r.services,"project","main")){NX_EXPECT(false);return;}
+    r.step(3);NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("curve_midpoint",""),"yes")==0);
+}

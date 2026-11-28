@@ -294,6 +294,10 @@ namespace nx
         std::vector<std::string> m_inputComponents,m_inputChoices;
         size_t m_inputComponent=0,m_inputChoiceFirst=0;
         bool m_inputReplace=false;
+        float m_curveX[4]{},m_curveY[4]{},m_curveCenterX=0,m_curveCenterY=0,m_curveScale=1;
+        int m_curveDrag=-1;
+        bool m_curveChanged=false;
+        bool beginCurveEditor(Input& input);
         void prepareInputEditor(size_t node);
         struct InputDetail { std::string name,type,value,origin; bool editable=false; };
         std::vector<InputDetail> inputDetails(size_t node) const;

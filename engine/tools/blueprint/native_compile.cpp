@@ -1156,6 +1156,10 @@ namespace nx
         // These helpers use stock Redux script APIs, so the exported game needs no editor
         // runtime. Only modules with synthesis nodes receive them. Limit work per call;
         // callers advance their phase/range on successive updates.
+        bool usesCubic=false;
+        for(const auto& graph:document.graphs)for(const auto& node:graph.nodes)
+            if(node.kind=="curve:cubic")usesCubic=true;
+        if(usesCubic)result+="\nCurve@ bp_curve_cubic(Vec2 p0, Vec2 p1, Vec2 p2, Vec2 p3)\n{\n    Curve@ c = Curve();\n    c.add(p0); c.add(p1); c.add(p2); c.add(p3);\n    return c;\n}\n";
         bool usesAudio=false;
         for(const auto& graph:document.graphs)for(const auto& node:graph.nodes)
             if(node.kind.rfind("audio:",0)==0)usesAudio=true;

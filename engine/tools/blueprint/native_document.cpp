@@ -27,6 +27,7 @@ namespace nx
             {"literal:uint64","Unsigned integer (64-bit)","Values","","value:uint64"},
             {"literal:double","Double","Values","","value:double"},
             {"make:Vec2","Make Vec2","Values","x:float|y:float","result:Vec2"},
+            {"curve:cubic","Create cubic Bezier curve","Curve / Visual","in:exec|p0:Vec2|p1:Vec2|p2:Vec2|p3:Vec2","then:exec|result:Curve@","bp_curve_cubic","","","","Curve@","","in:p0|in:p1|in:p2|in:p3","p0:Vec2(140,480)|p1:Vec2(400,40)|p2:Vec2(880,40)|p3:Vec2(1140,480)"},
             {"vec2:x","Get X (Vec2)","Math / Vector","target:Vec2","result:float","get_x","get","member","pure","float"},
             {"vec2:y","Get Y (Vec2)","Math / Vector","target:Vec2","result:float","get_y","get","member","pure","float"},
             {"make:Vec3","Make Vec3","Values","x:float|y:float|z:float","result:Vec3"},
@@ -2803,6 +2804,41 @@ namespace nx
         if(it==n.values.end())n.values.push_back({pin,value});
         else it->value=value;
         error.clear();return true;
+    }
+    bool BlueprintDocument::cubicPoints(size_t graph,size_t node,std::vector<std::string>& points,std::string& error)const
+    {
+        if(graph>=graphs.size()||node>=graphs[graph].nodes.size()||graphs[graph].nodes[node].kind!="curve:cubic")
+        {error="Select a Create cubic Bezier curve node.";return false;}
+        const auto& g=graphs[graph];const auto& n=g.nodes[node];const auto* spec=blueprintSpec(n.kind);
+        std::vector<std::string> result;
+        for(const char* pin:{"p0","p1","p2","p3"})
+        {
+            if(std::any_of(g.links.begin(),g.links.end(),[&](const Link& l){return l.to==node&&l.input==pin;}))
+            {error="Visual editing needs four constant points. Disconnect the point wires first.";return false;}
+            std::string value;
+            for(const auto& d:spec->defaults)if(d.name==pin)value=d.type.substr(5,d.type.size()-6);
+            for(const auto& v:n.values)if(v.pin==pin)value=v.value;
+            std::vector<std::string> parts;
+            if(!blueprintInputComponents("Vec2",value,parts)){error="Invalid curve point.";return false;}
+            result.push_back(value);
+        }
+        points.swap(result);error.clear();return true;
+    }
+    bool BlueprintDocument::setCubicPoints(size_t graph,size_t node,const std::vector<std::string>& points,std::string& error)
+    {
+        std::vector<std::string> old;
+        if(!cubicPoints(graph,node,old,error))return false;
+        if(points.size()!=4){error="A cubic curve has four control points.";return false;}
+        for(const auto& v:points){std::vector<std::string> parts;if(!blueprintInputComponents("Vec2",v,parts)){error="Invalid curve point.";return false;}}
+        if(old==points){error.clear();return true;}
+        auto values=graphs[graph].nodes[node].values;
+        for(size_t i=0;i<4;++i)
+        {
+            const std::string pin="p"+std::to_string(i);
+            const auto it=std::find_if(values.begin(),values.end(),[&](const InputValue& v){return v.pin==pin;});
+            if(it==values.end())values.push_back({pin,points[i]});else it->value=points[i];
+        }
+        record(graph);graphs[graph].nodes[node].values.swap(values);error.clear();return true;
     }
     bool BlueprintDocument::clearInputValue(size_t graph,size_t node,const std::string& pin)
     {

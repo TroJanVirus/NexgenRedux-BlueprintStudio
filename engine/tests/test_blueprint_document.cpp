@@ -9,7 +9,7 @@
 using namespace nx;
 NX_TEST(nativeCatalogueContainsReferenceAPI)
 {
-    NX_EXPECT(blueprintCatalogue().size()==1511);
+    NX_EXPECT(blueprintCatalogue().size()==1512);
     const auto* save=blueprintSpec("api:Save:Save::set:string,string");
     NX_EXPECT(save&&save->inputs.size()==3&&save->outputs.size()==1);
     if(save&&save->inputs.size()==3)NX_EXPECT(save->inputs[0].type=="exec"&&save->inputs[2].type=="string");
@@ -252,7 +252,7 @@ NX_TEST(nativeBuiltinOperatorsHaveConsistentTypedPinsAndCompile)
             authored=authored&&doc.setInputValue(0,1,p.name,p.type=="string"?"hello":p.type=="bool"?"true":"2",error);
         NX_EXPECT(authored&&compileBlueprint(doc,source,error));
     }
-    NX_EXPECT(operators==65);
+    NX_EXPECT(operators==106);
 }
 
 NX_TEST(nativeProjectScreensOwnTheirStateAndFunctions)
@@ -2044,4 +2044,22 @@ NX_TEST(nativeImportUpstreamObjectsAndWideIntegers)
     NX_EXPECT(source.find("Curve()")!=std::string::npos&&source.find("Batch()")!=std::string::npos);
     NX_EXPECT(source.find(".readI64()")!=std::string::npos);
     NX_EXPECT(source.find("@bp_var_path = null")!=std::string::npos);
+}
+
+NX_TEST(nativeCubicCurveVisualEditIsAtomic)
+{
+    BlueprintDocument doc;doc.create();std::string error,source,bytes;
+    NX_EXPECT(doc.addNode(0,"curve:cubic",0,0,error)&&doc.connect(0,0,"then",1,"in",error));
+    std::vector<std::string> original,edited;
+    NX_EXPECT(doc.cubicPoints(0,1,original,error)&&original.size()==4);
+    NX_EXPECT(doc.setCubicPoints(0,1,{"0,0","0,100","100,100","100,0"},error));
+    NX_EXPECT(doc.cubicPoints(0,1,edited,error)&&edited[1]=="0,100");
+    NX_EXPECT(doc.undo()&&doc.cubicPoints(0,1,edited,error)&&edited==original);
+    NX_EXPECT(doc.redo()&&doc.cubicPoints(0,1,edited,error)&&edited[2]=="100,100");
+    NX_EXPECT(!doc.setCubicPoints(0,1,{"0,0","nan,0","100,100","100,0"},error));
+    NX_EXPECT(doc.serialize(bytes,error));
+    BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error)&&compileBlueprint(copy,source,error));
+    NX_EXPECT(source.find("bp_curve_cubic(")!=std::string::npos&&source.find("Curve@ c = Curve();")!=std::string::npos);
+    NX_EXPECT(copy.addNode(0,"make:Vec2",0,0,error)&&copy.connect(0,2,"result",1,"p0",error));
+    NX_EXPECT(!copy.cubicPoints(0,1,edited,error)&&!copy.setCubicPoints(0,1,original,error));
 }

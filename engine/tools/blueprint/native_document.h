@@ -141,6 +141,9 @@ namespace nx
         bool toggleWatch(size_t graph,size_t node);
         bool setInputValue(size_t graph,size_t node,const std::string& pin,const std::string& value,std::string& error);
         bool clearInputValue(size_t graph,size_t node,const std::string& pin);
+        // Constant four-point curves can be edited as a single undoable transaction.
+        bool cubicPoints(size_t graph,size_t node,std::vector<std::string>& points,std::string& error)const;
+        bool setCubicPoints(size_t graph,size_t node,const std::vector<std::string>& points,std::string& error);
         bool setReference(size_t graph,size_t node,const std::string& value,std::string& error);
         bool addFunction(const std::string& name,std::string& error,const std::string& owner="Screen");
         const Graph* function(const std::string& owner,const std::string& name) const;
