@@ -35,7 +35,7 @@
 //                   it first, and --debug-remote lets one on another machine connect
 //   --saves FOLDER  keep saves there, and keep them with --demo too
 //   --size W H      window size
-//   --hidden (and silent), --null, --menu (open the engine's menu for a capture)
+//   --hidden (and silent), --silent (visible window without audio), --null, --menu (open the engine's menu for a capture)
 //   --clean         with --demo: no captions over the demos, for footage
 //   --meeting PORT  be a meeting place for rooms on the internet, with no window, until stopped
 namespace
@@ -60,6 +60,7 @@ namespace
         size_t budget = 0;
         u32 width = 1280, height = 720;
         bool hidden = false;
+        bool silent = false;
         bool clean = false;        // demos without their captions, for footage
         bool null = false;
         bool menu = false;
@@ -68,7 +69,7 @@ namespace
         bool debugWait = false;
         bool debugRemote = false;
 #ifdef NX_DESKTOP_BLUEPRINT
-        bool blueprintStudio = false;
+        bool blueprintStudio = false, blueprintProjects = false;
 #endif
     };
 
@@ -527,8 +528,8 @@ namespace
             Screens screens;
 #ifdef NX_DESKTOP_BLUEPRINT
             BlueprintWorkspace studio;
-            static bool studioRequested = false;
-            studioRequested = false;
+            static unsigned studioRequested = 0;
+            studioRequested = 0;
 #endif
             services.platform = &platform;
             services.device = device;
@@ -548,7 +549,7 @@ namespace
             const bool small = platform.totalMemory() && platform.totalMemory() <= 128u * 1024 * 1024;
             const size_t textures = options.budget ? options.budget : (small ? 20u : 256u) * 1024 * 1024;
             ok = assets.init(*device, platform, textures, (small ? 6u : 64u) * 1024 * 1024) && canvas.init(*device, assets) && host.init();
-            ok = ok && audio.init(options.null || options.docs || options.hidden || options.record ? createNullAudioOutput(options.record == nullptr) : createAudioOutput());
+            ok = ok && audio.init(options.null || options.docs || options.hidden || options.silent || options.record ? createNullAudioOutput(options.record == nullptr) : createAudioOutput());
             audio.onFinished([](void* asset, void* cache) { static_cast<Assets*>(cache)->release(static_cast<Asset*>(asset)); }, &assets);
             coroutines.init(host);
             save.init(platform, "showcase");
@@ -578,13 +579,14 @@ namespace
             {
                 debugger.waitForReady();
             }
-            ok = ok && (options.docs || screens.init(services, "showcase", "main"));
 #ifdef NX_DESKTOP_BLUEPRINT
             if (!options.null && !options.hidden && !options.frames && !options.tour && options.demo <= 0 && !options.docs && !options.screen)
             {
-                screens.setBlueprintLauncher([]() { studioRequested = true; return true; });
+                screens.setBlueprintLauncher([]() { studioRequested = 1; return true; });
+                screens.setBlueprintProjectLauncher([]() { studioRequested = 2; return true; });
             }
 #endif
+            ok = ok && (options.docs || screens.init(services, "showcase", "main"));
 
             if (ok && !options.docs)
             {
@@ -594,9 +596,9 @@ namespace
                 }
                 bool done = false;
 #ifdef NX_DESKTOP_BLUEPRINT
-                if (options.blueprintStudio)
+                if (options.blueprintStudio||options.blueprintProjects)
                 {
-                    studio.open(services);
+                    studio.open(services,options.blueprintProjects);
                     if (studio.active()) screens.setDevelopmentPaused(true);
                     else { ok = false; done = true; }
                 }
@@ -687,9 +689,11 @@ namespace
 #ifdef NX_DESKTOP_BLUEPRINT
                             if (studioRequested)
                             {
-                                studioRequested = false;
-                                studio.open(services);
+                                const bool projects=studioRequested==2;
+                                studioRequested = 0;
+                                studio.open(services,projects);
                                 if (studio.active()) screens.setDevelopmentPaused(true);
+                                else screens.blueprintLaunchFailed();
                             }
 #endif
                         }
@@ -713,10 +717,13 @@ namespace
                     {
                         canvas.begin();
 #ifdef NX_DESKTOP_BLUEPRINT
-                        if (studio.active() && !studio.previewing()) studio.draw(canvas);
+                        if (studio.active() && (!studio.previewing()||studio.tracePaused()||studio.playPaused())) studio.draw(canvas);
                         else
 #endif
                         screens.draw();
+#ifdef NX_DESKTOP_BLUEPRINT
+                        if(studio.active()&&studio.previewing())studio.drawPreviewOverlay(canvas);
+#endif
                         // Where nothing else shows the pointer, it is drawn here: an arrow, outlined.
                         if ((platform.drawsPointer() && input.raw().hasMouse) || input.stickPointing())
                         {
@@ -875,11 +882,13 @@ int main(int argc, char** argv)
         else if (strcmp(a, "--budget") == 0) options.budget = static_cast<size_t>(atof(value(i)) * 1024 * 1024);
         else if (strcmp(a, "--size") == 0) { options.width = static_cast<u32>(atoi(value(i))); options.height = static_cast<u32>(atoi(value(i))); }
         else if (strcmp(a, "--hidden") == 0) options.hidden = true;
+        else if (strcmp(a, "--silent") == 0) options.silent = true;
         else if (strcmp(a, "--clean") == 0) options.clean = true;
         else if (strcmp(a, "--null") == 0) options.null = true;
         else if (strcmp(a, "--menu") == 0) options.menu = true;
 #ifdef NX_DESKTOP_BLUEPRINT
         else if (strcmp(a, "--blueprint-studio") == 0) options.blueprintStudio = true;
+        else if (strcmp(a, "--blueprint-projects") == 0) options.blueprintProjects = true;
 #endif
         else if (strcmp(a, "--bench") == 0) options.bench = true;
         else if (strcmp(a, "--dev") == 0) options.dev = true;

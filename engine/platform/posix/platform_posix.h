@@ -10,6 +10,9 @@ namespace nx
     class PlatformPosix : public Platform
     {
     public:
+        ~PlatformPosix() override;
+        bool acquireBlueprintLease() override;
+        void releaseBlueprintLease() override;
         double seconds() override;
         void sleep(double seconds) override;
         bool readFile(const char* path, FileData& out, MemTag tag) override;
@@ -19,10 +22,14 @@ namespace nx
         void removeSave(const char* name) override;
         bool setSaveFolder(const char* path) override;
         bool writeFile(const char* path, const void* data, size_t size) override;
+        bool createOwnFolder(const char* name) override;
         void list(const char* path, bool folders, FolderCallback callback, void* user) override;
         bool takeDropped(std::string& name) override;
         u64 totalMemory() override;
         u64 freeMemory() override;
+        std::string locale() override;
+        u32 processors() override;
+        bool localTime(u32& hour, u32& minute, u32& second) override;
 
     protected:
         static constexpr size_t kMaxPath = 1024;
@@ -41,5 +48,6 @@ namespace nx
         char m_saves[kMaxPath] = {};
         std::vector<std::string> m_dropped;
         double m_start = 0;
+        int m_blueprintLease = -1;
     };
 }

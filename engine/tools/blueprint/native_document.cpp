@@ -3,6 +3,7 @@
 #include "base/json_value.h"
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <cstdlib>
 #include <unordered_map>
@@ -15,28 +16,98 @@ namespace nx
     {
         struct Row {const char* id;const char* title;const char* category;const char* inputs;const char* outputs;
             const char* call="";const char* property="";const char* member="";const char* pure="";const char* result="";const char* hasOut="";const char* arguments="";const char* defaults="";};
+        struct EnumRow {const char* type;const char* value;};
+        constexpr EnumRow enumRows[]={
+#include "tools/blueprint/native_enums.inc"
+        };
         constexpr Row rows[]={
             {"entry","Event entry","Flow","","then:exec"},
-            {"branch","Branch","Flow","in:exec|condition:bool","true:exec|false:exec"},
+            {"branch","Branch","Flow","in:exec|condition:bool","true:exec|false:exec|then:exec"},
             {"literal:string","String","Values","","value:string"},
             {"literal:bool","Boolean","Values","","value:bool"},
             {"literal:int","Integer","Values","","value:int"},
             {"literal:float","Float","Values","","value:float"},
             {"literal:uint","Unsigned integer","Values","","value:uint"},
+            {"literal:int64","Integer (64-bit)","Values","","value:int64"},
+            {"literal:uint64","Unsigned integer (64-bit)","Values","","value:uint64"},
             {"literal:double","Double","Values","","value:double"},
-            {"add:float","Add (float)","Math","a:float|b:float","result:float"},
-            {"less:float","Less than (float)","Math","a:float|b:float","result:bool"},
             {"make:Vec2","Make Vec2","Values","x:float|y:float","result:Vec2"},
+            {"curve:cubic","Create cubic Bezier curve","Curve / Visual","in:exec|p0:Vec2|p1:Vec2|p2:Vec2|p3:Vec2","then:exec|result:Curve@","bp_curve_cubic","","","","Curve@","","in:p0|in:p1|in:p2|in:p3","p0:Vec2(140,480)|p1:Vec2(400,40)|p2:Vec2(880,40)|p3:Vec2(1140,480)"},
+            {"vec2:x","Get X (Vec2)","Math / Vector","target:Vec2","result:float","get_x","get","member","pure","float"},
+            {"vec2:y","Get Y (Vec2)","Math / Vector","target:Vec2","result:float","get_y","get","member","pure","float"},
             {"make:Vec3","Make Vec3","Values","x:float|y:float|z:float","result:Vec3"},
             {"make:Color","Make Color","Values","r:float|g:float|b:float|a:float","result:Color"},
+            {"audio:wave","Oscillator (phase in cycles)","Audio / Synthesis","phase:float|shape:uint","result:float","bp_audio_wave","","","pure","float","","in:phase|in:shape","phase:float(0)|shape:uint(0)"},
+            {"audio:render-tone","Render tone / pitch sweep block","Audio / Synthesis","in:exec|samples:Samples@|start:uint|frames:uint|phase:float|shape:uint|frequency:float|endFrequency:float|gain:float|attack:float|release:float","then:exec|nextPhase:float|result:uint","bp_audio_render","","","","uint","out","in:samples|in:start|in:frames|in:phase|in:shape|in:frequency|in:endFrequency|in:gain|in:attack|in:release|out:nextPhase","start:uint(0)|frames:uint(4096)|phase:float(0)|shape:uint(0)|frequency:float(440)|endFrequency:float(440)|gain:float(0.5)|attack:float(0.01)|release:float(0.05)"},
+            {"audio:stream-tone","Fill stream oscillator block","Audio / Synthesis","in:exec|stream:AudioStream@|scratch:array<float>@|frames:uint|phase:float|shape:uint|frequency:float|gain:float","then:exec|nextPhase:float|result:uint","bp_audio_stream","","","","uint","out","in:stream|in:scratch|in:frames|in:phase|in:shape|in:frequency|in:gain|out:nextPhase","frames:uint(2048)|phase:float(0)|shape:uint(0)|frequency:float(440)|gain:float(0.5)"},
+            {"audio:render-channel","Render oscillator channel / ADSR block","Audio / Synthesis","in:exec|samples:Samples@|start:uint|frames:uint|channel:uint|shape:uint|frequency:float|endFrequency:float|gain:float|attack:float|decay:float|sustain:float|release:float","then:exec|result:uint","bp_audio_render_channel","","","","uint","","in:samples|in:start|in:frames|in:channel|in:shape|in:frequency|in:endFrequency|in:gain|in:attack|in:decay|in:sustain|in:release","start:uint(0)|frames:uint(4096)|channel:uint(0)|shape:uint(0)|frequency:float(440)|endFrequency:float(440)|gain:float(0.5)|attack:float(0.04)|decay:float(0.15)|sustain:float(0.65)|release:float(0.25)"},
+            {"audio:stream-stereo","Fill stream / dual oscillator block","Audio / Synthesis","in:exec|stream:AudioStream@|scratch:array<float>@|frames:uint|phase:float|rightPhase:float|shape:uint|rightShape:uint|frequency:float|rightFrequency:float|gain:float|rightGain:float","then:exec|nextPhase:float|nextRightPhase:float|result:uint","bp_audio_stream_stereo","","","","uint","out","in:stream|in:scratch|in:frames|in:phase|in:rightPhase|in:shape|in:rightShape|in:frequency|in:rightFrequency|in:gain|in:rightGain|out:nextPhase|out:nextRightPhase","frames:uint(4096)|phase:float(0)|rightPhase:float(0)|shape:uint(0)|rightShape:uint(0)|frequency:float(440)|rightFrequency:float(440)|gain:float(0.5)|rightGain:float(0.5)"},
+            {"audio:gain","Apply sample gain block","Audio / Synthesis","in:exec|samples:Samples@|start:uint|frames:uint|gain:float","then:exec|result:uint","bp_audio_gain","","","","uint","","in:samples|in:start|in:frames|in:gain","start:uint(0)|frames:uint(4096)|gain:float(1)"},
+            {"audio:reverse","Reverse sample region (max 4096 frames)","Audio / Synthesis","in:exec|samples:Samples@|start:uint|frames:uint","then:exec|result:uint","bp_audio_reverse","","","","uint","","in:samples|in:start|in:frames","start:uint(0)|frames:uint(4096)"},
+            {"audio:normalize","Normalize sample region (max 4096 frames)","Audio / Synthesis","in:exec|samples:Samples@|start:uint|frames:uint|peak:float","then:exec|result:uint","bp_audio_normalize","","","","uint","","in:samples|in:start|in:frames|in:peak","start:uint(0)|frames:uint(4096)|peak:float(0.9)"},
+            {"math:sin","Sine (radians)","Math","a:float","result:float","sin","","","pure","float","","in:a"},
+            {"math:cos","Cosine (radians)","Math","a:float","result:float","cos","","","pure","float","","in:a"},
+            {"time:delay","Delay","Time / Async","in:exec|cancel:exec|seconds:float","completed:exec","","","","","void","","","seconds:float(1)"},
+            {"time:retrigger-delay","Retriggerable Delay","Time / Async","in:exec|cancel:exec|seconds:float","completed:exec","","","","","void","","","seconds:float(1)"},
+            {"time:cancel-all","Cancel all pending timers","Time / Async","in:exec","then:exec"},
+            {"time:timer","Set Timer","Time / Async","in:exec|cancel:exec|seconds:float|loop:bool","completed:exec|then:exec","","","","","void","","","seconds:float(1)|loop:true"},
+            {"time:timeline","Timeline (0 to 1)","Time / Animation","in:exec|dt:float|duration:float|loop:bool|reset:bool","then:exec|progress:float|elapsed:float|finished:bool","","","","","void","","","dt:dt|duration:float(1)|loop:false|reset:false"},
+            {"player:yaw","Accumulate look yaw","Actors / Character","yaw:float|mouse:Vec2|pad:Vec2|dt:float|mouseSensitivity:float|padSpeed:float","result:float","bp_player_yaw","","","pure","float","","in:yaw|in:mouse|in:pad|in:dt|in:mouseSensitivity|in:padSpeed","mouseSensitivity:float(0.2)|padSpeed:float(130)"},
+            {"player:pitch","Accumulate clamped look pitch","Actors / Character","pitch:float|mouse:Vec2|pad:Vec2|dt:float|mouseSensitivity:float|padSpeed:float","result:float","bp_player_pitch","","","pure","float","","in:pitch|in:mouse|in:pad|in:dt|in:mouseSensitivity|in:padSpeed","mouseSensitivity:float(0.2)|padSpeed:float(100)"},
+            {"player:motion","Camera-relative walker motion","Actors / Character","motion:Vec3|move:Vec2|yaw:float|dt:float|grounded:bool|jump:bool|speed:float|jumpSpeed:float|groundGrip:float|airGrip:float","result:Vec3","bp_player_motion","","","pure","Vec3","","in:motion|in:move|in:yaw|in:dt|in:grounded|in:jump|in:speed|in:jumpSpeed|in:groundGrip|in:airGrip","speed:float(4.6)|jumpSpeed:float(6.4)|groundGrip:float(14)|airGrip:float(4)"},
+            {"player:eye","Eye position above feet","Actors / Character","feet:Vec3|height:float","result:Vec3","bp_player_eye","","","pure","Vec3","","in:feet|in:height","height:float(1.55)"},
+            {"player:target","Look target from yaw and pitch","Actors / Character","eye:Vec3|yaw:float|pitch:float","result:Vec3","bp_player_target","","","pure","Vec3","","in:eye|in:yaw|in:pitch",""},
+            {"player:chase-camera","Third person camera offset","Actors / Character","pivot:Vec3|yaw:float|pitch:float|distance:float","result:Vec3","bp_player_chase_camera","","","pure","Vec3","","in:pivot|in:yaw|in:pitch|in:distance","distance:float(5)"},
+            {"player:flight-position","Flight position from input","Actors / Character","place:Vec3|move:Vec2|yaw:float|pitch:float|speed:float|dt:float","result:Vec3","bp_player_flight_position","","","pure","Vec3","","in:place|in:move|in:yaw|in:pitch|in:speed|in:dt","speed:float(8)"},
+            {"player:ball-impulse","Rolling ball drive impulse","Actors / Character","move:Vec2|strength:float|dt:float","result:Vec3","bp_player_ball_impulse","","","pure","Vec3","","in:move|in:strength|in:dt","strength:float(18)"},
+            {"player:angles","Character facing from yaw","Actors / Character","yaw:float","result:Vec3","bp_player_angles","","","pure","Vec3","","in:yaw",""},
+            {"camera:orbit-timed","Orbit camera around entity (timed)","Space / Camera","in:exec|name:string|radius:float|height:float|duration:float|turns:float|angle:float|loop:bool|reset:bool|dt:float","then:exec|progress:float|elapsed:float|finished:bool|found:bool","","","","","void","","","name:\"Target\"|radius:float(6)|height:float(2)|duration:float(8)|turns:float(1)|angle:float(60)|loop:false|reset:false|dt:dt"},
+            {"camera:sequence","Camera Sequence (Sequencer)","Space / Camera","in:exec|play:bool|stop:bool|dt:float|anchor:string|asset:string|keys:string","then:exec|active:bool|finished:bool|elapsed:float|found:bool","","","","","void","","","play:false|stop:false|dt:dt|anchor:\"\"|asset:\"\"|keys:\"0,0,2,8,0,1,0,60,0;3,5,3,5,0,1,0,50,0;6,0,2,4,0,1,0,60,0\""},
+            {"camera:activate-actor","Activate actor camera","Space / Camera","in:exec|actor:Entity@|component:string","then:exec|result:bool","Space::activateActorCamera","","","","bool","","in:actor|in:component","component:\"\""},
+            {"actor:component","Get actor component","Space / Blueprint Classes","actor:Entity@|component:string","result:Entity@","Space::actorComponent","","","pure","Entity@","","in:actor|in:component"},
+            {"actor:valid","Is valid entity","Space / Blueprint Classes","entity:Entity@","result:bool","Space::validEntity","","","pure","bool","","in:entity"},
+            {"render:space","Render 3D scene","Space / Rendering","in:exec","then:exec"},
+            {"ui:load-asset","Load linked widget page","Ui / Designer","in:exec|id:string","then:exec"},
+            {"actor:spawn-asset","Spawn linked actor","Space / Blueprint Classes","in:exec|id:string|place:Vec3|instanceName:string|rotationOverride:string|sizeOverride:string","then:exec|result:Entity@","","","","","Entity@","","","place:Vec3(0, 0, 0)|instanceName:\"\"|rotationOverride:\"\"|sizeOverride:\"\""},
+            {"math:orbit-position","Orbit position (turns)","Math / Camera","center:Vec3|radius:float|height:float|turns:float","result:Vec3","","","","pure","Vec3","","","center:Vec3(0, 0, 0)|radius:float(6)|height:float(2)|turns:float(0)"},
+            {"spawn:box","Spawn 3D box","Space / Primitives","in:exec|name:string|place:Vec3|size:Vec3|color:Color","then:exec|result:Entity@","","","","","Entity@","","","name:\"Box\"|place:Vec3(0, 0.5, 0)|size:Vec3(1, 1, 1)|color:Color(0.92, 0.35, 0.12, 1)"},
+            {"spawn:plane","Spawn 3D floor plane","Space / Primitives","in:exec|name:string|place:Vec3|size:Vec3|color:Color","then:exec|result:Entity@","","","","","Entity@","","","name:\"Floor\"|place:Vec3(0, 0, 0)|size:Vec3(20, 1, 20)|color:Color(0.4, 0.46, 0.52, 1)"},
             {"event:delta","Delta time","Events","","value:float"},
             {"event:canvas","Canvas","Events","","value:Canvas@"},
+            {"event:entity","Owning entity","Events","","value:Entity@"},
+            {"event:other","Collision partner","Events","","value:Entity@"},
+            {"event:levelName","Level event name","Events","","value:string"},
+            {"event:levelWho","Trigger visitor","Events","","value:Entity@"},
+            {"event:levelWhat","Agent event","Events","","value:string"},
+            {"level:attach","Attach behaviour to named level entity","Level","in:exec|name:string","then:exec|result:bool"},
+            {"attach:behaviour","Attach behaviour","Behaviours","in:exec|target:Entity@","then:exec|result:bool"},
+            {"attach:direct","Attach behaviour (direct)","Behaviours","in:exec|target:Entity@","then:exec"},
+            {"global:get:bool","Get bool global","Module variables","","value:bool"},
+            {"global:set:bool","Set bool global","Module variables","in:exec|value:bool","then:exec"},
+            {"global:get:int","Get int global","Module variables","","value:int"},
+            {"global:set:int","Set int global","Module variables","in:exec|value:int","then:exec"},
+            {"global:get:uint","Get uint global","Module variables","","value:uint"},
+            {"global:set:uint","Set uint global","Module variables","in:exec|value:uint","then:exec"},
+            {"global:get:int64","Get int64 global","Module variables","","value:int64"},
+            {"global:set:int64","Set int64 global","Module variables","in:exec|value:int64","then:exec"},
+            {"global:get:uint64","Get uint64 global","Module variables","","value:uint64"},
+            {"global:set:uint64","Set uint64 global","Module variables","in:exec|value:uint64","then:exec"},
+            {"global:get:float","Get float global","Module variables","","value:float"},
+            {"global:set:float","Set float global","Module variables","in:exec|value:float","then:exec"},
+            {"global:get:double","Get double global","Module variables","","value:double"},
+            {"global:set:double","Set double global","Module variables","in:exec|value:double","then:exec"},
+            {"global:get:string","Get string global","Module variables","","value:string"},
+            {"global:set:string","Set string global","Module variables","in:exec|value:string","then:exec"},
             {"var:get:bool","Get bool variable","Variables","","value:bool"},
             {"var:set:bool","Set bool variable","Variables","in:exec|value:bool","then:exec"},
             {"var:get:int","Get int variable","Variables","","value:int"},
             {"var:set:int","Set int variable","Variables","in:exec|value:int","then:exec"},
             {"var:get:uint","Get uint variable","Variables","","value:uint"},
             {"var:set:uint","Set uint variable","Variables","in:exec|value:uint","then:exec"},
+            {"var:get:int64","Get int64 variable","Variables","","value:int64"},
+            {"var:set:int64","Set int64 variable","Variables","in:exec|value:int64","then:exec"},
+            {"var:get:uint64","Get uint64 variable","Variables","","value:uint64"},
+            {"var:set:uint64","Set uint64 variable","Variables","in:exec|value:uint64","then:exec"},
             {"var:get:float","Get float variable","Variables","","value:float"},
             {"var:set:float","Set float variable","Variables","in:exec|value:float","then:exec"},
             {"var:get:double","Get double variable","Variables","","value:double"},
@@ -49,11 +120,90 @@ namespace nx
             {"var:set:Vec3","Set Vec3 variable","Variables","in:exec|value:Vec3","then:exec"},
             {"var:get:Color","Get Color variable","Variables","","value:Color"},
             {"var:set:Color","Set Color variable","Variables","in:exec|value:Color","then:exec"},
+            {"create:pixels","Create pixels","Pixels","in:exec|width:uint|height:uint","then:exec|result:Pixels@","Pixels","","","","Pixels@","","in:width|in:height"},
+            {"create:random","Create seeded random","Random","in:exec|seed:uint","then:exec|result:Random@","Random","","","","Random@","","in:seed"},
+            {"create:playlist","Create music playlist","Playlist","in:exec","then:exec|result:Playlist@","Playlist","","","","Playlist@"},
+            {"create:websocket","Connect WebSocket","WebSocket","in:exec|url:string","then:exec|result:WebSocket@","WebSocket","","","","WebSocket@","","in:url"},
+            {"null:entity","No entity (null)","Values","","value:Entity@"},
+            {"null:playlist","No playlist (null)","Values","","value:Playlist@"},
+            {"null:websocket","No WebSocket (null)","Values","","value:WebSocket@"},
+            {"null:widget","No widget (null)","Values","","value:Widget@"},
+            {"null:thread","No Thread (null)","Values","","value:Thread@"},
+            {"null:channel","No Channel (null)","Values","","value:Channel@"},
+            {"null:samples","No Samples (null)","Values","","value:Samples@"},
+            {"null:audiostream","No AudioStream (null)","Values","","value:AudioStream@"},
+            {"null:sound","No Sound (null)","Values","","value:Sound@"},
+            {"null:curve","No Curve (null)","Values","","value:Curve@"},
+            {"null:batch","No Batch (null)","Values","","value:Batch@"},
+            {"null:packed","No Packed (null)","Values","","value:Packed@"},
+            {"null:zip","No Zip (null)","Values","","value:Zip@"},
+            {"null:font","No Font (null)","Values","","value:Font@"},
+            {"null:texture","No Texture (null)","Values","","value:Texture@"},
+            {"var:get:Playlist@","Get Playlist@ variable","Variables","","value:Playlist@"},
+            {"var:set:Playlist@","Set Playlist@ variable","Variables","in:exec|value:Playlist@","then:exec"},
+            {"global:get:Playlist@","Get Playlist@ global","Module variables","","value:Playlist@"},
+            {"global:set:Playlist@","Set Playlist@ global","Module variables","in:exec|value:Playlist@","then:exec"},
+            {"var:get:WebSocket@","Get WebSocket@ variable","Variables","","value:WebSocket@"},
+            {"var:set:WebSocket@","Set WebSocket@ variable","Variables","in:exec|value:WebSocket@","then:exec"},
+            {"global:get:WebSocket@","Get WebSocket@ global","Module variables","","value:WebSocket@"},
+            {"global:set:WebSocket@","Set WebSocket@ global","Module variables","in:exec|value:WebSocket@","then:exec"},
+            {"var:get:Widget@","Get Widget@ variable","Variables","","value:Widget@"},
+            {"var:set:Widget@","Set Widget@ variable","Variables","in:exec|value:Widget@","then:exec"},
+            {"global:get:Widget@","Get Widget@ global","Module variables","","value:Widget@"},
+            {"global:set:Widget@","Set Widget@ global","Module variables","in:exec|value:Widget@","then:exec"},
             {"var:get:Entity@","Get Entity@ variable","Variables","","value:Entity@"},
             {"var:set:Entity@","Set Entity@ variable","Variables","in:exec|value:Entity@","then:exec"},
             {"sequence","Sequence","Flow","in:exec","first:exec|second:exec|then:exec"},
+            {"flow:do-once","Do Once","Flow","in:exec|reset:bool","body:exec|then:exec","","","","","void","","","reset:false"},
+            {"flow:do-n","Do N","Flow","in:exec|count:int|reset:bool","body:exec|then:exec","","","","","void","","","count:1|reset:false"},
+            {"flow:gate","Gate (condition)","Flow","in:exec|open:bool","body:exec|then:exec","","","","","void","","","open:true"},
+            {"flow:flip-flop","Flip Flop","Flow","in:exec|reset:bool","a:exec|b:exec|then:exec","","","","","void","","","reset:false"},
+            {"flow:multi-gate","MultiGate (4 outputs)","Flow","in:exec|reset:bool|loop:bool","first:exec|second:exec|third:exec|fourth:exec|then:exec","","","","","void","","","reset:false|loop:false"},
+            {"flow:controlled-gate","Gate (Open / Close / Toggle)","Flow","in:exec|open:exec|close:exec|toggle:exec","body:exec"},
+            {"flow:switch-int","Switch on int (4 cases)","Flow","in:exec|value:int|case0:int|case1:int|case2:int|case3:int","first:exec|second:exec|third:exec|fourth:exec|default:exec|then:exec","","","","","void","","","case0:0|case1:1|case2:2|case3:3"},
             {"call:function","Call function","Functions","in:exec","then:exec"},
+            {"data:enum-value","Enum value","Custom types","","result:int"},
+            {"data:enum-equal","Enum equal","Custom types","","result:bool"},
+            {"data:enum-switch","Switch on enum","Custom types","in:exec","then:exec"},
+            {"data:enum-index","Enum to int","Custom types","","result:int"},
+            {"data:make-struct","Make structure","Custom types","",""},
+            {"data:break-struct","Break structure","Custom types","",""},
+            {"call:library","Call shared library","Functions / Libraries","in:exec","then:exec"},
+            {"call:event","Call custom event","Events","in:exec","then:exec"},
+            {"async:start","Start coroutine","Time / Async","in:exec","then:exec"},
+            {"async:wait","Wait in coroutine","Time / Async","in:exec|seconds:float","then:exec","","","","","void","","","seconds:float(1)"},
+            {"async:next","Next update (coroutine)","Time / Async","in:exec","then:exec"},
+            {"dispatch:bind-listener","Bind dispatcher listener","Events / Dispatchers","in:exec|handler:string","then:exec"},
+            {"dispatch:unbind-listener","Unbind dispatcher listener","Events / Dispatchers","in:exec|handler:string","then:exec"},
+            {"dispatch:bind","Bind event dispatcher","Events / Dispatchers","in:exec","then:exec"},
+            {"dispatch:unbind","Unbind event dispatcher","Events / Dispatchers","in:exec","then:exec"},
+            {"dispatch:broadcast","Broadcast event dispatcher","Events / Dispatchers","in:exec","then:exec"},
+            {"actor:is-class","Is actor class","Space / Blueprint Classes","actor:Entity@","result:bool","","","","pure","bool"},
+            {"actor:class-entity","Get entity from class reference","Space / Blueprint Classes","","result:Entity@"},
+            {"typed:field:get","Get typed field","Variables","",""},
+            {"typed:field:set","Set typed field","Variables","in:exec","then:exec"},
+            {"typed:global:get","Get typed global","Module variables","",""},
+            {"typed:global:set","Set typed global","Module variables","in:exec","then:exec"},
+            {"actor:cast-class","Cast actor to class","Space / Blueprint Classes","in:exec|actor:Entity@","success:exec|failure:exec|then:exec|result:Entity@"},
+            {"call:parent","Call parent function","Functions","in:exec","then:exec"},
+            {"return:function","Return","Functions","in:exec",""},
             {"repeat","Repeat (bounded)","Flow","in:exec|count:int","body:exec|then:exec|index:int"},
+            // The installed global:scene.as helper (ordinary AngelScript, not a second scene runtime).
+            {"level:load","Load native level","Level","in:exec|file:string","then:exec|result:bool","bp_level.load","","","","bool","","in:file"},
+            {"level:clear","Clear level","Level","in:exec","then:exec","bp_level.clear","","","","void"},
+            {"level:update","Update native level","Level","in:exec|dt:float|who:Entity@|shot:bool|shotAt:Vec3","then:exec|result:string","bp_level.update","","","","string","","in:dt|in:who|in:shot|in:shotAt","who:null|shot:false|shotAt:Vec3()"},
+            {"level:drawHud","Draw level HUD","Level","in:exec|canvas:Canvas@","then:exec","bp_level.drawHud","","","","void","","in:canvas"},
+            {"level:find","Find named level entity","Level","name:string","result:Entity@","bp_level.find","","","1","Entity@","","in:name"},
+            {"level:show","Show level entity","Level","in:exec|name:string|seconds:float|how:string","then:exec","bp_level.show","","","","void","","in:name|in:seconds|in:how","seconds:0.6f|how:\"\""},
+            {"level:hide","Hide level entity","Level","in:exec|name:string|seconds:float","then:exec","bp_level.hide","","","","void","","in:name|in:seconds","seconds:0.4f"},
+            {"level:switchOn","Switch level trigger","Level","in:exec|name:string|on:bool","then:exec","bp_level.switchOn","","","","void","","in:name|in:on"},
+            {"level:isOn","Level trigger enabled","Level","name:string","result:bool","bp_level.isOn","","","1","bool","","in:name"},
+            {"level:arrival","Find level arrival","Level","in:exec|name:string","then:exec|result:bool|place:Vec3|turned:float","bp_level.arrival","","","","bool","1","in:name|out:place|out:turned"},
+            {"level:set:number","Set HUD number","Level","in:exec|name:string|value:float","then:exec","bp_level.set","","","","void","","in:name|in:value"},
+            {"level:set:text","Set HUD text","Level","in:exec|name:string|value:string","then:exec","bp_level.set","","","","void","","in:name|in:value"},
+            {"level:number","Get HUD number","Level","name:string","result:float","bp_level.number","","","1","float","","in:name"},
+            {"level:text","Get HUD text","Level","name:string","result:string","bp_level.text","","","1","string","","in:name"},
+            {"level:say","Show level message","Level","in:exec|text:string|seconds:float","then:exec","bp_level.say","","","","void","","in:text|in:seconds","seconds:3"},
 #include "tools/blueprint/native_catalog.inc"
         };
         std::vector<BlueprintPin> parsePins(const std::string& text)
@@ -77,7 +227,8 @@ namespace nx
         constexpr size_t kMaxNodes=1024,kMaxLinks=4096,kMaxGraphs=64,kHistory=48;
         bool coordinate(float v){return std::isfinite(v)&&std::abs(v)<=1000000;}
         bool lifecycle(const std::string& name)
-        {return name=="onEnter"||name=="update"||name=="draw"||name=="onSuspend"||name=="onResume"||name=="onExit";}
+        {return name=="onEnter"||name=="update"||name=="draw"||name=="onSuspend"||name=="onResume"||name=="onExit"||name=="onLevelTouch"||name=="onLevelAgent";}
+        bool globalKind(const std::string& kind){return kind.rfind("global:get:",0)==0||kind.rfind("global:set:",0)==0;}
         bool variableKind(const std::string& kind){return kind.rfind("var:get:",0)==0||kind.rfind("var:set:",0)==0;}
         bool identifier(const std::string& s)
         {
@@ -85,14 +236,64 @@ namespace nx
             for(size_t i=0;i<s.size();++i){const char c=s[i];if(!(c=='_'||(c>='a'&&c<='z')||(c>='A'&&c<='Z')||(i&&c>='0'&&c<='9')))return false;}
             return true;
         }
-        bool context(const std::string& event,const std::string& kind)
-        {return (kind!="event:delta"||event=="update")&&(kind!="event:canvas"||event=="draw");}
+        bool screenId(const std::string& s)
+        {
+            if(s=="Screen")return true; // Initial screen, retained for native v2 drafts.
+            if(s.empty()||s.size()>40||s=="screen"||s.front()<'a'||s.front()>'z')return false;
+            return blueprintAssetName(s,true);
+        }
+        std::string scoped(const std::string& owner,const std::string& name){return owner+"/"+name;}
+        bool behaviourOwner(const std::string& owner){return owner.rfind("behaviour:",0)==0&&identifier(owner.substr(10));}
+        bool behaviourEvent(const std::string& name)
+        {return name=="start"||name=="update"||name=="onHit"||name=="onLeave"||name=="onGone";}
+        bool ownerEvent(const std::string& owner,const std::string& name)
+        {return behaviourOwner(owner)?behaviourEvent(name):lifecycle(name);}
+        bool context(const std::string& event,const std::string& kind,const std::string& owner)
+        {
+            const bool behaviour=behaviourOwner(owner);
+            if(kind=="camera:sequence")return !behaviour&&event=="update";
+            if(kind=="time:delay"||kind=="time:retrigger-delay"||kind=="time:timer")return event=="update"||(behaviour?event=="start":event=="onEnter")||(!ownerEvent(owner,event)&&event!="Construction");
+            return ((kind!="time:timeline"&&kind!="camera:orbit-timed")||event=="update")&&(kind!="render:space"||(!behaviour&&event=="draw"))&&(kind!="ui:load-asset"||(!behaviour&&event=="onEnter"))&&(kind!="event:delta"||event=="update")&&(kind!="event:canvas"||(!behaviour&&event=="draw"))&&
+                (kind!="event:entity"||behaviour)&&(kind!="event:other"||(behaviour&&(event=="onHit"||event=="onLeave")))&&
+                (kind!="event:levelName"||(!behaviour&&(event=="onLevelTouch"||event=="onLevelAgent")))&&
+                (kind!="event:levelWho"||(!behaviour&&event=="onLevelTouch"))&&
+                (kind!="event:levelWhat"||(!behaviour&&event=="onLevelAgent"))&&
+                (kind!="attach:behaviour"||!behaviour)&&(!behaviour||kind.rfind("level:",0)!=0);
+        }
+        bool customTypeName(const std::string& type){return type.rfind("BP_Data_",0)==0&&identifier(type.substr(8));}
+        bool classTypeName(const std::string& type){return type.size()>14&&type.rfind("BP_Behaviour_",0)==0&&type.back()=='@'&&identifier(type.substr(13,type.size()-14));}
+        bool typedVariable(const std::string& kind){return kind.rfind("typed:",0)==0;}
+        bool typedGlobal(const std::string& kind){return kind.rfind("typed:global:",0)==0;}
+        bool typeNode(const std::string& kind){return kind.rfind("data:",0)==0;}
+        bool listenerNode(const std::string& kind){return kind=="dispatch:bind-listener"||kind=="dispatch:unbind-listener";}
+        bool signatureType(const std::string& type)
+        {return blueprintLiteralType(type)||type=="Vec2"||type=="Vec3"||type=="Color"||type=="Entity@"||type=="Playlist@"||type=="WebSocket@"||type=="Widget@"||type=="Thread@"||type=="Channel@"||type=="Samples@"||type=="AudioStream@"||type=="Voice"||type=="Sound@"||type=="Curve@"||type=="Batch@"||type=="Packed@"||type=="Zip@"||type=="Font@"||type=="Texture@"||type=="Canvas@"||customTypeName(type)||classTypeName(type);}
+        bool validSignature(const std::vector<BlueprintPin>& parameters,const std::string& result)
+        {
+            if(parameters.size()>8||(result!="void"&&!signatureType(result)))return false;
+            std::unordered_set<std::string> names;
+            for(const auto& p:parameters)if(!identifier(p.name)||!signatureType(p.type)||!names.insert(p.name).second)return false;
+            return true;
+        }
         bool validText(JsonTree::Value v){return v.isString()&&v.text()[0]&&std::strlen(v.text())<=512;}
         bool literal(const std::string& kind,const std::string& value)
         {
             if(kind=="literal:string")return value.size()<=4096&&value.find('\0')==std::string::npos;
             if(kind=="literal:bool")return value=="true"||value=="false";
             if(kind.rfind("literal:",0)!=0||value.empty()||value.size()>64)return false;
+            // Compare decimal magnitudes as text. This is exact even on targets
+            // where double cannot distinguish adjacent 64-bit integers.
+            if(kind=="literal:int64"||kind=="literal:uint64")
+            {
+                const bool negative=value.front()=='-';
+                if(negative&&kind=="literal:uint64")return false;
+                const size_t start=negative?1:0;
+                if(start==value.size()||value.find_first_not_of("0123456789",start)!=std::string::npos)return false;
+                const auto nonzero=value.find_first_not_of('0',start);
+                const auto digits=nonzero==std::string::npos?std::string("0"):value.substr(nonzero);
+                const std::string limit=kind=="literal:uint64"?"18446744073709551615":negative?"9223372036854775808":"9223372036854775807";
+                return digits.size()<limit.size()||(digits.size()==limit.size()&&digits<=limit);
+            }
             if(value.find_first_not_of("0123456789.eE+-")!=std::string::npos)return false;
             char* end=nullptr;const double n=std::strtod(value.c_str(),&end);
             if(end!=value.c_str()+value.size()||!std::isfinite(n))return false;
@@ -103,13 +304,23 @@ namespace nx
             }
             return kind=="literal:double"||(kind=="literal:float"&&std::abs(n)<=3.402823466e38);
         }
-        bool validWire(const BlueprintDocument::Graph& g,size_t from,const std::string& output,size_t to,const std::string& input,std::string& error)
+        bool inputLiteral(const std::string& type,const std::string& value)
+        {
+            if(!blueprintEnumChoices(type).empty())return blueprintEnumValue(type,value);
+            if(blueprintLiteralType(type))return literal("literal:"+type,value);
+            std::vector<std::string> components;return blueprintInputComponents(type,value,components);
+        }
+        // A declared array object can be passed to an API handle pin without copying it.
+        bool arrayBorrow(const std::string& from,const std::string& to)
+        {return !blueprintArrayElement(from).empty()&&to==from+"@";}
+        bool validWire(const BlueprintDocument& doc,const BlueprintDocument::Graph& g,size_t from,const std::string& output,size_t to,const std::string& input,std::string& error)
         {
             if(from>=g.nodes.size()||to>=g.nodes.size()||from==to){error="Choose two different nodes.";return false;}
-            const auto* a=blueprintSpec(g.nodes[from].kind);const auto* b=blueprintSpec(g.nodes[to].kind);
-            if(!a||!b){error="Unknown node.";return false;}
-            const auto* out=findPin(a->outputs,output);const auto* in=findPin(b->inputs,input);
-            if(!out||!in||out->type!=in->type){error="Pins must have matching types and opposite directions.";return false;}
+            BlueprintNodeSpec a,b;
+            if(!doc.nodeSpec(g,g.nodes[from],a)||!doc.nodeSpec(g,g.nodes[to],b)){error="Unknown node or function.";return false;}
+            const auto* out=findPin(a.outputs,output);const auto* in=findPin(b.inputs,input);
+            if(!out||!in||(out->type!=in->type&&!arrayBorrow(out->type,in->type)&&!doc.classAssignable(out->type,in->type))){error="Pins must have matching types and opposite directions.";return false;}
+            if((g.nodes[to].kind=="data:enum-value"&&input=="member")||(listenerNode(g.nodes[to].kind)&&input=="handler")){error="Select a declaration name in the input inspector; this pin is not a runtime expression.";return false;}
             for(const auto& l:g.links)
             {
                 if(l.to==to&&l.input==input){error="Input already connected. Disconnect it first.";return false;}
@@ -130,12 +341,257 @@ namespace nx
         bool text(JsonValue& j,const char* key,const std::string& value){auto* v=j.put(key);if(!v)return false;v->setText(value);return true;}
         bool number(JsonValue& j,const char* key,double value){auto* v=j.put(key);if(!v)return false;v->setNumber(value);return true;}
     }
+    bool blueprintLiteralType(const std::string& type)
+    {return type=="bool"||type=="int"||type=="uint"||type=="int64"||type=="uint64"||type=="float"||type=="double"||type=="string";}
+    std::vector<std::string> blueprintInputComponentLabels(const std::string& type)
+    {
+        if(type=="Vec2")return {"X","Y"};
+        if(type=="Vec3")return {"X","Y","Z"};
+        if(type=="Color")return {"R","G","B","A"};
+        return {};
+    }
+    std::vector<std::string> blueprintEnumChoices(const std::string& type)
+    {
+        std::vector<std::string> result;
+        for(const auto& row:enumRows)if(type==row.type)result.emplace_back(row.value);
+        return result;
+    }
+    bool blueprintEnumValue(const std::string& type,const std::string& value)
+    {
+        for(const auto& row:enumRows)if(type==row.type&&value==row.value)return true;
+        return false;
+    }
+    std::string blueprintEnumType(const std::string& value)
+    {
+        std::string type;
+        for(const auto& row:enumRows)if(value==row.value)
+        {
+            if(!type.empty()&&type!=row.type)return "";
+            type=row.type;
+        }
+        return type;
+    }
+    bool blueprintInputLiteralType(const std::string& type){return blueprintLiteralType(type)||!blueprintEnumChoices(type).empty()||!blueprintInputComponentLabels(type).empty();}
+    bool blueprintCameraKeys(const std::string& text,std::vector<BlueprintCameraKey>& keys,std::string& error)
+    {
+        std::vector<BlueprintCameraKey> result;
+        if(text.empty()||text.size()>8192){error="Sequence requires 2 to 64 camera keys.";return false;}
+        size_t at=0;
+        while(at<text.size())
+        {
+            const auto end=text.find(';',at);auto row=text.substr(at,end==std::string::npos?end:end-at);std::string event;const auto marker=row.find('@');if(marker!=std::string::npos){event=row.substr(marker+1);row.erase(marker);if(!identifier(event)||event.size()>64){error="Event key requires a valid Blueprint function name.";return false;}}float v[9]{};size_t pos=0;
+            for(unsigned i=0;i<9;++i)
+            {
+                const auto comma=row.find(',',pos);if((i==8)!=(comma==std::string::npos)){error="Each key requires time, position XYZ, target XYZ, FOV and interpolation (0 linear, 1 cut, 2 eased).";return false;}
+                const auto part=row.substr(pos,comma==std::string::npos?comma:comma-pos);char* tail=nullptr;const auto number=std::strtof(part.c_str(),&tail);
+                if(part.empty()||tail!=part.c_str()+part.size()||!std::isfinite(number)||std::abs(number)>1000000.f){error="Invalid camera key number.";return false;}
+                v[i]=number;pos=comma==std::string::npos?row.size():comma+1;
+            }
+            if((result.empty()?v[0]!=0:v[0]<=result.back().time)||v[0]>3600||v[7]<1||v[7]>179||(v[8]!=0&&v[8]!=1&&v[8]!=2)||result.size()>=64){error="Keys must start at zero, increase strictly, have FOV 1–179 and valid cut flags.";return false;}
+            if(v[1]==v[4]&&v[2]==v[5]&&v[3]==v[6]){error="Camera position and target must differ.";return false;}
+            BlueprintCameraKey key;key.time=v[0];for(unsigned i=0;i<3;++i){key.from[i]=v[1+i];key.to[i]=v[4+i];}key.fov=v[7];key.cut=v[8]==1;key.smooth=v[8]==2;key.event=event;result.push_back(key);
+            if(end==std::string::npos)break;
+            at=end+1;if(at==text.size()){error="Empty camera key.";return false;}
+        }
+        if(result.size()<2){error="Sequence requires at least two keys.";return false;}
+        keys=std::move(result);error.clear();return true;
+    }
+    std::string blueprintCameraKeyText(const std::vector<BlueprintCameraKey>& keys)
+    {
+        std::string result;const auto add=[&](float f){char value[48];std::snprintf(value,sizeof(value),"%.9g",static_cast<double>(f));if(!result.empty()&&result.back()!=';')result+=",";result+=value;};
+        for(const auto& k:keys){if(!result.empty())result+=";";add(k.time);for(float f:k.from)add(f);for(float f:k.to)add(f);add(k.fov);add(k.cut?1.f:k.smooth?2.f:0.f);if(!k.event.empty())result+="@"+k.event;}
+        return result;
+    }
+    BlueprintCameraKey blueprintCameraSample(const std::vector<BlueprintCameraKey>& keys,float time)
+    {
+        if(keys.empty())return {};
+        if(time<=keys.front().time)return keys.front();
+        for(size_t i=1;i<keys.size();++i)if(time<keys[i].time)
+        {
+            const auto& a=keys[i-1];const auto& b=keys[i];auto out=a;out.time=time;
+            float f=b.cut?0.f:(time-a.time)/(b.time-a.time);if(b.smooth)f=f*f*(3.f-2.f*f);
+            for(unsigned j=0;j<3;++j){out.from[j]=a.from[j]+(b.from[j]-a.from[j])*f;out.to[j]=a.to[j]+(b.to[j]-a.to[j])*f;}out.fov=a.fov+(b.fov-a.fov)*f;return out;
+        }
+        return keys.back();
+    }
+    bool blueprintInputComponents(const std::string& type,const std::string& value,std::vector<std::string>& components)
+    {
+        const auto labels=blueprintInputComponentLabels(type);
+        if(type=="Color"){unsigned rgb;if(blueprintParseRGB(value,rgb)){components={std::to_string(static_cast<float>((rgb>>16)&255u)/255.f),std::to_string(static_cast<float>((rgb>>8)&255u)/255.f),std::to_string(static_cast<float>(rgb&255u)/255.f),"1"};return true;}}
+        if(labels.empty()||value.size()>270)return false;
+        std::vector<std::string> result;
+        size_t start=0;
+        for(size_t i=0;i<labels.size();++i)
+        {
+            const auto comma=value.find(',',start);
+            if((i+1==labels.size())!=(comma==std::string::npos))return false;
+            auto part=value.substr(start,comma==std::string::npos?comma:comma-start);
+            const auto first=part.find_first_not_of(" \t"),last=part.find_last_not_of(" \t");
+            if(first==std::string::npos)return false;
+            part=part.substr(first,last-first+1);
+            if(!literal("literal:float",part))return false;
+            result.push_back(std::move(part));
+            if(comma!=std::string::npos)start=comma+1;
+        }
+        components.swap(result);return true;
+    }
+    std::string blueprintArrayElement(const std::string& type)
+    {
+        if(type.size()<8||type.rfind("array<",0)!=0||!type.ends_with(">"))return "";
+        const auto element=type.substr(6,type.size()-7);
+        return element=="int"||element=="uint"||element=="float"||element=="bool"||element=="string"||element=="Vec2"||element=="Color"?element:"";
+    }
+    bool blueprintParseRGB(const std::string& text,unsigned& colour)
+    {
+        const auto offset=!text.empty()&&text.front()=='#'?1u:0u;
+        if(text.size()!=offset+6||text.find_first_not_of("0123456789abcdefABCDEF",offset)!=std::string::npos)return false;
+        colour=0x1000000u+static_cast<unsigned>(std::strtoul(text.c_str()+offset,nullptr,16));return true;
+    }
+    std::string blueprintRGBHex(unsigned colour)
+    {
+        if(!colour)return {};
+        constexpr unsigned legacy[]={0x34577A,0x963B3D,0x407850,0xA1672C,0x594D91,0x2E7A82,0x8A4A75,0x595E66};
+        if(colour<8)colour=legacy[colour];
+        char out[7];snprintf(out,sizeof(out),"%06X",colour&0xFFFFFFu);return out;
+    }
+    bool blueprintVariableType(const std::string& type){return type=="Entity@"||blueprintLiteralType(type)||!blueprintArrayElement(type).empty()||type=="Playlist@"||type=="WebSocket@"||type=="Widget@"||type=="Thread@"||type=="Channel@"||type=="Samples@"||type=="AudioStream@"||type=="Voice"||type=="Sound@"||type=="Curve@"||type=="Batch@"||type=="Packed@"||type=="Zip@"||type=="Font@"||type=="Texture@"||type=="BP_MapInt"||type=="BP_MapString"||type=="BP_SetInt"||type=="BP_SetString"||customTypeName(type)||classTypeName(type);}
+    bool blueprintLosslessConversion(const std::string& from,const std::string& to)
+    {return arrayBorrow(from,to)||(to=="double"&&(from=="int"||from=="uint"||from=="float"))||(to=="int64"&&(from=="int"||from=="uint"))||(to=="uint64"&&from=="uint");}
+    bool blueprintInvokesFunction(const std::string& kind)
+    {return kind=="call:function"||kind=="call:library"||kind=="call:event"||kind=="dispatch:broadcast"||kind=="async:start";}
+    bool blueprintNamedCall(const std::string& kind)
+    {return blueprintInvokesFunction(kind)||kind=="dispatch:bind"||kind=="dispatch:unbind"||kind=="dispatch:bind-listener"||kind=="dispatch:unbind-listener";}
+    bool blueprintBehaviourReference(const std::string& kind)
+    {return kind=="attach:behaviour"||kind=="attach:direct"||kind=="level:attach"||kind=="actor:is-class"||kind=="actor:cast-class"||kind=="actor:class-entity";}
+    bool blueprintFileName(const std::string& file)
+    {
+        return file.size()>8&&file.size()<=240&&file.ends_with(".bp.json")&&file!="blueprint-recovery.bp.json"&&
+            file.front()!='.'&&file.find("..") == std::string::npos&&file.find_first_of("/\\:") == std::string::npos&&
+            std::none_of(file.begin(),file.end(),[](unsigned char c){return c<32||c==127;});
+    }
+    bool blueprintAssetRoot(const std::string& root)
+    {
+        return root.size()>4&&root.size()<=32&&root.rfind("bpa-",0)==0&&
+            root[4]>='0'&&root[4]<='9'&&root.back()>='0'&&root.back()<='9'&&
+            root.find_first_not_of("0123456789-",4)==std::string::npos;
+    }
+    bool blueprintAssetName(const std::string& name,bool folder)
+    {
+        if(name.empty()||name.size()>64||name.front()=='.'||name.back()=='.'||name.find("..")!=std::string::npos||name.ends_with(".new"))return false;
+        for(char c:name)if(!((c>='a'&&c<='z')||(c>='0'&&c<='9')||c=='_'||c=='-'||(!folder&&c=='.')))return false;
+        const auto stem=name.substr(0,name.find('.'));
+        if(stem=="con"||stem=="prn"||stem=="aux"||stem=="nul"||
+            (stem.size()==4&&(stem.rfind("com",0)==0||stem.rfind("lpt",0)==0)&&stem[3]>='0'&&stem[3]<='9'))return false;
+        return true;
+    }
+    bool blueprintManagedName(const std::string& name,std::string& file)
+    {
+        if(name.empty()||name.size()>64||name.front()==' '||name.back()==' ')return false;
+        for(unsigned char c:name)if(!((c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9')||c=='_'||c=='-'||c==' '))return false;
+        file="blueprint-project-"+name+".bp.json";return true;
+    }
     const std::vector<BlueprintNodeSpec>& blueprintCatalogue()
     {
         static const auto catalogue=[]{
             std::vector<BlueprintNodeSpec> result;
             result.reserve(sizeof(rows)/sizeof(rows[0]));
             for(const auto& row:rows)result.push_back({row.id,row.title,row.category,parsePins(row.inputs),parsePins(row.outputs),row.call,row.property,row.result,*row.member!=0,*row.pure!=0,*row.hasOut!=0,parsePins(row.arguments),parsePins(row.defaults)});
+            auto operation=[&](const std::string& id,const std::string& title,const std::string& category,
+                const std::string& input,const std::string& output,const std::string& op,bool unary=false)
+            {
+                BlueprintNodeSpec spec;
+                spec.id=id;spec.title=title;spec.category=category;spec.pure=true;spec.result=output;spec.operation=op;
+                spec.inputs.push_back({"a",input});
+                if(!unary)spec.inputs.push_back({"b",input});
+                spec.outputs.push_back({"result",output});
+                result.push_back(std::move(spec));
+            };
+            struct Operator {const char* id;const char* title;const char* op;bool comparison;};
+            constexpr Operator numeric[]={
+                {"add","Add","+",false},{"subtract","Subtract","-",false},{"multiply","Multiply","*",false},
+                {"divide","Divide","/",false},{"equal","Equal","==",true},{"not_equal","Not equal","!=",true},
+                {"less","Less than","<",true},{"less_equal","Less or equal","<=",true},
+                {"greater","Greater than",">",true},{"greater_equal","Greater or equal",">=",true}
+            };
+            for(const std::string type:{"int","uint","int64","uint64","float","double"})
+            {
+                for(const auto& op:numeric)
+                    operation(std::string(op.id)+":"+type,std::string(op.title)+" ("+type+")","Math",type,op.comparison?"bool":type,op.op);
+                if(type=="int"||type=="uint"||type=="int64"||type=="uint64")operation("mod:"+type,"Remainder ("+type+")","Math",type,type,"%");
+                if(type!="uint"&&type!="uint64")operation("negate:"+type,"Negate ("+type+")","Math",type,type,"-",true);
+                for(const std::string target:{"int","uint","int64","uint64","float","double"})
+                    if(target!=type)operation("cast:"+type+":"+target,"Convert "+type+" to "+target,"Conversions",type,target,"cast",true);
+            }
+            for(const std::string type:{"bool","int","uint","int64","uint64","float","double","string","Vec2","Vec3","Color","Entity@","Playlist@","WebSocket@","Widget@","Thread@","Channel@","Samples@","AudioStream@","Sound@","Curve@","Batch@","Packed@","Zip@","Font@","Texture@"})
+            {
+                BlueprintNodeSpec spec;
+                spec.id="capture:"+type;spec.title="Capture "+type;spec.category="Variables";
+                spec.inputs={{"in","exec"},{"value",type}};
+                spec.outputs={{"then","exec"},{"result",type},{"local","local:"+type}};
+                spec.result=type;result.push_back(std::move(spec));
+                BlueprintNodeSpec assign;
+                assign.id="local:set:"+type;assign.title="Assign local "+type;assign.category="Variables";
+                assign.inputs={{"in","exec"},{"local","local:"+type},{"value",type}};
+                assign.outputs={{"then","exec"}};result.push_back(std::move(assign));
+            }
+            for(const std::string element:{"int","uint","float","bool","string","Vec2","Color"})
+            {
+                const auto type="array<"+element+">";
+                for(const std::string scope:{"var","global"})
+                {
+                    BlueprintNodeSpec getter;getter.id=scope+":get:"+type;getter.title="Get "+type+(scope=="global"?" global":" field");getter.category="Arrays";
+                    getter.outputs={{"value",type}};getter.pure=true;getter.result=type;result.push_back(std::move(getter));
+                }
+                BlueprintNodeSpec each;each.id="flow:foreach:"+element;each.title="For Each ("+element+")";each.category="Arrays";
+                each.inputs={{"in","exec"},{"target",type+"@"}};each.outputs={{"body","exec"},{"then","exec"},{"index","uint"},{"element",element}};result.push_back(std::move(each));
+                for(const std::string op:{"length","get","set","append","remove","resize","clear"})
+                {
+                    BlueprintNodeSpec spec;spec.id="array:"+op+":"+element;spec.title="Array "+op+" ("+element+")";spec.category="Arrays";
+                    const bool pure=op=="length"||op=="get";spec.pure=pure;
+                    if(!pure)spec.inputs.push_back({"in","exec"});
+                    spec.inputs.push_back({"target",type});
+                    if(op=="get"||op=="set"||op=="remove")spec.inputs.push_back({"index","uint"});
+                    if(op=="set"||op=="append")spec.inputs.push_back({"value",element});
+                    if(op=="resize")spec.inputs.push_back({"size","uint"});
+                    if(pure){spec.result=op=="length"?"uint":element;spec.outputs.push_back({"result",spec.result});}
+                    else {spec.result="void";spec.outputs.push_back({"then","exec"});}
+                    result.push_back(std::move(spec));
+                }
+            }
+            for(const std::string collection:{"Map","Set"})for(const std::string element:{"Int","String"})
+            {
+                const bool map=collection=="Map";
+                const std::string type="BP_"+collection+element,scalar=element=="Int"?"int":"string";
+                const std::string label=map?"Map (string -> "+scalar+")":"Set ("+scalar+")";
+                for(const std::string scope:{"var","global"})
+                {
+                    BlueprintNodeSpec getter;getter.id=scope+":get:"+type;getter.title="Get "+label+(scope=="global"?" global":" field");getter.category="Collections";
+                    getter.outputs={{"value",type}};getter.pure=true;getter.result=type;result.push_back(std::move(getter));
+                }
+                std::vector<std::string> operations={"length","contains","remove","clear",map?"set":"add"};
+                if(map)operations.push_back("get");
+                for(const auto& op:operations)
+                {
+                    BlueprintNodeSpec spec;spec.id="collection:"+type+":"+op;spec.title=label+" "+op;spec.category="Collections";
+                    spec.pure=op=="length"||op=="contains"||op=="get";spec.member=true;spec.call="bp_"+op;
+                    spec.result=op=="length"?"uint":op=="get"?scalar:op=="clear"?"void":"bool";
+                    if(!spec.pure)spec.inputs.push_back({"in","exec"});
+                    spec.inputs.push_back({"target",type});
+                    if(op!="length"&&op!="clear"){spec.inputs.push_back({"key",map?"string":scalar});spec.arguments.push_back({"in","key"});}
+                    if(op=="set"||op=="get"){spec.inputs.push_back({"value",scalar});spec.arguments.push_back({"in","value"});}
+                    if(!spec.pure)spec.outputs.push_back({"then","exec"});
+                    if(spec.result!="void")spec.outputs.push_back({"result",spec.result});
+                    result.push_back(std::move(spec));
+                }
+            }
+            operation("and:bool","And","Logic","bool","bool","&&");
+            operation("or:bool","Or","Logic","bool","bool","||");
+            operation("not:bool","Not","Logic","bool","bool","!",true);
+            operation("equal:bool","Equal (bool)","Logic","bool","bool","==");
+            operation("not_equal:bool","Not equal (bool)","Logic","bool","bool","!=");
+            operation("add:string","Concatenate","String","string","string","+");
+            operation("equal:string","Equal (string)","String","string","bool","==");
+            operation("not_equal:string","Not equal (string)","String","string","bool","!=");
             return result;
         }();
         return catalogue;
@@ -149,6 +605,1605 @@ namespace nx
         }();
         const auto found=index.find(kind);
         return found==index.end()?nullptr:found->second;
+    }
+    const std::string* BlueprintDocument::screenManifest(const std::string& owner) const
+    {
+        for(const auto& m:manifests)if(m.owner==owner)return &m.source;
+        return nullptr;
+    }
+    bool BlueprintDocument::importScreenManifest(const std::string& owner,const std::string& source,std::string& error)
+    {
+        const auto owners=screens();
+        if(std::find(owners.begin(),owners.end(),owner)==owners.end()||screenManifest(owner))
+        {error="Unknown or duplicate screen manifest: "+owner;return false;}
+        if(source.empty()||source.size()>64*1024||source.find('\0')!=std::string::npos)
+        {error="Invalid or oversized screen.json: "+owner;return false;}
+        JsonTree tree;
+        if(!tree.parse(source.data(),source.size())||!tree.root().isObject()||!validText(tree.root()["title"]))
+        {error="screen.json requires a valid object and nonempty title: "+owner;return false;}
+        manifests.push_back({owner,source});error.clear();return true;
+    }
+    namespace
+    {
+        // Bounded authoring metadata, not a second game runtime or scene schema.
+        bool validVisualAssets(const std::vector<BlueprintDocument::VisualAsset>& assets,std::string& error)
+        {
+            if(assets.size()>128){error="Too many reusable visual assets.";return false;}
+            std::unordered_map<std::string,size_t> ids;
+            size_t bytes=0;
+            for(size_t i=0;i<assets.size();++i)
+            {
+                const auto& a=assets[i];
+                if(!blueprintAssetName(a.id,true)||!ids.emplace(a.id,i).second||
+                    (a.kind!="actor"&&a.kind!="widget"&&a.kind!="theme"&&a.kind!="sequence")||a.title.empty()||a.title.size()>128||
+                    std::any_of(a.title.begin(),a.title.end(),[](unsigned char c){return c<32||c==127;})||
+                    a.source.empty()||a.source.size()>64*1024||a.source.find('\0')!=std::string::npos||
+                    a.dependencies.size()>32)
+                {error="Invalid or duplicate reusable visual asset: "+a.id;return false;}
+                bytes+=a.source.size();
+                if(bytes>512*1024){error="Reusable asset source budget exceeded.";return false;}
+                JsonTree tree;
+                if(!tree.parse(a.source.data(),a.source.size())||
+                    (a.kind=="widget"?!tree.root().isArray():!tree.root().isObject()))
+                {error="Invalid reusable visual asset JSON: "+a.id;return false;}
+                if(a.kind=="sequence"){std::vector<BlueprintCameraKey> keys;if(!tree.root()["keys"].isString()||!blueprintCameraKeys(tree.root()["keys"].text(),keys,error)||!a.dependencies.empty()){error="Invalid camera sequence asset: "+a.id;return false;}}
+            }
+            for(const auto& a:assets)
+            {
+                std::unordered_set<std::string> seen;
+                for(const auto& dependency:a.dependencies)
+                {
+                    const auto found=ids.find(dependency);
+                    if(found==ids.end()||!seen.insert(dependency).second)
+                    {error="Missing or duplicate visual asset dependency: "+a.id+" -> "+dependency;return false;}
+                    if((a.kind=="widget"&&assets[found->second].kind=="actor")||a.kind=="theme"||assets[found->second].kind=="sequence")
+                    {error="Invalid visual asset dependency kind: "+a.id;return false;}
+                }
+            }
+            // Each definition must have a finite dependency tree. Memoize longest
+            // path, not just visitation, so shared subgraphs cannot evade the limit.
+            std::vector<unsigned> state(assets.size()),height(assets.size());
+            const auto visit=[&](auto&& self,size_t i)->bool
+            {
+                if(state[i]==1){error="Cyclic visual asset dependency: "+assets[i].id;return false;}
+                if(state[i]==2)return true;
+                state[i]=1;height[i]=1;
+                for(const auto& dep:assets[i].dependencies)
+                {
+                    const size_t child=ids.at(dep);
+                    if(!self(self,child))return false;
+                    height[i]=std::max(height[i],height[child]+1);
+                    if(height[i]>16){error="Visual asset dependency nesting limit exceeded: "+assets[i].id;return false;}
+                }
+                state[i]=2;return true;
+            };
+            for(size_t i=0;i<assets.size();++i)if(!visit(visit,i))return false;
+            error.clear();return true;
+        }
+    }
+    const BlueprintDocument::VisualAsset* BlueprintDocument::visualAsset(const std::string& id)const
+    {
+        const auto it=std::find_if(m_visualAssets.begin(),m_visualAssets.end(),[&](const VisualAsset& a){return a.id==id;});
+        return it==m_visualAssets.end()?nullptr:&*it;
+    }
+    bool BlueprintDocument::replaceVisualAssets(const std::vector<VisualAsset>& assets,std::string& error)
+    {
+        if(!validVisualAssets(assets,error))return false;
+        // Copy before recording to permit replacing from a reference into this document.
+        auto next=assets;
+        unsigned serial=m_visualSerial;
+        for(const auto& a:next)
+        {
+            const auto prefix=a.kind+"-";
+            if(a.id.rfind(prefix,0)!=0)continue;
+            const auto suffix=a.id.substr(prefix.size());
+            if(!suffix.empty()&&suffix.size()<=9&&suffix.find_first_not_of("0123456789")==std::string::npos)
+                serial=std::max(serial,static_cast<unsigned>(std::strtoul(suffix.c_str(),nullptr,10)));
+        }
+        recordGraphList();m_visualAssets=std::move(next);m_visualSerial=serial;return true;
+    }
+    bool BlueprintDocument::createVisualAsset(const std::string& kind,std::string& id,std::string& error)
+    {
+        if(kind!="actor"&&kind!="widget"&&kind!="theme"&&kind!="sequence"){error="Unknown visual asset kind.";return false;}
+        if(m_visualAssets.size()>=128){error="Visual asset limit reached.";return false;}
+        // The ID is independent of the user-facing name. At this stage there
+        // are no external scene-instance references; dependency links are checked.
+        if(m_visualSerial>=999999999){error="Visual asset ID limit reached.";return false;}
+        const std::string next=kind+"-"+std::to_string(m_visualSerial+1);
+        auto assets=m_visualAssets;
+        assets.push_back({next,kind,kind=="actor"?"New Actor":kind=="theme"?"New Theme":kind=="sequence"?"New Camera Sequence":"New Widget",
+            kind=="actor"?"{\"entities\":[{\"name\":\"Root\",\"shape\":\"box\",\"size\":[1,1,1]}]}":kind=="theme"?"{\"styles\":{}}":kind=="sequence"?"{\"keys\":\"0,0,2,8,0,1,0,60,0;3,5,3,5,0,1,0,50,0;6,0,2,4,0,1,0,60,0\"}":"[]",{}});
+        if(!replaceVisualAssets(assets,error))return false;
+        id=next;return true;
+    }
+    bool BlueprintDocument::cameraSequenceKeys(const std::string& id,std::vector<BlueprintCameraKey>& keys,std::string& error) const
+    {
+        const auto* asset=visualAsset(id);JsonTree tree;
+        if(!asset||asset->kind!="sequence"||!tree.parse(asset->source.data(),asset->source.size())){error="Unknown camera sequence: "+id;return false;}
+        return blueprintCameraKeys(tree.root()["keys"].text(),keys,error);
+    }
+    bool BlueprintDocument::setCameraSequenceKeys(const std::string& id,const std::vector<BlueprintCameraKey>& keys,std::string& error)
+    {
+        const auto raw=blueprintCameraKeyText(keys);std::vector<BlueprintCameraKey> checked;if(!blueprintCameraKeys(raw,checked,error))return false;
+        auto assets=m_visualAssets;for(auto& asset:assets)if(asset.id==id&&asset.kind=="sequence")
+        {const auto source="{\"keys\":\""+raw+"\"}";if(asset.source==source){error.clear();return true;}asset.source=source;return replaceVisualAssets(assets,error);}
+        error="Unknown camera sequence.";return false;
+    }
+    bool BlueprintDocument::promoteCameraSequence(size_t graph,size_t node,const std::string& title,const std::vector<BlueprintCameraKey>& keys,std::string& id,std::string& error)
+    {
+        if(graph>=graphs.size()||node>=graphs[graph].nodes.size()||graphs[graph].nodes[node].kind!="camera:sequence"){error="Select a camera sequence node.";return false;}
+        const auto raw=blueprintCameraKeyText(keys);std::vector<BlueprintCameraKey> checked;if(!blueprintCameraKeys(raw,checked,error))return false;
+        if(m_visualSerial>=999999999){error="Asset ID limit reached.";return false;}
+        const auto next="sequence-"+std::to_string(m_visualSerial+1);auto assets=m_visualAssets;
+        assets.push_back({next,"sequence",title,"{\"keys\":\""+raw+"\"}",{}});
+        if(!validVisualAssets(assets,error))return false;
+        recordGraphList();m_visualAssets=std::move(assets);++m_visualSerial;auto& values=graphs[graph].nodes[node].values;
+        auto at=std::find_if(values.begin(),values.end(),[](const InputValue& v){return v.pin=="asset";});
+        if(at==values.end())values.push_back({"asset",next});else at->value=next;
+        id=next;error.clear();return true;
+    }
+    bool BlueprintDocument::placeCameraSequence(const std::string& owner,const std::string& id,size_t& graph,size_t& node,std::string& error)
+    {
+        std::vector<BlueprintCameraKey> keys;if(!cameraSequenceKeys(id,keys,error))return false;
+        size_t index=0;for(;index<graphs.size();++index)if(graphs[index].owner==owner&&graphs[index].name=="update")break;
+        if(index==graphs.size()){error="Scene has no Update graph.";return false;}
+        BlueprintDocument staged;staged.graphs=graphs;staged.name=name;staged.assetRoot=assetRoot;staged.manifests=manifests;staged.m_visualAssets=m_visualAssets;staged.m_visualSerial=m_visualSerial;staged.m_nextId=m_nextId;
+        const auto ni=staged.graphs[index].nodes.size();
+        if(!staged.addNode(index,"camera:sequence",300.f,80.f+static_cast<float>(ni)*100.f,error)||!staged.setInputValue(index,ni,"asset",id,error))return false;
+        if(ni==1&&!staged.connect(index,0,"then",ni,"in",error))return false;
+        recordGraphList();graphs=std::move(staged.graphs);m_nextId=staged.m_nextId;graph=index;node=ni;error.clear();return true;
+    }
+    bool BlueprintDocument::renameVisualAsset(const std::string& id,const std::string& title,std::string& error)
+    {
+        auto next=m_visualAssets;
+        for(auto& a:next)if(a.id==id)
+        {
+            if(a.title==title){error.clear();return true;}
+            a.title=title;return replaceVisualAssets(next,error);
+        }
+        error="Visual asset not found.";return false;
+    }
+    bool BlueprintDocument::removeVisualAsset(const std::string& id,std::string& error)
+    {
+        for(const auto& g:graphs)for(const auto& node:g.nodes)if(node.kind=="ui:load-asset"||node.kind=="actor:spawn-asset"||node.kind=="camera:sequence")
+            for(const auto& v:node.values)if((v.pin=="id"||v.pin=="asset")&&v.value==id)
+            {error="Remove linked nodes before deleting this asset.";return false;}
+        auto next=m_visualAssets;
+        const auto at=std::find_if(next.begin(),next.end(),[&](const VisualAsset& a){return a.id==id;});
+        if(at==next.end()){error="Visual asset not found.";return false;}
+        next.erase(at);return replaceVisualAssets(next,error);
+    }
+    namespace
+    {
+        const char* const widgetKinds[]={"component","column","row","grid","stack","scroll","label","paragraph","image","button","toggle","slider","progress","choice","field","list","tabs","space","line","custom"};
+        const char* widgetKind(const JsonValue& item)
+        {
+            if(item.type()!=JsonValue::Type::Object)return nullptr;
+            for(const char* kind:widgetKinds)if(item.find(kind))return kind;
+            return nullptr;
+        }
+        JsonValue* widgetChildren(JsonValue& item)
+        {
+            const char* kind=widgetKind(item);
+            if(!kind)return nullptr;
+            const std::string k=kind;
+            if(k!="column"&&k!="row"&&k!="grid"&&k!="stack"&&k!="scroll"&&k!="button")return nullptr;
+            auto* children=item.find(kind);
+            return children&&children->type()==JsonValue::Type::Array?children:nullptr;
+        }
+        struct WidgetMatch {JsonValue* item=nullptr;JsonValue* siblings=nullptr;u32 index=0;unsigned matches=0;};
+        void findVisualWidget(JsonValue& value,const std::string& id,WidgetMatch& out,JsonValue* siblings=nullptr,u32 index=0)
+        {
+            if(widgetKind(value))
+            {
+                const auto* key=value.find("id");
+                if(key&&key->type()==JsonValue::Type::String&&key->text()==id)
+                {out.item=&value;out.siblings=siblings;out.index=index;++out.matches;}
+            }
+            if(value.type()==JsonValue::Type::Array||value.type()==JsonValue::Type::Object)
+                for(u32 n=0;n<value.count();++n)if(auto* child=value.at(n))
+                    findVisualWidget(*child,id,out,value.type()==JsonValue::Type::Array?&value:nullptr,n);
+        }
+    }
+    bool BlueprintDocument::appendVisualWidget(const std::string& id,const std::string& kind,const std::string& label,std::string& error,const std::string& parent)
+    {
+        const bool container=kind=="column"||kind=="row"||kind=="grid"||kind=="stack"||kind=="scroll";
+        if(!container&&kind!="component"&&kind!="label"&&kind!="button"&&kind!="progress"&&kind!="toggle"&&kind!="slider"&&kind!="field"&&kind!="space")
+        {error="Unsupported palette widget.";return false;}
+        if(kind=="component"&&(!visualAsset(label)||visualAsset(label)->kind!="widget"||label==id))
+        {error="Choose a different reusable widget asset ID.";return false;}
+        if(label.size()>128||std::any_of(label.begin(),label.end(),[](unsigned char ch){return ch<32||ch==127;}))
+        {error="Widget text is too long or contains control characters.";return false;}
+        auto next=m_visualAssets;
+        for(auto& a:next)if(a.id==id&&a.kind=="widget")
+        {
+            JsonValue root;
+            if(!root.parse(a.source.data(),a.source.size(),error)||root.type()!=JsonValue::Type::Array)
+            {error="Invalid widget page.";return false;}
+            JsonValue* list=&root;
+            if(!parent.empty())
+            {
+                WidgetMatch match;findVisualWidget(root,parent,match);
+                if(match.matches!=1||!(list=widgetChildren(*match.item)))
+                {error="Select a unique container widget or the page root.";return false;}
+            }
+            if(list->count()>=64){error="Container widget limit reached.";return false;}
+            std::string widgetId;
+            for(unsigned n=1;n<=4096;++n)
+            {
+                widgetId="item-"+std::to_string(n);
+                WidgetMatch match;findVisualWidget(root,widgetId,match);if(!match.matches)break;
+                if(n==4096){error="No free widget ID.";return false;}
+            }
+            JsonValue item;
+            if(!text(item,"id",widgetId))return false;
+            if(container)
+            {
+                auto* children=item.put(kind);if(!children)return false;children->setArray();
+                if(kind=="grid"&&!number(item,"columns",2))return false;
+            }
+            else if(kind=="progress"||kind=="slider")
+            {
+                if(!number(item,kind.c_str(),0.75)||!number(item,"low",0)||!number(item,"high",1))return false;
+            }
+            else if(kind=="space"){if(!number(item,"space",24))return false;}
+            else if(kind=="component")
+            {
+                if(!text(item,"component",label))return false;
+                if(std::find(a.dependencies.begin(),a.dependencies.end(),label)==a.dependencies.end())a.dependencies.push_back(label);
+            }
+            else if(!text(item,kind.c_str(),label.empty()?(kind=="label"?"Text":kind=="button"?"Button":kind=="field"?"":"Toggle"):label))return false;
+            auto* added=list->add();if(!added||!added->setCopy(item)){error="Widget hierarchy is too deep.";return false;}
+            a.source=root.write(true);
+            if(kind=="component")
+            {
+                if(!validVisualAssets(next,error))return false;
+                BlueprintDocument staged;staged.m_visualAssets=next;std::string resolved;
+                if(!staged.visualWidgetPage(id,resolved,error))return false;
+            }
+            return replaceVisualAssets(next,error);
+        }
+        error="Select a widget page first.";return false;
+    }
+    bool BlueprintDocument::removeVisualWidgetComponent(const std::string& id,const std::string& widget,std::string& error)
+    {
+        auto assets=m_visualAssets;
+        for(auto& page:assets)if(page.id==id&&page.kind=="widget")
+        {
+            JsonValue root;if(!root.parse(page.source.data(),page.source.size(),error))return false;
+            WidgetMatch match;findVisualWidget(root,widget,match);
+            if(match.matches!=1||!match.siblings||!match.item->find("component"))
+            {error="Select a linked widget component.";return false;}
+            const std::string target=match.item->find("component")->text();
+            match.siblings->removeAt(match.index);
+            const auto used=[&](auto&& self,const JsonValue& node)->bool
+            {
+                if(const auto* ref=node.find("component");ref&&ref->text()==target)return true;
+                if(node.type()==JsonValue::Type::Array||node.type()==JsonValue::Type::Object)
+                    for(u32 i=0;i<node.count();++i)if(self(self,*node.at(i)))return true;
+                return false;
+            };
+            if(!used(used,root))page.dependencies.erase(std::remove(page.dependencies.begin(),page.dependencies.end(),target),page.dependencies.end());
+            page.source=root.write(true);return replaceVisualAssets(assets,error);
+        }
+        error="Widget page not found.";return false;
+    }
+    bool BlueprintDocument::visualWidgetPage(const std::string& id,std::string& source,std::string& error)const
+    {
+        unsigned nodes=0;std::unordered_set<std::string> names;
+        const auto expand=[&](auto&& self,const std::string& assetId,const std::string& prefix,unsigned depth,JsonValue& root)->bool
+        {
+            const auto* page=visualAsset(assetId);
+            if(!page||page->kind!="widget"||depth>8){error="Invalid widget component or nesting limit: "+assetId;return false;}
+            if(!root.parse(page->source.data(),page->source.size(),error)||root.type()!=JsonValue::Type::Array)
+            {error="Invalid widget component page: "+assetId;return false;}
+            const auto walk=[&](auto&& visit,JsonValue& node)->bool
+            {
+                if(const auto* kind=widgetKind(node);kind)
+                {
+                    if(++nodes>256){error="Expanded widget count exceeds 256.";return false;}
+                    auto* name=node.find("id");
+                    std::string qualified;
+                    if(name&&name->type()==JsonValue::Type::String&&!name->text().empty())
+                    {
+                        qualified=prefix+name->text();
+                        if(qualified.size()>128||!names.insert(qualified).second){error="Duplicate or excessive expanded widget ID: "+qualified;return false;}
+                        name->setText(qualified);
+                    }
+                    if(std::string(kind)=="component")
+                    {
+                        const auto* ref=node.find("component");
+                        if(qualified.empty()||!ref||ref->type()!=JsonValue::Type::String||
+                            std::find(page->dependencies.begin(),page->dependencies.end(),ref->text())==page->dependencies.end())
+                        {error="Widget component requires a stable ID and declared dependency.";return false;}
+                        const std::string target=ref->text();JsonValue nested;
+                        if(!self(self,target,qualified+"/",depth+1,nested))return false;
+                        node.remove("component");
+                        auto* content=node.put("column");
+                        if(!content||!content->setCopy(nested)){error="Expanded widget nesting limit exceeded.";return false;}
+                        return true;
+                    }
+                }
+                if(node.type()==JsonValue::Type::Array||node.type()==JsonValue::Type::Object)
+                    for(u32 i=0;i<node.count();++i)if(!visit(visit,*node.at(i)))return false;
+                return true;
+            };
+            return walk(walk,root);
+        };
+        const auto* page=visualAsset(id);
+        if(!page||page->kind!="widget"){error="Select a widget page.";return false;}
+        const bool nested=std::any_of(page->dependencies.begin(),page->dependencies.end(),[&](const std::string& dep){const auto* a=visualAsset(dep);return a&&a->kind=="widget";});
+        if(!nested){source=page->source;error.clear();return true;}
+        JsonValue root;if(!expand(expand,id,"",0,root))return false;
+        source=root.write(true);if(source.size()>64*1024){error="Expanded widget page exceeds 64 KiB.";return false;}
+        error.clear();return true;
+    }
+    bool BlueprintDocument::setVisualWidgetProperty(const std::string& id,const std::string& widget,const std::string& property,const std::string& value,std::string& error)
+    {
+        auto assets=m_visualAssets;
+        for(auto& asset:assets)if(asset.id==id&&asset.kind=="widget")
+        {
+            JsonValue root;if(!root.parse(asset.source.data(),asset.source.size(),error))return false;
+            WidgetMatch match;findVisualWidget(root,widget,match);
+            if(match.matches!=1){error="Select a widget with a unique ID.";return false;}
+            auto& item=*match.item;
+            const std::string allowed="|text|style|width|height|gap|grow|padding|value|align|justify|self|visible|enabled|checked|anchor|offset|";
+            if(property.empty()||property.find('|')!=std::string::npos||allowed.find("|"+property+"|")==std::string::npos)
+            {error="Unsupported widget property.";return false;}
+            if(property=="anchor"||property=="offset")
+            {
+                const auto isStackParent=[&](auto&& self,JsonValue& node)->bool
+                {
+                    if(node.find("stack")==match.siblings&&match.siblings)return true;
+                    if(node.type()==JsonValue::Type::Array||node.type()==JsonValue::Type::Object)
+                        for(u32 n=0;n<node.count();++n)if(self(self,*node.at(n)))return true;
+                    return false;
+                };
+                if(!value.empty()&&!isStackParent(isStackParent,root)){error="Anchors and offsets require a Stack parent.";return false;}
+                if(value.empty())
+                {
+                    item.remove(property.c_str());
+                    if(property=="anchor")item.remove("offset");
+                }
+                else if(property=="anchor")
+                {
+                    const std::string names="|top-left|top-center|top-right|middle-left|center|middle-right|bottom-left|bottom-center|bottom-right|stretch-x|stretch-y|stretch-both|";
+                    if(value.find('|')!=std::string::npos||names.find("|"+value+"|")==std::string::npos)
+                    {error="Choose a named point or stretch anchor.";return false;}
+                    if(!text(item,"anchor",value))return false;
+                }
+                else
+                {
+                    if(!item.find("anchor")){error="Choose an anchor first.";return false;}
+                    std::vector<std::string> xy;
+                    if(!blueprintInputComponents("Vec2",value,xy)){error="Enter X,Y offset.";return false;}
+                    auto* field=item.put("offset");if(!field)return false;field->setArray();
+                    for(const auto& axis:xy)
+                    {
+                        const double n=std::strtod(axis.c_str(),nullptr);
+                        if(!std::isfinite(n)||std::abs(n)>100000){error="Offset outside supported range.";return false;}
+                        auto* part=field->add();if(!part)return false;part->setNumber(n);
+                    }
+                }
+            }
+            else if(value.empty()&&property!="text")item.remove(property.c_str());
+            else if(property=="text"||property=="style")
+            {
+                if(value.size()>128||std::any_of(value.begin(),value.end(),[](unsigned char ch){return ch<32||ch==127;}))
+                {error="Invalid widget text or style.";return false;}
+                if(!text(item,property.c_str(),value))return false;
+            }
+            else if(property=="width"||property=="height"||property=="gap"||property=="grow"||property=="padding"||property=="value")
+            {
+                if(!literal("literal:float",value)){error="Enter a finite number.";return false;}
+                const double n=std::strtod(value.c_str(),nullptr);
+                if((property!="value"&&n<0)||std::abs(n)>100000){error="Widget property outside supported range.";return false;}
+                if(!number(item,property.c_str(),n))return false;
+            }
+            else if(property=="align"||property=="justify"||property=="self")
+            {
+                if(value!="start"&&value!="center"&&value!="end"&&value!="stretch"&&value!="spread")
+                {error="Use start, center, end, stretch or spread.";return false;}
+                if(!text(item,property.c_str(),value))return false;
+            }
+            else if(property=="visible"||property=="enabled"||property=="checked")
+            {
+                if(value!="true"&&value!="false"){error="Use true or false.";return false;}
+                auto* field=item.put(property);if(!field)return false;field->setFlag(value=="true");
+            }
+            else {error="Unsupported widget property.";return false;}
+            const auto changed=root.write(true);if(changed==asset.source){error.clear();return true;}
+            asset.source=changed;return replaceVisualAssets(assets,error);
+        }
+        error="Select a widget page.";return false;
+    }
+    bool BlueprintDocument::setWidgetKey(const std::string& id,const std::string& widget,const std::string& track,const std::string& value,float time,std::string& error)
+    {
+        const char* tracks[]={"x","y","scale","opacity","rotation"};
+        const double low[]={-10000,-10000,0.05,0,-3600},high[]={10000,10000,4,1,3600};
+        auto assets=m_visualAssets;
+        for(auto& asset:assets)if(asset.id==id&&asset.kind=="widget")
+        {
+            JsonValue root;if(!root.parse(asset.source.data(),asset.source.size(),error))return false;
+            WidgetMatch match;findVisualWidget(root,widget,match);
+            if(match.matches!=1){error="Select a unique widget.";return false;}
+            auto* a=match.item->find("animation");
+            if(a&&a->type()!=JsonValue::Type::Object){error="Invalid animation object.";return false;}
+            if(!a){a=match.item->put("animation");if(!a||!number(*a,"duration",2))return false;}
+            const auto* d=a->find("duration");const double duration=d?d->number():2;
+            if(!std::isfinite(duration)||duration<0.01||duration>60){error="Invalid duration.";return false;}
+            if(track=="duration")
+            {
+                if(!literal("literal:float",value)){error="Enter a duration in seconds.";return false;}
+                const double n=std::strtod(value.c_str(),nullptr);
+                if(n<0.01||n>60){error="Duration must be 0.01 to 60 seconds.";return false;}
+                for(const auto* trackName:tracks)if(const auto* keys=a->find(trackName))
+                    for(u32 j=0;j<keys->count();++j)if(keys->at(j)->at(0)->number()>n)
+                    {error="Remove keys beyond the new duration first.";return false;}
+                if(!number(*a,"duration",n))return false;
+            }
+            else if(track=="loop")
+            {
+                if(value!="true"&&value!="false"){error="Use true or false.";return false;}
+                auto* v=a->put("loop");if(!v)return false;v->setFlag(value=="true");
+            }
+            else
+            {
+                size_t index=0;while(index<5&&track!=tracks[index])++index;
+                if(index==5||!std::isfinite(time)||time<0||time>duration+0.00001){error="Invalid track or key time.";return false;}
+                double n=0;
+                if(!value.empty())
+                {
+                    if(!literal("literal:float",value)){error="Enter a finite key value.";return false;}
+                    n=std::strtod(value.c_str(),nullptr);
+                    if(n<low[index]||n>high[index]){error="Key value outside supported range.";return false;}
+                }
+                const double t=std::min<double>(duration,time);
+                std::vector<std::pair<double,double>> keys;
+                if(const auto* prior=a->find(track.c_str()))
+                {
+                    if(prior->type()!=JsonValue::Type::Array||prior->count()>64){error="Invalid track.";return false;}
+                    for(u32 j=0;j<prior->count();++j)
+                    {
+                        auto* key=prior->at(j);
+                        if(!key||key->type()!=JsonValue::Type::Array||key->count()!=2){error="Invalid key.";return false;}
+                        const double old=key->at(0)->number();
+                        if(std::abs(old-t)>0.00001)keys.emplace_back(old,key->at(1)->number());
+                    }
+                }
+                if(!value.empty())keys.emplace_back(t,n);
+                if(keys.size()>64){error="A track supports 64 keys.";return false;}
+                std::sort(keys.begin(),keys.end());
+                if(keys.empty())a->remove(track.c_str());
+                else
+                {
+                    auto* out=a->put(track);if(!out)return false;out->setArray();
+                    for(const auto& k:keys)
+                    {
+                        auto* pair=out->add();if(!pair)return false;pair->setArray();
+                        auto* first=pair->add();if(!first)return false;first->setNumber(k.first);
+                        auto* second=pair->add();if(!second)return false;second->setNumber(k.second);
+                    }
+                }
+            }
+            const auto changed=root.write(true);if(changed==asset.source){error.clear();return true;}
+            asset.source=changed;return replaceVisualAssets(assets,error);
+        }
+        error="Select a widget page.";return false;
+    }
+    bool BlueprintDocument::positionVisualWidget(const std::string& id,const std::string& widget,const std::string& anchor,float x,float y,std::string& error)
+    {
+        if(!std::isfinite(x)||!std::isfinite(y)||std::abs(x)>100000||std::abs(y)>100000)
+        {error="Invalid widget position.";return false;}
+        // Stage both edits so conversion from flow to anchored positioning is
+        // one history entry. Never publish an incomplete anchor/offset pair.
+        BlueprintDocument staged;staged.name=name;staged.assetRoot=assetRoot;staged.graphs=graphs;
+        staged.manifests=manifests;staged.m_visualAssets=m_visualAssets;
+        staged.m_visualSerial=m_visualSerial;staged.m_nextId=m_nextId;
+        if(!staged.setVisualWidgetProperty(id,widget,"anchor",anchor,error)||
+            !staged.setVisualWidgetProperty(id,widget,"offset",std::to_string(x)+","+std::to_string(y),error))return false;
+        const auto* before=visualAsset(id);const auto* after=staged.visualAsset(id);
+        if(before&&after&&before->source==after->source){error.clear();return true;}
+        return replaceVisualAssets(staged.m_visualAssets,error);
+    }
+    bool BlueprintDocument::reparentVisualWidget(const std::string& id,const std::string& widget,const std::string& parent,std::string& error)
+    {
+        if(widget.empty()||widget==parent){error="Cannot move a widget into itself.";return false;}
+        auto assets=m_visualAssets;
+        for(auto& page:assets)if(page.id==id&&page.kind=="widget")
+        {
+            JsonValue root;if(!root.parse(page.source.data(),page.source.size(),error)||root.type()!=JsonValue::Type::Array)return false;
+            WidgetMatch from;findVisualWidget(root,widget,from);
+            if(from.matches!=1||!from.siblings){error="Select a unique widget inside a container.";return false;}
+            JsonValue* dest=&root;bool stack=false;
+            if(!parent.empty())
+            {
+                WidgetMatch to,descendant;findVisualWidget(root,parent,to);findVisualWidget(*from.item,parent,descendant);
+                if(descendant.matches||to.matches!=1||!(dest=widgetChildren(*to.item)))
+                {error="Drop onto a container outside the selected widget's subtree.";return false;}
+                stack=to.item->find("stack")!=nullptr;
+            }
+            if(dest==from.siblings){error.clear();return true;}
+            if(!stack&&from.item->find("anchor")){error="Clear the widget anchor before moving outside a Stack.";return false;}
+            if(dest->count()>=64){error="Destination container is full.";return false;}
+            auto* copy=dest->add();
+            if(!copy||!copy->setCopy(*from.item)){error="Widget hierarchy nesting limit reached.";return false;}
+            from.siblings->removeAt(from.index);
+            page.source=root.write(true);return replaceVisualAssets(assets,error);
+        }
+        error="Widget page not found.";return false;
+    }
+    bool BlueprintDocument::moveVisualWidget(const std::string& id,const std::string& widget,int direction,std::string& error)
+    {
+        if(direction!=-1&&direction!=1){error="Invalid sibling movement.";return false;}
+        auto assets=m_visualAssets;
+        for(auto& asset:assets)if(asset.id==id&&asset.kind=="widget")
+        {
+            JsonValue root;if(!root.parse(asset.source.data(),asset.source.size(),error))return false;
+            WidgetMatch match;findVisualWidget(root,widget,match);
+            if(match.matches!=1||!match.siblings){error="Select a unique widget within a container.";return false;}
+            const auto target=static_cast<int>(match.index)+direction;
+            if(target<0||static_cast<u32>(target)>=match.siblings->count()){error="Already at the end of this container.";return false;}
+            auto* other=match.siblings->at(static_cast<u32>(target));
+            JsonValue before;if(!before.setCopy(*match.item)||!match.item->setCopy(*other)||!other->setCopy(before))return false;
+            asset.source=root.write(true);return replaceVisualAssets(assets,error);
+        }
+        error="Select a widget page.";return false;
+    }
+    namespace
+    {
+        bool widgetEvent(const std::string& event)
+        {return event=="click"||event=="change"||event=="focus"||event=="done"||event=="draw"||event=="makeRow";}
+        std::vector<BlueprintPin> widgetEventParameters(const std::string& event)
+        {
+            if(event=="draw")return {{"canvas","Canvas@"},{"widget","Widget@"}};
+            if(event=="makeRow")return {{"widget","Widget@"},{"index","int"}};
+            return {{"widget","Widget@"}};
+        }
+        struct WidgetHandler {std::string event,method;};
+        void widgetHandlers(JsonTree::Value item,std::vector<WidgetHandler>& out)
+        {
+            if(item.isArray()||item.isObject())
+            {
+                if(item.isObject())
+                {
+                    bool widget=false;
+                    for(const char* kind:widgetKinds)if(item[kind].exists()){widget=true;break;}
+                    if(widget)for(const char* event:{"click","change","focus","done","draw","makeRow"})
+                        if(item[event].exists())out.push_back({event,item[event].text()});
+                }
+                for(auto child=item.first();child.exists();child=child.next())widgetHandlers(child,out);
+            }
+        }
+        bool linksWidgetPage(const BlueprintDocument::Graph& g,const std::string& id)
+        {
+            for(const auto& n:g.nodes)if(n.kind=="ui:load-asset")
+                for(const auto& v:n.values)if(v.pin=="id"&&v.value==id)return true;
+            return false;
+        }
+        bool handlerSignature(const BlueprintDocument::Graph& g,const std::string& event)
+        {
+            const auto params=widgetEventParameters(event);
+            if(g.kind!="function"||g.inlineMacro||g.returnType!="void"||g.parameters.size()!=params.size())return false;
+            for(size_t i=0;i<params.size();++i)if(g.parameters[i].type!=params[i].type)return false;
+            return true;
+        }
+        // Page names are actual native method names. Blueprint functions are
+        // emitted with bp_fn_ prefixes; imported callbacks must be mapped explicitly.
+        bool ensureWidgetHandlers(BlueprintDocument& doc,const std::string& owner,const std::string& source,bool create,std::string& error)
+        {
+            JsonTree tree;if(!tree.parse(source.data(),source.size())){error="Invalid widget JSON.";return false;}
+            std::vector<WidgetHandler> handlers;widgetHandlers(tree.root(),handlers);
+            for(const auto& handler:handlers)
+            {
+                if(handler.method.rfind("bp_fn_",0)!=0||!identifier(handler.method.substr(6)))
+                {error="Widget "+handler.event+" callback must reference a Blueprint function: "+handler.method;return false;}
+                const auto functionName=handler.method.substr(6);
+                const auto* graph=doc.function(owner,functionName);
+                if(!graph)
+                {
+                    if(!create){error="Missing widget callback "+functionName+" on "+owner;return false;}
+                    // This is a newly created graph in the transaction. Initialize
+                    // its signature before publishing; the normal edit guard
+                    // intentionally refuses signature changes to linked handlers.
+                    if(!doc.addFunction(functionName,error,owner))return false;
+                    doc.graphs.back().parameters=widgetEventParameters(handler.event);
+                }
+                else if(!handlerSignature(*graph,handler.event))
+                {error="Incompatible widget callback signature: "+functionName;return false;}
+            }
+            return true;
+        }
+    }
+    bool BlueprintDocument::visualWidgetTheme(const std::string& pageId,std::string& source,std::string& error)const
+    {
+        source.clear();
+        const auto* page=visualAsset(pageId);
+        if(!page||page->kind!="widget"){error="Select a widget page.";return false;}
+        for(const auto& dependency:page->dependencies)
+        {
+            const auto* asset=visualAsset(dependency);
+            if(!asset||asset->kind=="actor"){error="Invalid widget dependency.";return false;}
+            if(asset->kind=="theme")
+            {
+                if(!source.empty()){error="A linked page supports one theme.";return false;}
+                source=asset->source;
+            }
+        }
+        error.clear();return true;
+    }
+    bool BlueprintDocument::setVisualTheme(const std::string& pageId,const std::string& themeId,std::string& error)
+    {
+        if(!themeId.empty())
+        {
+            const auto* theme=visualAsset(themeId);
+            if(!theme||theme->kind!="theme"){error="Choose an existing theme asset ID.";return false;}
+        }
+        auto assets=m_visualAssets;
+        for(auto& page:assets)if(page.id==pageId&&page.kind=="widget")
+        {
+            std::vector<std::string> next;
+            for(const auto& dependency:page.dependencies)
+            {
+                const auto* existing=visualAsset(dependency);
+                if(!existing||existing->kind=="actor"){error="Invalid existing widget dependency.";return false;}
+                if(existing->kind=="widget")next.push_back(dependency);
+            }
+            if(!themeId.empty())next.push_back(themeId);
+            if(page.dependencies==next){error.clear();return true;}
+            page.dependencies=next;return replaceVisualAssets(assets,error);
+        }
+        error="Widget page not found.";return false;
+    }
+    bool BlueprintDocument::setVisualThemeProperty(const std::string& id,const std::string& styleName,const std::string& state,const std::string& property,const std::string& value,std::string& error)
+    {
+        const std::string states="|normal|hovered|checked|focused|pressed|disabled|";
+        const std::string colors="|back|text|line|track|";
+        const std::string looks="|radius|lineWidth|scale|shadow|";
+        const std::string geometry="|size|padding|gap|minWidth|minHeight|seconds|slice|";
+        const auto contains=[](const std::string& list,const std::string& key){return !key.empty()&&key.find('|')==std::string::npos&&list.find("|"+key+"|")!=std::string::npos;};
+        const bool color=contains(colors,property),look=contains(looks,property),metric=contains(geometry,property),alignment=property=="align",media=property=="font"||property=="image"||contains("|soundMove|soundAccept|soundBack|soundChange|",property);
+        if(!identifier(styleName)||styleName.size()>31||!contains(states,state)||
+            (!color&&!look&&!metric&&!alignment&&!media)||((metric||alignment||media)&&state!="normal"))
+        {error="Invalid style name, state or property.";return false;}
+        if(color&&!value.empty()&&((value.size()!=7&&value.size()!=9)||value.front()!='#'||
+            value.find_first_not_of("0123456789abcdefABCDEF",1)!=std::string::npos))
+        {error="Use #RRGGBB or #RRGGBBAA.";return false;}
+        if(alignment&&!value.empty()&&value!="left"&&value!="center"&&value!="right")
+        {error="Use left, center or right.";return false;}
+        if(media&&!value.empty())
+        {
+            const auto prefix=value.rfind("asset:",0)==0?6u:value.rfind("global:",0)==0?7u:0u;
+            if(!prefix||value.size()>95||value.size()<=prefix||value.find('\\')!=std::string::npos)
+            {error="Use a local asset: or global: path (95 bytes maximum).";return false;}
+            size_t begin=prefix;
+            while(begin<value.size())
+            {
+                const auto slash=value.find('/',begin);const auto part=value.substr(begin,slash==std::string::npos?slash:slash-begin);
+                if(!blueprintAssetName(part,slash!=std::string::npos)){error="Invalid media asset path.";return false;}
+                if(slash==std::string::npos)break;
+                begin=slash+1;if(begin==value.size()){error="Invalid media asset path.";return false;}
+            }
+        }
+        double n=0;
+        if(!color&&!alignment&&!media&&!value.empty())
+        {
+            if(!literal("literal:float",value)){error="Enter a finite number.";return false;}
+            n=std::strtod(value.c_str(),nullptr);
+            if(n<0||n>4096||(property=="size"&&(n<1||n>256||std::floor(n)!=n))||
+                (property=="scale"&&(n<0.05||n>4))||(property=="shadow"&&n>1)||(property=="seconds"&&n>10))
+            {error="Style value outside supported range.";return false;}
+        }
+        auto assets=m_visualAssets;
+        for(auto& theme:assets)if(theme.id==id&&theme.kind=="theme")
+        {
+            JsonValue root;if(!root.parse(theme.source.data(),theme.source.size(),error))return false;
+            if(property.rfind("sound",0)==0)
+            {
+                auto* sounds=root.put("sounds");if(!sounds)return false;
+                const char* key=property=="soundMove"?"move":property=="soundAccept"?"accept":property=="soundBack"?"back":"change";
+                if(value.empty())sounds->remove(key);else if(!text(*sounds,key,value))return false;
+                const auto changed=root.write(true);if(changed==theme.source){error.clear();return true;}
+                theme.source=changed;return replaceVisualAssets(assets,error);
+            }
+            auto* styles=root.put("styles");if(!styles)return false;
+            if(styles->type()!=JsonValue::Type::Object&&styles->type()!=JsonValue::Type::Null){error="Invalid styles object.";return false;}
+            if(!styles->find(styleName.c_str())&&styles->count()>=24){error="Custom style limit reached.";return false;}
+            auto* style=styles->put(styleName);if(!style)return false;
+            auto* target=state=="normal"?style:style->put(state);if(!target)return false;
+            if(value.empty())target->remove(property.c_str());
+            else if(color||alignment||media){if(!text(*target,property.c_str(),value))return false;}
+            else if(!number(*target,property.c_str(),n))return false;
+            const auto changed=root.write(true);if(changed==theme.source){error.clear();return true;}
+            theme.source=changed;return replaceVisualAssets(assets,error);
+        }
+        error="Theme not found.";return false;
+    }
+    bool BlueprintDocument::visualWidgetForOwner(const std::string& id,const std::string& owner,std::string& json,std::string& error)const
+    {
+        std::string theme;if(!visualWidgetTheme(id,theme,error)||!visualWidgetPage(id,json,error))return false;
+        JsonTree tree;if(!tree.parse(json.data(),json.size())){error="Invalid widget JSON.";return false;}
+        std::vector<WidgetHandler> handlers;widgetHandlers(tree.root(),handlers);
+        for(const auto& handler:handlers)
+        {
+            const auto* graph=handler.method.rfind("bp_fn_",0)==0?function(owner,handler.method.substr(6)):nullptr;
+            if(!graph||!handlerSignature(*graph,handler.event)){error="Missing or incompatible widget "+handler.event+" callback: "+handler.method;return false;}
+        }
+        error.clear();return true;
+    }
+    bool BlueprintDocument::visualWidgetUsesFunction(const std::string& owner,const std::string& functionName)const
+    {
+        for(const auto& page:m_visualAssets)if(page.kind=="widget"&&
+            std::any_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==owner&&linksWidgetPage(g,page.id);}))
+        {
+            std::string resolved,error;if(!visualWidgetPage(page.id,resolved,error))continue;
+            JsonTree tree;if(!tree.parse(resolved.data(),resolved.size()))continue;
+            std::vector<WidgetHandler> handlers;widgetHandlers(tree.root(),handlers);
+            for(const auto& handler:handlers)if(handler.method=="bp_fn_"+functionName)return true;
+        }
+        return false;
+    }
+    bool BlueprintDocument::openVisualWidgetEvent(const std::string& owner,const std::string& id,const std::string& widget,const std::string& event,size_t& graph,std::string& error)
+    {
+        if(!widgetEvent(event)||widget.empty()){error="Select a widget and event.";return false;}
+        const auto* page=visualAsset(id);
+        if(!page||page->kind!="widget"){error="Select a widget page.";return false;}
+        if(std::none_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==owner&&linksWidgetPage(g,id);}))
+        {error="Link this page to the selected screen before authoring callbacks.";return false;}
+        JsonValue root;if(!root.parse(page->source.data(),page->source.size(),error))return false;
+        WidgetMatch match;findVisualWidget(root,widget,match);
+        if(match.matches!=1){error="Select a widget with a unique ID.";return false;}
+        const auto* existing=match.item->find(event.c_str());
+        std::string functionName;
+        if(existing)
+        {
+            const auto method=existing->text();
+            if(method.rfind("bp_fn_",0)!=0||!identifier(method.substr(6)))
+            {error="Imported callback is not a Blueprint function; clear the binding first.";return false;}
+            functionName=method.substr(6);
+        }
+        else
+        {
+            std::string base="ui_"+id+"_"+widget+"_"+event;
+            for(char& ch:base)if(!((ch>='a'&&ch<='z')||(ch>='A'&&ch<='Z')||(ch>='0'&&ch<='9')||ch=='_'))ch='_';
+            if(base.size()>52)base.resize(52);
+            functionName=base;
+            unsigned serial=0;
+            while(std::any_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.name==functionName;}))
+                functionName=base+"_"+std::to_string(++serial);
+            if(!text(*match.item,event.c_str(),"bp_fn_"+functionName))return false;
+        }
+        BlueprintDocument staged;staged.name=name;staged.assetRoot=assetRoot;staged.graphs=graphs;staged.manifests=manifests;
+        staged.m_visualAssets=m_visualAssets;staged.m_visualSerial=m_visualSerial;staged.m_nextId=m_nextId;
+        const std::string source=existing?page->source:root.write(true);
+        const auto owners=screens();
+        for(const auto& screen:owners)
+            if(std::any_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==screen&&linksWidgetPage(g,id);}))
+                if(!ensureWidgetHandlers(staged,screen,source,true,error))return false;
+        const auto* target=staged.function(owner,functionName);
+        if(!target){error="Cannot locate widget handler.";return false;}
+        graph=static_cast<size_t>(target-staged.graphs.data());
+        if(existing&&staged.graphs.size()==graphs.size()){error.clear();return true;}
+        for(auto& a:staged.m_visualAssets)if(a.id==id)a.source=source;
+        std::string checked;
+        if(!validVisualAssets(staged.m_visualAssets,error)||!staged.serialize(checked,error))return false;
+        recordGraphList();graphs.swap(staged.graphs);m_visualAssets.swap(staged.m_visualAssets);m_nextId=staged.m_nextId;error.clear();return true;
+    }
+    bool BlueprintDocument::clearVisualWidgetEvent(const std::string& id,const std::string& widget,const std::string& event,std::string& error)
+    {
+        if(!widgetEvent(event)||widget.empty()){error="Select a widget and event.";return false;}
+        auto assets=m_visualAssets;
+        for(auto& page:assets)if(page.id==id&&page.kind=="widget")
+        {
+            JsonValue root;if(!root.parse(page.source.data(),page.source.size(),error))return false;
+            WidgetMatch match;findVisualWidget(root,widget,match);
+            if(match.matches!=1){error="Select a widget with a unique ID.";return false;}
+            if(!match.item->find(event.c_str())){error.clear();return true;}
+            match.item->remove(event.c_str());page.source=root.write(true);
+            // Leave the callback graph intact: other references may still use it.
+            return replaceVisualAssets(assets,error);
+        }
+        error="Widget page not found.";return false;
+    }
+    bool BlueprintDocument::connectVisualWidget(const std::string& owner,const std::string& id,std::string& error)
+    {
+        std::string theme,resolved;if(!visualWidgetTheme(id,theme,error)||!visualWidgetPage(id,resolved,error))return false;
+        size_t enter=static_cast<size_t>(-1),draw=enter;
+        for(size_t i=0;i<graphs.size();++i)if(graphs[i].owner==owner)
+        {
+            if(graphs[i].name=="onEnter")enter=i;
+            if(graphs[i].name=="draw")draw=i;
+        }
+        if(enter>=graphs.size()||draw>=graphs.size()){error="Select a screen graph.";return false;}
+        BlueprintDocument staged;
+        staged.name=name;staged.assetRoot=assetRoot;staged.graphs=graphs;staged.manifests=manifests;
+        staged.m_visualAssets=m_visualAssets;staged.m_visualSerial=m_visualSerial;staged.m_nextId=m_nextId;
+        // Only append to a complete simple action chain. No implicit rewiring.
+        auto tail=[&](size_t index,size_t& last)->bool
+        {
+            const auto& g=staged.graphs[index];
+            last=static_cast<size_t>(-1);
+            for(size_t i=0;i<g.nodes.size();++i)if(g.nodes[i].kind=="entry"){last=i;break;}
+            if(last>=g.nodes.size())return false;
+            std::unordered_set<size_t> seen;
+            while(true)
+            {
+                if(!seen.insert(last).second)return false;
+                BlueprintNodeSpec spec;
+                if(!staged.nodeSpec(g,g.nodes[last],spec))return false;
+                size_t count=0;
+                for(const auto& out:spec.outputs)if(out.type=="exec")
+                {if(out.name!="then")return false;++count;}
+                if(count!=1)return false;
+                const auto link=std::find_if(g.links.begin(),g.links.end(),[&](const Link& l){return l.from==last&&l.output=="then";});
+                if(link==g.links.end())break;
+                if(link->to>=g.nodes.size())return false;
+                last=link->to;
+            }
+            for(size_t i=0;i<g.nodes.size();++i)if(!seen.count(i))
+            {
+                BlueprintNodeSpec spec;
+                if(!staged.nodeSpec(g,g.nodes[i],spec))return false;
+                for(const auto& in:spec.inputs)if(in.type=="exec")return false;
+            }
+            return true;
+        };
+        size_t enterTail,drawTail;
+        if(!tail(enter,enterTail)||!tail(draw,drawTail))
+        {error="Existing On Enter or Draw is not a simple action chain. Connect the page manually.";return false;}
+        bool linked=false,drawn=false;
+        for(const auto& n:staged.graphs[enter].nodes)
+        {
+            if(n.kind=="api:Ui:Ui::load:string,Widget@")
+            {error="Existing UI load found. Connect the page manually.";return false;}
+            if(n.kind=="ui:load-asset")
+            {
+                if(linked||std::none_of(n.values.begin(),n.values.end(),[&](const InputValue& v){return v.pin=="id"&&v.value==id;}))
+                {error="Screen already links a different widget page.";return false;}
+                linked=true;
+            }
+        }
+        for(const auto& n:staged.graphs[draw].nodes)
+            if(n.kind.rfind("api:Ui:Ui::draw:",0)==0)
+            {
+                if(drawn){error="Multiple existing UI draws; connect manually.";return false;}
+                drawn=true;
+            }
+        if(!linked)
+        {
+            const auto node=staged.graphs[enter].nodes[enterTail];
+            if(!staged.addConnectedNode(enter,enterTail,"then","ui:load-asset",node.x+240,node.y,error)||
+                !staged.setInputValue(enter,staged.graphs[enter].nodes.size()-1,"id",id,error))return false;
+        }
+        if(!drawn)
+        {
+            const auto node=staged.graphs[draw].nodes[drawTail];
+            if(!staged.addConnectedNode(draw,drawTail,"then","api:Ui:Ui::draw:Canvas@",node.x+240,node.y,error))return false;
+            const auto target=staged.graphs[draw].nodes.size()-1;
+            size_t canvas=0;
+            while(canvas<staged.graphs[draw].nodes.size()&&staged.graphs[draw].nodes[canvas].kind!="event:canvas")++canvas;
+            if(canvas==staged.graphs[draw].nodes.size()&&!staged.addNode(draw,"event:canvas",node.x,node.y+180,error))return false;
+            if(!staged.connect(draw,canvas,"value",target,"canvas",error))return false;
+        }
+        if(!ensureWidgetHandlers(staged,owner,resolved,true,error))return false;
+        if(linked&&drawn&&staged.graphs.size()==graphs.size()){error.clear();return true;}
+        std::string verified;
+        if(!staged.serialize(verified,error))return false;
+        recordGraphList();graphs.swap(staged.graphs);m_nextId=staged.m_nextId;error.clear();return true;
+    }
+    std::string BlueprintDocument::parentBehaviour(const std::string& owner)const
+    {
+        for(const auto& g:graphs)if(g.owner==owner&&g.name=="start"&&!g.parentBehaviour.empty())return "behaviour:"+g.parentBehaviour;
+        return "";
+    }
+    std::string BlueprintDocument::actorBehaviour(const std::string& id)const
+    {
+        std::string source,error;
+        if(!visualActorRoot(id,source,error))return "";
+        JsonTree tree;if(!tree.parse(source.data(),source.size()))return "";
+        const std::string behaviourName=tree.root()["behaviour"].text();
+        return behaviourName.rfind("BP_Behaviour_",0)==0?"behaviour:"+behaviourName.substr(13):"";
+    }
+    std::vector<BlueprintDocument::Field> BlueprintDocument::actorSpawnFields(const std::string& id)const
+    {
+        std::vector<Field> result;std::string owner=actorBehaviour(id);
+        std::vector<std::string> chain;
+        for(unsigned i=0;!owner.empty()&&i<16;++i){chain.push_back(owner);owner=parentBehaviour(owner);}
+        for(auto it=chain.rbegin();it!=chain.rend();++it)for(const auto& g:graphs)if(g.owner==*it&&g.name=="start")
+            for(const auto& field:g.fields)
+            {
+                auto found=std::find_if(result.begin(),result.end(),[&](const Field& item){return item.name==field.name;});
+                if(found!=result.end()){const bool exposed=found->exposed;*found=field;found->exposed=exposed||field.exposed;}
+                else if(field.exposed)result.push_back(field);
+            }
+        return result;
+    }
+    bool BlueprintDocument::setActorFieldExposed(const std::string& owner,const std::string& field,bool enabled,std::string& error)
+    {
+        BlueprintDocument staged;staged.name=name;staged.assetRoot=assetRoot;staged.graphs=graphs;staged.manifests=manifests;
+        staged.m_visualAssets=m_visualAssets;staged.m_visualSerial=m_visualSerial;staged.m_nextId=m_nextId;
+        for(auto& g:staged.graphs)if(g.owner==owner&&behaviourOwner(owner)&&g.name=="start")
+            for(auto& item:g.fields)if(item.name==field)
+            {
+                if(!blueprintLiteralType(item.type)){error="Only primitive typed fields can be exposed on spawn.";return false;}
+                if(item.exposed==enabled){error.clear();return true;}
+                item.exposed=enabled;std::string checked;
+                if(!staged.serialize(checked,error))return false;
+                recordGraphList();graphs.swap(staged.graphs);return true;
+            }
+        error="Declare a typed Behaviour field first.";return false;
+    }
+    bool BlueprintDocument::ensureActorBehaviour(const std::string& id,std::string& owner,std::string& error)
+    {
+        BlueprintDocument staged;staged.name=name;staged.assetRoot=assetRoot;staged.graphs=graphs;staged.manifests=manifests;
+        staged.m_visualAssets=m_visualAssets;staged.m_visualSerial=m_visualSerial;staged.m_nextId=m_nextId;
+        const auto ensure=[&](auto&& self,const std::string& assetId,std::string& result)->bool
+        {
+            const auto* asset=staged.visualAsset(assetId);
+            if(!asset||asset->kind!="actor"){error="Select an actor class.";return false;}
+            const auto parentId=asset->dependencies.empty()?std::string():asset->dependencies.front();
+            std::string parent;
+            if(!parentId.empty()&&!self(self,parentId,parent))return false;
+            const auto current=staged.actorBehaviour(assetId);
+            if(!current.empty()&&current!=parent){result=current;return true;}
+            const std::string local="Actor_"+assetId.substr(6);
+            if(!staged.addBehaviour(local,error))return false;
+            result="behaviour:"+local;
+            for(auto& g:staged.graphs)if(g.owner==result&&g.name=="start"&&!parent.empty())g.parentBehaviour=parent.substr(10);
+            return staged.setVisualActorProperty(assetId,0,"behaviour",local,error);
+        };
+        if(!ensure(ensure,id,owner))return false;
+        std::string checked;if(!staged.serialize(checked,error))return false;
+        if(staged.graphs.size()==graphs.size()){error.clear();return true;}
+        recordGraphList();graphs.swap(staged.graphs);m_visualAssets.swap(staged.m_visualAssets);m_nextId=staged.m_nextId;error.clear();return true;
+    }
+    bool BlueprintDocument::validateBehaviourInheritance(std::string& error)const
+    {
+        for(const auto& behaviourName:behaviours())
+        {
+            const auto owner="behaviour:"+behaviourName;
+            std::unordered_set<std::string> seen;
+            for(auto at=owner;!at.empty();at=parentBehaviour(at))
+            {
+                if(!seen.insert(at).second||seen.size()>16||std::none_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==at&&g.name=="start";})||
+                    (!moduleForOwner(at).empty()&&at!=owner))
+                {error="Invalid or cyclic shared Behaviour inheritance.";return false;}
+            }
+            for(const auto& g:graphs)if(g.owner==owner&&g.kind=="function")
+            {
+                if(g.name=="Construction"&&(g.inlineMacro||g.returnType!="void"||!g.parameters.empty()))
+                {error="Construction must be a callable void() graph.";return false;}
+                const auto* base=function(parentBehaviour(owner),g.name);
+                if(base&&(g.inlineMacro||base->inlineMacro||base->returnType!=g.returnType||base->parameters.size()!=g.parameters.size()||
+                    !std::equal(base->parameters.begin(),base->parameters.end(),g.parameters.begin(),[](const BlueprintPin& a,const BlueprintPin& b){return a.name==b.name&&a.type==b.type;})))
+                {error="Override must preserve the inherited function signature: "+g.name;return false;}
+            }
+            // Check the actual virtual call graph for each concrete class, not
+            // just the declaring class: a child override can introduce a cycle
+            // into a previously acyclic parent function.
+            std::vector<unsigned> state(graphs.size(),0);
+            const auto visit=[&](auto&& self,const Graph* g)->bool
+            {
+                if(!g)return false;
+                const auto index=static_cast<size_t>(g-graphs.data());
+                if(state[index]==1){error="Recursive inherited function dispatch in "+owner+"/"+g->name;return false;}
+                if(state[index]==2)return true;
+                state[index]=1;
+                for(const auto& node:g->nodes)if(blueprintInvokesFunction(node.kind)||node.kind=="call:parent")
+                {
+                    const auto* target=node.kind=="call:library"?libraryFunction(node.ref):node.kind=="call:parent"?function(parentBehaviour(g->owner),g->name):function(owner,node.ref);
+                    if(!target){error="Missing inherited function in "+g->name;return false;}
+                    if(!self(self,target))return false;
+                    if(node.kind=="dispatch:broadcast")for(const auto* handler:dispatcherListeners(g->owner,node.ref))if(!self(self,function(owner,handler->name)))return false;
+                }
+                state[index]=2;return true;
+            };
+            for(const auto& g:graphs)if(g.kind=="function"&&function(owner,g.name)==&g&&!visit(visit,&g))return false;
+            // A construction call may not recursively spawn its own class via
+            // a helper. Keep this first implementation bounded by forbidding
+            // linked actor spawning within the entire construction call chain.
+            std::unordered_set<const Graph*> checked;
+            const auto constructionSafe=[&](auto&& self,const Graph* g)->bool
+            {
+                if(!g||!checked.insert(g).second)return true;
+                for(const auto& node:g->nodes)
+                {
+                    if(node.kind=="actor:spawn-asset"||node.kind=="time:delay"||node.kind=="time:retrigger-delay"||node.kind=="time:timer"){error="Construction graphs cannot spawn linked actors or schedule deferred work; use Start instead.";return false;}
+                    if(node.kind=="async:start"){error="Construction graphs cannot launch coroutines.";return false;}
+                    if(blueprintInvokesFunction(node.kind)&&!self(self,node.kind=="call:library"?libraryFunction(node.ref):function(owner,node.ref)))return false;
+                    if(node.kind=="dispatch:broadcast")for(const auto* handler:dispatcherListeners(g->owner,node.ref))if(!self(self,function(owner,handler->name)))return false;
+                    if(node.kind=="call:parent"&&!self(self,function(parentBehaviour(g->owner),g->name)))return false;
+                }
+                return true;
+            };
+            if(!constructionSafe(constructionSafe,function(owner,"Construction")))return false;
+        }
+        for(const auto& asset:m_visualAssets)if(asset.kind=="actor"&&actorSpawnFields(asset.id).size()>16)
+        {error="An actor supports at most 16 exposed spawn fields.";return false;}
+        return true;
+    }
+    bool BlueprintDocument::validateEditorConstruction(const std::string& classOwner,std::string& error)const
+    {
+        error.clear();
+        const auto* construction=function(classOwner,"Construction");
+        if(classOwner.rfind("behaviour:",0)!=0||!construction)
+        {error="No Construction graph.";return false;}
+        if(construction->returnType!="void"||!construction->parameters.empty()||construction->inlineMacro)
+        {error="Construction must be a parameterless void function.";return false;}
+        const auto safeType=[](const std::string& type)
+        {
+            for(const char* allowed:{"void","exec","bool","int","uint","float","double","string","Vec2","Vec3","Color","Entity@","Solid"})
+                if(type==allowed)return true;
+            return false;
+        };
+        std::unordered_set<const Graph*> visiting,complete;
+        const auto visit=[&](auto&& self,const Graph* graph,unsigned depth)->bool
+        {
+            if(!graph||depth>32){error="Missing or too deeply nested Construction helper.";return false;}
+            if(complete.count(graph))return true;
+            if(!visiting.insert(graph).second){error="Recursive Construction preview call: "+graph->name;return false;}
+            if(graph->dataRole=="coroutine"||!safeType(graph->returnType)||
+                std::any_of(graph->parameters.begin(),graph->parameters.end(),[&](const BlueprintPin& pin){return !safeType(pin.type);}))
+            {error="Runtime-only Construction helper signature: "+graph->name;return false;}
+            for(const auto& node:graph->nodes)
+            {
+                const auto& k=node.kind;
+                if(k=="call:function"||k=="call:event"||k=="call:library"||k=="call:parent")
+                {
+                    const auto* target=k=="call:library"?libraryFunction(node.ref):k=="call:parent"?
+                        function(parentBehaviour(graph->owner),graph->name):function(graph->owner,node.ref);
+                    if(!self(self,target,depth+1))return false;
+                    // Native callable methods use virtual dispatch. A parent's safe helper
+                    // may be overridden by the selected concrete actor with an unsafe one.
+                    // Macros and explicit parent calls are statically bound.
+                    if(target&&!target->inlineMacro&&!target->sharedLibrary&&k!="call:parent")
+                    {
+                        const auto* actual=function(classOwner,node.ref);
+                        if(!self(self,actual,depth+1))return false;
+                    }
+                    continue;
+                }
+                bool allowed=false;
+                for(const char* exact:{"entry","return:function","event:entity","actor:component","actor:valid","null:entity",
+                    "branch","sequence","repeat","make:Vec2","make:Vec3","make:Color","math:sin","math:cos","math:orbit-position",
+                    "flow:do-once","flow:do-n","flow:flip-flop","flow:multi-gate","flow:controlled-gate","flow:switch-int",
+                    "api:Entity:get_place:Entity@","api:Entity:get_angles:Entity@","api:Entity:get_size:Entity@",
+                    "api:Entity:get_name:Entity@","api:Entity:get_color:Entity@","api:Entity:set_place:Entity@,Vec3",
+                    "api:Entity:set_angles:Entity@,Vec3","api:Entity:set_size:Entity@,Vec3",
+                    "api:Entity:set_color:Entity@,Color","api:Entity:set_name:Entity@,string",
+                    "api:Entity:shape:Entity@,Solid,Color"})
+                    if(k==exact){allowed=true;break;}
+                if(k.rfind("literal:",0)==0||k.rfind("var:get:",0)==0||k.rfind("var:set:",0)==0||
+                    k.rfind("capture:",0)==0||(k.rfind("typed:",0)==0&&k.rfind("typed:global:",0)!=0))
+                    allowed=true;
+                const auto* base=blueprintSpec(k);
+                if(base&&!base->operation.empty())allowed=true;
+                BlueprintNodeSpec spec;
+                if(!allowed||!nodeSpec(*graph,node,spec)||
+                    std::any_of(spec.inputs.begin(),spec.inputs.end(),[&](const BlueprintPin& pin){return !safeType(pin.type);})||
+                    std::any_of(spec.outputs.begin(),spec.outputs.end(),[&](const BlueprintPin& pin){return !safeType(pin.type);}))
+                {error="Runtime-only node in "+graph->owner+"/"+graph->name+": "+k;return false;}
+            }
+            visiting.erase(graph);complete.insert(graph);return true;
+        };
+        return visit(visit,construction,0);
+    }
+
+    bool BlueprintDocument::createVisualActorChild(const std::string& parentId,std::string& id,std::string& error)
+    {
+        std::string resolved;if(!visualActorSource(parentId,resolved,error))return false;
+        if(m_visualAssets.size()>=128||m_visualSerial>=999999999){error="Visual asset limit reached.";return false;}
+        const auto* parent=visualAsset(parentId);const auto nextId="actor-"+std::to_string(m_visualSerial+1);
+        auto assets=m_visualAssets;
+        assets.push_back({nextId,"actor",parent->title.substr(0,120)+" Child","{\"rootOverrides\":{}}",{parentId}});
+        if(!replaceVisualAssets(assets,error))return false;
+        id=nextId;return true;
+    }
+    bool BlueprintDocument::resetVisualActorOverrides(const std::string& id,std::string& error,size_t component)
+    {
+        std::string resolved;std::vector<std::string> keys;
+        if(!resolveVisualActor(id,resolved,keys,error))return false;
+        if(component>=keys.size()){error="Select a component.";return false;}
+        auto assets=m_visualAssets;
+        for(auto& asset:assets)if(asset.id==id&&asset.kind=="actor"&&asset.dependencies.size()==1)
+        {
+            JsonValue delta;if(!delta.parse(asset.source.data(),asset.source.size(),error))return false;
+            if(component==0)
+            {
+                auto* root=delta.find("rootOverrides");
+                if(!root||!root->count()){error.clear();return true;}
+                const auto local="BP_Behaviour_Actor_"+id.substr(6);
+                const auto* binding=root->find("behaviour");
+                const bool keep=binding&&binding->text()==local;
+                if(keep&&root->count()==1){error.clear();return true;}
+                JsonValue empty;if(!empty.parse("{}",2,error)||!root->setCopy(empty))return false;
+                if(keep&&!text(*root,"behaviour",local))return false;
+            }
+            else
+            {
+                auto* table=delta.find("componentOverrides");
+                if(!table||!table->find(keys[component].c_str())){error.clear();return true;}
+                table->remove(keys[component].c_str());
+                if(!table->count())delta.remove("componentOverrides");
+            }
+            asset.source=delta.write(true);return replaceVisualAssets(assets,error);
+        }
+        error="Select a derived actor.";return false;
+    }
+    namespace
+    {
+        bool storeActorOverrides(BlueprintDocument::VisualAsset& asset,const JsonValue& effective,const std::string& property,const std::string& keyId,bool rootComponent,std::string& error)
+        {
+            JsonValue delta;if(!delta.parse(asset.source.data(),asset.source.size(),error))return false;
+            auto* overrides=delta.find("rootOverrides");
+            if(!overrides||overrides->type()!=JsonValue::Type::Object){error="Invalid child actor overrides.";return false;}
+            if(!rootComponent)
+            {
+                auto* table=delta.put("componentOverrides");if(!table)return false;
+                overrides=table->put(keyId);if(!overrides)return false;
+            }
+            std::vector<std::string> keys;
+            if(property=="collision")keys={"cube","sphere","capsule","exact"};
+            else if(property=="model"||property=="shape")keys={"model","shape","animate"};
+            else keys={property};
+            for(const auto& key:keys)
+            {
+                auto* target=overrides->put(key);if(!target)return false;
+                if(const auto* value=effective.find(key.c_str())){if(!target->setCopy(*value))return false;}
+                else target->setNull();
+            }
+            asset.source=delta.write(true);return true;
+        }
+    }
+    bool BlueprintDocument::visualActorSource(const std::string& id,std::string& json,std::string& error)const
+    {
+        std::vector<std::string> keys;
+        return resolveVisualActor(id,json,keys,error);
+    }
+    bool BlueprintDocument::resolveVisualActor(const std::string& id,std::string& json,std::vector<std::string>& keys,std::string& error)const
+    {
+        keys.clear();
+        const auto* asset=visualAsset(id);
+        if(!asset||asset->kind!="actor"){error="Select an actor definition.";return false;}
+        std::string source=asset->source;
+        if(!asset->dependencies.empty())
+        {
+            // Dependencies have already passed the document's acyclic, bounded validation.
+            if(asset->dependencies.size()!=1){error="A child actor must have one parent.";return false;}
+            JsonValue delta;
+            if(!delta.parse(source.data(),source.size(),error)||delta.type()!=JsonValue::Type::Object){error="Invalid child actor definition.";return false;}
+            for(u32 i=0;i<delta.count();++i)
+            {
+                const std::string key=delta.key(i);
+                if(key!="rootOverrides"&&key!="componentOverrides"&&key!="additions"){error="Unknown child actor field.";return false;}
+            }
+            const auto* overrides=delta.find("rootOverrides");
+            if(!overrides||overrides->type()!=JsonValue::Type::Object){error="Invalid child actor overrides.";return false;}
+            if(!resolveVisualActor(asset->dependencies.front(),source,keys,error))return false;
+            JsonValue parent;if(!parent.parse(source.data(),source.size(),error))return false;
+            auto* entities=parent.find("entities");
+            const auto* additions=delta.find("additions");
+            if(additions)
+            {
+                if(additions->type()!=JsonValue::Type::Array){error="Invalid child component additions.";return false;}
+                auto* parents=parent.find("parents");
+                if(!parents){parents=parent.put("parents");if(!parents)return false;parents->setArray();auto* first=parents->add();if(!first)return false;first->setNumber(-1);}
+                for(u32 i=0;i<additions->count();++i)
+                {
+                    const auto* entry=additions->at(i);
+                    const auto* parentKey=entry->find("parent");const auto* definition=entry->find("entity");
+                    if(!parentKey||parentKey->type()!=JsonValue::Type::String||!definition||definition->type()!=JsonValue::Type::Object||entities->count()>=32)
+                    {error="Invalid child component or component limit reached.";return false;}
+                    const auto at=std::find(keys.begin(),keys.end(),parentKey->text());
+                    if(at==keys.end()){error="Inherited component parent no longer exists.";return false;}
+                    const auto index=static_cast<double>(at-keys.begin());
+                    auto* entity=entities->add();auto* p=parents->add();
+                    if(!entity||!p||!entity->setCopy(*definition))return false;
+                    p->setNumber(index);keys.push_back(id+":"+std::to_string(i+1));
+                }
+            }
+            const std::string allowed="|name|place|angles|size|shape|model|animate|camera|mass|friction|bounce|gravity|drag|cube|sphere|capsule|exact|behaviour|";
+            const auto apply=[&](JsonValue* entity,const JsonValue* fields)->bool
+            {
+                if(!entity||!fields||fields->type()!=JsonValue::Type::Object){error="Invalid component overrides.";return false;}
+                for(u32 i=0;i<fields->count();++i)
+                {
+                    const std::string key=fields->key(i);
+                    if(key.empty()||key.find('|')!=std::string::npos||allowed.find("|"+key+"|")==std::string::npos)
+                    {error="Unsupported child actor override: "+key;return false;}
+                    const auto* value=fields->at(i);
+                    if(value->type()==JsonValue::Type::Null)entity->remove(key.c_str());
+                    else {auto* target=entity->put(key);if(!target||!target->setCopy(*value))return false;}
+                }
+                return true;
+            };
+            if(!apply(entities->at(0),overrides))return false;
+            if(const auto* table=delta.find("componentOverrides"))
+            {
+                if(table->type()!=JsonValue::Type::Object){error="Invalid component override table.";return false;}
+                for(u32 i=0;i<table->count();++i)
+                {
+                    const auto at=std::find(keys.begin(),keys.end(),table->key(i));
+                    if(at==keys.end()||at==keys.begin()){error="Component override target no longer exists.";return false;}
+                    if(!apply(entities->at(static_cast<u32>(at-keys.begin())),table->at(i)))return false;
+                }
+            }
+            source=parent.write(true);
+        }
+        JsonTree tree;
+        if(!tree.parse(source.data(),source.size())){error="Invalid actor JSON.";return false;}
+        const auto root=tree.root(),entities=root["entities"],parents=root["parents"];
+        const auto count=entities.count();
+        if(!root.isObject()||!entities.isArray()||!count||count>32||
+            root.count()!=(parents.exists()?2u:1u)||
+            (parents.exists()?(!parents.isArray()||parents.count()!=count):count!=1))
+        {error="Invalid actor hierarchy: use one root and at most 32 parent-first components.";return false;}
+        unsigned depths[32]={};
+        for(unsigned i=0;i<count;++i)
+        {
+            if(!entities[i].isObject()||(i&&entities[i]["onLand"].exists()))
+            {error="Invalid actor component; terrain-relative placement is root-only.";return false;}
+            if(!parents.exists())continue;
+            const auto p=parents[i];const double n=p.exact();
+            if(!p.isNumber()||(!i?n!=-1:!(n>=0&&n<i&&std::floor(n)==n)))
+            {error="Actor component parent must precede the child.";return false;}
+            if(i&&(depths[i]=depths[static_cast<unsigned>(n)]+1)>8)
+            {error="Actor hierarchy nesting limit exceeded.";return false;}
+        }
+        if(asset->dependencies.empty())for(u32 i=0;i<count;++i)keys.push_back(id+":"+std::to_string(i));
+        if(keys.size()!=count||source.size()>64*1024){error="Resolved actor exceeds source budget.";return false;}
+        json=source;error.clear();return true;
+    }
+    bool BlueprintDocument::visualActorRoot(const std::string& id,std::string& json,std::string& error)const
+    {
+        std::string source;if(!visualActorSource(id,source,error))return false;
+        JsonValue root;if(!root.parse(source.data(),source.size(),error))return false;
+        json=root.find("entities")->at(0)->write(true);return true;
+    }
+    bool BlueprintDocument::setVisualActorShape(const std::string& id,const std::string& shape,std::string& error,size_t component)
+    {
+        if(shape!="box"&&shape!="sphere"&&shape!="capsule"&&shape!="plane")
+        {error="Unsupported actor shape.";return false;}
+        std::string checked;std::vector<std::string> keys;if(!resolveVisualActor(id,checked,keys,error))return false;
+        auto assets=m_visualAssets;
+        for(auto& a:assets)if(a.id==id)
+        {
+            JsonValue root;if(!root.parse(checked.data(),checked.size(),error))return false;
+            auto* entities=root.find("entities");
+            if(component>=entities->count()){error="Select a component.";return false;}
+            auto* entity=entities->at(static_cast<unsigned>(component));
+            const auto* previous=entity->find("shape");
+            if(previous&&previous->text()==shape){error.clear();return true;}
+            if(entity->find("model")){error="Remove the model before changing the primitive shape.";return false;}
+            auto* value=entity->put("shape");if(!value){error="Cannot edit actor shape.";return false;}
+            value->setText(shape);
+            if(a.dependencies.empty())a.source=root.write(true);
+            else if(!storeActorOverrides(a,*entity,"shape",keys[component],component==0,error))return false;
+            return replaceVisualAssets(assets,error);
+        }
+        error="Actor not found.";return false;
+    }
+    bool BlueprintDocument::appendVisualActorComponent(const std::string& id,size_t parent,const std::string& shape,const std::string& place,std::string& error)
+    {
+        std::vector<std::string> xyz;
+        if((shape!="box"&&shape!="sphere"&&shape!="capsule"&&shape!="plane"&&shape!="camera")||
+            !blueprintInputComponents("Vec3",place,xyz))
+        {error="Choose a shape and valid local XYZ.";return false;}
+        std::string source;std::vector<std::string> keys;if(!resolveVisualActor(id,source,keys,error))return false;
+        auto assets=m_visualAssets;
+        for(auto& a:assets)if(a.id==id)
+        {
+            JsonValue root;if(!root.parse(source.data(),source.size(),error))return false;
+            auto* entities=root.find("entities");
+            if(parent>=entities->count()||entities->count()>=32){error="Invalid parent or component limit reached.";return false;}
+            auto* parents=root.find("parents");
+            if(!parents){parents=root.put("parents");if(!parents)return false;parents->setArray();auto* first=parents->add();if(!first)return false;first->setNumber(-1);}
+            unsigned depth=1;
+            for(auto at=parent;at;at=static_cast<size_t>(parents->at(static_cast<unsigned>(at))->number()))++depth;
+            if(depth>8){error="Actor hierarchy nesting limit reached.";return false;}
+            auto* child=entities->add();auto* p=parents->add();
+            if(!child||!p||!text(*child,"name",std::string(shape=="camera"?"Camera":"Component")+std::to_string(entities->count()-1))||
+                (shape=="camera"?!number(*child,"camera",60):!text(*child,"shape",shape)))
+            {error="Cannot allocate component.";return false;}
+            p->setNumber(static_cast<double>(parent));
+            auto* position=child->put("place");if(!position)return false;position->setArray();
+            for(const auto& value:xyz){auto* axis=position->add();if(!axis)return false;axis->setNumber(std::strtod(value.c_str(),nullptr));}
+            if(a.dependencies.empty())a.source=root.write(true);
+            else
+            {
+                JsonValue delta;if(!delta.parse(a.source.data(),a.source.size(),error))return false;
+                auto* additions=delta.find("additions");
+                if(!additions){additions=delta.put("additions");if(!additions)return false;additions->setArray();}
+                auto* entry=additions->add();if(!entry||!text(*entry,"parent",keys[parent]))return false;
+                auto* definition=entry->put("entity");if(!definition||!definition->setCopy(*child))return false;
+                // Names stay fixed when a parent later adds components.
+                if(!text(*definition,"name",std::string(shape=="camera"?"Camera":"Component")+a.id.substr(6)+"_"+std::to_string(additions->count())))return false;
+                a.source=delta.write(true);
+            }
+            BlueprintDocument staged;
+            if(!validVisualAssets(assets,error))return false;
+            staged.m_visualAssets=assets;
+            for(const auto& dependent:assets)if(dependent.kind=="actor"&&dependent.source.find("\"rootOverrides\"")!=std::string::npos)
+            {std::string resolved;if(!staged.visualActorSource(dependent.id,resolved,error))return false;}
+            return replaceVisualAssets(assets,error);
+        }
+        error="Actor not found.";return false;
+    }
+    bool BlueprintDocument::visualActorForOwner(const std::string& id,const std::string& owner,std::string& json,std::string& error)const
+    {
+        std::string source;if(!visualActorSource(id,source,error))return false;
+        JsonTree tree;if(!tree.parse(source.data(),source.size()))return false;
+        for(auto item=tree.root()["entities"].first();item.exists();item=item.next())
+        {
+            const auto ref=item["behaviour"];
+            if(!ref.exists())continue;
+            const std::string behaviourName=ref.text();
+            if(!ref.isString()||behaviourName.rfind("BP_Behaviour_",0)!=0||!canAttach(owner,behaviourName.substr(13)))
+            {error="Actor references missing or out-of-scope Blueprint Behaviour: "+behaviourName;return false;}
+        }
+        json.swap(source);error.clear();return true;
+    }
+    namespace
+    {
+        bool actorTransform(JsonValue& item,const std::string& property,const std::string& value,std::string& error)
+        {
+            std::vector<std::string> xyz;
+            if(!blueprintInputComponents("Vec3",value,xyz)){error="Enter three finite numbers separated by commas.";return false;}
+            double values[3]={};
+            for(size_t i=0;i<3;++i)
+            {
+                values[i]=std::strtod(xyz[i].c_str(),nullptr);
+                if(!std::isfinite(values[i])||std::abs(values[i])>1000000||(property=="size"&&values[i]<=0))
+                {error="Transform outside supported range; size must be positive.";return false;}
+            }
+            auto* field=item.put(property);if(!field)return false;field->setArray();
+            for(double n:values){auto* v=field->add();if(!v)return false;v->setNumber(n);}
+            return true;
+        }
+        bool actorName(JsonValue& item,const std::string& value,std::string& error)
+        {
+            if(value.empty()||value.size()>23||std::any_of(value.begin(),value.end(),[](unsigned char ch){return ch<32||ch==127;}))
+            {error="Use a nonempty component name of at most 23 UTF-8 bytes.";return false;}
+            return text(item,"name",value);
+        }
+    }
+    bool BlueprintDocument::visualActorInstance(const std::string& id,const std::string& owner,const std::vector<InputValue>& overrides,std::string& json,std::string& error)const
+    {
+        std::string source;if(!visualActorForOwner(id,owner,source,error))return false;
+        JsonValue root;if(!root.parse(source.data(),source.size(),error))return false;
+        auto* item=root.find("entities")->at(0);
+        bool edited=false;
+        for(const auto& v:overrides)
+        {
+            if(v.value.empty())continue; // Empty means inherit, not reset to zero.
+            if(v.pin=="instanceName"){if(!actorName(*item,v.value,error))return false;edited=true;}
+            else if(v.pin=="rotationOverride"||v.pin=="sizeOverride")
+            {
+                if(!actorTransform(*item,v.pin=="rotationOverride"?"angles":"size",v.value,error))return false;
+                edited=true;
+            }
+        }
+        json=edited?root.write(true):source;error.clear();return true;
+    }
+    bool BlueprintDocument::setVisualActorProperty(const std::string& id,size_t component,const std::string& property,const std::string& value,std::string& error)
+    {
+        std::string source;std::vector<std::string> keys;if(!resolveVisualActor(id,source,keys,error))return false;
+        auto assets=m_visualAssets;
+        for(auto& a:assets)if(a.id==id)
+        {
+            JsonValue root;if(!root.parse(source.data(),source.size(),error))return false;
+            auto* entities=root.find("entities");
+            if(component>=entities->count()){error="Select a component.";return false;}
+            auto* item=entities->at(static_cast<unsigned>(component));
+            if(property=="place"||property=="angles"||property=="size")
+            {
+                if(!actorTransform(*item,property,value,error))return false;
+            }
+            else if(property=="name")
+            {
+                if(!actorName(*item,value,error))return false;
+            }
+            else if(property=="camera")
+            {
+                if(value.empty())item->remove("camera");
+                else
+                {
+                    if(!literal("literal:float",value)){error="Enter a finite vertical camera FOV.";return false;}
+                    const double n=std::strtod(value.c_str(),nullptr);
+                    if(n<5||n>150){error="Camera FOV must be between 5 and 150 degrees.";return false;}
+                    if(!number(*item,"camera",n))return false;
+                }
+            }
+            else if(property=="mass"||property=="friction"||property=="bounce"||property=="gravity"||property=="drag")
+            {
+                if(value.empty())item->remove(property.c_str());
+                else
+                {
+                    if(!literal("literal:float",value)){error="Enter a finite number or leave blank to inherit the engine default.";return false;}
+                    const double n=std::strtod(value.c_str(),nullptr);
+                    if(n<0||n>(property=="bounce"?1:1000000)){error="Physics property outside supported range.";return false;}
+                    if(!number(*item,property.c_str(),n))return false;
+                }
+            }
+            else if(property=="animate")
+            {
+                if(value.empty())item->remove("animate");
+                else
+                {
+                    if(!item->find("model")){error="Assign a model before selecting a startup animation.";return false;}
+                    if(value.size()>64||std::any_of(value.begin(),value.end(),[](unsigned char ch){return ch<32||ch==127;}))
+                    {error="Invalid animation name.";return false;}
+                    if(!text(*item,"animate",value))return false;
+                }
+            }
+            else if(property=="collision")
+            {
+                // Exactly one native collider. The dimensions are in engine units.
+                std::string shape=value;
+                const auto colon=value.find(':');
+                if(colon!=std::string::npos)shape=value.substr(0,colon);
+                std::vector<std::string> xyz;
+                if(shape!="none"&&shape!="box"&&shape!="sphere"&&shape!="capsule")
+                {error="Use none, box:X,Y,Z, sphere:radius or capsule:radius,height.";return false;}
+                std::string raw=colon==std::string::npos?"":value.substr(colon+1);
+                if(shape=="box")
+                {
+                    if(!blueprintInputComponents("Vec3",raw,xyz)){error="Box requires X,Y,Z dimensions.";return false;}
+                }
+                else if(shape=="sphere")
+                {
+                    if(!literal("literal:float",raw)){error="Sphere requires a radius.";return false;}
+                    xyz={raw};
+                }
+                else if(shape=="capsule")
+                {
+                    const auto comma=raw.find(',');
+                    if(comma==std::string::npos||!literal("literal:float",raw.substr(0,comma))||!literal("literal:float",raw.substr(comma+1)))
+                    {error="Capsule requires radius,height.";return false;}
+                    xyz={raw.substr(0,comma),raw.substr(comma+1)};
+                }
+                else if(colon!=std::string::npos){error="Use none without dimensions.";return false;}
+                std::vector<double> dimensions;
+                for(const auto& axis:xyz)
+                {
+                    const double n=std::strtod(axis.c_str(),nullptr);
+                    if(n<=0||n>1000000){error="Collider dimensions must be positive.";return false;}
+                    dimensions.push_back(n);
+                }
+                if(shape=="capsule"&&dimensions[1]<2*dimensions[0]){error="Capsule height must be at least twice its radius.";return false;}
+                for(const char* key:{"cube","sphere","capsule","exact"})item->remove(key);
+                if(shape!="none")
+                {
+                    auto* field=item->put(shape=="box"?"cube":shape);if(!field)return false;
+                    if(shape=="sphere")field->setNumber(dimensions[0]);
+                    else
+                    {
+                        field->setArray();
+                        for(double n:dimensions){auto* v=field->add();if(!v)return false;v->setNumber(n);}
+                    }
+                }
+            }
+            else if(property=="behaviour")
+            {
+                const auto local="Actor_"+id.substr(6);
+                if(component==0&&actorBehaviour(id)=="behaviour:"+local&&value!=local)
+                {error="The actor's class graphs own its root Behaviour. Edit those graphs instead.";return false;}
+                if(value.empty())item->remove("behaviour");
+                else
+                {
+                    const auto names=behaviours();
+                    if(std::find(names.begin(),names.end(),value)==names.end()||!moduleForOwner("behaviour:"+value).empty())
+                    {error="Select a shared Blueprint Behaviour by name; screen-local Behaviours cannot be reused.";return false;}
+                    if(!text(*item,"behaviour","BP_Behaviour_"+value))return false;
+                }
+            }
+            else if(property=="model")
+            {
+                if(value.empty()){item->remove("model");item->remove("animate");}
+                else
+                {
+                    size_t at=value.rfind("asset:",0)==0?6:value.rfind("global:",0)==0?7:0;
+                    if(!at||at>=value.size()||value.size()>128){error="Use asset: or global: followed by a portable model path.";return false;}
+                    while(at<value.size())
+                    {
+                        const auto slash=value.find('/',at);
+                        const auto part=value.substr(at,slash==std::string::npos?slash:slash-at);
+                        if(!blueprintAssetName(part,slash!=std::string::npos)){error="Invalid model asset path.";return false;}
+                        if(slash==std::string::npos)break;
+                        at=slash+1;if(at==value.size()){error="Invalid model asset path.";return false;}
+                    }
+                    if(!text(*item,"model",value))return false;
+                    item->remove("shape");
+                }
+            }
+            else {error="Unsupported actor property.";return false;}
+            if(!a.dependencies.empty())
+            {
+                const auto before=a.source;
+                if(!storeActorOverrides(a,*item,property,keys[component],component==0,error))return false;
+                if(before==a.source){error.clear();return true;}
+            }
+            else
+            {
+                const auto changed=root.write(true);
+                if(changed==a.source){error.clear();return true;}
+                a.source=changed;
+            }
+            return replaceVisualAssets(assets,error);
+        }
+        error="Actor not found.";return false;
+    }
+    bool BlueprintDocument::editVisualActorPlacement(const std::string& owner,const std::string& nodeId,const std::string& property,const std::string& value,std::string& error)
+    {
+        if(nodeId.empty()||(property!="place"&&property!="instanceName"&&property!="rotationOverride"&&property!="sizeOverride"))
+        {error="Select an instance and a supported property.";return false;}
+        for(size_t g=0;g<graphs.size();++g)
+        {
+            const auto& graph=graphs[g];if(graph.owner!=owner||graph.name!="onEnter")continue;
+            for(size_t n=0;n<graph.nodes.size();++n)
+            {
+                const auto& node=graph.nodes[n];if(node.id!=nodeId||node.kind!="actor:spawn-asset")continue;
+                for(const auto& link:graph.links)if(link.to==n&&(link.input=="id"||link.input=="place"||link.input==property))
+                {error="This property is wired in the graph. Edit its source node instead.";return false;}
+                if(property=="place")
+                {
+                    JsonValue checked;if(!actorTransform(checked,"place",value,error))return false;
+                }
+                return setInputValue(g,n,property,value,error);
+            }
+        }
+        error="The selected linked instance no longer exists.";return false;
+    }
+    bool BlueprintDocument::placeVisualActor(const std::string& owner,const std::string& id,const std::string& place,std::string& error)
+    {
+        std::string json;std::vector<std::string> components;
+        if(!visualActorForOwner(id,owner,json,error))return false;
+        if(!blueprintInputComponents("Vec3",place,components)){error="Enter a valid XYZ position.";return false;}
+        size_t enter=static_cast<size_t>(-1),draw=enter;
+        for(size_t i=0;i<graphs.size();++i)if(graphs[i].owner==owner)
+        {
+            if(graphs[i].name=="onEnter")enter=i;
+            if(graphs[i].name=="draw")draw=i;
+        }
+        if(enter>=graphs.size()||draw>=graphs.size()){error="Select a screen.";return false;}
+        BlueprintDocument staged;staged.name=name;staged.assetRoot=assetRoot;staged.graphs=graphs;staged.manifests=manifests;
+        staged.m_visualAssets=m_visualAssets;staged.m_visualSerial=m_visualSerial;staged.m_nextId=m_nextId;
+        // Only append to an existing simple On Enter chain, preserving prior logic.
+        const auto& g=staged.graphs[enter];size_t last=0;
+        while(last<g.nodes.size()&&g.nodes[last].kind!="entry")++last;
+        if(last==g.nodes.size()){error="Missing On Enter entry.";return false;}
+        std::unordered_set<size_t> seen;
+        for(;;)
+        {
+            BlueprintNodeSpec spec;
+            if(!seen.insert(last).second||!staged.nodeSpec(g,g.nodes[last],spec)||
+                std::count_if(spec.outputs.begin(),spec.outputs.end(),[](const BlueprintPin& p){return p.type=="exec";})!=1||
+                std::none_of(spec.outputs.begin(),spec.outputs.end(),[](const BlueprintPin& p){return p.name=="then"&&p.type=="exec";}))
+            {error="On Enter branches or terminates; place a Spawn linked actor node manually.";return false;}
+            const auto link=std::find_if(g.links.begin(),g.links.end(),[&](const Link& l){return l.from==last&&l.output=="then";});
+            if(link==g.links.end())break;
+            if(link->to>=g.nodes.size()){error="Invalid On Enter connection.";return false;}
+            last=link->to;
+        }
+        for(size_t i=0;i<g.nodes.size();++i)if(!seen.count(i))
+        {
+            BlueprintNodeSpec spec;if(!staged.nodeSpec(g,g.nodes[i],spec))return false;
+            if(std::any_of(spec.inputs.begin(),spec.inputs.end(),[](const BlueprintPin& p){return p.type=="exec";}))
+            {error="Connect existing On Enter actions before placing an actor.";return false;}
+        }
+        const auto tail=g.nodes[last];
+        if(!staged.addConnectedNode(enter,last,"then","actor:spawn-asset",tail.x+240,tail.y,error))return false;
+        const auto placed=staged.graphs[enter].nodes.size()-1;
+        if(!staged.setInputValue(enter,placed,"id",id,error)||!staged.setInputValue(enter,placed,"place",place,error))return false;
+        // Auto-create a renderer only for a truly empty Draw graph. Other
+        // projects may already draw 3D, or need to control layering themselves.
+        if(staged.graphs[draw].nodes.size()==1&&staged.graphs[draw].nodes[0].kind=="entry")
+        {
+            const auto entry=staged.graphs[draw].nodes[0];
+            if(!staged.addConnectedNode(draw,0,"then","render:space",entry.x+240,entry.y,error))return false;
+        }
+        std::string checked;if(!staged.serialize(checked,error))return false;
+        recordGraphList();graphs.swap(staged.graphs);m_nextId=staged.m_nextId;error.clear();return true;
     }
     void BlueprintDocument::create()
     {
@@ -170,46 +2225,289 @@ namespace nx
             !validText(root["name"])||!gs.isArray()||!gs.count()||gs.count()>kMaxGraphs)
         {error="Expected native Blueprint version 2. Browser prototypes are not supported.";return false;}
         BlueprintDocument candidate;candidate.name=root["name"].text();
+        candidate.assetRoot=root["assetRoot"].text();
+        if(!candidate.assetRoot.empty()&&!blueprintAssetRoot(candidate.assetRoot)){error="Invalid project asset directory.";return false;}
+        const auto serialValue=root["visualSerial"];
+        if(serialValue.exists())
+        {
+            const auto n=serialValue.exact();
+            if(!serialValue.isNumber()||n<0||n>999999999||std::floor(n)!=n)
+            {error="Invalid visual asset allocator.";return false;}
+            candidate.m_visualSerial=static_cast<unsigned>(n);
+        }
+        const auto visual=root["visualAssets"];
+        if(visual.exists())
+        {
+            if(!visual.isArray()||visual.count()>128){error="Invalid reusable visual asset list.";return false;}
+            for(auto a=visual.first();a.exists();a=a.next())
+            {
+                const auto deps=a["dependencies"];
+                if(!a.isObject()||!a["id"].isString()||!a["kind"].isString()||!a["title"].isString()||
+                    !a["source"].isString()||!deps.isArray()||deps.count()>32)
+                {error="Invalid reusable visual asset entry.";return false;}
+                VisualAsset entry{a["id"].text(),a["kind"].text(),a["title"].text(),a["source"].text(),{}};
+                for(auto d=deps.first();d.exists();d=d.next())
+                {
+                    if(!d.isString()){error="Invalid visual asset dependency.";return false;}
+                    entry.dependencies.emplace_back(d.text());
+                }
+                candidate.m_visualAssets.push_back(std::move(entry));
+            }
+            if(!validVisualAssets(candidate.m_visualAssets,error))return false;
+            unsigned serial=candidate.m_visualSerial;
+        for(const auto& a:candidate.m_visualAssets)
+        {
+            const auto prefix=a.kind+"-";
+            if(a.id.rfind(prefix,0)!=0)continue;
+            const auto suffix=a.id.substr(prefix.size());
+            if(!suffix.empty()&&suffix.size()<=9&&suffix.find_first_not_of("0123456789")==std::string::npos)
+                serial=std::max(serial,static_cast<unsigned>(std::strtoul(suffix.c_str(),nullptr,10)));
+        }
+            candidate.m_visualSerial=serial;
+        }
         std::unordered_set<std::string> graphNames;
+        // Load every graph header first so forward function references resolve consistently.
         for(auto value=gs.first();value.exists();value=value.next())
         {
             auto ns=value["nodes"],ls=value["links"];
-            if(!validText(value["name"])||!graphNames.emplace(value["name"].text()).second||
+            const std::string owner=value["owner"].text("Screen");
+            if((!screenId(owner)&&!behaviourOwner(owner))||!validText(value["name"])||!graphNames.emplace(scoped(owner,value["name"].text())).second||
                 !ns.isArray()||!ls.isArray()||ns.count()>kMaxNodes||ls.count()>kMaxLinks)
             {error="Invalid or duplicate graph.";return false;}
-            Graph g;g.name=value["name"].text();g.owner="Screen";g.kind="event";
+            Graph g;g.name=value["name"].text();g.owner=owner;g.kind="event";
             const auto kind=value["kind"].text("event");
             g.kind=kind;
-            if((g.kind=="event"&&!lifecycle(g.name))||
-                (g.kind=="function"&&(!identifier(g.name)||lifecycle(g.name)))||(g.kind!="event"&&g.kind!="function"))
+            if((g.kind=="event"&&!ownerEvent(owner,g.name))||
+                (g.kind=="function"&&(!identifier(g.name)||ownerEvent(owner,g.name)))||(g.kind!="event"&&g.kind!="function"))
             {error="Invalid event or function graph.";return false;}
+            auto parameters=value["parameters"];
+            if(parameters.exists())
+            {
+                if(!parameters.isArray()||parameters.count()>8){error="Invalid function parameters.";return false;}
+                for(auto p=parameters.first();p.exists();p=p.next())
+                    g.parameters.push_back({p["name"].text(),p["type"].text()});
+            }
+            g.returnType=value["returnType"].text("void");
+            const auto macro=value["inlineMacro"];
+            if(macro.exists()&&(macro.type()!=JsonTree::Type::Bool||g.kind!="function"||g.returnType!="void")){error="Invalid inline macro.";return false;}
+            g.inlineMacro=macro.flag();
+            const auto shared=value["sharedLibrary"];
+            if(shared.exists()&&(shared.type()!=JsonTree::Type::Bool||g.kind!="function"||behaviourOwner(owner))){error="Invalid shared library graph.";return false;}
+            g.sharedLibrary=shared.flag();
+            const auto role=value["dataRole"];const std::string roleText=role.text();
+            if(role.exists()&&(!role.isString()||g.kind!="function"||(roleText!="enum"&&roleText!="struct"&&roleText!="event"&&roleText!="coroutine"))){error="Invalid graph role.";return false;}
+            g.dataRole=roleText;
+            if(!validSignature(g.parameters,g.returnType)||(g.kind!="function"&&(!g.parameters.empty()||g.returnType!="void")))
+            {error="Invalid function signature in "+g.name;return false;}
+            const auto declarations=value["fields"];
+            if(declarations.exists())
+            {
+                if(g.name!=(behaviourOwner(owner)?"start":"onEnter")||g.kind!="event"||!declarations.isArray()||declarations.count()>256)
+                {error="Invalid field declarations.";return false;}
+                std::unordered_set<std::string> names;
+                for(auto f=declarations.first();f.exists();f=f.next())
+                {
+                    Field field{f["name"].text(),f["type"].text(),f["value"].text(),f["value"].exists()};
+                    if(!f.isObject()||!identifier(field.name)||!blueprintVariableType(field.type)||!names.insert(field.name).second||
+                        (behaviourOwner(owner)&&field.name=="entity")||
+                        (field.initialized&&(!f["value"].isString()||!literal("literal:"+field.type,field.value))))
+                    {error="Invalid or duplicate field declaration.";return false;}
+                    const auto exposed=f["exposed"];
+                    if(exposed.exists()&&(exposed.type()!=JsonTree::Type::Bool||!behaviourOwner(owner)||!blueprintLiteralType(field.type)))
+                    {error="Invalid exposed spawn field.";return false;}
+                    field.exposed=exposed.flag();g.fields.push_back(std::move(field));
+                }
+            }
+            const auto parent=value["parentBehaviour"];
+            if(parent.exists())
+            {
+                if(!behaviourOwner(owner)||g.name!="start"||g.kind!="event"||!parent.isString()||!identifier(parent.text()))
+                {error="Invalid parent Behaviour.";return false;}
+                g.parentBehaviour=parent.text();
+            }
+            const auto scope=value["moduleOwner"];
+            if(scope.exists())
+            {
+                if(!behaviourOwner(owner)||g.name!="start"||g.kind!="event"||!scope.isString()||!screenId(scope.text()))
+                {error="Invalid Behaviour module scope.";return false;}
+                g.moduleOwner=scope.text();
+            }
+            const auto globals=value["globals"];
+            if(globals.exists())
+            {
+                if(behaviourOwner(owner)||g.name!="onEnter"||g.kind!="event"||!globals.isArray()||globals.count()>256)
+                {error="Invalid module variable declarations.";return false;}
+                std::unordered_set<std::string> names;
+                for(auto f=globals.first();f.exists();f=f.next())
+                {
+                    Field field{f["name"].text(),f["type"].text(),f["value"].text(),f["value"].exists()};
+                    if(!f.isObject()||!identifier(field.name)||!blueprintVariableType(field.type)||!names.insert(field.name).second||
+                        (field.initialized&&(!f["value"].isString()||!literal("literal:"+field.type,field.value))))
+                    {error="Invalid or duplicate module variable.";return false;}
+                    g.globals.push_back(std::move(field));
+                }
+            }
+            candidate.graphs.push_back(std::move(g));
+        }
+        if(!candidate.validateBehaviourInheritance(error))return false;
+        size_t graphIndex=0;
+        for(auto value=gs.first();value.exists();value=value.next(),++graphIndex)
+        {
+            auto& g=candidate.graphs[graphIndex];
+            auto ns=value["nodes"],ls=value["links"];
             std::unordered_map<std::string,size_t> ids;unsigned entries=0;
             for(auto n=ns.first();n.exists();n=n.next())
             {
-                const std::string kind=n["kind"].text(),ref=n["value"].text();
+                std::string kind=n["kind"].text();const std::string ref=n["value"].text();
+                // Upstream extended joint signatures with optional limits. Old
+                // links and values remain valid, with native defaults for new pins.
+                if(kind=="api:Space:Space::join:Entity@,Entity@,Vec3")kind="api:Space:Space::join:Entity@,Entity@,Vec3,float";
+                if(kind=="api:Space:Space::hinge:Entity@,Entity@,Vec3,Vec3")kind="api:Space:Space::hinge:Entity@,Entity@,Vec3,Vec3,float,float";
                 const float x=n["x"].number(),y=n["y"].number();
-                if(!validText(n["id"])||!blueprintSpec(kind)||!context(g.name,kind)||!n["x"].isNumber()||!n["y"].isNumber()||
+                if(!validText(n["id"])||!blueprintSpec(kind)||!context(g.name,kind,g.owner)||!n["x"].isNumber()||!n["y"].isNumber()||
                     !coordinate(x)||!coordinate(y)||!ids.emplace(n["id"].text(),g.nodes.size()).second||
                     (kind.rfind("literal:",0)==0&&(!n["value"].isString()||!literal(kind,ref)))||
-                    ((variableKind(kind)||kind=="call:function")&&(!n["value"].isString()||!identifier(ref))))
+                    ((variableKind(kind)||globalKind(kind)||kind.rfind("capture:",0)==0||blueprintNamedCall(kind)||blueprintBehaviourReference(kind)||typeNode(kind)||typedVariable(kind))&&(!n["value"].isString()||!identifier(ref))))
                 {error="Invalid node in "+g.name;return false;}
+                if(g.inlineMacro&&kind=="return:function"){error="Inline macros cannot return from the caller.";return false;}
                 if(kind=="entry")++entries;
-                g.nodes.push_back({n["id"].text(),kind,ref,x,y});
+                Node node{n["id"].text(),kind,ref,x,y};
+                if(n["watch"].exists()&&n["watch"].type()!=JsonTree::Type::Bool){error="Invalid node watch flag.";return false;}
+                node.watch=n["watch"].flag();
+                for(const char* key:{"displayName","comment"})if(n[key].exists()){const std::string annotation=n[key].text();if(!n[key].isString()||annotation.size()>(std::string(key)=="displayName"?96u:256u)){error="Invalid node annotation.";return false;}}
+                node.displayName=n["displayName"].text();node.comment=n["comment"].text();
+                if(n["colour"].exists())
+                {
+                    if(n["colour"].isString()){if(!blueprintParseRGB(n["colour"].text(),node.colour)){error="Invalid node RGB colour.";return false;}}
+                    else {const float colour=n["colour"].number();if(!n["colour"].isNumber()||colour<0||colour>7||std::floor(colour)!=colour){error="Invalid legacy node colour.";return false;}node.colour=static_cast<unsigned>(colour);}
+                }
+                BlueprintNodeSpec resolved;
+                const auto values=n["values"];
+                if(kind=="actor:spawn-asset"&&values["id"].isString())node.values.push_back({"id",values["id"].text()});
+                if(!candidate.nodeSpec(g,node,resolved)){error="Invalid function node in "+g.name;return false;}
+                node.values.clear();
+                if(values.exists())
+                {
+                    if(!values.isObject()||values.count()>resolved.inputs.size())
+                    {error="Invalid input values in "+g.name;return false;}
+                    for(auto v=values.first();v.exists();v=v.next())
+                    {
+                        const std::string pin=v.key();
+                        const auto* input=findPin(resolved.inputs,pin);
+                        if(!input||!v.isString()||!inputLiteral(input->type,v.text())||
+                            std::any_of(node.values.begin(),node.values.end(),[&](const InputValue& old){return old.pin==pin;}))
+                        {error="Invalid or duplicate input value: "+pin;return false;}
+                        node.values.push_back({pin,v.text()});
+                    }
+                }
+                g.nodes.push_back(std::move(node));
             }
             if(entries!=1){error="Each graph needs exactly one entry.";return false;}
             for(auto l=ls.first();l.exists();l=l.next())
             {
                 auto a=ids.find(l["from"].text()),b=ids.find(l["to"].text());
-                if(a==ids.end()||b==ids.end()||!validWire(g,a->second,l["output"].text(),b->second,l["input"].text(),error))
+                if(a==ids.end()||b==ids.end()||!validWire(candidate,g,a->second,l["output"].text(),b->second,l["input"].text(),error))
                 {if(a==ids.end()||b==ids.end())error="Dangling connection.";return false;}
-                g.links.push_back({a->second,b->second,l["output"].text(),l["input"].text()});
+                Link wire{a->second,b->second,l["output"].text(),l["input"].text()};
+                const auto route=l["route"];
+                if(route.exists())
+                {
+                    if(!route.isArray()||route.count()>16){error="Invalid wire route.";return false;}
+                    for(auto p=route.first();p.exists();p=p.next())
+                    {
+                        const float x=p["x"].number(),y=p["y"].number();
+                        if(!p.isObject()||!p["x"].isNumber()||!p["y"].isNumber()||!coordinate(x)||!coordinate(y)){error="Invalid route point.";return false;}
+                        wire.route.push_back({x,y});
+                    }
+                }
+                g.links.push_back(std::move(wire));
             }
-            candidate.graphs.push_back(std::move(g));
+            const auto comments=value["comments"];
+            if(comments.exists())
+            {
+                if(!comments.isArray()||comments.count()>128){error="Invalid comment groups.";return false;}
+                std::unordered_set<std::string> claimed;
+                for(auto item=comments.first();item.exists();item=item.next())
+                {
+                    const std::string title=item["title"].text();const auto members=item["members"];
+                    if(!item.isObject()||!item["title"].isString()||title.empty()||title.size()>256||!members.isArray()||!members.count()||members.count()>kMaxNodes)
+                    {error="Invalid comment group.";return false;}
+                    Comment comment{title,{}};
+                    if(item["width"].exists())
+                    {
+                        if(!item["x"].isNumber()||!item["y"].isNumber()||!item["width"].isNumber()||!item["height"].isNumber()){error="Invalid comment bounds.";return false;}
+                        comment.x=item["x"].number();comment.y=item["y"].number();comment.width=item["width"].number();comment.height=item["height"].number();
+                        if(!coordinate(comment.x)||!coordinate(comment.y)||!coordinate(comment.width)||!coordinate(comment.height)||comment.width<80||comment.height<48){error="Invalid comment bounds.";return false;}
+                    }
+                    if(item["colour"].exists()&&(!item["colour"].isString()||!blueprintParseRGB(item["colour"].text(),comment.colour))){error="Invalid comment colour.";return false;}
+                    for(auto member=members.first();member.exists();member=member.next())
+                    {
+                        const std::string id=member.text();
+                        if(!member.isString()||!ids.count(id)||!claimed.insert(id).second){error="Unknown or overlapping comment member.";return false;}
+                        comment.members.push_back(id);
+                    }
+                    g.comments.push_back(std::move(comment));
+                }
+            }
         }
-        for(const char* event:{"onEnter","update","draw"})
-            if(!graphNames.count(event)){error="Missing required event graph.";return false;}
-        std::vector<BlueprintPin> vars;
-        if(!candidate.variables(vars,error)||!candidate.functions(error))return false;
+        for(const auto& owner:candidate.screens())
+        {
+            for(const char* event:{"onEnter","update","draw"})
+                if(!graphNames.count(scoped(owner,event))){error="Missing required event graph in "+owner;return false;}
+            std::vector<BlueprintPin> vars;if(!candidate.variables(vars,error,owner))return false;
+        }
+        if(candidate.screens().empty()){error="A project requires at least one screen.";return false;}
+        const auto metadata=root["manifests"];
+        if(metadata.exists())
+        {
+            if(!metadata.isArray()||metadata.count()>candidate.screens().size())
+            {error="Invalid screen manifest list.";return false;}
+            for(auto m=metadata.first();m.exists();m=m.next())
+            {
+                if(!m.isObject()||!m["owner"].isString()||!m["source"].isString())
+                {error="Invalid screen manifest entry.";return false;}
+                if(!candidate.importScreenManifest(m["owner"].text(),m["source"].text(),error))return false;
+            }
+        }
+        const auto behaviours=candidate.behaviours();
+        for(const auto& behaviour:behaviours)
+        {
+            const auto owner="behaviour:"+behaviour;
+            for(const char* event:{"start","update","onHit","onLeave","onGone"})
+                if(!graphNames.count(scoped(owner,event))){error="Missing behaviour event "+owner+"/"+event;return false;}
+            std::vector<BlueprintPin> vars;if(!candidate.variables(vars,error,owner))return false;
+        }
+        const auto screens=candidate.screens();
+        // Migrate older single-screen documents whose Behaviours used implicit module scope.
+        if(screens.size()==1&&!candidate.moduleGlobals(screens.front()).empty())
+        {
+            bool changed=true;
+            while(changed)
+            {
+                changed=false;
+                for(auto& g:candidate.graphs)if(behaviourOwner(g.owner)&&g.name=="start"&&g.moduleOwner.empty())
+                {
+                    bool needsScope=false;
+                    for(const auto& method:candidate.graphs)if(method.owner==g.owner)for(const auto& n:method.nodes)
+                        if(globalKind(n.kind)||typedGlobal(n.kind)||(blueprintBehaviourReference(n.kind)&&!candidate.moduleForOwner("behaviour:"+n.ref).empty()))needsScope=true;
+                    if(needsScope){g.moduleOwner=screens.front();changed=true;}
+                }
+            }
+        }
+        for(const auto& g:candidate.graphs)
+        {
+            if(!g.moduleOwner.empty()&&std::find(screens.begin(),screens.end(),g.moduleOwner)==screens.end())
+            {error="Missing Behaviour module: "+g.moduleOwner;return false;}
+            const auto& globals=candidate.moduleGlobals(g.owner);
+            for(const auto& n:g.nodes)
+            {
+                if(blueprintBehaviourReference(n.kind)&&!candidate.canAttach(g.owner,n.ref))
+                {error="Missing or out-of-scope Behaviour: "+n.ref;return false;}
+                if(globalKind(n.kind)&&std::none_of(globals.begin(),globals.end(),[&](const Field& f){return f.name==n.ref&&f.type==n.kind.substr(11);}))
+                {error="Unknown or incompatible module variable: "+n.ref;return false;}
+            }
+        }
+        if(!candidate.validateBehaviourInheritance(error)||!candidate.functions(error))return false;
         *this=std::move(candidate);error.clear();return true;
     }
     bool BlueprintDocument::serialize(std::string& result,std::string& error)const
@@ -217,16 +2515,96 @@ namespace nx
         if(graphs.empty()){error="No Blueprint open.";return false;}
         auto fail=[&](){error="Not enough memory to serialize Blueprint.";return false;};
         JsonValue root;
-        if(!number(root,"version",2)||!text(root,"kind","NativeBlueprint")||!text(root,"name",name))return fail();
+        if(!number(root,"version",2)||!text(root,"kind","NativeBlueprint")||!text(root,"name",name)||!text(root,"assetRoot",assetRoot))return fail();
+        if(!manifests.empty())
+        {
+            auto* metadata=root.put("manifests");if(!metadata)return fail();metadata->setArray();
+            for(const auto& m:manifests)
+            {
+                if(m.source.find('\0')!=std::string::npos){error="Invalid screen manifest bytes.";return false;}
+                auto* entry=metadata->add();if(!entry||!text(*entry,"owner",m.owner)||!text(*entry,"source",m.source))return fail();
+            }
+        }
+        if(m_visualSerial&&!number(root,"visualSerial",m_visualSerial))return fail();
+        if(!m_visualAssets.empty())
+        {
+            if(!validVisualAssets(m_visualAssets,error))return false;
+            auto* list=root.put("visualAssets");if(!list)return fail();list->setArray();
+            for(const auto& a:m_visualAssets)
+            {
+                auto* item=list->add();
+                if(!item||!text(*item,"id",a.id)||!text(*item,"kind",a.kind)||
+                    !text(*item,"title",a.title)||!text(*item,"source",a.source))return fail();
+                auto* deps=item->put("dependencies");if(!deps)return fail();deps->setArray();
+                for(const auto& dependency:a.dependencies)
+                {
+                    auto* d=deps->add();if(!d)return fail();d->setText(dependency);
+                }
+            }
+        }
         auto* gs=root.put("graphs");if(!gs)return fail();gs->setArray();
         for(const auto& g:graphs)
         {
-            auto* v=gs->add();if(!v||!text(*v,"name",g.name)||!text(*v,"kind",g.kind))return fail();
+            auto* v=gs->add();if(!v||!text(*v,"owner",g.owner)||!text(*v,"name",g.name)||!text(*v,"kind",g.kind))return fail();
+            if(g.inlineMacro){auto* macro=v->put("inlineMacro");if(!macro)return fail();macro->setFlag(true);}
+            if(g.sharedLibrary){auto* shared=v->put("sharedLibrary");if(!shared)return fail();shared->setFlag(true);}
+            if(!g.dataRole.empty()&&!text(*v,"dataRole",g.dataRole))return fail();
+            if(g.kind=="function")
+            {
+                if(!text(*v,"returnType",g.returnType))return fail();
+                auto* parameters=v->put("parameters");if(!parameters)return fail();parameters->setArray();
+                for(const auto& p:g.parameters)
+                {
+                    auto* item=parameters->add();if(!item||!text(*item,"name",p.name)||!text(*item,"type",p.type))return fail();
+                }
+            }
+            if(!g.fields.empty())
+            {
+                auto* fields=v->put("fields");if(!fields)return fail();fields->setArray();
+                for(const auto& f:g.fields)
+                {
+                    auto* item=fields->add();if(!item||!text(*item,"name",f.name)||!text(*item,"type",f.type))return fail();
+                    if(f.initialized&&!text(*item,"value",f.value))return fail();
+                    if(f.exposed){auto* exposed=item->put("exposed");if(!exposed)return fail();exposed->setFlag(true);}
+                }
+            }
+            if(!g.parentBehaviour.empty()&&!text(*v,"parentBehaviour",g.parentBehaviour))return fail();
+            if(!g.moduleOwner.empty()&&!text(*v,"moduleOwner",g.moduleOwner))return fail();
+            if(!g.globals.empty())
+            {
+                auto* fields=v->put("globals");if(!fields)return fail();fields->setArray();
+                for(const auto& f:g.globals)
+                {
+                    auto* item=fields->add();if(!item||!text(*item,"name",f.name)||!text(*item,"type",f.type))return fail();
+                    if(f.initialized&&!text(*item,"value",f.value))return fail();
+                }
+            }
             auto* ns=v->put("nodes");if(!ns)return fail();ns->setArray();
             for(const auto& n:g.nodes)
             {
                 auto* j=ns->add();if(!j||!text(*j,"id",n.id)||!text(*j,"kind",n.kind)||!number(*j,"x",n.x)||!number(*j,"y",n.y))return fail();
-                if((n.kind.rfind("literal:",0)==0||variableKind(n.kind)||n.kind=="call:function")&&!text(*j,"value",n.ref))return fail();
+                if((n.kind.rfind("literal:",0)==0||variableKind(n.kind)||globalKind(n.kind)||n.kind.rfind("capture:",0)==0||blueprintNamedCall(n.kind)||blueprintBehaviourReference(n.kind)||typeNode(n.kind)||typedVariable(n.kind))&&!text(*j,"value",n.ref))return fail();
+                if(n.watch){auto* watch=j->put("watch");if(!watch)return fail();watch->setFlag(true);}
+                if(!n.displayName.empty()&&!text(*j,"displayName",n.displayName))return fail();
+                if(!n.comment.empty()&&!text(*j,"comment",n.comment))return fail();
+                if(n.colour&&!text(*j,"colour",blueprintRGBHex(n.colour)))return fail();
+                if(!n.values.empty())
+                {
+                    auto* values=j->put("values");if(!values)return fail();
+                    for(const auto& input:n.values)if(!text(*values,input.pin.c_str(),input.value))return fail();
+                }
+            }
+            if(!g.comments.empty())
+            {
+                auto* comments=v->put("comments");if(!comments)return fail();comments->setArray();
+                for(const auto& comment:g.comments)
+                {
+                    auto* item=comments->add();if(!item||!text(*item,"title",comment.title))return fail();
+                    if(comment.width>0&&(!number(*item,"x",comment.x)||!number(*item,"y",comment.y)||!number(*item,"width",comment.width)||!number(*item,"height",comment.height)))return fail();
+                    if(comment.colour&&!text(*item,"colour",blueprintRGBHex(comment.colour)))return fail();
+                    auto* members=item->put("members");if(!members)return fail();members->setArray();
+                    for(const auto& id:comment.members){auto* member=members->add();if(!member)return fail();member->setText(id);}
+                }
             }
             auto* ls=v->put("links");if(!ls)return fail();ls->setArray();
             for(const auto& l:g.links)
@@ -235,6 +2613,11 @@ namespace nx
                 auto* j=ls->add();
                 if(!j||!text(*j,"from",g.nodes[l.from].id)||!text(*j,"to",g.nodes[l.to].id)||
                     !text(*j,"output",l.output)||!text(*j,"input",l.input))return fail();
+                if(!l.route.empty())
+                {
+                    auto* route=j->put("route");if(!route)return fail();route->setArray();
+                    for(const auto& p:l.route){auto* item=route->add();if(!item||!number(*item,"x",p.x)||!number(*item,"y",p.y))return fail();}
+                }
             }
         }
         auto output=root.write(false);BlueprintDocument check;
@@ -252,42 +2635,267 @@ namespace nx
         auto& n=graphs[graph].nodes[node];if(n.x==x&&n.y==y)return false;
         record(graph);n.x=x;n.y=y;return true;
     }
-    bool BlueprintDocument::addNode(size_t graph,const std::string& kind,float x,float y,std::string& error)
+    bool BlueprintDocument::moveNodes(size_t graph,const std::vector<size_t>& nodes,float dx,float dy)
+    {
+        if(graph>=graphs.size()||nodes.empty()||(!dx&&!dy)||!std::isfinite(dx)||!std::isfinite(dy))return false;
+        auto& g=graphs[graph];std::unordered_set<size_t> selected(nodes.begin(),nodes.end());
+        for(const auto i:selected)if(i>=g.nodes.size()||!coordinate(g.nodes[i].x+dx)||!coordinate(g.nodes[i].y+dy))return false;
+        for(const auto& l:g.links)if(selected.count(l.from)&&selected.count(l.to))
+            for(const auto& p:l.route)if(!coordinate(p.x+dx)||!coordinate(p.y+dy))return false;
+        record(graph);
+        for(const auto i:selected){g.nodes[i].x+=dx;g.nodes[i].y+=dy;}
+        for(auto& l:g.links)if(selected.count(l.from)&&selected.count(l.to))for(auto& p:l.route){p.x+=dx;p.y+=dy;}
+        for(auto& item:g.comments)if(item.width>0&&!item.members.empty()&&std::all_of(item.members.begin(),item.members.end(),[&](const std::string& id){return std::any_of(selected.begin(),selected.end(),[&](size_t i){return g.nodes[i].id==id;});})){item.x+=dx;item.y+=dy;}
+        return true;
+    }
+    bool BlueprintDocument::arrange(size_t graph,std::string& error,const std::vector<float>& widths)
+    {
+        if(graph>=graphs.size()){error="Unknown graph.";return false;}
+        auto& g=graphs[graph];const size_t count=g.nodes.size();
+        std::vector<size_t> indegree(count,0),rank(count,0),order;
+        std::vector<std::vector<size_t>> outgoing(count);
+        for(const auto& l:g.links)
+        {
+            if(l.from>=count||l.to>=count){error="Invalid graph connection.";return false;}
+            ++indegree[l.to];outgoing[l.from].push_back(l.to);
+        }
+        for(size_t i=0;i<count;++i)if(!indegree[i])order.push_back(i);
+        for(size_t i=0;i<order.size();++i)for(const auto child:outgoing[order[i]])
+        {rank[child]=std::max(rank[child],rank[order[i]]+1);if(!--indegree[child])order.push_back(child);}
+        if(order.size()!=count){error="Cannot arrange cyclic graph.";return false;}
+        std::vector<float> offsets(count+1,60.f),columns(count+1,196.f);std::vector<Point> positions(count);
+        if(widths.size()==count)for(size_t i=0;i<count;++i)if(std::isfinite(widths[i]))columns[rank[i]]=std::max(columns[rank[i]],std::clamp(widths[i],196.f,640.f));
+        std::vector<float> x(count+1,24.f);for(size_t i=1;i<x.size();++i)x[i]=x[i-1]+columns[i-1]+56.f;
+        for(const auto i:order)
+        {
+            BlueprintNodeSpec spec;if(!nodeSpec(g,g.nodes[i],spec)){error="Unknown node.";return false;}
+            positions[i]={x[rank[i]],offsets[rank[i]]};
+            offsets[rank[i]]+=std::max(72.f,46.f+22.f*static_cast<float>(std::max(spec.inputs.size(),spec.outputs.size())))+36.f;
+        }
+        bool changed=std::any_of(g.links.begin(),g.links.end(),[](const Link& l){return !l.route.empty();});
+        for(size_t i=0;i<count;++i)changed=changed||g.nodes[i].x!=positions[i].x||g.nodes[i].y!=positions[i].y;
+        if(changed){record(graph);for(size_t i=0;i<count;++i){g.nodes[i].x=positions[i].x;g.nodes[i].y=positions[i].y;}for(auto& l:g.links)l.route.clear();}
+        error.clear();return true;
+    }
+    bool BlueprintDocument::alignNodes(size_t graph,const std::vector<size_t>& nodes,bool horizontal,std::string& error)
+    {
+        if(graph>=graphs.size()||nodes.size()<2){error="Select at least two nodes.";return false;}
+        auto& g=graphs[graph];float position=1000000.f;
+        for(const auto i:nodes){if(i>=g.nodes.size()){error="Invalid node selection.";return false;}position=std::min(position,horizontal?g.nodes[i].y:g.nodes[i].x);}
+        bool changed=false;for(const auto i:nodes)changed=changed||(horizontal?g.nodes[i].y:g.nodes[i].x)!=position;
+        if(changed){record(graph);for(const auto i:nodes){if(horizontal)g.nodes[i].y=position;else g.nodes[i].x=position;}}
+        error.clear();return true;
+    }
+    bool BlueprintDocument::addComment(size_t graph,const std::vector<size_t>& nodes,const std::string& title,std::string& error)
+    {
+        if(graph>=graphs.size()||nodes.empty()||title.empty()||title.size()>256||title.find('\0')!=std::string::npos||graphs[graph].comments.size()>=128){error="Select nodes and enter a comment title.";return false;}
+        auto& g=graphs[graph];Comment comment{title,{}};
+        for(const auto i:nodes)
+        {
+            if(i>=g.nodes.size()){error="Invalid node selection.";return false;}
+            const auto& id=g.nodes[i].id;
+            if(std::find(comment.members.begin(),comment.members.end(),id)!=comment.members.end())continue;
+            for(const auto& other:g.comments)if(std::find(other.members.begin(),other.members.end(),id)!=other.members.end()){error="A selected node already belongs to a comment group.";return false;}
+            comment.members.push_back(id);
+        }
+        record(graph);g.comments.push_back(std::move(comment));error.clear();return true;
+    }
+    bool BlueprintDocument::resizeComment(size_t graph,size_t comment,float x,float y,float width,float height)
+    {
+        if(graph>=graphs.size()||comment>=graphs[graph].comments.size()||!coordinate(x)||!coordinate(y)||!coordinate(width)||!coordinate(height)||width<80||height<48)return false;
+        auto& item=graphs[graph].comments[comment];if(item.x==x&&item.y==y&&item.width==width&&item.height==height)return true;
+        record(graph);item.x=x;item.y=y;item.width=width;item.height=height;return true;
+    }
+    bool BlueprintDocument::editComment(size_t graph,size_t comment,const std::string& title,unsigned colour,std::string& error)
+    {
+        if(graph>=graphs.size()||comment>=graphs[graph].comments.size()||title.empty()||title.size()>256||title.find('\0')!=std::string::npos||colour>0x1FFFFFFu){error="Invalid comment title or colour.";return false;}
+        auto& item=graphs[graph].comments[comment];if(item.title!=title||item.colour!=colour){record(graph);item.title=title;item.colour=colour;}error.clear();return true;
+    }
+    bool BlueprintDocument::renameComment(size_t graph,size_t comment,const std::string& title,std::string& error)
+    {
+        if(graph>=graphs.size()||comment>=graphs[graph].comments.size()||title.empty()||title.size()>256||title.find('\0')!=std::string::npos){error="Invalid comment title.";return false;}
+        auto& item=graphs[graph].comments[comment];if(item.title!=title){record(graph);item.title=title;}error.clear();return true;
+    }
+    bool BlueprintDocument::deleteComment(size_t graph,size_t comment)
+    {
+        if(graph>=graphs.size()||comment>=graphs[graph].comments.size())return false;
+        record(graph);auto& items=graphs[graph].comments;items.erase(items.begin()+static_cast<std::ptrdiff_t>(comment));return true;
+    }
+    bool BlueprintDocument::insertRoutePoint(size_t graph,size_t link,size_t point,float x,float y)
+    {
+        if(graph>=graphs.size()||link>=graphs[graph].links.size()||!coordinate(x)||!coordinate(y))return false;
+        auto& route=graphs[graph].links[link].route;if(point>route.size()||route.size()>=16)return false;
+        record(graph);route.insert(route.begin()+static_cast<std::ptrdiff_t>(point),{x,y});return true;
+    }
+    bool BlueprintDocument::moveRoutePoint(size_t graph,size_t link,size_t point,float x,float y)
+    {
+        if(graph>=graphs.size()||link>=graphs[graph].links.size()||point>=graphs[graph].links[link].route.size()||!coordinate(x)||!coordinate(y))return false;
+        auto& p=graphs[graph].links[link].route[point];if(p.x==x&&p.y==y)return false;
+        record(graph);p={x,y};return true;
+    }
+    bool BlueprintDocument::deleteRoutePoint(size_t graph,size_t link,size_t point)
+    {
+        if(graph>=graphs.size()||link>=graphs[graph].links.size()||point>=graphs[graph].links[link].route.size())return false;
+        record(graph);auto& route=graphs[graph].links[link].route;route.erase(route.begin()+static_cast<std::ptrdiff_t>(point));return true;
+    }
+    bool BlueprintDocument::addNode(size_t graph,const std::string& kind,float x,float y,std::string& error,const std::string& functionTarget)
     {
         if(graph>=graphs.size()||!blueprintSpec(kind)||kind=="entry"||!coordinate(x)||!coordinate(y)||graphs[graph].nodes.size()>=kMaxNodes)
         {error="Cannot add this node.";return false;}
         auto& g=graphs[graph];
-        if(!context(g.name,kind)){error="This event value belongs to a different event graph.";return false;}
+        if(kind=="return:function"&&g.inlineMacro){error="Inline macros cannot contain return nodes.";return false;}
+        if(kind=="return:function"&&g.kind!="function"){error="Return belongs in a function graph.";return false;}
+        if(kind=="call:parent"&&(g.kind!="function"||!function(parentBehaviour(g.owner),g.name)))
+        {error="Call parent belongs in an overridden function.";return false;}
+        if(!context(g.name,kind,g.owner)){error="This event value belongs to a different event graph.";return false;}
+        if((kind=="async:wait"||kind=="async:next")&&g.dataRole!="coroutine"){error="Wait nodes require a Coroutine graph.";return false;}
+        if(g.dataRole=="enum"||g.dataRole=="struct"){error="Edit the declaration signature, not its graph.";return false;}
         std::string id;
         do{id="n"+std::to_string(++m_nextId);}while(std::any_of(g.nodes.begin(),g.nodes.end(),[&](const Node& n){return n.id==id;}));
         std::string value=kind=="literal:string"?"":kind=="literal:bool"?"false":kind.rfind("literal:",0)==0?"0":"";
+        if(kind.rfind("capture:",0)==0)value="captured";
+        if(globalKind(kind))
+        {
+            const auto& globals=moduleGlobals(g.owner);
+            const auto found=std::find_if(globals.begin(),globals.end(),[&](const Field& f){return f.type==kind.substr(11);});
+            if(found==globals.end()){error="No declared module variable of this type.";return false;}
+            value=found->name;
+        }
         if(variableKind(kind))
         {
             const auto type=kind.substr(8);
             value="value_"+type; if(value.back()=='@')value.pop_back();
+            if(!blueprintArrayElement(type).empty())value="array_"+blueprintArrayElement(type);
             std::vector<BlueprintPin> vars;
-            if(!variables(vars,error))return false;
+            if(!variables(vars,error,g.owner))return false;
             for(unsigned i=1;std::any_of(vars.begin(),vars.end(),[&](const BlueprintPin& p){return p.name==value&&p.type!=type;});++i)value="variable_"+std::to_string(i);
         }
-        if(kind=="call:function")
+        if(typedVariable(kind))
+        {
+            std::vector<BlueprintPin> vars;
+            if(typedGlobal(kind)){for(const auto& f:moduleGlobals(g.owner))vars.push_back({f.name,f.type});}
+            else if(!variables(vars,error,g.owner))return false;
+            const auto it=std::find_if(vars.begin(),vars.end(),[&](const BlueprintPin& p){return (functionTarget.empty()||p.name==functionTarget)&&(customTypeName(p.type)||classTypeName(p.type)||p.type=="Thread@"||p.type=="Channel@"||p.type=="Samples@"||p.type=="AudioStream@"||p.type=="Voice"||p.type=="Sound@"||p.type=="Curve@"||p.type=="Batch@"||p.type=="Packed@"||p.type=="Zip@"||p.type=="Font@"||p.type=="Texture@");});
+            if(it==vars.end()){error="Declare a custom typed variable first.";return false;}value=it->name;
+        }
+        if(typeNode(kind))
+        {
+            const auto it=std::find_if(graphs.begin(),graphs.end(),[&](const Graph& declaration){return (functionTarget.empty()||functionTarget==declaration.name)&&dataType(declaration.name)==&declaration&&((kind.rfind("data:enum-",0)==0)==(declaration.dataRole=="enum"));});
+            if(it==graphs.end()){error="Create a matching custom type first.";return false;}value=it->name;
+        }
+        if(blueprintBehaviourReference(kind))
+        {
+            const auto names=behaviours();const auto found=std::find_if(names.begin(),names.end(),[&](const std::string& n){return canAttach(g.owner,n)&&(functionTarget.empty()||functionTarget==n);});
+            if(found==names.end()){error="No Behaviour available in this module.";return false;}value=*found;
+        }
+        if(blueprintNamedCall(kind))
         {
             // Choose the first valid target, not merely the first function in the list.
             bool valid=false;
             for(const auto& fn:graphs)
             {
-                if(fn.kind!="function"||fn.name==g.name)continue;
+                if(fn.kind!="function"||(kind=="call:library"?libraryFunction(fn.name):function(g.owner,fn.name))!=&fn||&fn==&g||(!functionTarget.empty()&&fn.name!=functionTarget)||
+                    (kind!="call:function"&&kind!="call:library"&&(fn.sharedLibrary||fn.inlineMacro||fn.returnType!="void"))||((kind=="async:start")!=(fn.dataRole=="coroutine")))continue;
                 value=fn.name;g.nodes.push_back({id,kind,value,x,y});
                 valid=functions(error);g.nodes.pop_back();if(valid)break;
             }
             if(!valid){error="No nonrecursive function target. Create another function first.";return false;}
         }
-        record(graph);g.nodes.push_back({id,kind,value,x,y});error.clear();return true;
+        Node added{id,kind,value,x,y};added.displayName=nodeDisplayName(graph,added);record(graph);g.nodes.push_back(std::move(added));error.clear();return true;
+    }
+    bool BlueprintDocument::addConnectedNode(size_t graph,size_t from,const std::string& output,const std::string& kind,float x,float y,std::string& error)
+    {return placeContextNode(graph,from,output,true,kind,"","",x,y,error);}
+    bool BlueprintDocument::canCallFunction(size_t graph,const std::string& target) const
+    {
+        if(graph>=graphs.size())return false;
+        const auto& caller=graphs[graph];
+        const auto* first=function(caller.owner,target);
+        if(!first)return false;
+        std::vector<const Graph*> work{first},seen;
+        while(!work.empty())
+        {
+            const auto* g=work.back();work.pop_back();
+            if(g==&caller||(caller.kind=="function"&&g->name==caller.name))return false;
+            if(std::find(seen.begin(),seen.end(),g)!=seen.end())continue;
+            seen.push_back(g);
+            for(const auto& n:g->nodes)if(blueprintInvokesFunction(n.kind))
+            {const auto* child=n.kind=="call:library"?libraryFunction(n.ref):function(caller.owner,n.ref);if(child)work.push_back(child);}
+        }
+        return true;
+    }
+    bool BlueprintDocument::connectCompatible(size_t graph,size_t from,const std::string& output,size_t to,const std::string& input,std::string& error)
+    {
+        if(graph>=graphs.size()||from>=graphs[graph].nodes.size()||to>=graphs[graph].nodes.size())
+        {error="Invalid connection endpoints.";return false;}
+        const auto& g=graphs[graph];BlueprintNodeSpec a,b;
+        if(!nodeSpec(g,g.nodes[from],a)||!nodeSpec(g,g.nodes[to],b)){error="Unknown node.";return false;}
+        const auto* out=findPin(a.outputs,output);const auto* in=findPin(b.inputs,input);
+        if(!out||!in){error="Unknown pin.";return false;}
+        if(out->type==in->type||arrayBorrow(out->type,in->type)||classAssignable(out->type,in->type))return connect(graph,from,output,to,input,error);
+        if(!blueprintLosslessConversion(out->type,in->type)){error="Pins need matching types or an explicit conversion.";return false;}
+        BlueprintDocument staged;staged.name=name;staged.assetRoot=assetRoot;staged.graphs=graphs;staged.manifests=manifests;staged.m_nextId=m_nextId;
+        const float x=(g.nodes[from].x+g.nodes[to].x)*0.5f,y=(g.nodes[from].y+g.nodes[to].y)*0.5f+100.f;
+        if(!staged.addNode(graph,"cast:"+out->type+":"+in->type,x,y,error))return false;
+        const auto cast=staged.graphs[graph].nodes.size()-1;
+        if(!staged.connect(graph,from,output,cast,"a",error)||!staged.connect(graph,cast,"result",to,input,error))return false;
+        record(graph);graphs[graph]=std::move(staged.graphs[graph]);m_nextId=staged.m_nextId;error.clear();return true;
+    }
+    bool BlueprintDocument::placeContextNode(size_t graph,size_t existing,const std::string& pin,bool output,const std::string& kind,const std::string& reference,const std::string& otherPin,float x,float y,std::string& error)
+    {
+        if(graph>=graphs.size()||(existing!=static_cast<size_t>(-1)&&existing>=graphs[graph].nodes.size())){error="Invalid source pin.";return false;}
+        BlueprintDocument staged;staged.name=name;staged.assetRoot=assetRoot;staged.graphs=graphs;staged.manifests=manifests;staged.m_nextId=m_nextId;
+        if(!reference.empty()&&(globalKind(kind)||variableKind(kind)||typedVariable(kind)))
+        {
+            if(!staged.addVariableNode(graph,reference,globalKind(kind)||typedGlobal(kind),kind.find(":set:")!=std::string::npos||kind.ends_with(":set"),x,y,error))return false;
+            if(staged.graphs[graph].nodes.back().kind!=kind){error="Variable type changed.";return false;}
+        }
+        else if(!staged.addNode(graph,kind,x,y,error,(blueprintNamedCall(kind)||blueprintBehaviourReference(kind)||typeNode(kind))?reference:""))return false;
+        const auto added=staged.graphs[graph].nodes.size()-1;
+        if(existing!=static_cast<size_t>(-1))
+        {
+            BlueprintNodeSpec sourceSpec,targetSpec;
+            if(!staged.nodeSpec(staged.graphs[graph],staged.graphs[graph].nodes[existing],sourceSpec)||
+               !staged.nodeSpec(staged.graphs[graph],staged.graphs[graph].nodes[added],targetSpec)){error="Invalid node.";return false;}
+            const auto* endpoint=findPin(output?sourceSpec.outputs:sourceSpec.inputs,pin);
+            if(!endpoint){error="Invalid source pin.";return false;}
+            const auto& candidates=output?targetSpec.inputs:targetSpec.outputs;
+            const BlueprintPin* match=nullptr;
+            for(const auto& candidate:candidates)if((otherPin.empty()||otherPin==candidate.name)&&candidate.type==endpoint->type){match=&candidate;break;}
+            if(!match)for(const auto& candidate:candidates)if((otherPin.empty()||otherPin==candidate.name)&&
+                (output?(blueprintLosslessConversion(endpoint->type,candidate.type)||staged.classAssignable(endpoint->type,candidate.type)):(blueprintLosslessConversion(candidate.type,endpoint->type)||staged.classAssignable(candidate.type,endpoint->type)))){match=&candidate;break;}
+            if(!match){error="No compatible pin on this node.";return false;}
+            if(!(output?staged.connectCompatible(graph,existing,pin,added,match->name,error):staged.connectCompatible(graph,added,match->name,existing,pin,error)))return false;
+        }
+        record(graph);graphs[graph]=std::move(staged.graphs[graph]);m_nextId=staged.m_nextId;error.clear();return true;
+    }
+    bool BlueprintDocument::addVariableNode(size_t graph,const std::string& variableName,bool global,bool setter,float x,float y,std::string& error)
+    {
+        if(graph>=graphs.size()||!identifier(variableName)||!coordinate(x)||!coordinate(y)||graphs[graph].nodes.size()>=kMaxNodes)
+        {error="Cannot place variable node.";return false;}
+        auto& g=graphs[graph];std::string type;
+        if(global)
+        {
+            for(const auto& f:moduleGlobals(g.owner))if(f.name==variableName){type=f.type;break;}
+        }
+        else
+        {
+            std::vector<BlueprintPin> vars;if(!variables(vars,error,g.owner))return false;
+            for(const auto& f:vars)if(f.name==variableName){type=f.type;break;}
+        }
+        if(setter&&!blueprintArrayElement(type).empty()){error="Use array element operations rather than whole-array assignment.";return false;}
+        const auto kind=(customTypeName(type)||classTypeName(type)||type=="Thread@"||type=="Channel@"||type=="Samples@"||type=="AudioStream@"||type=="Voice"||type=="Sound@"||type=="Curve@"||type=="Batch@"||type=="Packed@"||type=="Zip@"||type=="Font@"||type=="Texture@")?std::string(global?"typed:global:":"typed:field:")+(setter?"set":"get"):std::string(global?"global:":"var:")+(setter?"set:":"get:")+type;
+        if(type.empty()||!blueprintSpec(kind)||!context(g.name,kind,g.owner)){error="Variable is not available in this graph.";return false;}
+        std::string id;do{id="n"+std::to_string(++m_nextId);}while(std::any_of(g.nodes.begin(),g.nodes.end(),[&](const Node& n){return n.id==id;}));
+        Node added{id,kind,variableName,x,y};added.displayName=nodeDisplayName(graph,added);record(graph);g.nodes.push_back(std::move(added));error.clear();return true;
     }
     bool BlueprintDocument::deleteNode(size_t graph,size_t node,std::string& error)
     {
         if(graph>=graphs.size()||node>=graphs[graph].nodes.size()||graphs[graph].nodes[node].kind=="entry")
         {error="The event entry cannot be deleted.";return false;}
         auto& g=graphs[graph];record(graph);
+        const auto id=g.nodes[node].id;
+        for(auto& comment:g.comments)comment.members.erase(std::remove(comment.members.begin(),comment.members.end(),id),comment.members.end());
+        g.comments.erase(std::remove_if(g.comments.begin(),g.comments.end(),[](const Comment& item){return item.members.empty();}),g.comments.end());
         g.links.erase(std::remove_if(g.links.begin(),g.links.end(),[&](const Link& l){return l.from==node||l.to==node;}),g.links.end());
         for(auto& l:g.links){if(l.from>node)--l.from;if(l.to>node)--l.to;}
         g.nodes.erase(g.nodes.begin()+static_cast<std::ptrdiff_t>(node));error.clear();return true;
@@ -295,7 +2903,7 @@ namespace nx
     bool BlueprintDocument::connect(size_t graph,size_t from,const std::string& output,size_t to,const std::string& input,std::string& error)
     {
         if(graph>=graphs.size()||graphs[graph].links.size()>=kMaxLinks){error="Graph link limit reached.";return false;}
-        auto& g=graphs[graph];if(!validWire(g,from,output,to,input,error))return false;
+        auto& g=graphs[graph];if(!validWire(*this,g,from,output,to,input,error))return false;
         record(graph);g.links.push_back({from,to,output,input});error.clear();return true;
     }
     bool BlueprintDocument::disconnect(size_t graph,size_t node,const std::string& pin,bool output)
@@ -306,6 +2914,15 @@ namespace nx
         if(std::none_of(g.links.begin(),g.links.end(),match))return false;
         record(graph);g.links.erase(std::remove_if(g.links.begin(),g.links.end(),match),g.links.end());return true;
     }
+    bool BlueprintDocument::toggleWatch(size_t graph,size_t node)
+    {
+        if(graph>=graphs.size()||node>=graphs[graph].nodes.size())return false;
+        BlueprintNodeSpec spec;const auto& g=graphs[graph];
+        if(!nodeSpec(g,g.nodes[node],spec))return false;
+        const auto exec=[](const BlueprintPin& p){return p.type=="exec";};
+        if(!std::any_of(spec.inputs.begin(),spec.inputs.end(),exec)&&!std::any_of(spec.outputs.begin(),spec.outputs.end(),exec))return false;
+        record(graph);graphs[graph].nodes[node].watch=!graphs[graph].nodes[node].watch;return true;
+    }
     bool BlueprintDocument::setLiteral(size_t graph,size_t node,const std::string& value,std::string& error)
     {
         if(graph>=graphs.size()||node>=graphs[graph].nodes.size()||!literal(graphs[graph].nodes[node].kind,value))
@@ -313,10 +2930,237 @@ namespace nx
         auto& n=graphs[graph].nodes[node];if(n.ref==value){error.clear();return true;}
         record(graph);n.ref=value;error.clear();return true;
     }
-    bool BlueprintDocument::variables(std::vector<BlueprintPin>& values,std::string& error)const
+    namespace
+    {
+        std::string nodeNameIdentity(const BlueprintDocument& doc,size_t graph,const BlueprintDocument::Node& n)
+        {
+            const auto& g=doc.graphs[graph];
+            if(n.kind=="entry")return "entry/"+g.owner+"/"+g.name;
+            if(n.kind=="call:function"||n.kind=="call:library"||n.kind=="call:parent"||n.kind=="call:event"||n.kind=="async:start")
+            {
+                const auto* target=n.kind=="call:library"?doc.libraryFunction(n.ref):n.kind=="call:parent"?doc.function(doc.parentBehaviour(g.owner),g.name):doc.function(g.owner,n.ref);
+                if(target)return "function/"+target->owner+"/"+target->name;
+            }
+            if(n.kind.rfind("global:",0)==0||n.kind.rfind("typed:global:",0)==0)return "global/"+doc.moduleForOwner(g.owner)+"/"+n.kind+"/"+n.ref;
+            if(n.kind.rfind("var:",0)==0||n.kind.rfind("typed:",0)==0||n.kind.rfind("capture:",0)==0||n.kind.rfind("local:",0)==0)return "scope/"+g.owner+"/"+(n.kind.rfind("capture:",0)==0||n.kind.rfind("local:",0)==0?g.name:"")+"/"+n.kind+"/"+n.ref;
+            return n.kind+"/"+n.ref;
+        }
+    }
+    std::string BlueprintDocument::nodeDisplayName(size_t graph,const Node& node) const
+    {
+        if(graph>=graphs.size())return node.displayName;
+        if(!node.displayName.empty())return node.displayName;
+        const auto identity=nodeNameIdentity(*this,graph,node);
+        for(size_t i=0;i<graphs.size();++i)for(const auto& other:graphs[i].nodes)
+            if(!other.displayName.empty()&&nodeNameIdentity(*this,i,other)==identity)return other.displayName;
+        return {};
+    }
+    bool BlueprintDocument::moveConnection(size_t graph,size_t link,size_t node,const std::string& pin,bool output,std::string& error)
+    {
+        if(graph>=graphs.size()||link>=graphs[graph].links.size()||node>=graphs[graph].nodes.size()){error="Invalid connection.";return false;}
+        const auto old=graphs[graph].links[link];
+        if((output&&old.from==node&&old.output==pin)||(!output&&old.to==node&&old.input==pin)){error.clear();return true;}
+        BlueprintDocument staged;staged.name=name;staged.assetRoot=assetRoot;staged.graphs=graphs;staged.manifests=manifests;staged.m_visualAssets=m_visualAssets;staged.m_nextId=m_nextId;
+        auto& links=staged.graphs[graph].links;links.erase(links.begin()+static_cast<std::ptrdiff_t>(link));
+        if(!staged.connectCompatible(graph,output?node:old.from,output?pin:old.output,output?old.to:node,output?old.input:pin,error))return false;
+        record(graph);graphs[graph]=std::move(staged.graphs[graph]);m_nextId=staged.m_nextId;return true;
+    }
+    bool BlueprintDocument::disconnectNode(size_t graph,size_t node)
+    {
+        if(graph>=graphs.size()||node>=graphs[graph].nodes.size())return false;
+        auto& links=graphs[graph].links;const auto match=[&](const Link& l){return l.from==node||l.to==node;};
+        if(std::none_of(links.begin(),links.end(),match))return false;
+        record(graph);links.erase(std::remove_if(links.begin(),links.end(),match),links.end());return true;
+    }
+    bool BlueprintDocument::editNodeValues(size_t graph,size_t node,const std::vector<InputValue>& values,const std::string* literalValue,std::string& error,const std::string* displayName,const std::string* comment,const unsigned* colour)
+    {
+        if(graph>=graphs.size()||node>=graphs[graph].nodes.size()){error="Unknown node.";return false;}
+        if(values.empty()&&!literalValue&&!displayName&&!comment&&!colour){error.clear();return true;}
+        if((displayName&&(displayName->size()>96||displayName->find_first_of("\r\n\t")!=std::string::npos||displayName->find('\0')!=std::string::npos))||(comment&&(comment->size()>256||comment->find('\0')!=std::string::npos))||(colour&&*colour>0x1FFFFFFu)){error="Invalid node name, comment or colour.";return false;}
+        BlueprintDocument staged;staged.name=name;staged.assetRoot=assetRoot;staged.graphs=graphs;staged.manifests=manifests;staged.m_visualAssets=m_visualAssets;staged.m_visualSerial=m_visualSerial;staged.m_nextId=m_nextId;
+        if(literalValue&&!staged.setLiteral(graph,node,*literalValue,error))return false;
+        for(const auto& value:values)if(!staged.setInputValue(graph,node,value.pin,value.value,error)){error=value.pin+": "+error;return false;}
+        if(displayName)
+        {
+            const auto identity=nodeNameIdentity(staged,graph,staged.graphs[graph].nodes[node]);
+            for(size_t i=0;i<staged.graphs.size();++i)for(auto& other:staged.graphs[i].nodes)
+                if(nodeNameIdentity(staged,i,other)==identity)other.displayName=*displayName;
+        }
+        auto& edited=staged.graphs[graph].nodes[node];if(comment)edited.comment=*comment;if(colour)edited.colour=*colour;
+        if(displayName){recordGraphList();graphs=std::move(staged.graphs);}
+        else {record(graph);graphs[graph]=std::move(staged.graphs[graph]);}
+        error.clear();return true;
+    }
+    bool BlueprintDocument::setInputValue(size_t graph,size_t node,const std::string& pin,const std::string& rawValue,std::string& error)
+    {
+        std::string value=rawValue;
+        if(graph>=graphs.size()||node>=graphs[graph].nodes.size()){error="Invalid node.";return false;}
+        auto& n=graphs[graph].nodes[node];
+        BlueprintNodeSpec spec;
+        const auto* input=nodeSpec(graphs[graph],n,spec)?findPin(spec.inputs,pin):nullptr;
+        if(n.kind=="camera:sequence"&&pin=="asset"&&!value.empty()){std::vector<BlueprintCameraKey> keys;if(!cameraSequenceKeys(value,keys,error))return false;}
+        if(n.kind=="camera:sequence"&&pin=="keys"){std::vector<BlueprintCameraKey> keys;if(!blueprintCameraKeys(value,keys,error))return false;value=blueprintCameraKeyText(keys);}
+        if(input&&input->type=="Color"){unsigned rgb;if(blueprintParseRGB(value,rgb))value=blueprintRGBHex(rgb);}
+        if(!input||!inputLiteral(input->type,value))
+        {error="Invalid value for input "+pin+".";return false;}
+        if(n.kind=="actor:spawn-asset"&&pin=="id")
+        {
+            Node proposed=n;auto prior=std::find_if(proposed.values.begin(),proposed.values.end(),[](const InputValue& v){return v.pin=="id";});
+            if(prior==proposed.values.end())proposed.values.push_back({"id",value});else prior->value=value;
+            BlueprintNodeSpec changed;if(!nodeSpec(graphs[graph],proposed,changed))return false;
+            for(const auto& v:n.values)if(v.pin.rfind("spawn_",0)==0)
+            {const auto* p=findPin(changed.inputs,v.pin);if(!p||!inputLiteral(p->type,v.value)){error="Clear incompatible exposed spawn values before changing actor.";return false;}}
+            for(const auto& link:graphs[graph].links)if(link.to==node&&link.input.rfind("spawn_",0)==0)
+            {
+                const auto* before=findPin(spec.inputs,link.input);const auto* after=findPin(changed.inputs,link.input);
+                if(!before||!after||before->type!=after->type){error="Disconnect incompatible spawn pins before changing actor.";return false;}
+            }
+        }
+        if(n.kind=="actor:spawn-asset"&&!value.empty()&&(pin=="instanceName"||pin=="rotationOverride"||pin=="sizeOverride"))
+        {
+            JsonValue checked;
+            if(pin=="instanceName"?!actorName(checked,value,error):!actorTransform(checked,pin=="rotationOverride"?"angles":"size",value,error))return false;
+        }
+        if((n.kind=="data:enum-value"&&pin=="member")||(listenerNode(n.kind)&&pin=="handler"))
+        {
+            const auto old=n.values;
+            auto proposed=std::find_if(n.values.begin(),n.values.end(),[&](const InputValue& v){return v.pin==pin;});
+            if(proposed==n.values.end())n.values.push_back({pin,value});else proposed->value=value;
+            const bool ok=functions(error);n.values=old;if(!ok)return false;
+        }
+        const auto it=std::find_if(n.values.begin(),n.values.end(),[&](const InputValue& v){return v.pin==pin;});
+        if(it!=n.values.end()&&it->value==value){error.clear();return true;}
+        record(graph);
+        if(it==n.values.end())n.values.push_back({pin,value});
+        else it->value=value;
+        error.clear();return true;
+    }
+    bool blueprintPhysicsJoint(const std::string& kind)
+    {
+        for(const char* name:{"join","hinge","weld","rope","spring","slider","drag","dragTo","motor","wheel"})
+            if(kind.rfind(std::string("api:Scene:Scene::")+name+":",0)==0)return true;
+        for(const char* name:{"join","hinge","rope","spring"})
+            if(kind.rfind(std::string("api:Space:Space::")+name+":",0)==0)return true;
+        return false;
+    }
+    bool BlueprintDocument::setJointProjection(size_t graph,size_t node,const std::string& pin,
+        unsigned plane,float horizontal,float vertical,std::string& error)
+    {
+        if(graph>=graphs.size()||node>=graphs[graph].nodes.size()||!blueprintPhysicsJoint(graphs[graph].nodes[node].kind)||
+            plane>2||!std::isfinite(horizontal)||!std::isfinite(vertical)||std::abs(horizontal)>1000000.f||std::abs(vertical)>1000000.f)
+        {error="Invalid physics joint projection.";return false;}
+        const auto& g=graphs[graph];const auto& n=g.nodes[node];BlueprintNodeSpec spec;
+        if(!nodeSpec(g,n,spec)){error="Invalid physics joint.";return false;}
+        const auto* input=findPin(spec.inputs,pin);
+        if(!input||(input->type!="Vec2"&&input->type!="Vec3")||(input->type=="Vec2"&&plane!=0))
+        {error="Select a vector pin and valid projection.";return false;}
+        if(std::any_of(g.links.begin(),g.links.end(),[&](const Link& l){return l.to==node&&l.input==pin;}))
+        {error="Connected vector pins must be edited at their source.";return false;}
+        const auto prefix=input->type+"(";std::string value=input->type=="Vec2"?"0,0":"0,0,0";
+        for(const auto& def:spec.defaults)if(def.name==pin&&def.type.rfind(prefix,0)==0&&def.type.ends_with(")"))
+            value=def.type.substr(prefix.size(),def.type.size()-prefix.size()-1);
+        for(const auto& v:n.values)if(v.pin==pin)value=v.value;
+        std::vector<std::string> parts;
+        if(!blueprintInputComponents(input->type,value,parts)){error="Invalid joint vector.";return false;}
+        const unsigned u=plane==2?1:0,v=plane==0?1:2;
+        char first[64],second[64];std::snprintf(first,sizeof(first),"%.9g",static_cast<double>(horizontal));
+        std::snprintf(second,sizeof(second),"%.9g",static_cast<double>(vertical));parts[u]=first;parts[v]=second;
+        std::string combined;for(const auto& part:parts){if(!combined.empty())combined+=",";combined+=part;}
+        if(pin=="axis")
+        {
+            bool nonzero=false;for(const auto& part:parts)if(std::strtod(part.c_str(),nullptr)!=0)nonzero=true;
+            if(!nonzero){error="A joint axis cannot be zero.";return false;}
+        }
+        return setInputValue(graph,node,pin,combined,error);
+    }
+    bool BlueprintDocument::cubicPoints(size_t graph,size_t node,std::vector<std::string>& points,std::string& error)const
+    {
+        if(graph>=graphs.size()||node>=graphs[graph].nodes.size()||graphs[graph].nodes[node].kind!="curve:cubic")
+        {error="Select a Create cubic Bezier curve node.";return false;}
+        const auto& g=graphs[graph];const auto& n=g.nodes[node];const auto* spec=blueprintSpec(n.kind);
+        std::vector<std::string> result;
+        for(const char* pin:{"p0","p1","p2","p3"})
+        {
+            if(std::any_of(g.links.begin(),g.links.end(),[&](const Link& l){return l.to==node&&l.input==pin;}))
+            {error="Visual editing needs four constant points. Disconnect the point wires first.";return false;}
+            std::string value;
+            for(const auto& d:spec->defaults)if(d.name==pin)value=d.type.substr(5,d.type.size()-6);
+            for(const auto& v:n.values)if(v.pin==pin)value=v.value;
+            std::vector<std::string> parts;
+            if(!blueprintInputComponents("Vec2",value,parts)){error="Invalid curve point.";return false;}
+            result.push_back(value);
+        }
+        points.swap(result);error.clear();return true;
+    }
+    bool BlueprintDocument::setCubicPoints(size_t graph,size_t node,const std::vector<std::string>& points,std::string& error)
+    {
+        std::vector<std::string> old;
+        if(!cubicPoints(graph,node,old,error))return false;
+        if(points.size()!=4){error="A cubic curve has four control points.";return false;}
+        for(const auto& v:points){std::vector<std::string> parts;if(!blueprintInputComponents("Vec2",v,parts)){error="Invalid curve point.";return false;}}
+        if(old==points){error.clear();return true;}
+        auto values=graphs[graph].nodes[node].values;
+        for(size_t i=0;i<4;++i)
+        {
+            const std::string pin="p"+std::to_string(i);
+            const auto it=std::find_if(values.begin(),values.end(),[&](const InputValue& v){return v.pin==pin;});
+            if(it==values.end())values.push_back({pin,points[i]});else it->value=points[i];
+        }
+        record(graph);graphs[graph].nodes[node].values.swap(values);error.clear();return true;
+    }
+    bool BlueprintDocument::clearInputValue(size_t graph,size_t node,const std::string& pin)
+    {
+        if(graph>=graphs.size()||node>=graphs[graph].nodes.size())return false;
+        const auto& n=graphs[graph].nodes[node];
+        if(n.kind=="actor:spawn-asset"&&pin=="id"&&
+            (std::any_of(n.values.begin(),n.values.end(),[](const InputValue& v){return v.pin.rfind("spawn_",0)==0;})||
+             std::any_of(graphs[graph].links.begin(),graphs[graph].links.end(),[&](const Link& l){return l.to==node&&l.input.rfind("spawn_",0)==0;})))return false;
+        auto& values=graphs[graph].nodes[node].values;
+        const auto it=std::find_if(values.begin(),values.end(),[&](const InputValue& v){return v.pin==pin;});
+        if(it==values.end())return false;
+        record(graph);values.erase(it);return true;
+    }
+    std::string BlueprintDocument::moduleForOwner(const std::string& owner) const
+    {
+        if(!behaviourOwner(owner))return owner;
+        for(const auto& g:graphs)if(g.owner==owner&&g.name=="start")return g.moduleOwner;
+        return "";
+    }
+    const std::vector<BlueprintDocument::Field>& BlueprintDocument::moduleGlobals(const std::string& owner) const
+    {
+        static const std::vector<Field> empty;
+        const auto owners=screens();
+        const auto module=owner.empty()?(owners.size()==1?owners.front():""):moduleForOwner(owner);
+        if(module.empty())return empty;
+        for(const auto& g:graphs)if(g.owner==module&&g.name=="onEnter")return g.globals;
+        return empty;
+    }
+    bool BlueprintDocument::canAttach(const std::string& owner,const std::string& behaviour) const
+    {
+        const auto target="behaviour:"+behaviour;
+        if(std::none_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==target&&g.name=="start";}))return false;
+        const auto scope=moduleForOwner(target);
+        return scope.empty()||scope==moduleForOwner(owner);
+    }
+    bool BlueprintDocument::variables(std::vector<BlueprintPin>& values,std::string& error,const std::string& owner)const
     {
         std::vector<BlueprintPin> result;
-        for(const auto& graph:graphs)for(const auto& node:graph.nodes)
+        const auto parent=parentBehaviour(owner);
+        if(!parent.empty())
+        {
+            std::unordered_set<std::string> seen;
+            for(auto at=owner;!at.empty();at=parentBehaviour(at))
+                if(!seen.insert(at).second||seen.size()>16){error="Invalid Behaviour inheritance.";return false;}
+            if(!variables(result,error,parent))return false;
+        }
+        for(const auto& graph:graphs)if(graph.owner==owner)for(const auto& field:graph.fields)
+        {
+            const auto inherited=std::find_if(result.begin(),result.end(),[&](const BlueprintPin& p){return p.name==field.name;});
+            if(!identifier(field.name)||!blueprintVariableType(field.type)||(inherited!=result.end()&&inherited->type!=field.type))
+            {error="Invalid or conflicting declared field: "+field.name;return false;}
+            if(inherited==result.end())result.push_back({field.name,field.type});
+        }
+        for(const auto& graph:graphs)if(graph.owner==owner)for(const auto& node:graph.nodes)
         {
             if(!variableKind(node.kind))continue;
             if(!identifier(node.ref)){error="Invalid variable name in "+graph.name;return false;}
@@ -331,37 +3175,189 @@ namespace nx
         std::sort(result.begin(),result.end(),[](const BlueprintPin& a,const BlueprintPin& b){return a.name<b.name;});
         values.swap(result);error.clear();return true;
     }
+    bool BlueprintDocument::editVariableDeclaration(const std::string& owner,const std::string& command,std::string& error)
+    {
+        const bool global=command.rfind("global ",0)==0;
+        if(!global&&command.rfind("field ",0)!=0){error="Use field or global followed by name:type.";return false;}
+        const auto body=command.substr(global?7:6);
+        const auto scope=global?moduleForOwner(owner):owner;
+        const auto event=behaviourOwner(scope)?"start":"onEnter";
+        if(scope.empty()){error="Shared Behaviours have no single module. Select a screen for global variables.";return false;}
+        BlueprintDocument staged;staged.name=name;staged.assetRoot=assetRoot;staged.graphs=graphs;staged.manifests=manifests;
+        staged.m_visualAssets=m_visualAssets;staged.m_visualSerial=m_visualSerial;staged.m_nextId=m_nextId;
+        auto graph=std::find_if(staged.graphs.begin(),staged.graphs.end(),[&](const Graph& g){return g.owner==scope&&g.name==event;});
+        if(graph==staged.graphs.end()){error="Unknown declaration owner.";return false;}
+        auto& fields=global?graph->globals:graph->fields;
+        const bool remove=!body.empty()&&body.front()=='-';
+        std::string oldName;Field next;
+        if(remove)oldName=body.substr(1);
+        else
+        {
+            const auto colon=body.find(':');
+            if(colon==std::string::npos){error="Use name:type, optionally =value.";return false;}
+            const auto names=body.substr(0,colon);const auto arrow=names.find('>');
+            oldName=arrow==std::string::npos?names:names.substr(0,arrow);
+            next.name=arrow==std::string::npos?names:names.substr(arrow+1);
+            const auto equals=body.find('=',colon+1);
+            next.type=body.substr(colon+1,equals==std::string::npos?equals:equals-colon-1);
+            next.initialized=equals!=std::string::npos;
+            if(next.initialized)next.value=body.substr(equals+1);
+            if(!identifier(next.name)||!blueprintVariableType(next.type)||(!global&&behaviourOwner(scope)&&next.name=="entity")||
+                (next.initialized&&!literal("literal:"+next.type,next.value)))
+            {error="Invalid name, primitive type or literal initializer.";return false;}
+        }
+        if(!identifier(oldName)){error="Invalid variable name.";return false;}
+        auto old=std::find_if(fields.begin(),fields.end(),[&](const Field& f){return f.name==oldName;});
+        const auto matches=[&](const Graph& g,const Node& n,const std::string& ref)
+        {return (global?staged.moduleForOwner(g.owner)==scope&&(globalKind(n.kind)||typedGlobal(n.kind)):g.owner==scope&&(variableKind(n.kind)||(typedVariable(n.kind)&&!typedGlobal(n.kind))))&&n.ref==ref;};
+        bool inheritedField=false;
+        if(!global&&!staged.parentBehaviour(scope).empty())
+        {
+            std::vector<BlueprintPin> inherited;
+            if(!staged.variables(inherited,error,staged.parentBehaviour(scope)))return false;
+            const auto inheritedPin=std::find_if(inherited.begin(),inherited.end(),[&](const BlueprintPin& p){return p.name==oldName;});
+            inheritedField=inheritedPin!=inherited.end();
+            if(inheritedField&&!remove&&(oldName!=next.name||inheritedPin->type!=next.type))
+            {error="Inherited fields preserve their name and type; only the default may be overridden.";return false;}
+        }
+        if(!global&&!inheritedField&&(remove||oldName!=next.name||(old!=fields.end()&&old->type!=next.type)))
+            for(const auto& g:staged.graphs)
+            {
+                bool descendant=false;
+                for(auto at=staged.parentBehaviour(g.owner);!at.empty();at=staged.parentBehaviour(at))if(at==scope){descendant=true;break;}
+                if(descendant&&(std::any_of(g.fields.begin(),g.fields.end(),[&](const Field& field){return field.name==oldName;})||
+                    std::any_of(g.nodes.begin(),g.nodes.end(),[&](const Node& node){return (variableKind(node.kind)||(typedVariable(node.kind)&&!typedGlobal(node.kind)))&&node.ref==oldName;})))
+                {error="Remove derived field overrides and references before changing this inherited contract.";return false;}
+            }
+        bool referenced=false;
+        for(const auto& g:staged.graphs)for(const auto& n:g.nodes)if(matches(g,n,oldName))
+        {
+            referenced=true;
+            if((remove&&!inheritedField)||(!remove&&(typedVariable(n.kind)?(old==fields.end()||old->type!=next.type):n.kind.substr(global?11:8)!=next.type))){error="Remove or replace variable nodes before deleting or changing its type.";return false;}
+        }
+        if(remove)
+        {
+            if(old==fields.end()){error="No explicit declaration with that name.";return false;}
+            fields.erase(old);
+        }
+        else
+        {
+            if(oldName!=next.name)
+            {
+                if(old==fields.end()&&!referenced){error="Unknown declaration to rename.";return false;}
+                if(std::any_of(fields.begin(),fields.end(),[&](const Field& f){return f.name==next.name;}))
+                {error="Destination variable already exists.";return false;}
+                for(const auto& g:staged.graphs)for(const auto& n:g.nodes)if(matches(g,n,next.name))
+                {error="Destination variable already has nodes.";return false;}
+                for(auto& g:staged.graphs)for(auto& n:g.nodes)if(matches(g,n,oldName))n.ref=next.name;
+            }
+            if(old==fields.end())
+            {
+                if(fields.size()>=256){error="Declaration limit reached.";return false;}
+                fields.push_back(std::move(next));
+            }
+            else {next.exposed=old->exposed;*old=std::move(next);}
+        }
+        std::string checked;
+        if(!staged.serialize(checked,error))return false;
+        recordGraphList();graphs.swap(staged.graphs);error.clear();return true;
+    }
     bool BlueprintDocument::setReference(size_t graph,size_t node,const std::string& value,std::string& error)
     {
         if(graph>=graphs.size()||node>=graphs[graph].nodes.size()||
-            (!variableKind(graphs[graph].nodes[node].kind)&&graphs[graph].nodes[node].kind!="call:function")||!identifier(value))
+            (!variableKind(graphs[graph].nodes[node].kind)&&!globalKind(graphs[graph].nodes[node].kind)&&graphs[graph].nodes[node].kind.rfind("capture:",0)!=0&&!blueprintNamedCall(graphs[graph].nodes[node].kind)&&!blueprintBehaviourReference(graphs[graph].nodes[node].kind)&&!typeNode(graphs[graph].nodes[node].kind)&&!typedVariable(graphs[graph].nodes[node].kind))||!identifier(value))
         {error="Use a variable name containing letters, digits and underscores.";return false;}
         auto& n=graphs[graph].nodes[node];
         if(n.ref==value){error.clear();return true;}
-        if(n.kind=="call:function")
+        if(globalKind(n.kind))
+        {
+            const auto& globals=moduleGlobals(graphs[graph].owner);
+            if(std::none_of(globals.begin(),globals.end(),[&](const Field& f){return f.name==value&&f.type==n.kind.substr(11);}))
+            {error="Unknown or incompatible module variable.";return false;}
+            record(graph);n.ref=value;error.clear();return true;
+        }
+        if(n.kind.rfind("capture:",0)==0){record(graph);n.ref=value;error.clear();return true;}
+        if(blueprintBehaviourReference(n.kind))
+        {
+            if(!canAttach(graphs[graph].owner,value)){error="Unknown or out-of-scope Behaviour "+value;return false;}
+            record(graph);n.ref=value;error.clear();return true;
+        }
+        if(blueprintNamedCall(n.kind)||typeNode(n.kind)||typedVariable(n.kind))
         {
             const std::string previous=n.ref;n.ref=value;
-            const bool valid=functions(error);n.ref=previous;if(!valid)return false;
+            std::string checked;
+            const bool valid=functions(error)&&serialize(checked,error);n.ref=previous;if(!valid)return false;
             record(graph);n.ref=value;error.clear();return true;
         }
         const auto type=n.kind.substr(8);
-        for(const auto& g:graphs)for(const auto& other:g.nodes)
+        for(const auto& g:graphs)if(g.owner==graphs[graph].owner)for(const auto& f:g.fields)
+            if(f.name==value&&f.type!=type){error="Declared variable has a different type.";return false;}
+        for(const auto& g:graphs)if(g.owner==graphs[graph].owner)for(const auto& other:g.nodes)
             if(&other!=&n&&variableKind(other.kind)&&other.ref==value&&other.kind.substr(8)!=type)
             {error="Variable name already has a different type.";return false;}
         record(graph);n.ref=value;error.clear();return true;
     }
     bool BlueprintDocument::functions(std::string& error) const
     {
-        std::unordered_map<std::string,size_t> index;
-        for(size_t i=0;i<graphs.size();++i)
-            if(graphs[i].kind=="function")index.emplace(graphs[i].name,i);
+        std::unordered_set<std::string> dataNames;
+        for(const auto& g:graphs)
+        {
+            if(g.dataRole=="coroutine"&&(behaviourOwner(g.owner)||g.returnType!="void"||!g.parameters.empty()||g.inlineMacro||g.sharedLibrary||g.name=="Construction")){error="Coroutines must be local screen void() graphs.";return false;}
+            if(g.dataRole=="event"&&(g.returnType!="void"||g.inlineMacro||g.sharedLibrary||g.name=="Construction")){error="Custom events must be local callable void graphs.";return false;}
+            if(g.dataRole=="enum"||g.dataRole=="struct")
+            {
+                if(behaviourOwner(g.owner)||g.sharedLibrary||g.inlineMacro||g.returnType!="void"||g.parameters.empty()||g.nodes.size()!=1||!dataNames.insert(g.name).second){error="Custom types must be unique nonempty declarations in a screen.";return false;}
+                for(const auto& p:g.parameters)if((g.dataRole=="enum"&&p.type!="int")||(g.dataRole=="struct"&&(!blueprintLiteralType(p.type)&&p.type!="Vec2"&&p.type!="Vec3"&&p.type!="Color"&&!customTypeName(p.type)))){error="Invalid custom type member.";return false;}
+            }
+        }
+        for(const auto& g:graphs)
+        {
+            for(const auto& n:g.nodes)if((n.kind=="async:wait"||n.kind=="async:next")&&g.dataRole!="coroutine"){error="Wait nodes require a Coroutine graph.";return false;}
+            const auto validType=[&](const std::string& type){return (!customTypeName(type)||dataType(type.substr(8)))&&(!classTypeName(type)||(canAttach(g.owner,type.substr(13,type.size()-14))&&(!g.sharedLibrary||moduleForOwner("behaviour:"+type.substr(13,type.size()-14)).empty())));};
+            if(!validType(g.returnType)){error="Unknown or out-of-scope return type.";return false;}
+            for(const auto& p:g.parameters)if(!validType(p.type)){error="Unknown or out-of-scope parameter type.";return false;}
+            for(const auto& f:g.fields)if(!validType(f.type)){error="Unknown or out-of-scope field type.";return false;}
+            for(const auto& f:g.globals)if(!validType(f.type)){error="Unknown or out-of-scope global type.";return false;}
+        }
+        std::vector<unsigned> typeState(graphs.size(),0);
+        const auto visitType=[&](auto&& self,const Graph& g)->bool
+        {
+            const auto index=static_cast<size_t>(&g-graphs.data());
+            if(typeState[index]==1){error="Recursive structure declarations are not supported.";return false;}
+            if(typeState[index]==2)return true;
+            typeState[index]=1;
+            if(g.dataRole=="struct")for(const auto& p:g.parameters)if(customTypeName(p.type))
+            {const auto* dep=dataType(p.type.substr(8));if(!dep||!self(self,*dep))return false;}
+            typeState[index]=2;return true;
+        };
+        for(const auto& g:graphs)if((g.dataRole=="struct"||g.dataRole=="enum")&&!visitType(visitType,g))return false;
+        for(const auto& g:graphs)for(const auto& n:g.nodes)
+        {
+            if(n.kind=="data:enum-value")for(const auto& v:n.values)if(v.pin=="member")
+            {const auto* decl=dataType(n.ref);if(!decl||std::none_of(decl->parameters.begin(),decl->parameters.end(),[&](const BlueprintPin& p){return p.name==v.value;})){error="Unknown enum member: "+v.value;return false;}}
+            if(listenerNode(n.kind))for(const auto& v:n.values)if(v.pin=="handler")
+            {const auto handlers=dispatcherListeners(g.owner,n.ref);if(std::none_of(handlers.begin(),handlers.end(),[&](const Graph* handler){return handler->name==v.value;})){error="Invalid dispatcher listener: "+v.value;return false;}}
+        }
+        std::unordered_set<std::string> libraryNames;
+        for(const auto& g:graphs)if(g.sharedLibrary)
+        {
+            if(g.kind!="function"||behaviourOwner(g.owner)||g.name=="Construction"||!libraryNames.insert(g.name).second)
+            {error="Shared library names must be unique across the project.";return false;}
+            for(const auto& n:g.nodes)
+            {
+                const auto* spec=blueprintSpec(n.kind);
+                const bool portable=n.kind=="api:Input:Input::key:string"||n.kind=="api:Input:Input::padButton:uint,uint"||n.kind=="entry"||n.kind=="return:function"||n.kind=="call:library"||n.kind=="branch"||n.kind=="sequence"||n.kind=="repeat"||n.kind.rfind("literal:",0)==0||n.kind.rfind("capture:",0)==0||n.kind.rfind("local:set:",0)==0||n.kind.rfind("make:",0)==0||typeNode(n.kind)||(spec&&!spec->operation.empty());
+                if(!portable){error="Shared library "+g.name+" contains a non-portable node: "+n.kind;return false;}
+            }
+        }
         std::vector<std::vector<size_t>> calls(graphs.size());
         for(size_t i=0;i<graphs.size();++i)for(const auto& node:graphs[i].nodes)
         {
-            if(node.kind!="call:function")continue;
-            const auto it=index.find(node.ref);
-            if(it==index.end()){error="Missing function: "+node.ref;return false;}
-            calls[i].push_back(it->second);
+            if(!blueprintInvokesFunction(node.kind)&&node.kind!="call:parent")continue;
+            const auto* target=node.kind=="call:library"?libraryFunction(node.ref):node.kind=="call:parent"?function(parentBehaviour(graphs[i].owner),graphs[i].name):function(graphs[i].owner,node.ref);
+            if(!target){error="Missing function: "+node.ref;return false;}
+            calls[i].push_back(static_cast<size_t>(target-graphs.data()));
+            if(node.kind=="dispatch:broadcast")for(const auto* handler:dispatcherListeners(graphs[i].owner,node.ref))calls[i].push_back(static_cast<size_t>(handler-graphs.data()));
         }
         // Topological elimination avoids recursion and catches indirect cycles.
         std::vector<size_t> indegree(graphs.size(),0),ready;
@@ -380,28 +3376,580 @@ namespace nx
     void BlueprintDocument::recordGraphList()
     {
         if(m_undo.size()>=kHistory)m_undo.erase(m_undo.begin());
-        m_undo.push_back({static_cast<size_t>(-1),{},m_revision,graphs});
+        m_undo.push_back({static_cast<size_t>(-1),{},m_revision,graphs,manifests,m_visualAssets});
         m_redo.clear();m_revision=++m_nextRevision;
     }
-    bool BlueprintDocument::addFunction(const std::string& functionName,std::string& error)
+    const BlueprintDocument::Graph* BlueprintDocument::function(const std::string& owner,const std::string& functionName) const
+    {
+        std::string at=owner;
+        for(unsigned depth=0;depth<16&&!at.empty();++depth,at=parentBehaviour(at))
+        {
+            const auto found=std::find_if(graphs.begin(),graphs.end(),[&](const Graph& g)
+            {return g.owner==at&&g.name==functionName&&g.kind=="function"&&g.dataRole!="enum"&&g.dataRole!="struct";});
+            if(found!=graphs.end())return &*found;
+        }
+        return nullptr;
+    }
+    const BlueprintDocument::Graph* BlueprintDocument::libraryFunction(const std::string& functionName) const
+    {
+        const auto at=std::find_if(graphs.begin(),graphs.end(),[&](const Graph& g){return g.sharedLibrary&&g.name==functionName;});
+        return at==graphs.end()?nullptr:&*at;
+    }
+    const BlueprintDocument::Graph* BlueprintDocument::dataType(const std::string& typeName) const
+    {
+        const auto at=std::find_if(graphs.begin(),graphs.end(),[&](const Graph& g){return g.name==typeName&&(g.dataRole=="enum"||g.dataRole=="struct");});
+        return at==graphs.end()?nullptr:&*at;
+    }
+    std::vector<const BlueprintDocument::Graph*> BlueprintDocument::dispatcherListeners(const std::string& owner,const std::string& signal) const
+    {
+        std::vector<const Graph*> result;
+        const auto* source=function(owner,signal);if(!source)return result;
+        for(unsigned depth=0;depth<16;++depth)
+        {const auto* parent=function(parentBehaviour(source->owner),signal);if(!parent)break;source=parent;}
+        for(const auto& g:graphs)if(g.owner==source->owner)for(const auto& n:g.nodes)
+            if(n.ref==signal&&(n.kind=="dispatch:bind-listener"||n.kind=="dispatch:unbind-listener"))
+                for(const auto& v:n.values)if(v.pin=="handler")
+                {
+                    const auto* handler=function(source->owner,v.value);
+                    if(handler&&handler!=source&&handler->owner==source->owner&&handler->returnType=="void"&&!handler->inlineMacro&&!handler->sharedLibrary&&handler->dataRole!="coroutine"&&handler->parameters.size()==source->parameters.size()&&
+                        std::equal(handler->parameters.begin(),handler->parameters.end(),source->parameters.begin(),[](const BlueprintPin& a,const BlueprintPin& b){return a.type==b.type;})&&std::find(result.begin(),result.end(),handler)==result.end())result.push_back(handler);
+                }
+        return result;
+    }
+    bool BlueprintDocument::classAssignable(const std::string& from,const std::string& to) const
+    {
+        if(!classTypeName(from)||!classTypeName(to))return false;
+        const auto target="behaviour:"+to.substr(13,to.size()-14);
+        auto current="behaviour:"+from.substr(13,from.size()-14);
+        for(unsigned i=0;i<16&&!current.empty();++i,current=parentBehaviour(current))if(current==target)return true;
+        return false;
+    }
+    bool BlueprintDocument::exportLibrary(std::string& result,std::string& error) const
+    {
+        BlueprintDocument package;package.create();package.name="Shared Blueprint library";
+        for(const auto& g:graphs)if(g.sharedLibrary||g.dataRole=="enum"||g.dataRole=="struct")
+        {
+            if(package.graphs.size()>=kMaxGraphs){error="Library package exceeds graph limit.";return false;}
+            if(std::any_of(package.graphs.begin(),package.graphs.end(),[&](const Graph& item){return item.name==g.name;})){error="Library package has a duplicate or reserved name: "+g.name;return false;}
+            Graph copy=g;copy.owner="Screen";package.graphs.push_back(std::move(copy));
+        }
+        if(package.graphs.size()==6){error="Publish a function, macro or custom type first.";return false;}
+        return package.serialize(result,error);
+    }
+    bool BlueprintDocument::importLibrary(const char* bytes,size_t count,const std::string& owner,std::string& error)
+    {
+        BlueprintDocument package;if(!package.load(bytes,count,error))return false;
+        const auto screensHere=screens();
+        const auto target=behaviourOwner(owner)?(screensHere.empty()?std::string():screensHere.front()):owner;
+        if(std::find(screensHere.begin(),screensHere.end(),target)==screensHere.end()){error="Select a target screen.";return false;}
+        BlueprintDocument staged;staged.name=name;staged.assetRoot=assetRoot;staged.graphs=graphs;staged.manifests=manifests;
+        staged.m_visualAssets=m_visualAssets;staged.m_visualSerial=m_visualSerial;staged.m_nextId=m_nextId;
+        size_t added=0;
+        for(const auto& g:package.graphs)if(g.sharedLibrary||g.dataRole=="enum"||g.dataRole=="struct")
+        {
+            if(staged.graphs.size()>=kMaxGraphs||std::any_of(staged.graphs.begin(),staged.graphs.end(),[&](const Graph& item){return item.name==g.name&&(item.owner==target||item.sharedLibrary||item.dataRole=="enum"||item.dataRole=="struct");}))
+            {error="Library import conflicts with existing graph: "+g.name;return false;}
+            Graph copy=g;copy.owner=target;staged.graphs.push_back(std::move(copy));++added;
+        }
+        if(!added){error="No shared graphs or custom types in this package.";return false;}
+        std::string checked;if(!staged.serialize(checked,error))return false;
+        recordGraphList();graphs.swap(staged.graphs);error.clear();return true;
+    }
+    bool BlueprintDocument::setSharedLibrary(size_t graph,bool enabled,std::string& error)
+    {
+        if(graph>=graphs.size()||graphs[graph].kind!="function"||behaviourOwner(graphs[graph].owner)){error="Select a screen function or macro.";return false;}
+        auto& g=graphs[graph];if(g.sharedLibrary==enabled){error.clear();return true;}
+        if(enabled&&visualWidgetUsesFunction(g.owner,g.name)){error="Unbind the widget callback first.";return false;}
+        const bool old=g.sharedLibrary;g.sharedLibrary=enabled;std::string checked;
+        const bool ok=serialize(checked,error);g.sharedLibrary=old;if(!ok)return false;
+        record(graph);g.sharedLibrary=enabled;error.clear();return true;
+    }
+    bool BlueprintDocument::nodeSpec(const Graph& graph,const Node& node,BlueprintNodeSpec& spec) const
+    {
+        const auto* base=blueprintSpec(node.kind);if(!base)return false;
+        spec=*base;
+        if(node.kind=="actor:cast-class"||node.kind=="actor:class-entity")
+        {
+            if(!canAttach(graph.owner,node.ref))return false;
+            const auto type="BP_Behaviour_"+node.ref+"@";
+            if(node.kind=="actor:cast-class")spec.outputs.push_back({"typed",type});
+            else {spec.inputs={{"target",type}};spec.pure=true;}
+        }
+        if(typedVariable(node.kind))
+        {
+            std::vector<BlueprintPin> vars;std::string why;
+            if(typedGlobal(node.kind)){for(const auto& f:moduleGlobals(graph.owner))vars.push_back({f.name,f.type});}
+            else if(!variables(vars,why,graph.owner))return false;
+            const auto p=std::find_if(vars.begin(),vars.end(),[&](const BlueprintPin& v){return v.name==node.ref&&(customTypeName(v.type)||classTypeName(v.type)||v.type=="Thread@"||v.type=="Channel@"||v.type=="Samples@"||v.type=="AudioStream@"||v.type=="Voice"||v.type=="Sound@"||v.type=="Curve@"||v.type=="Batch@"||v.type=="Packed@"||v.type=="Zip@"||v.type=="Font@"||v.type=="Texture@");});
+            if(p==vars.end())return false;
+            if(node.kind.ends_with(":set"))spec.inputs.push_back({"value",p->type});
+            else {spec.outputs={{"value",p->type}};spec.pure=true;spec.result=p->type;}
+        }
+        if(typeNode(node.kind))
+        {
+            const auto* decl=dataType(node.ref);if(!decl||((node.kind.rfind("data:enum-",0)==0)!=(decl->dataRole=="enum")))return false;
+            const auto type="BP_Data_"+decl->name;spec.pure=true;
+            if(node.kind=="data:enum-value"){spec.inputs={{"member","string"}};spec.outputs={{"result",type}};if(!decl->parameters.empty())spec.defaults={{"member","\""+decl->parameters.front().name+"\""}};}
+            else if(node.kind=="data:enum-switch")
+            {spec.pure=false;spec.inputs={{"in","exec"},{"value",type}};spec.outputs.clear();for(const auto& p:decl->parameters)spec.outputs.push_back({"case_"+p.name,"exec"});spec.outputs.push_back({"default","exec"});spec.outputs.push_back({"then","exec"});}
+            else if(node.kind=="data:enum-equal"){spec.inputs={{"a",type},{"b",type}};}
+            else if(node.kind=="data:enum-index"){spec.inputs={{"value",type}};}
+            else if(node.kind=="data:make-struct"){spec.inputs=decl->parameters;spec.outputs={{"result",type}};}
+            else if(node.kind=="data:break-struct"){spec.inputs={{"value",type}};spec.outputs=decl->parameters;}
+        }
+        if(node.kind=="actor:spawn-asset")
+        {
+            const auto id=std::find_if(node.values.begin(),node.values.end(),[](const InputValue& v){return v.pin=="id";});
+            if(id!=node.values.end())for(const auto& field:actorSpawnFields(id->value))
+                spec.inputs.push_back({"spawn_"+field.name,field.type});
+        }
+        if(node.kind=="entry"&&graph.kind=="function")
+            for(const auto& p:graph.parameters)spec.outputs.push_back({"arg_"+p.name,p.type});
+        if(node.kind=="return:function")
+        {
+            if(graph.kind!="function"||graph.inlineMacro)return false;
+            if(graph.returnType!="void")spec.inputs.push_back({"value",graph.returnType});
+        }
+        if(blueprintNamedCall(node.kind)||node.kind=="call:parent")
+        {
+            if(node.kind=="call:parent"&&graph.kind!="function")return false;
+            const auto* target=node.kind=="call:library"?libraryFunction(node.ref):node.kind=="call:parent"?function(parentBehaviour(graph.owner),graph.name):function(graph.owner,node.ref);
+            if(!target||(node.kind=="call:parent"&&target->inlineMacro))return false;
+            if((node.kind=="async:start")!=(target->dataRole=="coroutine"))return false;
+            if(node.kind!="call:function"&&node.kind!="call:library"&&node.kind!="call:parent"&&(target->sharedLibrary||target->inlineMacro||target->returnType!="void"))return false;
+            if(listenerNode(node.kind)&&(target->owner!=graph.owner||function(parentBehaviour(target->owner),target->name)))return false;
+            if(node.kind!="dispatch:bind"&&node.kind!="dispatch:unbind"&&node.kind!="dispatch:bind-listener"&&node.kind!="dispatch:unbind-listener")
+                for(const auto& p:target->parameters)spec.inputs.push_back({"arg_"+p.name,p.type});
+            if(target->inlineMacro)spec.title="Macro "+target->name;
+            spec.result=target->returnType;
+            if(spec.result!="void")spec.outputs.push_back({"result",spec.result});
+        }
+        return true;
+    }
+    bool BlueprintDocument::setFunctionSignature(size_t graph,const std::vector<BlueprintPin>& parameters,const std::string& returnType,std::string& error)
+    {
+        if(graph>=graphs.size()||graphs[graph].kind!="function"||!validSignature(parameters,returnType))
+        {error="Invalid signature: up to eight uniquely named typed parameters.";return false;}
+        auto& g=graphs[graph];
+        if(visualWidgetUsesFunction(g.owner,g.name))
+        {if(g.returnType!=returnType||g.parameters.size()!=parameters.size()||!std::equal(g.parameters.begin(),g.parameters.end(),parameters.begin(),[](const BlueprintPin& a,const BlueprintPin& b){return a.type==b.type;})){error="Unbind the widget callback before changing its signature.";return false;}}
+        if(g.inlineMacro&&returnType!="void"){error="Inline macros currently require a void signature.";return false;}
+        const auto old=g.parameters;const auto oldReturn=g.returnType;
+        if(oldReturn==returnType&&old.size()==parameters.size()&&
+            std::equal(old.begin(),old.end(),parameters.begin(),[](const BlueprintPin& a,const BlueprintPin& b){return a.name==b.name&&a.type==b.type;}))
+        {error.clear();return true;}
+        // A signature is a contract. Reject incompatible connected pins or stored input values.
+        g.parameters=parameters;g.returnType=returnType;
+        std::string checked;
+        const bool valid=serialize(checked,error);
+        g.parameters=old;g.returnType=oldReturn;
+        if(!valid){error="Signature would invalidate existing pins: "+error;return false;}
+        record(graph);g.parameters=parameters;g.returnType=returnType;error.clear();return true;
+    }
+    std::string BlueprintDocument::functionSignature(size_t graph)const
+    {
+        if(graph>=graphs.size()||graphs[graph].kind!="function")return "";
+        const auto& g=graphs[graph];std::string s=(g.dataRole.empty()?g.returnType:g.dataRole)+"(";
+        for(size_t i=0;i<g.parameters.size();++i)
+        {if(i)s+=", ";s+=g.parameters[i].name;if(g.dataRole!="enum")s+=":"+g.parameters[i].type;}
+        return s+")";
+    }
+    bool BlueprintDocument::editFunctionSignature(size_t graph,const std::string& signature,std::string& error)
+    {
+        const auto trim=[](const std::string& s)
+        {
+            const auto first=s.find_first_not_of(" \t"),last=s.find_last_not_of(" \t");
+            return first==std::string::npos?std::string():s.substr(first,last-first+1);
+        };
+        const auto s=trim(signature);const auto open=s.find('(');
+        auto fail=[&](){error="Use returnType(name:type, name:type), e.g. float(amount:float).";return false;};
+        if(open==std::string::npos||s.empty()||s.back()!=')')return fail();
+        const auto result=trim(s.substr(0,open));const auto body=trim(s.substr(open+1,s.size()-open-2));
+        std::vector<BlueprintPin> parameters;
+        if(!body.empty())
+        {
+            for(size_t at=0;;)
+            {
+                const auto comma=body.find(',',at);const auto item=trim(body.substr(at,comma==std::string::npos?comma:comma-at));
+                const auto colon=item.find(':');
+                if(result=="enum"&&colon==std::string::npos)parameters.push_back({item,"int"});
+                else {if(colon==std::string::npos)return fail();parameters.push_back({trim(item.substr(0,colon)),trim(item.substr(colon+1))});}
+                if(comma==std::string::npos)break;
+                at=comma+1;
+            }
+        }
+        if(result=="enum"||result=="struct"||result=="event"||result=="coroutine"||(graph<graphs.size()&&!graphs[graph].dataRole.empty()))
+        {
+            if(graph>=graphs.size()||graphs[graph].kind!="function"){error="Select a function graph.";return false;}
+            auto& g=graphs[graph];const auto old=g;const bool role=result=="enum"||result=="struct"||result=="event"||result=="coroutine";
+            if((result=="enum"||result=="struct")&&(g.nodes.size()!=1||visualWidgetUsesFunction(g.owner,g.name))){error="Use an empty function graph for a type declaration.";return false;}
+            g.dataRole=role?result:"";g.parameters=parameters;g.returnType=role?"void":result;
+            std::string checked;const bool ok=serialize(checked,error);const auto next=g;g=old;if(!ok)return false;
+            record(graph);g=next;error.clear();return true;
+        }
+        return setFunctionSignature(graph,parameters,result,error);
+    }
+    std::vector<BlueprintDocument::InputActionBinding> BlueprintDocument::inputActions() const
+    {
+        std::vector<InputActionBinding> result;
+        for(const auto& g:graphs)
+        {
+            if(!g.sharedLibrary||g.inlineMacro||g.returnType!="bool"||!g.parameters.empty()||g.name.rfind("Input_",0)!=0||g.nodes.size()!=5||g.links.size()!=4)continue;
+            if(g.nodes[0].kind!="entry"||g.nodes[1].kind!="api:Input:Input::key:string"||g.nodes[2].kind!="api:Input:Input::padButton:uint,uint"||g.nodes[3].kind!="or:bool"||g.nodes[4].kind!="return:function")continue;
+            const auto wired=[&](size_t from,const char* out,size_t to,const char* in){return std::any_of(g.links.begin(),g.links.end(),[&](const Link& l){return l.from==from&&l.to==to&&l.output==out&&l.input==in;});};
+            if(!wired(0,"then",4,"in")||!wired(1,"result",3,"a")||!wired(2,"result",3,"b")||!wired(3,"result",4,"value"))continue;
+            InputActionBinding binding;binding.name=g.name.substr(6);std::string button,pad;
+            for(const auto& v:g.nodes[1].values)if(v.pin=="name")binding.key=v.value;
+            for(const auto& v:g.nodes[2].values){if(v.pin=="button")button=v.value;if(v.pin=="pad")pad=v.value;}
+            if(binding.key.empty()||pad!="0")continue;
+            bool valid=false;for(unsigned i=0;i<=14;++i)if(button==std::to_string(i)){binding.button=i;valid=true;break;}
+            if(valid)result.push_back(std::move(binding));
+        }
+        return result;
+    }
+    bool BlueprintDocument::setInputAction(const std::string& action,const std::string& key,unsigned button,std::string& error)
+    {
+        const std::string functionName="Input_"+action;
+        const std::string keys="|None|Up|Down|Left|Right|Space|Enter|Escape|Tab|Backspace|Shift|Control|Alt|";
+        const bool validKey=(key.size()==1&&((key[0]>='A'&&key[0]<='Z')||(key[0]>='0'&&key[0]<='9')))||(!key.empty()&&key.find('|')==std::string::npos&&keys.find("|"+key+"|")!=std::string::npos);
+        if(!identifier(action)||!identifier(functionName)||!validKey||button>14||(key=="None"&&button==14)){error="Enter a valid action identifier and at least one keyboard or controller binding.";return false;}
+        const auto owners=screens();if(owners.empty()){error="Create a scene first.";return false;}
+        BlueprintDocument staged;staged.graphs=graphs;staged.name=name;staged.assetRoot=assetRoot;staged.manifests=manifests;staged.m_visualAssets=m_visualAssets;staged.m_visualSerial=m_visualSerial;staged.m_nextId=m_nextId;
+        size_t g=graphs.size();
+        if(const auto* existing=libraryFunction(functionName))
+        {
+            const auto actions=inputActions();
+            if(std::none_of(actions.begin(),actions.end(),[&](const InputActionBinding& a){return a.name==action;})){error="That shared function is not a managed input action.";return false;}
+            g=static_cast<size_t>(existing-graphs.data());
+        }
+        else
+        {
+            if(!staged.addFunction(functionName,error,owners.front())||!staged.setFunctionSignature(g,{},"bool",error)||
+                !staged.addNode(g,"api:Input:Input::key:string",24,220,error)||!staged.addNode(g,"api:Input:Input::padButton:uint,uint",24,400,error)||
+                !staged.addNode(g,"or:bool",340,220,error)||!staged.addNode(g,"return:function",660,60,error)||
+                !staged.connect(g,0,"then",4,"in",error)||!staged.connect(g,1,"result",3,"a",error)||
+                !staged.connect(g,2,"result",3,"b",error)||!staged.connect(g,3,"result",4,"value",error))return false;
+        }
+        if(!staged.setInputValue(g,1,"name",key,error)||!staged.setInputValue(g,2,"pad","0",error)||
+            !staged.setInputValue(g,2,"button",std::to_string(button),error)||!staged.setSharedLibrary(g,true,error))return false;
+        std::string checked;if(!staged.serialize(checked,error))return false;
+        recordGraphList();graphs=std::move(staged.graphs);m_nextId=staged.m_nextId;error.clear();return true;
+    }
+    bool BlueprintDocument::addFunction(const std::string& functionName,std::string& error,const std::string& owner)
     {
         if(!identifier(functionName)||graphs.size()>=kMaxGraphs||
-            std::any_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.name==functionName;})||
-            lifecycle(functionName))
+            std::none_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==owner;})||
+            std::any_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==owner&&g.name==functionName;})||
+            ownerEvent(owner,functionName))
         {error="Choose a unique function name (letters, digits and underscores).";return false;}
+        Graph g;g.owner=owner;g.name=functionName;g.kind="function";
+        if(const auto* inherited=function(parentBehaviour(owner),functionName))
+        {
+            if(inherited->inlineMacro){error="Inline macros cannot be overridden.";return false;}
+            g.parameters=inherited->parameters;g.returnType=inherited->returnType;
+        }
         recordGraphList();
-        Graph g;g.owner="Screen";g.name=functionName;g.kind="function";
         g.nodes.push_back({"entry","entry","",24,60});graphs.push_back(std::move(g));
         error.clear();return true;
+    }
+    bool BlueprintDocument::setInlineMacro(size_t graph,bool enabled,std::string& error)
+    {
+        if(graph>=graphs.size()||graphs[graph].kind!="function"){error="Select a reusable graph.";return false;}
+        auto& g=graphs[graph];
+        if(enabled&&(visualWidgetUsesFunction(g.owner,g.name)||!g.dataRole.empty())){error="Widget callbacks and explicit graph roles cannot become inline macros.";return false;}
+        if(enabled&&(g.returnType!="void"||std::any_of(g.nodes.begin(),g.nodes.end(),[](const Node& n){return n.kind=="return:function";})))
+        {error="Inline macros require a void signature and no return nodes.";return false;}
+        if(g.inlineMacro!=enabled){record(graph);g.inlineMacro=enabled;}error.clear();return true;
+    }
+    bool BlueprintDocument::renameFunction(size_t graph,const std::string& functionName,std::string& error)
+    {
+        if(graph>=graphs.size()||graphs[graph].kind!="function"||!identifier(functionName)||ownerEvent(graphs[graph].owner,functionName))
+        {error="Choose a valid function name.";return false;}
+        if(graphs[graph].sharedLibrary||graphs[graph].dataRole=="enum"||graphs[graph].dataRole=="struct"){error="Shared libraries and custom data types cannot be renamed while published.";return false;}
+        const auto owner=graphs[graph].owner,old=graphs[graph].name;
+        if(old==functionName){error.clear();return true;}
+        if(visualWidgetUsesFunction(owner,old)){error="Unbind the widget callback before renaming it.";return false;}
+        if(function(parentBehaviour(owner),old)){error="Inherited overrides cannot be renamed; remove the override to inherit instead.";return false;}
+        for(const auto& g:graphs)
+        {
+            bool derived=false;for(auto at=parentBehaviour(g.owner);!at.empty();at=parentBehaviour(at))if(at==owner){derived=true;break;}
+            if(derived&&((g.kind=="function"&&g.name==old)||std::any_of(g.nodes.begin(),g.nodes.end(),[&](const Node& node){return blueprintNamedCall(node.kind)&&node.ref==old;})))
+            {error="Remove derived function references and overrides before renaming.";return false;}
+        }
+        if(std::any_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==owner&&g.name==functionName;}))
+        {error="A graph already uses that name.";return false;}
+        recordGraphList();graphs[graph].name=functionName;
+        for(auto& g:graphs)if(g.owner==owner)for(auto& n:g.nodes)
+        {
+            if(blueprintNamedCall(n.kind)&&n.ref==old)n.ref=functionName;
+            if(listenerNode(n.kind))for(auto& v:n.values)if(v.pin=="handler"&&v.value==old)v.value=functionName;
+        }
+        error.clear();return true;
+    }
+    bool BlueprintDocument::duplicateFunction(size_t graph,const std::string& functionName,std::string& error)
+    {
+        if(graph>=graphs.size()||graphs[graph].kind!="function"||graphs.size()>=kMaxGraphs||!identifier(functionName)||ownerEvent(graphs[graph].owner,functionName)||
+            std::any_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==graphs[graph].owner&&g.name==functionName;}))
+        {error="Choose a unique name for the copied function.";return false;}
+        Graph copy=graphs[graph];copy.name=functionName;copy.sharedLibrary=false;copy.dataRole.clear();
+        recordGraphList();graphs.push_back(std::move(copy));error.clear();return true;
+    }
+    bool BlueprintDocument::collapseToFunction(size_t graph,const std::vector<size_t>& nodes,const std::string& functionName,std::string& error)
+    {
+        const auto fail=[&](const std::string& reason){error=reason;return false;};
+        if(graph>=graphs.size()||nodes.empty()||graphs.size()>=kMaxGraphs||!identifier(functionName))return fail("Select nodes and choose a unique function name.");
+        const auto& original=graphs[graph];const size_t count=original.nodes.size(),none=static_cast<size_t>(-1);
+        if(ownerEvent(original.owner,functionName)||std::any_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==original.owner&&g.name==functionName;}))
+            return fail("A graph already uses that function name.");
+        std::vector<bool> selected(count,false),action(count,false);bool structured=false;
+        std::vector<BlueprintNodeSpec> specs(count);size_t actions=0,selectedCount=0;
+        for(const auto i:nodes){if(i>=count)return fail("Invalid selection.");if(!selected[i]){selected[i]=true;++selectedCount;}}
+        for(size_t i=0;i<count;++i)
+        {
+            const auto& n=original.nodes[i];
+            if(!nodeSpec(original,n,specs[i]))return fail("Unknown node in graph.");
+            if(!selected[i])continue;
+            if(n.kind=="entry"||n.kind=="return:function"||n.kind.rfind("event:",0)==0||n.kind.rfind("local:set:",0)==0)
+                return fail("Event entries, returns, event values and mutable local assignments cannot be extracted.");
+            const auto isExec=[](const BlueprintPin& p){return p.type=="exec";};
+            const auto inputs=std::count_if(specs[i].inputs.begin(),specs[i].inputs.end(),isExec);
+            const auto outputs=std::count_if(specs[i].outputs.begin(),specs[i].outputs.end(),isExec);
+            if(inputs||outputs)
+            {
+                if(inputs!=1||!findPin(specs[i].inputs,"in")||!findPin(specs[i].outputs,"then"))return fail("Unsupported execution boundary.");
+                if(outputs!=1)
+                {
+                    if(n.kind!="branch"&&n.kind!="sequence"&&n.kind!="repeat")return fail("Unsupported structured flow node.");
+                    structured=true;
+                }
+                action[i]=true;++actions;
+            }
+        }
+        if(!actions)return fail("Select at least one connected execution node.");
+        struct Boundary { size_t node;std::string pin,type; };
+        std::vector<Boundary> arguments;Boundary returned{none,"","void"};
+        const Link* entering=nullptr;const Link* leaving=nullptr;
+        std::vector<size_t> next(count,none);std::vector<std::vector<size_t>> execChildren(count);
+        for(const auto& l:original.links)
+        {
+            if(l.from>=count||l.to>=count)return fail("Invalid graph link.");
+            const auto* source=findPin(specs[l.from].outputs,l.output);
+            if(!source)return fail("Unknown source pin.");
+            const bool a=selected[l.from],b=selected[l.to];
+            if(source->type=="exec")
+            {
+                if(!a&&b){if(entering)return fail("Selection has more than one execution entry.");entering=&l;}
+                else if(a&&!b){if(leaving||l.output!="then")return fail("Include all branch and loop bodies; only a single Then continuation may leave.");leaving=&l;}
+                else if(a&&b){execChildren[l.from].push_back(l.to);if(l.output=="then")next[l.from]=l.to;}
+                continue;
+            }
+            if(!a&&b)
+            {
+                const auto& n=original.nodes[l.from];
+                const bool stable=n.kind.rfind("literal:",0)==0||(n.kind=="entry"&&l.output.rfind("arg_",0)==0)||n.kind.rfind("event:",0)==0||
+                    std::any_of(specs[l.from].inputs.begin(),specs[l.from].inputs.end(),[](const BlueprintPin& p){return p.type=="exec";});
+                if(!stable||!signatureType(source->type))return fail("Include live expression dependencies in the selection; only stable typed boundary inputs can become parameters.");
+                if(std::none_of(arguments.begin(),arguments.end(),[&](const Boundary& p){return p.node==l.from&&p.pin==l.output;}))
+                {if(arguments.size()>=8)return fail("Extraction supports at most eight distinct input values.");arguments.push_back({l.from,l.output,source->type});}
+            }
+            else if(a&&!b)
+            {
+                if(!action[l.from]||!signatureType(source->type))return fail("Only an executed value can cross the function return boundary.");
+                if(returned.node!=none&&(returned.node!=l.from||returned.pin!=l.output))return fail("Extraction supports one returned value.");
+                returned={l.from,l.output,source->type};
+            }
+        }
+        if(!entering)return fail("Selection must be connected to an execution entry.");
+        size_t cursor=entering->to,last=none,visited=0;
+        while(cursor!=none&&visited<=actions)
+        {if(!action[cursor])return fail("Invalid selected execution chain.");last=cursor;cursor=next[cursor];++visited;}
+        if(cursor!=none||(leaving&&leaving->from!=last))return fail("Selected actions must have one outer continuation.");
+        if(structured&&returned.node!=none)return fail("Structured extraction currently requires no outgoing data value.");
+        std::vector<bool> reached(count,false);std::vector<size_t> flowWork{entering->to};reached[entering->to]=true;
+        for(size_t i=0;i<flowWork.size();++i)for(const auto child:execChildren[flowWork[i]])if(!reached[child]){reached[child]=true;flowWork.push_back(child);}
+        if(flowWork.size()!=actions)return fail("Select one connected execution region including all nested bodies.");
+        std::vector<bool> used(count,false);std::vector<size_t> work;
+        for(size_t i=0;i<count;++i)if(action[i]){used[i]=true;work.push_back(i);}
+        std::vector<std::vector<size_t>> predecessors(count);
+        for(const auto& l:original.links)if(selected[l.from]&&selected[l.to])predecessors[l.to].push_back(l.from);
+        for(size_t i=0;i<work.size();++i)for(const auto dep:predecessors[work[i]])if(!used[dep]){used[dep]=true;work.push_back(dep);}
+        for(size_t i=0;i<count;++i)if(selected[i]&&!used[i])return fail("Selection includes unused value nodes.");
+        for(const auto& comment:original.comments)
+        {
+            size_t included=0;
+            for(size_t i=0;i<count;++i)if(selected[i]&&std::find(comment.members.begin(),comment.members.end(),original.nodes[i].id)!=comment.members.end())++included;
+            if(included&&included!=comment.members.size())return fail("Select the complete comment group or remove it before extraction.");
+        }
+        if(selectedCount+2>kMaxNodes)return fail("Extracted graph exceeds node limit.");
+        BlueprintDocument staged;staged.name=name;staged.assetRoot=assetRoot;staged.graphs=graphs;staged.manifests=manifests;staged.m_nextId=m_nextId;
+        Graph outer=original,inner;outer.nodes.clear();outer.links.clear();outer.comments.clear();
+        inner.owner=original.owner;inner.name=functionName;inner.kind="function";inner.returnType=returned.type;
+        for(size_t i=0;i<arguments.size();++i)inner.parameters.push_back({"input_"+std::to_string(i+1),arguments[i].type});
+        std::unordered_set<std::string> ids;for(const auto& n:original.nodes)ids.insert(n.id);
+        auto newId=[&](){std::string id;do{id="n"+std::to_string(++staged.m_nextId);}while(!ids.insert(id).second);return id;};
+        inner.nodes.push_back({newId(),"entry","",24,60});
+        std::vector<size_t> outside(count,none),inside(count,none);
+        const auto& first=original.nodes[entering->to];
+        for(size_t i=0;i<count;++i)
+        {
+            if(selected[i]){inside[i]=inner.nodes.size();inner.nodes.push_back(original.nodes[i]);}
+            else {outside[i]=outer.nodes.size();outer.nodes.push_back(original.nodes[i]);}
+        }
+        const size_t call=outer.nodes.size();outer.nodes.push_back({newId(),"call:function",functionName,first.x,first.y});
+        const size_t ret=inner.nodes.size();
+        if(returned.node!=none)inner.nodes.push_back({newId(),"return:function","",24,60});
+        for(const auto& comment:original.comments)
+        {
+            const bool moved=std::any_of(inner.nodes.begin(),inner.nodes.end(),[&](const Node& n){return n.id==comment.members.front();});
+            (moved?inner.comments:outer.comments).push_back(comment);
+        }
+        for(const auto& l:original.links)
+        {
+            const bool a=selected[l.from],b=selected[l.to];
+            if(a&&b){Link copy=l;copy.from=inside[l.from];copy.to=inside[l.to];inner.links.push_back(std::move(copy));}
+            else if(!a&&!b){Link copy=l;copy.from=outside[l.from];copy.to=outside[l.to];outer.links.push_back(std::move(copy));}
+            else if(&l==entering){outer.links.push_back({outside[l.from],call,l.output,"in"});inner.links.push_back({0,inside[l.to],"then",l.input});}
+            else if(&l==leaving)outer.links.push_back({call,outside[l.to],"then",l.input});
+            else if(!a&&b)
+            {
+                const auto found=std::find_if(arguments.begin(),arguments.end(),[&](const Boundary& p){return p.node==l.from&&p.pin==l.output;});
+                if(found==arguments.end())return fail("Missing extraction argument.");
+                const auto arg="arg_input_"+std::to_string(static_cast<size_t>(found-arguments.begin())+1);
+                if(std::none_of(outer.links.begin(),outer.links.end(),[&](const Link& wire){return wire.to==call&&wire.input==arg;}))
+                    outer.links.push_back({outside[l.from],call,l.output,arg});
+                inner.links.push_back({0,inside[l.to],arg,l.input});
+            }
+            else outer.links.push_back({call,outside[l.to],"result",l.input});
+        }
+        if(returned.node!=none){inner.links.push_back({inside[last],ret,"then","in"});inner.links.push_back({inside[returned.node],ret,returned.pin,"value"});}
+        staged.graphs[graph]=std::move(outer);staged.graphs.push_back(std::move(inner));
+        if(!staged.arrange(staged.graphs.size()-1,error))return false;
+        std::string checked;if(!staged.serialize(checked,error))return false;
+        recordGraphList();graphs.swap(staged.graphs);m_nextId=staged.m_nextId;error.clear();return true;
     }
     bool BlueprintDocument::removeFunction(size_t graph,std::string& error)
     {
         if(graph>=graphs.size()||graphs[graph].kind!="function")
         {error="Only function graphs can be deleted.";return false;}
+        if(visualWidgetUsesFunction(graphs[graph].owner,graphs[graph].name)){error="Unbind the widget callback before deleting it.";return false;}
+        const auto& removed=graphs[graph];
+        if(!function(parentBehaviour(removed.owner),removed.name))
+        {
+            for(const auto& g:graphs)
+            {
+                if(g.kind=="function"&&g.name==removed.name&&function(parentBehaviour(g.owner),g.name)==&removed)
+                {error="Remove inherited overrides before deleting the base function.";return false;}
+                for(const auto& n:g.nodes)if(blueprintNamedCall(n.kind)&&(n.kind=="call:library"?libraryFunction(n.ref):function(g.owner,n.ref))==&removed)
+                {error="Remove calls to this function before deleting it.";return false;}
+            }
+        }
+        BlueprintDocument staged;staged.name=name;staged.assetRoot=assetRoot;staged.graphs=graphs;staged.manifests=manifests;
+        staged.m_visualAssets=m_visualAssets;staged.m_visualSerial=m_visualSerial;staged.m_nextId=m_nextId;
+        staged.graphs.erase(staged.graphs.begin()+static_cast<std::ptrdiff_t>(graph));
+        std::string checked;if(!staged.serialize(checked,error))return false;
+        recordGraphList();graphs.swap(staged.graphs);error.clear();return true;
+    }
+    std::vector<std::string> BlueprintDocument::screens() const
+    {
+        std::vector<std::string> result;
+        for(const auto& g:graphs)if(!behaviourOwner(g.owner)&&std::find(result.begin(),result.end(),g.owner)==result.end())result.push_back(g.owner);
+        return result;
+    }
+    std::vector<std::string> BlueprintDocument::behaviours() const
+    {
+        std::vector<std::string> result;
+        for(const auto& g:graphs)if(behaviourOwner(g.owner))
+        {
+            const auto behaviourName=g.owner.substr(10);
+            if(std::find(result.begin(),result.end(),behaviourName)==result.end())result.push_back(behaviourName);
+        }
+        return result;
+    }
+    bool BlueprintDocument::addBehaviour(const std::string& behaviourName,std::string& error)
+    {
+        const auto owner="behaviour:"+behaviourName;
+        if(!identifier(behaviourName)||graphs.size()+5>kMaxGraphs||
+            std::any_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==owner;}))
+        {error="Choose a unique behaviour identifier.";return false;}
+        recordGraphList();
+        for(const char* event:{"start","update","onHit","onLeave","onGone"})
+        {
+            Graph g;g.owner=owner;g.name=event;g.kind="event";
+            g.nodes.push_back({"entry","entry","",24,60});graphs.push_back(std::move(g));
+        }
+        error.clear();return true;
+    }
+    bool BlueprintDocument::removeBehaviour(const std::string& behaviourName,std::string& error)
+    {
+        const auto owner="behaviour:"+behaviourName;
+        for(const auto& g:graphs)if(g.parentBehaviour==behaviourName){error="Remove derived Behaviours first.";return false;}
+        if(std::none_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==owner;}))
+        {error="Unknown behaviour.";return false;}
         for(const auto& g:graphs)for(const auto& n:g.nodes)
-            if(n.kind=="call:function"&&n.ref==graphs[graph].name)
-            {error="Remove calls to this function before deleting it.";return false;}
-        recordGraphList();graphs.erase(graphs.begin()+static_cast<std::ptrdiff_t>(graph));error.clear();return true;
+            if(blueprintBehaviourReference(n.kind)&&n.ref==behaviourName){error="Remove attachment nodes referencing "+behaviourName+" first.";return false;}
+        for(const auto& asset:m_visualAssets)if(asset.kind=="actor")
+        {
+            JsonTree tree;std::string resolved,why;
+            if(visualActorSource(asset.id,resolved,why)&&tree.parse(resolved.data(),resolved.size()))
+                for(auto item=tree.root()["entities"].first();item.exists();item=item.next())
+                    if(std::string(item["behaviour"].text())=="BP_Behaviour_"+behaviourName)
+                    {error="Remove actor component assignments referencing "+behaviourName+" first.";return false;}
+        }
+        recordGraphList();
+        graphs.erase(std::remove_if(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==owner;}),graphs.end());
+        error.clear();return true;
+    }
+    bool BlueprintDocument::addLevelEvents(const std::string& owner,std::string& error)
+    {
+        const auto owners=screens();
+        if(std::find(owners.begin(),owners.end(),owner)==owners.end())
+        {error="Select a screen graph.";return false;}
+        std::vector<std::string> missing;
+        for(const char* eventName:{"onLevelTouch","onLevelAgent"})
+            if(std::none_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==owner&&g.name==eventName;}))missing.emplace_back(eventName);
+        if(missing.empty()){error="Level events already exist for this screen.";return false;}
+        if(graphs.size()+missing.size()>kMaxGraphs){error="Graph limit reached.";return false;}
+        recordGraphList();
+        for(const auto& eventName:missing)
+        {
+            Graph g;g.owner=owner;g.name=eventName;g.kind="event";
+            g.nodes.push_back({"entry","entry","",24,60});graphs.push_back(std::move(g));
+        }
+        error.clear();return true;
+    }
+    bool BlueprintDocument::addScreen(const std::string& id,std::string& error)
+    {
+        if(!screenId(id)||graphs.size()+6>kMaxGraphs||
+            std::any_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==id;}))
+        {error="Choose a unique lowercase screen ID (letters, digits, hyphens or underscores; not screen).";return false;}
+        recordGraphList();
+        for(const char* event:{"onEnter","update","draw","onSuspend","onResume","onExit"})
+        {
+            Graph g;g.owner=id;g.name=event;g.kind="event";
+            g.nodes.push_back({"entry","entry","",24,60});graphs.push_back(std::move(g));
+        }
+        error.clear();return true;
+    }
+    bool BlueprintDocument::removeScreen(const std::string& id,std::string& error)
+    {
+        const auto owners=screens();
+        if(owners.size()<2||id==owners.front()||std::find(owners.begin(),owners.end(),id)==owners.end())
+        {error="The initial screen cannot be deleted.";return false;}
+        for(const auto& g:graphs)if(g.moduleOwner==id){error="Remove module-scoped Behaviours before deleting "+id+".";return false;}
+        // Reject references in both stored input values and wired constant nodes.
+        for(const auto& g:graphs)if(g.owner!=id)for(size_t i=0;i<g.nodes.size();++i)
+        {
+            const auto& n=g.nodes[i];
+            if(n.kind!="api:Screens:Screens::push:string"&&n.kind!="api:Screens:Screens::replace:string")continue;
+            for(const auto& v:n.values)if(v.pin=="id"&&v.value==id)
+            {error="Remove navigation references to "+id+" first.";return false;}
+            for(const auto& l:g.links)if(l.to==i&&l.input=="id"&&g.nodes[l.from].kind=="literal:string"&&g.nodes[l.from].ref==id)
+            {error="Remove navigation references to "+id+" first.";return false;}
+        }
+        recordGraphList();
+        graphs.erase(std::remove_if(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==id;}),graphs.end());
+        manifests.erase(std::remove_if(manifests.begin(),manifests.end(),[&](const ScreenManifest& m){return m.owner==id;}),manifests.end());
+        error.clear();return true;
     }
     bool BlueprintDocument::undo()
     {
@@ -409,7 +3957,7 @@ namespace nx
         auto e=std::move(m_undo.back());m_undo.pop_back();
         if(e.graph==static_cast<size_t>(-1))
         {
-            m_redo.push_back({e.graph,{},m_revision,std::move(graphs)});graphs=std::move(e.all);
+            m_redo.push_back({e.graph,{},m_revision,std::move(graphs),std::move(manifests),std::move(m_visualAssets)});graphs=std::move(e.all);manifests=std::move(e.manifests);m_visualAssets=std::move(e.visualAssets);
         }
         else
         {
@@ -423,7 +3971,7 @@ namespace nx
         auto e=std::move(m_redo.back());m_redo.pop_back();
         if(e.graph==static_cast<size_t>(-1))
         {
-            m_undo.push_back({e.graph,{},m_revision,std::move(graphs)});graphs=std::move(e.all);
+            m_undo.push_back({e.graph,{},m_revision,std::move(graphs),std::move(manifests),std::move(m_visualAssets)});graphs=std::move(e.all);manifests=std::move(e.manifests);m_visualAssets=std::move(e.visualAssets);
         }
         else
         {

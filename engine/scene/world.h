@@ -29,7 +29,10 @@ namespace nx
         void release();
     };
 
-    enum class Shape : u8 { Circle, Box };
+    // A polygon is convex, of up to kPolygonPoints corners; a chain is lines through any number of points, for ground and
+    // slopes, and never moves.
+    enum class Shape : u8 { Circle, Box, Polygon, Chain };
+    constexpr u32 kPolygonPoints = 8;
     enum class Look : u8 { Image, Rect, Disc, Text };
 
     constexpr u32 kGroups = 16;
@@ -80,8 +83,12 @@ namespace nx
         u8 group;
         bool wall;          // doesn't move; solid and rigid bodies are stopped by it
         bool occluder;      // casts shadows from lights on the plane
+        bool oneWay;        // of a wall: solid only from above, so that what is under it can jump up through
+        bool loop;          // of a chain: the last point joins the first
         u16 hits;           // groups it wants to know about
         float halfWidth, halfHeight;  // a circle's radius is halfWidth
+        Vec2* points;       // owned: a polygon's or a chain's, in its own space
+        u32 count;
     };
 
     struct Lifetime
@@ -203,6 +210,8 @@ namespace nx
         u32 count() const { return m_live; }
         u32 countGroup(u32 group) const;
         u32 findNamed(const char* name) const;
+        // Search within one live hierarchy; absent or ambiguous names return 0.
+        u32 findComponent(u32 root,const char* name) const;
         // Everything but what was loaded.
         void clear();
 
@@ -226,6 +235,19 @@ namespace nx
             EntityRef* ref;
             char name[24];
         };
+
+        // Each that is there, with its id, in the order they were made: for looking at, not for changing.
+        template <typename Fn>
+        void eachEntity(Fn fn) const
+        {
+            for (u32 i = 0; i < m_entities.count(); i++)
+            {
+                if (m_entities[i].live && !m_entities[i].dying)
+                {
+                    fn(idOf(i), m_entities[i]);
+                }
+            }
+        }
 
         // nullptr if it has gone or been destroyed. Valid until the next spawn.
         Entity* find(u32 id);
@@ -315,6 +337,11 @@ namespace nx
             }
         }
         u32 raycast(Vec2 from, Vec2 to, u32 groups, Vec2& hit) const;
+        // Its collider a convex polygon (made so if it isn't), or lines through points. False with too few points.
+        bool setPolygon(u32 id, const Vec2* points, u32 count, u32 group, u32 hits);
+        bool setChain(u32 id, const Vec2* points, u32 count, bool loop, u32 group, u32 hits);
+        // A collider's points in the world, for a polygon or a chain; how many.
+        u32 worldPoints(const Collider& c, Vec2* out, u32 most) const;
         bool touching(u32 a, u32 b) const;
         // What the map that was loaded last has at a place: 0 outside.
         u32 tileAt(Vec2 position) const;
@@ -337,6 +364,34 @@ namespace nx
 
         // Pins two together at a place; the second may be 0, for the world. Softer ones give.
         bool join(u32 a, u32 b, Vec2 at, float softness);
+        // Each of the others; see JointKind. Angles in degrees; a spring's frequency in pulls a second.
+        bool hinge(u32 a, u32 b, Vec2 at, float low, float high, float motorSpeed, float motorTorque);
+        bool weld(u32 a, u32 b, Vec2 at);
+        bool rope(u32 a, u32 b, Vec2 atA, Vec2 atB, float length);
+        bool spring(u32 a, u32 b, Vec2 atA, Vec2 atB, float frequency, float damping, float length);
+        bool slider(u32 a, u32 b, Vec2 at, Vec2 axis, float low, float high);
+        bool drag(u32 a, Vec2 at, float strength);
+        // a, a wheel, turns freely on a line through b along an axis (in b's directions), sprung towards where it is
+        // now; with a motor, as a hinge's.
+        bool wheel(u32 a, u32 b, Vec2 axis, float frequency, float damping, float motorSpeed, float motorTorque);
+        // A rope from a over a fixed place, and on over another to b: as one end goes up the other comes down,
+        // ratio times as far for b.
+        bool pulley(u32 a, u32 b, Vec2 groundA, Vec2 groundB, Vec2 atA, Vec2 atB, float ratio);
+        // b turns the other way to a, ratio times as far.
+        bool gear(u32 a, u32 b, float ratio);
+        // Slows a's moving and turning against b's (or the world's), no harder than strength times its weight: the
+        // ground, seen from above.
+        bool friction(u32 a, u32 b, float strength);
+        // Pushes b towards where it is now from a, as a moves and turns, no harder than strength times its weight;
+        // followTarget changes where.
+        bool follow(u32 a, u32 b, float strength, float correction);
+        void followTarget(u32 a, u32 b, Vec2 offset, float degrees);
+        // Where a drag pulls towards now; and a hinge's motor.
+        void dragTo(u32 a, Vec2 target);
+        void setMotor(u32 a, float speed, float torque);
+        void unjoin(u32 id);
+        // Where two rigid bodies touched in the last step: the middle of it, which way from a to b, and how hard.
+        bool contact(u32 a, u32 b, Vec2& at, Vec2& normal, float& impulse) const;
         // At a place, or at the middle.
         void push(u32 id, Vec2 impulse, const Vec2* at);
 
@@ -395,7 +450,10 @@ namespace nx
             u32 id;
             u32 body;       // index, or kNone for something that doesn't move
             u32 entity;
-            Shape shape;
+            Shape shape;    // a box or a polygon has its corners below; a piece of a chain is a polygon of two
+            bool oneWay;
+            u8 count;
+            Vec2 points[kPolygonPoints], normals[kPolygonPoints];   // in the world
             Vec2 position, velocity;
             float angle, turning, c, s;
             float inverseMass, inverseInertia;
@@ -423,16 +481,39 @@ namespace nx
             Contact contacts[2];
         };
 
+    public:
+        // Pin holds a place on each together; Weld their turn too; Rope keeps them no further apart than a length;
+        // Spring pulls them towards one; Slider lets a move only along a line through b; Drag pulls a towards a place
+        // that moves, softly, as a hand would.
+        // From Wheel on, see wheel(), pulley(), gear(), friction() and follow().
+        enum class JointKind : u8 { Pin, Weld, Rope, Spring, Slider, Drag, Wheel, Pulley, Gear, Friction, Follow };
+    private:
         struct Joint
         {
+            JointKind kind;
             u32 a, b;                // ids; b may be 0
-            Vec2 localA, localB;     // b's is in the world if there is no b
+            Vec2 localA, localB;     // b's is in the world if there is no b; a drag's target, in the world
             float softness;
             Vec2 impulse;
             u32 rigidA, rigidB;      // this step
             Vec2 fromA, fromB, bias;
             float m[4];              // the inverse of how much they resist
             bool active;
+            // Turning: a hinge's limits and motor, a weld's or slider's held angle, measured from how they began.
+            float reference;         // b's angle less a's, at the start
+            bool limited, motor;
+            float low, high;         // radians, or a slider's distance along its line
+            float motorSpeed, motorTorque;
+            float angularMass, angularBias, angularImpulse, limitImpulse, motorImpulse, angle;
+            // Along a line: a rope's or spring's length, a slider's axis.
+            float length, frequency, damping;
+            Vec2 axis, localAxis;
+            float axialMass, axialBias, axialImpulse, axialSoftness, along;
+            float strength;          // a drag's, as many times its weight
+            // A wheel's spring, along its axis; a pulley's fixed places and ratio, which a gear has too.
+            float springMass, springSoftness, springBias, springImpulse;
+            Vec2 groundA, groundB, axisB;
+            float ratio, correction;
         };
 
         struct Box
@@ -514,8 +595,15 @@ namespace nx
         static u32 touch(const Rigid& a, const Rigid& b, Contact (&contacts)[2]);
         static u32 touchBoxes(const Rigid& a, const Rigid& b, Contact (&contacts)[2]);
         static u32 touchCircleBox(const Rigid& circle, const Rigid& box, Contact& contact);
+        bool joined(u32 a, u32 b) const;
+        static u32 touchPolygons(const Rigid& a, const Rigid& b, Contact (&contacts)[2]);
+        static u32 touchCirclePolygon(const Rigid& circle, const Rigid& polygon, Contact& contact);
+        // Chains under a box: the highest ground among their gentle parts, or a large number if there is none.
+        float chainGround(const Box& box, u32 self) const;
         void prepareJoint(Joint& joint, float dt);
         void solveJoint(Joint& joint);
+        void prepareMore(Joint& joint, float dt);
+        void solveMore(Joint& joint);
         void prepareTouch(Touch& touch, float dt);
         void solveTouch(Touch& touch);
         void buildWalls(const TileMap& map);
@@ -531,6 +619,8 @@ namespace nx
         void halfExtent(const Collider& c, float& x, float& y) const;
         bool touchesCircle(const Collider& c, Vec2 position, float radius) const;
         bool overlap(const Collider& a, const Collider& b) const;
+        // A box, polygon or chain as convex outlines (see world.cpp); how many.
+        u32 outlines(const Collider& c, void* out, u32 most) const;
 
         void buildDrawList();
         void drawVisual(Canvas& canvas, const Visual& v, const float (&view)[4]);
@@ -614,6 +704,9 @@ namespace nx
         GrowArray<Event> m_events;
         GrowArray<DrawItem> m_drawList;
         bool m_drawDirty = true;
+    public:
+        bool m_showShapes = false;   // colliders drawn over everything: grey walls, green bodies, blue characters, yellow areas
+    private:
 
         Vec2 m_gravity;
         bool m_hasCamera = false;

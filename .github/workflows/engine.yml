@@ -13,6 +13,7 @@ on:
     branches: [ "main" ]
     paths: [ "engine/**", "NexgenRedux-Media", ".github/workflows/engine.yml" ]
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
@@ -125,7 +126,7 @@ jobs:
           macOS)   ditto -c -k --keepParent "$package" "$package.zip" ;;
         esac
 
-    - uses: actions/upload-artifact@v5
+    - uses: actions/upload-artifact@v6
       with:
         name: Nexgen-${{ matrix.name }}
         path: |
@@ -173,6 +174,32 @@ jobs:
     - name: Build the window
       run: dotnet publish engine/tools/cook-ui -c Release -r ${{ matrix.rid }} -o build-ui
 
+    - name: Scan Windows Cook executables before packaging
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $files = @(Get-ChildItem -LiteralPath build -Recurse -File -Filter cook.exe)
+        $files += Get-Item -LiteralPath build-ui/nexgen-cook.exe
+        if ($files.Count -lt 2) { throw 'Cook executables missing' }
+        $status = Get-MpComputerStatus
+        if (!$status.AntivirusEnabled -or !$status.AMServiceEnabled) { throw 'Defender unavailable; Windows Cook release blocked.' }
+        Update-MpSignature
+        $status = Get-MpComputerStatus
+        $manifest = @("Source commit: $env:GITHUB_SHA", "Workflow run: $env:GITHUB_RUN_ID", "Defender definitions: $($status.AntivirusSignatureVersion)")
+        foreach ($file in $files) {
+          $full = $file.FullName
+          $hash = (Get-FileHash -LiteralPath $full -Algorithm SHA256).Hash
+          $sig = Get-AuthenticodeSignature -LiteralPath $full
+          Start-MpScan -ScanType CustomScan -ScanPath $full
+          if (!(Test-Path -LiteralPath $full) -or (Get-FileHash -LiteralPath $full -Algorithm SHA256).Hash -ne $hash) { throw "Defender removed or changed $full" }
+          $detections = @(Get-MpThreatDetection | Where-Object { @($_.Resources | Where-Object { $_ -like "*$full*" }).Count -gt 0 })
+          if ($detections.Count -gt 0) { throw "Defender reported a detection for $full" }
+          $manifest += "$hash  $($file.Name)  Authenticode=$($sig.Status)"
+        }
+        $manifest | Set-Content -LiteralPath cook-build-info.txt -Encoding utf8
+        $manifest | ForEach-Object { Write-Host $_ }
+
     - name: Try it
       run: |
         cook="$(find build -name cook.exe -o -name cook -type f -perm -u+x | head -1)"
@@ -200,6 +227,7 @@ jobs:
                    codesign --force --deep --sign - "$app" ;;
         esac
         cp engine/tools/cook-ui/README.md "dist/$package/README.md"
+        if [[ "$RUNNER_OS" == Windows ]]; then cp cook-build-info.txt "dist/$package/BUILDINFO.txt"; fi
         cd dist
         case "$RUNNER_OS" in
           Windows) 7z a -bso0 "$package.zip" "$package" ;;
@@ -207,7 +235,7 @@ jobs:
           macOS)   ditto -c -k --keepParent "$package" "$package.zip" ;;
         esac
 
-    - uses: actions/upload-artifact@v5
+    - uses: actions/upload-artifact@v6
       with:
         name: Nexgen-cook-${{ matrix.name }}
         path: |
@@ -291,7 +319,7 @@ jobs:
         test "$(find "dist/$package" -path '*media/showcase/*/main.as' | wc -l)" -ge 20
         cd dist && 7z a -bso0 "$package.zip" "$package"
 
-    - uses: actions/upload-artifact@v5
+    - uses: actions/upload-artifact@v6
       with:
         name: Nexgen-xbox-og
         path: |
@@ -334,7 +362,7 @@ jobs:
         if ($demos -lt 20) { throw "only $demos demos in the package" }
         Compress-Archive "dist/$package" "dist/$package.zip"
 
-    - uses: actions/upload-artifact@v5
+    - uses: actions/upload-artifact@v6
       with:
         name: Nexgen-uwp-x64
         path: dist/*.zip
@@ -357,7 +385,7 @@ jobs:
         python3 engine/tools/vscode/package.py dist/Nexgen-vscode.vsix
         python3 -c "import zipfile; names = zipfile.ZipFile('dist/Nexgen-vscode.vsix').namelist(); assert 'extension/extension.js' in names and 'extension.vsixmanifest' in names, names"
 
-    - uses: actions/upload-artifact@v5
+    - uses: actions/upload-artifact@v6
       with:
         name: Nexgen-vscode
         path: dist/*.vsix
@@ -366,13 +394,13 @@ jobs:
   release:
     name: Release
     needs: [ desktop, cook, variants, xboxog, uwp, vscode ]
-    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    if: (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))) || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     permissions:
       contents: write
 
     steps:
-    - uses: actions/download-artifact@v5
+    - uses: actions/download-artifact@v7
       with:
         path: dist
         pattern: Nexgen-*

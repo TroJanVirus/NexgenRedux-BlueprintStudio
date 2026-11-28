@@ -50,6 +50,14 @@ namespace nx
         void waitForReady();
         bool connected() const { return m_client.state() == TcpState::Open; }
         bool listening() const { return m_host != nullptr; }
+#ifdef NX_DESKTOP_BLUEPRINT
+        // Local graph trace uses the same native watcher, without opening a socket.
+        using TraceCallback=void (*)(void*,const char*,int,u32,asIScriptContext*);
+        bool startLocalTrace(ScriptHost& host,TraceCallback callback,void* user);
+        void stopLocalTrace();
+        void traceValues(asIScriptContext* context,std::vector<std::string>& values);
+        void traceStack(asIScriptContext* context,std::vector<std::string>& frames);
+#endif
 
         void line(asIScriptContext* context) override;
         void exception(asIScriptContext* context) override;
@@ -57,6 +65,11 @@ namespace nx
 
     private:
         enum class Mode : u8 { Run, Pause, StepIn, StepOver, StepOut };
+
+        // The entities of the screen on top, and what each is like, to look at and change while it runs.
+        void entities(int id);
+        void entity(int id, const JsonValue& ask);
+        void setEntity(int id, const JsonValue& ask);
 
         struct Breakpoints
         {
@@ -100,6 +113,11 @@ namespace nx
         void forget();
 
         ScriptHost* m_host = nullptr;
+#ifdef NX_DESKTOP_BLUEPRINT
+        ScriptHost* m_localHost=nullptr;
+        TraceCallback m_trace=nullptr;
+        void* m_traceUser=nullptr;
+#endif
         TcpSocket m_listener;
         TcpSocket m_client;
         std::string m_in;

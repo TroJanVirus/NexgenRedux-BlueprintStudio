@@ -43,8 +43,24 @@ function createBridge({host='127.0.0.1',port=4711,webPort=8765,validator=null,pr
             switch(body.action){case 'validate':result=await validate(body.source,body.kind);break;case 'attach': events=[];result=await attach();break;case 'detach':disconnect();result={connected:false};break;case 'events':result={connected,events:events.splice(0)};break;case 'command':result=await command(body.cmd,body.args);break;default:throw Error('Unsupported action');}reply(res,200,result);
         }catch(e){reply(res,400,{error:e.message});}
     });
+    // Explicit shutdown must release active HTTP connections, including incomplete
+    // requests and keep-alive sockets. Waiting for server.close alone can hang.
+    const httpSockets=new Set();
+    server.on('connection',s=>{httpSockets.add(s);s.once('close',()=>httpSockets.delete(s));});
+    let closing=null;
+    function close(){
+        if(closing)return closing;
+        disconnect();
+        clearInterval(idle);
+        const closed=new Promise((resolve,reject)=>{
+            server.close(e=>{if(e&&e.code!=='ERR_SERVER_NOT_RUNNING')reject(e);else resolve();});
+            for(const s of httpSockets)s.destroy();
+        });
+        closing=Promise.all([closed,preview.stop(),cooker.stop()]);
+        return closing;
+    }
     const idle=setInterval(()=>{if(connected&&Date.now()-lastContact>90000)disconnect();},5000);idle.unref();server.on('close',()=>{clearInterval(idle);disconnect();preview.stop().catch(()=>{});cooker.stop().catch(()=>{});});
-    return {server,token,start:()=>new Promise((resolve,reject)=>{server.once('error',reject);server.listen(webPort,'127.0.0.1',()=>resolve(server.address()));}),close:()=>{disconnect();server.close();return Promise.all([preview.stop(),cooker.stop()]);}};
+    return {server,token,start:()=>new Promise((resolve,reject)=>{server.once('error',reject);server.listen(webPort,'127.0.0.1',()=>resolve(server.address()));}),close};
 }
 if(require.main===module){const args=process.argv.slice(2);let cookExecutable=null;const ci=args.indexOf('--cook');if(ci>=0){cookExecutable=args[ci+1];args.splice(ci,2);if(!cookExecutable||cookExecutable.startsWith('--')){console.error('Pass the Nexgen cook executable after --cook.');process.exit(1);}}const i=args.indexOf('--preview-engine');let previewEngine=null;if(i>=0){previewEngine=args[i+1];args.splice(i,2);if(!previewEngine){console.error('Pass a desktop Nexgen executable after --preview-engine.');process.exit(1);}}const [host='127.0.0.1',port='4711',webPort='8765',validator]=args;if(args.length>4||!host||![port,webPort].every(x=>/^\d+$/.test(x)&&+x>0&&+x<=65535)){console.error('Usage: node debug_bridge.js [engine-host] [engine-port] [local-web-port] [native-validator-executable] [--preview-engine /path/to/test-copy/nexgen] [--cook /path/to/cook]');process.exit(1);}const b=createBridge({host,port:+port,webPort:+webPort,validator:validator?path.resolve(validator):null,previewEngine:previewEngine?path.resolve(previewEngine):null,cookExecutable:cookExecutable?path.resolve(cookExecutable):null});b.start().then(a=>console.log(`Blueprint Studio: http://127.0.0.1:${a.port}/ (target ${host}:${port}; trusted LAN only)`)).catch(e=>{console.error(e.message);process.exitCode=1;});let closing=false;const shutdown=async()=>{if(closing)return;closing=true;await b.close();process.exit(0);};process.on('SIGINT',shutdown);process.on('SIGTERM',shutdown);}
 module.exports={createBridge};

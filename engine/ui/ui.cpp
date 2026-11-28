@@ -450,12 +450,12 @@ namespace nx
 
     void Ui::corner(const Widget& w, float& x, float& y) const
     {
-        x = w.x;
-        y = w.y;
+        x = w.x+w.animationValues[0];
+        y = w.y+w.animationValues[1];
         for (const Widget* p = w.parent; p; p = p->parent)
         {
-            x += p->x;
-            y += p->y - p->scroll;
+            x += p->x+p->animationValues[0];
+            y += p->y+p->animationValues[1] - p->scroll;
         }
     }
 
@@ -1127,7 +1127,7 @@ namespace nx
         {
             return nullptr;
         }
-        const float x = px + w.x, y = py + w.y;
+        const float x = px+w.x+w.animationValues[0], y=py+w.y+w.animationValues[1];
         const bool within = mx >= x && my >= y && mx < x + w.w && my < y + w.h;
         if (!within && (w.kind == WidgetKind::Scroll || w.kind == WidgetKind::List || &w == &top()))
         {

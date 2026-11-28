@@ -374,6 +374,82 @@ NX_TEST(busEffectsChangeWhatIsHeard)
     freeSound(click);
 }
 
+NX_TEST(moreBusEffectsChangeWhatIsHeard)
+{
+    Mixer m;
+    SoundData* low = load(makeWav(48000, 1, 48000, 120, 0.1f));
+    SoundData* mid = load(makeWav(48000, 1, 48000, 1000, 0.1f));
+    SoundData* high = load(makeWav(48000, 1, 48000, 8000, 0.1f));
+    SoundData* loud = load(makeWav(48000, 1, 48000, 1000, 0.5f));
+    int l = 0, r = 0;
+    int owner = 0;
+    const auto loudness = [&](const SoundData& tone)
+    {
+        const Voice v = m.audio.play(tone, &owner, {});
+        m.mix(4800, l, r);
+        m.mix(2400, l, r);
+        const int heard = l;
+        m.audio.stop(v, 0);
+        for (int i = 0; i < 10; i++)
+        {
+            m.mix(4800, l, r);
+        }
+        return heard;
+    };
+    const int plainLow = loudness(*low), plainMid = loudness(*mid), plainHigh = loudness(*high), plainLoud = loudness(*loud);
+    NX_EXPECT(plainLow > 1500 && plainMid > 1500 && plainHigh > 1500 && plainLoud > 8000);
+
+    // The equaliser: lows up, middle and highs down.
+    BusEffectSettings eq;
+    eq.low = 12;
+    eq.mid = -12;
+    eq.high = -12;
+    m.audio.setEffects(Bus::Effects, eq, 0);
+    NX_EXPECT(loudness(*low) > plainLow * 3);
+    NX_EXPECT(loudness(*mid) < plainMid / 3);
+    NX_EXPECT(loudness(*high) < plainHigh / 3);
+
+    // Distortion drives a quiet tone up towards full.
+    BusEffectSettings driven;
+    driven.distortion = 1;
+    m.audio.setEffects(Bus::Effects, driven, 0);
+    NX_EXPECT(loudness(*mid) > plainMid * 4);
+
+    // A compressor presses a loud tone down, and leaves a quiet one alone.
+    BusEffectSettings pressed;
+    pressed.threshold = -18;
+    pressed.ratio = 20;
+    m.audio.setEffects(Bus::Effects, pressed, 0);
+    NX_EXPECT(loudness(*loud) < plainLoud / 2);
+    const int quiet = loudness(*mid);
+    NX_EXPECT(quiet > plainMid * 8 / 10 && quiet < plainMid * 12 / 10);
+
+    // Chorus and flanger add a copy: louder where it lines up, never more than twice.
+    for (int which = 0; which < 2; which++)
+    {
+        BusEffectSettings waver;
+        (which ? waver.flanger : waver.chorus) = 1;
+        waver.flangerFeedback = 0;
+        m.audio.setEffects(Bus::Effects, waver, 0);
+        const int heard = loudness(*mid);
+        NX_EXPECT(heard != plainMid && heard <= plainMid * 21 / 10);
+    }
+
+    // And back to nothing.
+    m.audio.clearEffects(0);
+    for (int i = 0; i < 20; i++)
+    {
+        m.mix(4800, l, r);
+    }
+    NX_EXPECT(abs(loudness(*mid) - plainMid) <= plainMid / 50);
+
+    m.audio.shutdown();
+    freeSound(low);
+    freeSound(mid);
+    freeSound(high);
+    freeSound(loud);
+}
+
 NX_TEST(damagedSoundsDontCrash)
 {
     i16 samples[1200] = {};
@@ -482,4 +558,24 @@ NX_TEST(mixingRunsOnItsOwnThread)
     NX_EXPECT(started > 50 && finished == started);
     freeSound(sounds[0]);
     freeSound(sounds[1]);
+}
+
+NX_TEST(decodedSampleBudgetRejectsOversizedAudio)
+{
+    SoundData* sound = load(makeWav(12000, 2, 8000, 440, 0.5f));
+    NX_EXPECT(sound != nullptr);
+    if (!sound) return;
+    u32 frames = 123;
+    i16* rejected = decodeAll(*sound, frames, 12000u * 4u - 1u);
+    NX_EXPECT(rejected == nullptr && frames == 0);
+    memFree(rejected);
+    i16* exact = decodeAll(*sound, frames, 12000u * 4u);
+    NX_EXPECT(exact && frames == 12000);
+    if (exact)
+    {
+        NX_EXPECT(exact[2] != 0 && exact[2] == exact[3]);
+        NX_EXPECT(memcmp(exact, sound->data, 12000u * 4u) == 0);
+        memFree(exact);
+    }
+    freeSound(sound);
 }

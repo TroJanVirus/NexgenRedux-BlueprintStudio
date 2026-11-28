@@ -248,6 +248,25 @@ namespace nx
             u64 totalMemory() override { return memory().dwTotalPhys; }
             u64 freeMemory() override { return memory().dwAvailPhys; }
             const char* name() const override { return "Xbox 360"; }
+            u32 processors() override { return 6; }   // three cores of two threads
+            bool localTime(u32& hour, u32& minute, u32& second) override
+            {
+                // As the dashboard's clock and time zone are set.
+                SYSTEMTIME t;
+                GetLocalTime(&t);
+                hour = t.wHour;
+                minute = t.wMinute;
+                second = t.wSecond;
+                return true;
+            }
+
+
+            std::string locale() override
+            {
+                static const char* const kLanguages[] = { "", "en", "ja", "de", "fr", "es", "it", "ko", "zh-Hant", "pt", "zh-Hans", "pl", "ru" };
+                const DWORD language = XGetLanguage();
+                return language < sizeof(kLanguages) / sizeof(kLanguages[0]) ? kLanguages[language] : "";
+            }
 
         private:
             static bool readWhole(const char* full, FileData& out, MemTag tag, bool complain)

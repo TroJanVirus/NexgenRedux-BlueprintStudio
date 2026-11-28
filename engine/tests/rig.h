@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <map>
+#include <set>
 #include <string>
 
 namespace nx::test
@@ -25,6 +26,12 @@ namespace nx::test
         std::string saved, nothing;
         std::map<std::string, std::string> kept;  // other saves, by name
         std::string written;                       // the last file
+        std::set<std::string> ownFolders;
+        bool workspaceFiles=false;                 // opt-in writable virtual own/ filesystem
+        bool blueprintLease=false;
+        bool acquireBlueprintLease() override {if(blueprintLease)return false;blueprintLease=true;return true;}
+        void releaseBlueprintLease() override {blueprintLease=false;}
+        bool failOwnWrites=false;                  // inject failed writes without touching existing data
         double now = 0;
         std::string extraPath, extraText;
         std::map<std::string, std::string> files;   // more, by path
@@ -79,29 +86,34 @@ namespace nx::test
 
         void list(const char* path, bool folders, FolderCallback callback, void* user) override
         {
-            if (!folders && strcmp(path, "own") == 0)
+            std::set<std::string> emitted;
+            auto emit=[&](const std::string& name)
             {
-                for (const char* name : { "b.stl", "a.obj" })
-                {
-                    callback(name, user);
-                }
-            }
-            if (!folders)
+                if(emitted.insert(name).second)callback(name.c_str(),user);
+            };
+            if(!folders&&strcmp(path,"own")==0)
+                for(const char* name:{"b.stl","a.obj"})emit(name);
+            if(folders&&strcmp(path,"showcase")==0)
+                for(const char* name:{"main","shapes","blend","faulty","test"})emit(name);
+            const std::string prefix=std::string(path)+"/";
+            for(const auto& item:files)
             {
-                return;
-            }
-            if (strcmp(path, "showcase") == 0)
-            {
-                for (const char* name : { "main", "shapes", "blend", "faulty", "test" })
-                {
-                    callback(name, user);
-                }
+                if(item.first.compare(0,prefix.size(),prefix)!=0)continue;
+                const auto relative=item.first.substr(prefix.size());
+                if(relative.empty()||relative.front()=='.')continue;
+                const auto slash=relative.find('/');
+                if(folders&&slash!=std::string::npos&&slash>0)emit(relative.substr(0,slash));
+                else if(!folders&&slash==std::string::npos&&!relative.empty())emit(relative);
             }
         }
 
         std::string dropped;
 
-        u64 fileTime(const char*) override { return time; }
+        u64 fileTime(const char* path) override
+        {
+            if(workspaceFiles&&strncmp(path,"own/",4)==0)return files.count(path)||ownFolders.count(path)?time:0;
+            return time;
+        }
 
         bool loadSave(const char* name, FileData& out) override
         {
@@ -125,9 +137,17 @@ namespace nx::test
 
         void removeSave(const char* name) override { kept.erase(name); }
 
-        bool writeFile(const char* path, const void*, size_t) override
+        bool createOwnFolder(const char* name) override
+        {return workspaceFiles&&ownFolders.insert(std::string("own/")+name).second;}
+
+        bool writeFile(const char* path, const void* data, size_t size) override
         {
             written = path;
+            if(workspaceFiles&&strncmp(path,"own/",4)==0)
+            {
+                if(failOwnWrites)return false;
+                files[path].assign(static_cast<const char*>(data),size);
+            }
             return true;
         }
 

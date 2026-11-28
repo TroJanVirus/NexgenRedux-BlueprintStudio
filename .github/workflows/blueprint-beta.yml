@@ -1,0 +1,158 @@
+name: Blueprint Studio beta
+on:
+  push:
+    branches: ["blueprint/beta-*"]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: blueprint-beta-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  native-verification:
+    if: startsWith(github.ref, 'refs/heads/blueprint/beta-')
+    uses: ./.github/workflows/blueprint-native.yml
+    permissions:
+      contents: read
+
+  platform-packages:
+    if: startsWith(github.ref, 'refs/heads/blueprint/beta-')
+    uses: ./.github/workflows/engine.yml
+    permissions:
+      contents: write
+
+  publish:
+    needs: [native-verification, platform-packages]
+    if: github.repository == 'TroJanVirus/NexgenRedux-BlueprintStudio' && startsWith(github.ref, 'refs/heads/blueprint/beta-')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: Nexgen-*
+          path: dist
+          merge-multiple: true
+      - name: Verify complete platform matrix and calculate checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist
+          expected=(
+            Nexgen-windows-x64.zip
+            Nexgen-windows-arm64.zip
+            Nexgen-linux-x64.tar.gz
+            Nexgen-macos-arm64.zip
+            Nexgen-macos-x64.zip
+            Nexgen-xbox-og.zip
+            Nexgen-xbox-og.iso
+            Nexgen-uwp-x64.zip
+            Nexgen-cook-windows-x64.zip
+            Nexgen-cook-windows-arm64.zip
+            Nexgen-cook-linux-x64.tar.gz
+            Nexgen-cook-linux-arm64.tar.gz
+            Nexgen-cook-macos-arm64.zip
+            Nexgen-cook-macos-x64.zip
+            Nexgen-vscode.vsix
+          )
+          for asset in "${expected[@]}"; do
+            test -s "$asset" || { echo "Missing or empty: $asset"; exit 1; }
+            case "$asset" in
+              *.zip|*.vsix) unzip -tq "$asset" ;;
+              *.tar.gz) tar -tzf "$asset" >/dev/null ;;
+            esac
+          done
+          sha256sum "${expected[@]}" > SHA256SUMS.txt
+      - name: Publish prerelease from this exact verified commit
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          suffix="${GITHUB_REF_NAME#blueprint/beta-}"
+          [[ "$suffix" =~ ^[0-9]+(\.[0-9]+)?$ ]] || { echo "Invalid beta branch number"; exit 1; }
+          tag="blueprint-studio-beta.$suffix"
+          # Never overwrite an existing beta or move its tag.
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release already exists: $tag"; exit 1
+          fi
+          if gh api "repos/$GH_REPO/git/ref/tags/$tag" >/dev/null 2>&1; then
+            echo "Tag already exists: $tag"; exit 1
+          fi
+          cat > notes.md <<'EOF'
+          Native Blueprint Studio prerelease for Nexgen Redux.
+          Open Blueprint Studio from the desktop engine menu, or start nexgen with --blueprint-studio.
+
+          Desktop editor: Windows x64/ARM64, Linux x64, macOS Intel/Apple Silicon.
+          Console runtime packages: original Xbox (XBE folder and XISO) and UWP x64 (Windows/Xbox Developer Mode).
+          The native graphical editor is desktop-only; console packages run compatible exported AngelScript games.
+          Cook tools are provided for all six supported host architectures, plus the VS Code debugging extension.
+          Windows desktop binaries are not Authenticode signed; macOS applications are ad-hoc signed, not notarized.
+          UWP uses the bundled self-signed certificate; install only after verifying the source and checksum.
+
+          This is a beta, not a stable release. Native reverse import does not cover arbitrary AngelScript,
+          and console hardware behavior is not certified by CI. Keep backups of projects.
+          The Linux suite exercises real native GUI authoring, camera orbits, save/recovery and preview.
+          Desktop and console build coverage does not imply identical interactive testing on every platform.
+          EOF
+          if [[ "$suffix" == 2 ]]; then
+            cat >> notes.md <<'EOF'
+
+          ## Beta 2 changes
+          - Updated upstream engine and generated script node catalogue.
+          - Native content library with linked reusable actors, widget pages and themes.
+          - Native widget hierarchy editing, responsive stack anchors, direct positioning, RGBA colour controls, theme media selection and isolated state preview.
+          - Nested linked widgets, linear widget keyframe tracks and runtime playback.
+          - Actor hierarchies with native transforms, physics, behaviour assignment and camera children.
+          - Native 3D viewport for constant linked actor placements, with camera orbit, zoom and height-plane snapping.
+
+          These are initial implementations. Named animation clips, graph-triggered playback, per-instance widget overrides, camera selection/blending, arbitrary scene entity editing and transform gizmos remain future work. Test exported projects on the intended hardware.
+          EOF
+          elif [[ "$suffix" == 3 || "$suffix" == 3.1 ]]; then
+            cat >> notes.md <<'EOF'
+
+          ## Beta 3 changes
+          - Expanded native Blueprint execution and authoring: custom events, event dispatchers, enums, structures, maps, sets, shared function/macro libraries, asynchronous operations, conversions, actor class inheritance and casting.
+          - Actor component inheritance and overrides, construction previews, exposed spawn fields, transform gizmos and mesh-surface picking.
+          - Responsive graph, actor, widget and scene workspaces with unified tabs, categorized navigation, inline scalar pin editing and an interactive graph overview.
+          - Four-edge content docking, floating content panels and independent graph dock visibility.
+          - Native widget thumbnails, responsive layout tools and expanded designer authoring.
+          - Perspective scene orbit, pan, zoom, framing and placement-plane controls; read-only visual context from saved native scenes.
+          - Native desktop input, document, runtime and sanitizer regression coverage.
+
+          ## Known limitations
+          - True detachable operating-system windows and universal panel docking are not implemented.
+          - Native scene context is a render-only preview of supported saved scene entities; edit native scenes using the original scene editor. Terrain and arbitrary scene entity editing are not fully integrated.
+          - Unreal Engine visual and Blueprint feature parity is not complete. Inline editing does not cover every pin layout.
+          - Desktop UI tests do not certify every hardware configuration; the Cook binaries and console builds should be tested on the intended systems. This prerelease does not replace the separate rolling Redux latest release.
+          EOF
+          fi
+          if [[ "$suffix" == 3.1 ]]; then
+            cat >> notes.md <<'EOF'
+
+          ## Beta 3.1 upstream integration
+          - Redux engine synchronized through upstream revision 17ee0d3, including scripting threads, expanded 2D physics and canvas APIs, audio synthesis and streaming, deterministic random and system/window services.
+          - Regenerated Blueprint node catalogues; persistent Thread, Channel, Samples and AudioStream references can be stored in native graphs.
+          - Create and start a worker from a graph, communicate with named channels and poll results without blocking the main screen. Worker scripts still need to be authored separately in AngelScript; blocking waits are intentionally omitted from normal screen graphs.
+          - Includes the Windows Cook executable Defender verification gate and SHA256 build information. A scan is not a substitute for code signing or hardware testing.
+          - Upstream runtime now plays WAV, Ogg and ADPCM; use Cook to convert MP3 or FLAC sources before runtime.
+          EOF
+          fi
+          if [[ "$suffix" == 4 ]]; then
+            cat >> notes.md <<'EOF'
+
+          ## Beta 4 changes
+          - Grouped searchable node library and default categorized graph navigation; variables remain visible.
+          - Zoom-scaled graph text, automatic node widths, selectable curved/orthogonal/straight connections and translucent node bodies.
+          - Native audio editor with independent stereo synthesis, native effects, non-destructive clip manipulation and persistent portable presets.
+          - Editable sample and streaming Blueprint graph templates, and a native joint coordinate inspector.
+          - Portable ZIP projects, shared global media authoring, bitmap font companion handling and upstream clock nodes.
+          - Upstream Hub and Channels demos and pinned shared artwork through revision 099c007.
+          - Verification includes native desktop authoring, sanitizer regressions and all platform packages.
+          EOF
+          fi
+          printf '\nBuilt from commit %s.\n' "$GITHUB_SHA" >> notes.md
+          printf '\nVerification: %s/%s/actions/runs/%s\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> notes.md
+          gh release create "$tag" dist/* --target "$GITHUB_SHA" --title "Blueprint Studio Beta $suffix" --notes-file notes.md --prerelease --latest=false

@@ -1,0 +1,423 @@
+{
+  "version": 2,
+  "kind": "NativeBlueprint",
+  "name": "Visual Bezier Sprite Path",
+  "graphs": [
+    {
+      "owner": "Screen",
+      "name": "onEnter",
+      "kind": "event",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 20,
+          "y": 40
+        },
+        {
+          "id": "curve",
+          "kind": "curve:cubic",
+          "x": 265,
+          "y": 40,
+          "values": {
+            "p0": "140,480",
+            "p1": "400,40",
+            "p2": "880,40",
+            "p3": "1140,480"
+          }
+        },
+        {
+          "id": "storeCurve",
+          "kind": "typed:field:set",
+          "x": 510,
+          "y": 40,
+          "value": "curve"
+        },
+        {
+          "id": "batch",
+          "kind": "api:Batch:Batch:",
+          "x": 755,
+          "y": 40
+        },
+        {
+          "id": "storeBatch",
+          "kind": "typed:field:set",
+          "x": 1000,
+          "y": 40,
+          "value": "batch"
+        },
+        {
+          "id": "sprite",
+          "kind": "api:Batch:add:Batch@,float,float,float,float,Color,float",
+          "x": 1245,
+          "y": 40,
+          "values": {
+            "x": "140",
+            "y": "480",
+            "w": "42",
+            "h": "42",
+            "color": "0.25,0.9,1,1"
+          }
+        }
+      ],
+      "links": [
+        {
+          "from": "entry",
+          "to": "curve",
+          "output": "then",
+          "input": "in"
+        },
+        {
+          "from": "curve",
+          "to": "storeCurve",
+          "output": "then",
+          "input": "in"
+        },
+        {
+          "from": "batch",
+          "to": "storeBatch",
+          "output": "then",
+          "input": "in"
+        },
+        {
+          "from": "storeBatch",
+          "to": "sprite",
+          "output": "then",
+          "input": "in"
+        },
+        {
+          "from": "curve",
+          "to": "storeCurve",
+          "output": "result",
+          "input": "value"
+        },
+        {
+          "from": "batch",
+          "to": "storeBatch",
+          "output": "result",
+          "input": "value"
+        },
+        {
+          "from": "batch",
+          "to": "sprite",
+          "output": "result",
+          "input": "target"
+        },
+        {
+          "from": "storeCurve",
+          "to": "batch",
+          "output": "then",
+          "input": "in"
+        }
+      ],
+      "fields": [
+        {
+          "name": "curve",
+          "type": "Curve@"
+        },
+        {
+          "name": "batch",
+          "type": "Batch@"
+        }
+      ]
+    },
+    {
+      "owner": "Screen",
+      "name": "update",
+      "kind": "event",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 20,
+          "y": 40
+        },
+        {
+          "id": "time",
+          "kind": "time:timeline",
+          "x": 260,
+          "y": 40,
+          "values": {
+            "duration": "4",
+            "loop": "true"
+          }
+        },
+        {
+          "id": "curve",
+          "kind": "typed:field:get",
+          "x": 260,
+          "y": 270,
+          "value": "curve"
+        },
+        {
+          "id": "sample",
+          "kind": "api:Curve:at:Curve@,float",
+          "x": 520,
+          "y": 40
+        },
+        {
+          "id": "x",
+          "kind": "vec2:x",
+          "x": 780,
+          "y": 160
+        },
+        {
+          "id": "y",
+          "kind": "vec2:y",
+          "x": 780,
+          "y": 290
+        },
+        {
+          "id": "batch",
+          "kind": "typed:field:get",
+          "x": 780,
+          "y": 420,
+          "value": "batch"
+        },
+        {
+          "id": "move",
+          "kind": "api:Batch:move:Batch@,uint,float,float,float",
+          "x": 1040,
+          "y": 40,
+          "values": {
+            "index": "0"
+          }
+        }
+      ],
+      "links": [
+        {
+          "from": "entry",
+          "to": "time",
+          "output": "then",
+          "input": "in"
+        },
+        {
+          "from": "time",
+          "to": "sample",
+          "output": "then",
+          "input": "in"
+        },
+        {
+          "from": "curve",
+          "to": "sample",
+          "output": "value",
+          "input": "target"
+        },
+        {
+          "from": "time",
+          "to": "sample",
+          "output": "progress",
+          "input": "t"
+        },
+        {
+          "from": "sample",
+          "to": "move",
+          "output": "then",
+          "input": "in"
+        },
+        {
+          "from": "sample",
+          "to": "x",
+          "output": "result",
+          "input": "target"
+        },
+        {
+          "from": "sample",
+          "to": "y",
+          "output": "result",
+          "input": "target"
+        },
+        {
+          "from": "batch",
+          "to": "move",
+          "output": "value",
+          "input": "target"
+        },
+        {
+          "from": "x",
+          "to": "move",
+          "output": "result",
+          "input": "x"
+        },
+        {
+          "from": "y",
+          "to": "move",
+          "output": "result",
+          "input": "y"
+        }
+      ]
+    },
+    {
+      "owner": "Screen",
+      "name": "draw",
+      "kind": "event",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 20,
+          "y": 40
+        },
+        {
+          "id": "canvas",
+          "kind": "event:canvas",
+          "x": 20,
+          "y": 270
+        },
+        {
+          "id": "design",
+          "kind": "api:Canvas:design:Canvas@,float,float",
+          "x": 260,
+          "y": 40,
+          "values": {
+            "width": "1280",
+            "height": "720"
+          }
+        },
+        {
+          "id": "curve",
+          "kind": "typed:field:get",
+          "x": 260,
+          "y": 270,
+          "value": "curve"
+        },
+        {
+          "id": "points",
+          "kind": "api:Curve:points:Curve@,uint",
+          "x": 520,
+          "y": 40,
+          "values": {
+            "count": "48"
+          }
+        },
+        {
+          "id": "path",
+          "kind": "api:Canvas:polyline:Canvas@,array<Vec2>@,float,Color",
+          "x": 780,
+          "y": 40,
+          "values": {
+            "thickness": "3",
+            "color": "0.4,0.5,0.65,1"
+          }
+        },
+        {
+          "id": "batch",
+          "kind": "typed:field:get",
+          "x": 780,
+          "y": 310,
+          "value": "batch"
+        },
+        {
+          "id": "render",
+          "kind": "api:Canvas:batch:Canvas@,Batch@,float,float,Color",
+          "x": 1040,
+          "y": 40
+        }
+      ],
+      "links": [
+        {
+          "from": "entry",
+          "to": "design",
+          "output": "then",
+          "input": "in"
+        },
+        {
+          "from": "design",
+          "to": "points",
+          "output": "then",
+          "input": "in"
+        },
+        {
+          "from": "points",
+          "to": "path",
+          "output": "then",
+          "input": "in"
+        },
+        {
+          "from": "path",
+          "to": "render",
+          "output": "then",
+          "input": "in"
+        },
+        {
+          "from": "canvas",
+          "to": "design",
+          "output": "value",
+          "input": "target"
+        },
+        {
+          "from": "canvas",
+          "to": "path",
+          "output": "value",
+          "input": "target"
+        },
+        {
+          "from": "canvas",
+          "to": "render",
+          "output": "value",
+          "input": "target"
+        },
+        {
+          "from": "curve",
+          "to": "points",
+          "output": "value",
+          "input": "target"
+        },
+        {
+          "from": "points",
+          "to": "path",
+          "output": "result",
+          "input": "points"
+        },
+        {
+          "from": "batch",
+          "to": "render",
+          "output": "value",
+          "input": "batch"
+        }
+      ]
+    },
+    {
+      "owner": "Screen",
+      "name": "onSuspend",
+      "kind": "event",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 20,
+          "y": 40
+        }
+      ],
+      "links": []
+    },
+    {
+      "owner": "Screen",
+      "name": "onResume",
+      "kind": "event",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 20,
+          "y": 40
+        }
+      ],
+      "links": []
+    },
+    {
+      "owner": "Screen",
+      "name": "onExit",
+      "kind": "event",
+      "nodes": [
+        {
+          "id": "entry",
+          "kind": "entry",
+          "x": 20,
+          "y": 40
+        }
+      ],
+      "links": []
+    }
+  ]
+}

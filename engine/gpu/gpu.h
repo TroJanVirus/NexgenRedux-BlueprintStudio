@@ -27,6 +27,9 @@ namespace nx::gpu
     enum class Blend : u8 { None, Alpha, Additive, Multiply, Count };
     enum class Cull : u8 { None, Back };
     enum class Filter : u8 { Linear, Nearest };
+    // A 2D draw and the stencil: Write marks where it covers with stencilRef and draws no colour; Inside and
+    // Outside draw only where the stencil is (or isn't) stencilRef.
+    enum class Stencil : u8 { None, Write, Inside, Outside };
 
     struct PipelineDesc
     {
@@ -70,6 +73,9 @@ namespace nx::gpu
         Filter filter = Filter::Linear;
         Scissor scissor;
         Mat4 transform;  // model to clip space
+        Stencil stencil = Stencil::None;
+        u8 stencilRef = 0;
+        bool clearStencil = false;  // the stencil of what is drawn into to 0 first, all of it
     };
 
     enum class PixelFormat : u8
@@ -216,6 +222,22 @@ namespace nx::gpu
         float spread = 1;
     };
 
+    // How a view in space is finished, from how far away each pixel is: on GPUs that can see that (seesDepth).
+    struct SpaceLook
+    {
+        float occlusion = 0;          // corners and creases darkened, 0 to 1
+        float occlusionRadius = 0.6f; // metres
+        float reflections = 0;        // in what faces up, 0 to 1
+        float focus = 0;              // metres to what is sharp; 0 for all of it
+        float focusDepth = 1;         // metres either side of that, sharp too
+        float focusFalloff = 6;       // metres beyond those to the most blurred
+        float focusBlur = 0;          // pixels across the most blurred, at 720 high
+        float bokeh = 1;              // how much the brightest spread into discs
+        float exposure = 0;           // brightness that auto exposure aims for, 0 to 1; 0 for none
+        float exposureRange = 2.5f;   // as much brighter or darker as it may make it
+        float exposureAdapt = 0.05f;  // of the way there this frame
+    };
+
     // Vertices that stream() can take in one frame.
     constexpr u32 kStreamVertices = 65536;
     // Largest texture side that every target supports.
@@ -318,6 +340,22 @@ namespace nx::gpu
         virtual bool bloom(const Bloom& bloom, const Scissor& area)
         {
             (void)bloom;
+            (void)area;
+            return false;
+        }
+        // All that has been drawn so far, blurred about so many pixels across.
+        virtual bool blur(float pixels, const Scissor& area)
+        {
+            (void)pixels;
+            (void)area;
+            return false;
+        }
+        // Whether it can see how far away what was drawn in space is: for spaceLook, and depthAt in picture effects.
+        virtual bool seesDepth() const { return false; }
+        // Finishes the view just drawn, over its area.
+        virtual bool spaceLook(const SpaceLook& look, const Scissor& area)
+        {
+            (void)look;
             (void)area;
             return false;
         }

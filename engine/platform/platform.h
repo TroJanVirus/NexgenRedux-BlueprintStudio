@@ -45,7 +45,7 @@ namespace nx
         None,
         A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z,
         Num0, Num1, Num2, Num3, Num4, Num5, Num6, Num7, Num8, Num9,
-        Up, Down, Left, Right, Space, Enter, Escape, Tab, Backspace, Shift, Control,
+        Up, Down, Left, Right, Space, Enter, Escape, Tab, Backspace, Shift, Control, Alt,
         Count
     };
 
@@ -112,6 +112,42 @@ namespace nx
         return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '.' || c == '-' ? c : '_';
     }
 
+    // The generic drop receiver must never replace Studio's managed or recovery files.
+    // Stage reserved names under a distinct, portable import name.
+    inline bool protectedBlueprintDrop(const std::string& name)
+    {
+        return name.rfind("blueprint-project-",0)==0||name.rfind("blueprint-recovery",0)==0||
+            (name.size()>=8&&name.compare(name.size()-8,8,".bp.json")==0);
+    }
+    inline std::string blueprintDropName(const std::string& name,unsigned attempt)
+    {
+        std::string staged=name;
+        if(name.rfind("blueprint-project-",0)==0||name.rfind("blueprint-recovery",0)==0)staged="import-"+name;
+        if(!attempt)return staged;
+        size_t extension=staged.rfind('.');
+        if(staged.size()>=8&&staged.compare(staged.size()-8,8,".bp.json")==0)extension=staged.size()-8;
+        if(extension==std::string::npos)extension=staged.size();
+        staged.insert(extension,"-"+std::to_string(attempt+1));
+        return staged;
+    }
+
+    // The pointer's look over the window.
+    enum class PointerShape : u8 { Arrow, Hand, Text, Crosshair, Wait, Move, ResizeAcross, ResizeUpDown, NotAllowed, Count };
+
+    // How Windows 11 draws a window's frame. Colours are 0xRRGGBB, or kSystem for the system's own.
+    struct TitleBar
+    {
+        static constexpr u32 kSystem = 0xFFFFFFFFu;
+        static constexpr u32 kNone = 0xFFFFFFFEu;   // a border that isn't drawn
+        enum class Corners : u8 { System, Square, Round, SmallRound };
+        enum class Backdrop : u8 { System, None, Mica, Acrylic, Tabbed };
+
+        int dark = -1;                 // -1 as the system's apps are, 0 light, 1 dark
+        u32 back = kSystem, text = kSystem, border = kSystem;
+        Corners corners = Corners::System;
+        Backdrop backdrop = Backdrop::System;
+    };
+
     class Platform
     {
     public:
@@ -139,6 +175,12 @@ namespace nx
         virtual bool loadSave(const char* name, FileData& out) = 0;
         // Over a file in the media, while developing. False where it can't be.
         virtual bool writeFile(const char*, const void*, size_t) { return false; }
+        // Development exports: exclusively create a directory under own/, with validated relative components.
+        virtual bool createOwnFolder(const char*) { return false; }
+        // Exclusive desktop authoring lease for the current own/ directory.
+        // Released by the OS if the process exits unexpectedly.
+        virtual bool acquireBlueprintLease() { return false; }
+        virtual void releaseBlueprintLease() {}
         virtual bool writeSave(const char* name, const void* data, size_t size) = 0;
         virtual void removeSave(const char* name) = 0;
         // Somewhere else for them, so that a trial leaves the player's own alone. False if there is no such place.
@@ -165,6 +207,31 @@ namespace nx
         virtual u64 freeMemory() = 0;
 
         virtual const char* name() const = 0;
+
+        // The window, on a desktop. Elsewhere there is only the one screen: false, and nothing happens.
+        virtual bool setFullscreen(bool) { return false; }
+        virtual bool fullscreen() const { return false; }
+        virtual void setTitle(const char*) {}
+        // Windows 11's frame: dark or light, colours, corners and backdrop. False where it can't be, wholly or in part
+        // (Windows 10 has only dark and light, and other systems none of it).
+        virtual bool setTitleBar(const TitleBar&) { return false; }
+        // Temporary editor chrome, independent of script-owned frame settings.
+        virtual void setEditorChrome(bool) {}
+        // Its inside, in pixels, while it isn't full-screen.
+        virtual bool setWindowSize(u32, u32) { return false; }
+        virtual void setPointer(PointerShape) {}
+        virtual bool focused() const { return true; }
+        // Waits for it to be answered: true for OK or yes. False at once where there are none.
+        virtual bool showMessage(const char*, const char*, bool) { return false; }
+        // The system's own clipboard; false where there is none, and the engine keeps one of its own.
+        virtual bool clipboard(std::string&) { return false; }
+        virtual bool setClipboard(const char*) { return false; }
+        // Language and region as the system is set: "en-GB", or "en" where there is no region. Empty if unknown.
+        virtual std::string locale() { return std::string(); }
+        // Threads that can run at once.
+        virtual u32 processors() { return 1; }
+        // The time of day where the machine is, as it is set. False if it can't be told.
+        virtual bool localTime(u32&, u32&, u32&) { return false; }
     };
 
     // nullptr on failure, after logging why. Release with nx::destroy.

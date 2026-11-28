@@ -26,6 +26,8 @@ Red, green, blue and alpha, each 0 to 1.
 | `Color hsv(float hue, float saturation, float value)` | A colour from its hue (0 to 1 around the wheel), saturation and brightness. |
 | `Color lerp(const Color &in a, const Color &in b, float t)` | From a to b as t goes from 0 to 1. |
 | `Color fade(const Color &in color, float alpha)` | The same colour, more transparent. |
+| `Color toLinear(const Color &in color)` | A colour as screens show it (sRGB) as the light it stands for: for mixing, adding and fading lights as they really would. Alpha is kept. |
+| `Color toGamma(const Color &in color)` | Back again, to draw. |
 
 ## Texture
 
@@ -103,7 +105,7 @@ Triangles made by a script. Shared by every entity that shows it.
 
 ## Font
 
-A scalable SSFN font at one size.
+A font at one size: a scalable SSFN one, or one drawn beforehand in a picture.
 
 | | |
 |---|---|
@@ -112,7 +114,7 @@ A scalable SSFN font at one size.
 
 ## Sound
 
-Something to play: WAV, Ogg Vorbis, MP3 or cooked. Short effects are kept ready; long music is decoded while it plays.
+Something to play: WAV, Ogg Vorbis or cooked; the cook tool makes MP3 and FLAC into these. Short effects are kept ready; long music is decoded while it plays.
 
 | | |
 |---|---|
@@ -156,7 +158,8 @@ Loading. Names start with `asset:` for the screen's own files, `global:` for sha
 | `uint Assets::get_textureKilobytes() property` | Memory that images and fonts take. |
 | `uint Assets::get_soundKilobytes() property` | Memory that sounds take. |
 | `uint Assets::get_soundBudgetKilobytes() property` | Memory that sounds may take. |
-| `Font@ Assets::font(const string &in name, uint size)` | A font at a size in design units. |
+| `Font@ Assets::font(const string &in name, uint size)` | A font at a size in design units: an SSFN font, drawn sharp at any size; or a BMFont .fnt, with its one picture beside it, as BMFont, Hiero and Littera make them, its line that many units high (0 as it was drawn). |
+| `Font@ Assets::imageFont(const string &in name, const string &in glyphs, uint size = 0, uint spacing = 1)` | A font drawn in a picture, as pixel art often is: its glyphs side by side in the order given, with a column of the top left pixel's colour between each. Its letters as tall as the picture, or size units, with a quarter of that between lines; spacing is the pixels between letters. Draw it with FilterNearest to keep it sharp. Its own colours are kept, tinted by the text's colour, so white shows them as they are. |
 | `uint Assets::get_inUse() property` | Assets that something is holding. |
 | `uint Assets::get_warm() property` | Assets kept ready though nothing holds them. |
 | `uint Assets::get_hits() property` | Requests served without reading a file. |
@@ -195,6 +198,7 @@ Which part of some text sits at its position.
 | `AlignLeft` | Its left edge. |
 | `AlignCenter` | Its middle. |
 | `AlignRight` | Its right edge. |
+| `AlignJustify` | In a paragraph, each line but the last of it spread to fill the width, as a book's are. Elsewhere, its left edge. |
 
 ## Look
 
@@ -216,6 +220,26 @@ What each colour of a picture becomes: warmer, colder, faded, harder. Settings, 
 | `void unload()` | Forgets the table. |
 | `bool get_loaded() const property` | Whether it has a table. |
 | `Color apply(const Color &in color)` | What it makes of one colour, worked out here rather than on the GPU. |
+
+## Batch
+
+Many sprites of one picture, kept from frame to frame and drawn at once with Canvas.batch: a crowd, a starfield, a map of tiles, bullets. Each has a place, a size, a turn about its middle, a part of the picture and a colour, and is changed by its number, from 0 in the order they were added. Up to 65536.
+
+| | |
+|---|---|
+| `uint add(float x, float y, float w, float h, const Color &in color = White, float rotation = 0)` | The whole picture, or a plain rectangle if there is none, turned by degrees about its middle. Returns its number. |
+| `uint addPart(float x, float y, float w, float h, float sx, float sy, float sw, float sh, const Color &in color = White, float rotation = 0)` | Part of the picture, given in its own pixels. |
+| `uint addFrame(uint columns, uint rows, uint frame, float x, float y, float w, float h, const Color &in color = White, float rotation = 0)` | One frame from a sheet of equal frames, counting along each row. |
+| `void move(uint index, float x, float y, float rotation = 0)` | Puts one somewhere else. |
+| `void resize(uint index, float w, float h)` | Changes one's size. |
+| `void color(uint index, const Color &in color)` | Changes one's colour; see-through ones aren't drawn. |
+| `void frame(uint index, uint columns, uint rows, uint frame)` | Shows another frame of the sheet: to animate one. |
+| `void part(uint index, float sx, float sy, float sw, float sh)` | Shows another part of the picture, in its pixels. |
+| `Vec2 place(uint index)` | Where one is. |
+| `void removeLast()` | Takes away the one added last. To hide another, make it see-through. |
+| `void clear()` | Takes them all away. |
+| `uint get_count() const property` | How many there are. |
+| `Texture@ get_texture() const property` | The picture they are of. |
 
 ## Canvas
 
@@ -250,7 +274,18 @@ What each colour of a picture becomes: warmer, colder, faded, harder. Settings, 
 | `void arc(float x, float y, float radius, float thickness, float from, float to, const Color &in color)` | Part of a ring, or a slice of a circle, between two angles in degrees. |
 | `void glow(float x, float y, float radius, const Color &in color)` | A round glow, fading to nothing at its edge. With BlendAdd it is light. |
 | `void triangle(const Vec2 &in a, const Vec2 &in b, const Vec2 &in c, const Color &in ca, const Color &in cb, const Color &in cc)` | A triangle with a colour at each corner. |
+| `void polygon(const array<Vec2> &in corners, const Color &in color)` | A filled polygon of up to 256 corners, either way round: concave ones too, as long as their sides don't cross. |
+| `void polygonLine(const array<Vec2> &in corners, float thickness, const Color &in color)` | A polygon's outline, with mitred corners. |
+| `void polyline(const array<Vec2> &in points, float thickness, const Color &in color)` | Lines through up to 256 points, joined with mitres where they meet (bevelled where that would be sharp): a path, a graph, a trail. |
+| `void ellipse(float x, float y, float rx, float ry, const Color &in color)` | A filled ellipse, so far across to each side and up and down. |
+| `void ellipseLine(float x, float y, float rx, float ry, float thickness, const Color &in color)` | An ellipse's outline. |
+| `void mesh(const Texture@+ texture, const array<Vec2> &in points, const array<Vec2> &in uvs, const Color &in tint = White, const array<uint>@+ triangles = null, const array<Color>@+ colors = null)` | Triangles of a picture, each corner a point and where in the picture it comes from (uvs, 0 to 1 across it): bent, stretched, torn. Three indices to a triangle, or a fan from the first point without them. A colour for each point, if given, tints it; null texture is plain colour. For a water surface, cloth, a picture wrapped round a shape. |
+| `void batch(const Batch@+ batch, float x = 0, float y = 0, const Color &in tint = White)` | Draws all a batch's sprites at once, moved by x and y and tinted: thousands cost little more than one, and nothing until the picture has arrived. |
+| `void mask()` | What is drawn after this is not seen but marks out a mask: shapes, lines, text, images (all of each image's square). Each mask() starts a new mask. |
+| `void masked(bool inside = true)` | Then what is drawn is seen only inside the mask, or only outside it: a spotlight, a torn edge, a window into another scene. A mask doesn't last into or out of a picture, or into the next frame. |
+| `void unmask()` | Everything is seen again. |
 | `bool effect(Effect@+ effect)` | Puts all that has been drawn so far through a shader. False where there are none. |
+| `bool blur(float pixels = 8)` | Blurs all that has been drawn so far, about so many pixels across on a screen 720 high: only inside the clip, if there is one, for frosted glass behind a panel. Draw the panel after. On every GPU; false where it can't be done. |
 | `bool bloom(float strength = 0.8, float threshold = 0.7, float spread = 1)` | Lets light spill from what is bright, of all that has been drawn so far. False where it can't be done. |
 | `bool grade(Look@+ look, float strength = 1)` | Turns each colour of all that has been drawn so far into what a look makes of it, mixed with what it was by strength (0 to 1). Only inside the clip, if there is one, so a part can be shown before and after. One pass over the screen, on every GPU; the look is worked out again only when it changes. Usually last, before text that should stay as it is. False where it can't be done. |
 | `bool beginPicture(Texture@+ picture, const Color &in clear = Color(0, 0, 0, 0))` | Draws into a picture from Assets::picture instead of the screen, 2D and 3D alike, until endPicture: cleared to a colour first, and with a design of its own pixels until it is changed. One at a time; effects, bloom and grading are for the screen and do nothing in it. False if it can't be, and drawing goes on to the screen. |
@@ -262,7 +297,7 @@ What each colour of a picture becomes: warmer, colder, faded, harder. Settings, 
 | `void nineSlice(const Texture@+ texture, float x, float y, float w, float h, float corner, const Color &in tint = White)` | A stretchy panel whose corners keep their size. |
 | `void tile(const Texture@+ texture, float x, float y, float w, float h, float tileW, float tileH, float offsetX, float offsetY, const Color &in tint = White)` | An image repeated over an area. |
 | `float text(const Font@+ font, const string &in text, float x, float y, const Color &in color = White, Align align = AlignLeft)` | Text from its top. Returns its width. |
-| `float paragraph(const Font@+ font, const string &in text, float x, float y, float width, const Color &in color = White)` | Text broken into lines to fit a width. Returns its height. |
+| `float paragraph(const Font@+ font, const string &in text, float x, float y, float width, const Color &in color = White, Align align = AlignLeft)` | Text broken into lines to fit a width, each line from the left, centred, from the right, or justified to fill it. Returns its height. |
 | `float rich(const Font@+ font, const string &in text, float x, float y, float width, const Color &in color = White, Align align = AlignLeft)` | A paragraph with parts of it marked: `[color=#ff8000]` or `[color=orange]` ... `[/color]`, `[b]` bold `[/b]`, `[u]` underlined `[/u]`, `[s]` struck through `[/s]`; `[[` is a [ itself. The colours are white, black, red, green, blue, yellow, orange, pink, purple, cyan and gray, or #rrggbb and #rrggbbaa. Returns its height. |
 | `float richHeight(const Font@+ font, const string &in text, float width)` | How tall that would be, with nothing drawn. |
 
@@ -341,6 +376,66 @@ Something that is playing. Safe to use after it has ended.
 | `bool get_ready() const property` | Whether it has arrived. Until then it plays as silence. |
 | `bool get_failed() const property` | Whether the file could not be loaded. |
 
+## Samples
+
+Sound as numbers, -1 to 1, that a script writes and reads one at a time: a laser made from a sine, an explosion from noise, a sound loaded and played backwards. Each play has a copy of its own.
+
+| | |
+|---|---|
+| `uint get_frames() const property` | How many: one a channel in each. |
+| `uint get_rate() const property` | How many a second. |
+| `uint get_channels() const property` | 1 or 2. |
+| `float get_seconds() const property` | How long it is. |
+| `float get(uint frame, uint channel = 0) const` | One sample, -1 to 1; 0 past the end. |
+| `void set(uint frame, float value)` | Every channel of one frame. |
+| `void set(uint frame, float left, float right)` | The left and right of one frame; their middle if there is only one channel. |
+| `Voice play(float volume = 1, float pan = 0, float pitch = 1, bool loop = false) const` | Plays them as an effect, as they are now. |
+| `Samples@ Assets::samples(const string &in name)` | A sound's samples, read now, to look at or change: `asset:`, `global:` or `own:`. Null if there is none. |
+
+## AudioStream
+
+Sound written as it plays, by a synthesiser, a tracker or an emulator: write() as much as there is room for each frame, and it plays as it comes, quiet while there is none. It plays out what it has after it is let go.
+
+| | |
+|---|---|
+| `uint write(const array<float> &in samples)` | Samples, -1 to 1, left then right for two channels: as many frames as there is room for. How many were taken. |
+| `uint get_room() const property` | Frames there is room for. It holds so many seconds, as made: more is later, less risks gaps. |
+| `uint get_queued() const property` | Frames written and not yet heard. |
+| `uint get_rate() const property` | Frames a second. |
+| `uint get_channels() const property` | 1 or 2. |
+| `void clear()` | Leaves out what has been written and not yet heard. |
+| `Voice play(float volume = 1, float pan = 0)` | Starts it; the same voice if it is playing already. |
+| `Voice get_voice() const property` | What is playing it, to change its volume, pan or pitch. |
+
+## Playlist
+
+Music, one track after another, the next fading in as the last fades out: in order or shuffled, round again or not. It moves on by itself while its screen is on top.
+
+| | |
+|---|---|
+| `void add(Sound@+ track)` | One more, at the end. Up to 64. |
+| `void clear()` | None, and quiet. |
+| `void play(float fadeSeconds = 0)` | From the track it is at, fading in. A track that hasn't arrived starts once it has. |
+| `void next(float fadeSeconds = -1)` | On to the next now, over crossfade seconds unless told. |
+| `void previous(float fadeSeconds = -1)` | Back to the one before. |
+| `void stop(float fadeSeconds = 1)` | Quiet, fading out; play starts the same track again. |
+| `uint get_count() const property` | How many tracks. |
+| `uint get_index() const property` | Which is playing, from 0. |
+| `void set_index(uint) property` | Straight to one, fading across. |
+| `bool get_playing() const property` | Whether it is playing, or about to. |
+| `bool get_shuffle() const property` | Whether each next is any but the last. |
+| `void set_shuffle(bool) property` | Each next any but the last, or in order. |
+| `bool get_loop() const property` | Whether it goes round again after the last; true to begin with. |
+| `void set_loop(bool) property` | Round again after the last, or stop. |
+| `float get_crossfade() const property` | Seconds each track overlaps the next; 2 to begin with. |
+| `void set_crossfade(float) property` | Seconds each track overlaps the next; 0 for one straight after another. |
+| `float get_volume() const property` | How loud, 1 as it is. |
+| `void set_volume(float) property` | Louder or softer, gradually. |
+| `bool get_paused() const property` | Whether it is held where it is. |
+| `void set_paused(bool) property` | Holds it where it is, or lets it go on. |
+| `float get_position() const property` | Seconds into the track playing. |
+| `float get_seconds() const property` | How long the track playing is; 0 if that isn't known. |
+
 ## Audio
 
 Volumes, and what is being heard. A screen's sounds pause while it is covered and stop when it closes.
@@ -355,6 +450,12 @@ Volumes, and what is being heard. A screen's sounds pause while it is covered an
 | `void Audio::highPass(Bus bus, float hertz, float seconds = 0)` | Takes away what is lower, as a small radio or a telephone does: 1000 is thin, 0 is everything again. |
 | `void Audio::reverb(Bus bus, float amount, float room = 0.6f, float seconds = 0)` | A room's echoes: amount 0 to 1, how much is heard; room 0 to 1, from a small, dead one to a hall or a cave. 0 for none. |
 | `void Audio::echo(Bus bus, float amount, float delay = 0.3f, float feedback = 0.4f, float seconds = 0)` | Each sound again, after so many seconds (up to 0.75), and again, quieter each time by feedback (0 to 0.9). 0 for none. |
+| `void Audio::bandPass(Bus bus, float hertz, float octaves = 1, float seconds = 0)` | Only what is near so many hertz, so many octaves wide: a radio, a voice through a pipe. lowPass(20000) and highPass(0) take it away. |
+| `void Audio::distortion(Bus bus, float amount, float seconds = 0)` | Driven too hard, as an amplifier pushed past what it can: amount 0 to 1, from none to fuzz. Glides there over so many seconds. |
+| `void Audio::chorus(Bus bus, float amount, float rate = 1.5f, float seconds = 0)` | A copy a little behind, swaying in time, so that one sounds like several: amount 0 to 1, rate in sways a second. |
+| `void Audio::flanger(Bus bus, float amount, float rate = 0.25f, float feedback = 0.5f, float seconds = 0)` | A copy very close behind, sweeping, fed back by feedback (0 to 0.9): the whoosh of a jet, or a robot's voice. |
+| `void Audio::compressor(Bus bus, float threshold = -18, float ratio = 4)` | Presses down what is louder than threshold decibels below full by ratio (1 to 20): quick to press, slow to let go, so loud and soft come closer. 0 for none. |
+| `void Audio::equalizer(Bus bus, float low, float mid, float high, float seconds = 0)` | Turns the lows (about 250 Hz), middle (1000 Hz) and highs (4000 Hz) up or down, in decibels from -24 to 24: 0, 0, 0 is as it is. |
 | `void Audio::clearEffects(float seconds = 0)` | Every bus back to none. A screen starts with none, and they go when it closes. |
 | `float Audio::get_level() property` | How loud it has been lately, 0 to 1. |
 | `float Audio::spectrum(uint band)` | How strong one of 32 bands is, low to high, 0 to 1. |
@@ -436,6 +537,170 @@ Numbers, text and flags, in lists and by name: for files, and for what comes fro
 | `void Assets::forget(const string &in name)` | Goes back to the file that came with the screen, and loses what was written over it. While developing it is the only one, and nothing is done. |
 | `bool Assets::write(const string &in name, const string &in text)` | Writes one of the screen's own files: `asset:` something `.json`. While developing it is the file itself; otherwise it is kept with the saves, and read from there from then on. False if it couldn't be. |
 
+## Pixels
+
+Pictures as colours that a script reads and writes, one pixel at a time: made, loaded, drawn and saved.
+
+| | |
+|---|---|
+
+## Pixels
+
+A picture held as its pixels, from the top left, up to 2048 a side.
+
+| | |
+|---|---|
+| `uint get_width() const property` | Across. |
+| `uint get_height() const property` | Down. |
+| `Color get(uint x, uint y) const` | One pixel's colour; see-through black outside. |
+| `void set(uint x, uint y, const Color &in color)` | Changes one; nothing outside. |
+| `void fill(const Color &in color)` | Every one the same. |
+| `void paste(const Pixels@+ from, int x, int y)` | Another's pixels over these, its top left at x, y, as they are: what is see-through in it is see-through here. |
+| `Pixels@ copy() const` | Another the same, of its own. |
+| `Texture@ get_texture() property` | To draw them: the same texture each time, sent to the GPU again if a pixel has changed since it was last asked for. Change many, then draw. Null where the GPU can't. |
+| `string png() const` | As a PNG file, in a string: to send, or to keep in a save. |
+| `bool save(const string &in name)` | Keeps them as a PNG with the saves: `saved:` and a short, plain name that ends in .png. Assets::pixels reads it back. On a computer it is a file in the saves' folder. False if it couldn't be. |
+| `Pixels@ Assets::pixelsFrom(const string &in file)` | A picture's pixels from the bytes of a PNG, JPEG, TGA, BMP or GIF: from a Zip, the web or a save. Null if they aren't one, of up to 2048 pixels a side. |
+| `Pixels@ Assets::pixels(const string &in name)` | A picture's pixels, read now: `asset:`, `global:` or `own:`, or `saved:` for one that Pixels.save kept. Null if there is none. |
+
+## Data
+
+Bytes in strings: squeezed, fingerprinted, and written as text. A string can hold any bytes.
+
+| | |
+|---|---|
+| `string Data::compress(const string &in bytes, int level = 6)` | Smaller, in zlib's format, which most languages can read: level 1 is quickest, 9 smallest. |
+| `string Data::uncompress(const string &in bytes)` | As it was before compress(), or what zlib made. |
+| `string Data::md5(const string &in bytes)` | A fingerprint, as 32 hex digits: the same bytes give the same one. For telling whether a file has changed, not for secrets. |
+| `string Data::sha1(const string &in bytes)` | The same, 40 digits. |
+| `string Data::sha256(const string &in bytes)` | The same, 64 digits, and hard to forge. |
+| `string Data::base64(const string &in bytes)` | Any bytes as letters, digits, + and /: for JSON, the web, or copying by hand. |
+| `string Data::unbase64(const string &in text)` | The bytes again; the web's kind, with - and _, too. |
+| `string Data::hex(const string &in bytes)` | Each byte as two hex digits. |
+| `string Data::unhex(const string &in text)` | The bytes again. |
+| `string Data::deflate(const string &in bytes, int level = 6)` | Smaller, as bare deflate with nothing round it: what zip files, PNGs and some web servers hold. |
+| `string Data::inflate(const string &in bytes)` | As it was before deflate(). |
+| `string Data::gzip(const string &in bytes, int level = 6)` | Smaller, as a .gz file: what gzip and web servers make. |
+| `string Data::gunzip(const string &in bytes)` | As it was before gzip(), or what gzip made, checked. |
+| `uint Data::crc32(const string &in bytes)` | The check that zip, gzip and PNG files keep: the same bytes give the same number. |
+
+## Packed
+
+Numbers and text laid out in bytes, as a file format or another program wants them, and read back in the same order. Little-endian, as most machines are, unless told otherwise.
+
+| | |
+|---|---|
+| `bool get_bigEndian() const property` | Whether the largest byte of a number comes first, as networks and some old formats want. |
+| `void set_bigEndian(bool) property` | Changes it, for what is written or read next. |
+| `void writeU8(uint value)` | A byte, 0 to 255. |
+| `void writeU16(uint value)` | Two bytes, 0 to 65535. |
+| `void writeU32(uint value)` | Four bytes. |
+| `void writeI8(int value)` | A byte, -128 to 127. |
+| `void writeI16(int value)` | Two bytes, -32768 to 32767. |
+| `void writeI32(int value)` | Four bytes. |
+| `void writeI64(int64 value)` | Eight bytes. |
+| `void writeFloat(float value)` | Four bytes. |
+| `void writeDouble(double value)` | Eight bytes. |
+| `void writeText(const string &in text)` | Text and a zero byte after it. |
+| `void writeFixed(const string &in text, uint count)` | Text in so many bytes: cut short, or made up with zeros. |
+| `void write(const string &in bytes)` | Bytes as they are. |
+| `uint readU8()` | The next byte. |
+| `uint readU16()` | The next two. |
+| `uint readU32()` | The next four. |
+| `int readI8()` | The next byte, below 0 too. |
+| `int readI16()` | The next two, below 0 too. |
+| `int readI32()` | The next four, below 0 too. |
+| `int64 readI64()` | The next eight. |
+| `float readFloat()` | The next four, as a number. |
+| `double readDouble()` | The next eight, as a number. |
+| `string readText()` | Text, up to a zero byte, which is passed over. |
+| `string readFixed(uint count)` | Text in so many bytes, up to a zero if there is one. |
+| `string read(uint count)` | So many bytes as they are. |
+| `string get_bytes() const property` | All of them, to keep, send or put in a file. |
+| `uint get_size() const property` | How many bytes. |
+| `uint get_position() const property` | Where the next read starts. |
+| `void set_position(uint) property` | Reads from somewhere else: to skip, or go back. |
+| `bool get_more() const property` | Whether there is anything left to read. |
+| `bool get_whole() const property` | False if more was read than there was, or written than 64 MB. |
+| `void clear()` | No bytes, to start again. |
+
+## Zip
+
+A zip file's files, read from its bytes or put together to make one: a level pack, a player's mod, a save with its pictures.
+
+| | |
+|---|---|
+| `bool get_failed() const property` | Whether what it was made from isn't a zip file it can read: one kept as it is or deflated, as nearly all are, and under 4 GB. |
+| `uint get_count() const property` | How many files are in it; folders aren't counted. |
+| `string name(uint index) const` | One's name, with / between folders: `levels/first.json`. |
+| `bool has(const string &in name) const` | Whether a file of that name is in it. |
+| `uint size(const string &in name) const` | How large one is, as it is. |
+| `string read(const string &in name) const` | What is in one, checked: text, or bytes for Assets::pixelsFrom, Json or Packed. |
+| `void add(const string &in name, const string &in bytes, int level = 6)` | Puts a file in, or replaces one of that name: deflated, unless level is 0 or that makes it no smaller. |
+| `void remove(const string &in name)` | Takes one out. |
+| `string get_bytes() const property` | The whole zip file, for any program to open. |
+
+## Random
+
+Random numbers of a script's own, from a seed: the same seed gives the same numbers, in the same order, on every machine. For worlds made from a number, replays, and dealing the same cards twice.
+
+| | |
+|---|---|
+
+## Random
+
+A generator of its own.
+
+| | |
+|---|---|
+| `float random()` | From 0 up to 1. |
+| `float random(float low, float high)` | Between two numbers. |
+| `int randomInt(int low, int high)` | A whole number from low to high, including both. |
+| `float normal(float mean = 0, float deviation = 1)` | Mostly near the mean and seldom far from it, in a bell curve: about two in three within one deviation. For heights, aim, damage that varies. |
+| `uint get_seed() const property` | What it started from. |
+| `void set_seed(uint) property` | Starts again from a seed. |
+| `string get_state() const property` | Where it has got to, as text, to keep in a save. |
+| `void set_state(const string &in) property` | Goes on from where it had got to. |
+| `float randomNormal(float mean = 0, float deviation = 1)` | From the shared generator, as Random.normal. |
+
+## Threads
+
+Scripts of their own, each on a thread of its own, for work that would hold up the screen: making a world, finding a way, squeezing a file. A thread's script has strings, arrays, maths, Json, Data and Random, and nothing that draws, plays or loads; it begins at its `void main()`, and shares nothing with the screen but what goes through channels. On the original Xbox, with one processor, a thread runs in the time the screen leaves.
+
+| | |
+|---|---|
+
+## Channel
+
+Text passed from one thread to another, first in, first out, and safe to use from any of them. Channels of the same name are the same channel, in every thread. Numbers go as text, and anything with parts as Json's text.
+
+| | |
+|---|---|
+| `string get_name() const property` | What it is called. |
+| `void push(const string &in value)` | Puts one at the end. |
+| `bool pop(string &out value)` | Takes the first, if there is one: false if there isn't. Never waits. |
+| `string pop()` | Takes the first, or gives empty text if there is none. |
+| `string peek()` | The first, left where it is. |
+| `string demand(float seconds = -1)` | In a thread: waits for one, for so many seconds or for ever, and takes it; empty if none came, or the thread is asked to stop. |
+| `uint get_count() property` | How many are waiting. |
+| `void clear()` | Takes them all away. |
+
+## Thread
+
+A script file run on a thread of its own. It is asked to stop, and waited for, when nothing holds it any more: as its screen closes.
+
+| | |
+|---|---|
+| `bool start()` | Runs its main(), once. |
+| `bool get_started() const property` | Whether it has been started. |
+| `bool get_running() const property` | Whether its main() is still going. |
+| `string get_error() property` | What went wrong in it, with its line, or empty. |
+| `void stop()` | Asks it to stop: its waits end, and Worker::stopping is true. |
+| `void wait()` | Waits until its main() has returned: for ever, if it never does. stop() first to end it sooner. |
+| `void Worker::sleep(float seconds)` | In a thread: waits so long, waking at once if it is asked to stop. 0 lets others run. |
+| `bool Worker::get_stopping() property` | In a thread: whether it has been asked to stop, as its screen closes. Long loops should look, and return. |
+| `bool Worker::get_inThread() property` | Whether the script running is a thread's. |
+
 ## Paths and noise
 
 Ways for things to follow, and smooth randomness to make worlds with.
@@ -464,6 +729,28 @@ A smooth way through points, passing through each one. Places on it are asked fo
 | `Vec2 at2(float distance)` | at(), on the plane. |
 | `Vec2 direction2(float distance)` | direction(), on the plane. |
 | `float nearest(const Vec2 &in place)` | nearest(), on the plane. |
+
+## Curve
+
+A Bezier curve on the plane: it starts at its first control point and ends at its last, and is pulled towards those between without passing through them, as drawing programs' curves are. Places on it are asked for by t, 0 at the start to 1 at the end. Up to 32 control points: 3 make it quadratic, 4 cubic.
+
+| | |
+|---|---|
+| `void add(const Vec2 &in point)` | Another control point at the end. |
+| `void insert(uint index, const Vec2 &in point)` | One before another, or at the end. |
+| `void remove(uint index)` | Takes one out. |
+| `void clear()` | No control points. |
+| `uint get_count() const property` | How many control points. |
+| `uint get_degree() const property` | One less than that. |
+| `Vec2 point(uint index) const` | One of them. |
+| `void setPoint(uint index, const Vec2 &in point)` | Moves one. |
+| `Vec2 at(float t) const` | The place on it at t. |
+| `Vec2 slope(float t) const` | Which way it goes at t, and how fast as t goes up: its normalized() is the direction, for turning what follows it. |
+| `array<Vec2>@ points(uint count = 32) const` | So many places along it, from start to end, evenly in t: for Canvas.polyline, a road, a path to follow. |
+| `float length(uint pieces = 64) const` | How long it is, measured along so many straight pieces. |
+| `Curve@ part(float from, float to) const` | The part between two values of t, as a curve of its own: to split one, or draw it bit by bit. |
+| `array<uint>@ triangulate(const array<Vec2> &in corners)` | Cuts a polygon, either way round and concave too, into triangles that fill it: three corner indices for each. For Canvas.mesh, or shapes for physics, which want convex pieces. As long as its sides don't cross. |
+| `bool isConvex(const array<Vec2> &in corners)` | Whether a polygon bulges out at every corner, so a line between any two places inside stays inside. |
 | `float noise(float x, float y = 0, float z = 0)` | Smooth noise, -1 to 1, with hills and dips about 1 apart: the same for the same place every time. Scale the place for bigger or smaller ones; move through z for noise that changes with time. |
 | `float noise(const Vec2 &in place)` | The same, on the plane. |
 | `float noise(const Vec3 &in place)` | The same, in space. |
@@ -564,6 +851,10 @@ A script on an entity. Write a class that comes from it and any of these methods
 | `int get_onWall() const property` | -1 for something solid on its left, 1 on its right, otherwise 0. |
 | `void circle(float radius, uint group = 0, uint hits = 0)` | Gives it a round collider in a group from 0 to 15. hits has a bit for each group it wants to know about: 1 << group. |
 | `void box(float w, float h, uint group = 0, uint hits = 0)` | The same with a box, which turns with it. |
+| `void polygon(const array<Vec2> &in corners, uint group = 0, uint hits = 0)` | The same with a convex polygon, around its place, which turns and grows with it: up to 8 corners, made convex if they aren't. A rigid body of any shape: a wedge, a rock, a car's body. |
+| `void chain(const array<Vec2> &in points, bool loop = false, uint group = 0, uint hits = 0)` | Lines through up to 256 points, around its place, that never move: ground with slopes and hills, a curved ramp, the inside of a bowl if loop. Bodies hit them from either side; characters stand on them and walk up their gentle parts, and are stopped by the steep ones. |
+| `bool get_oneWay() const property` | Whether a wall is solid only from above. |
+| `void set_oneWay(bool) property` | Makes a wall solid only from above, as a platform that what is under it can jump up through and land on: for characters and rigid bodies alike. |
 | `bool get_wall() const property` | Whether others stop at its collider. |
 | `bool get_occluder() const property` | Whether its collider casts shadows from lights on the plane. |
 | `void set_occluder(bool) property` | Makes its collider, a box or a circle, cast shadows from lights on the plane, as solid tiles do. It needs a collider first. |
@@ -599,6 +890,8 @@ Entities that move, collide and are drawn by the engine. Each screen has its own
 | `array<Entity@>@ Scene::within(const Vec2 &in position, float radius, uint groups = 0xFFFF)` | Everything whose collider touches a circle. |
 | `Entity@ Scene::raycast(const Vec2 &in from, const Vec2 &in to, Vec2 &out hit, uint groups = 0xFFFF)` | The first collider on a line, and where, or null. |
 | `Vec2 Scene::get_gravity() property` | What pulls on those that feel it. |
+| `bool Scene::get_showShapes() property` | Whether colliders are drawn over the scene. |
+| `void Scene::set_showShapes(bool) property` | Draws every collider over the scene, to see what touches what: grey walls, green bodies with mass, blue characters and the rest, yellow areas that only feel. |
 | `void Scene::set_gravity(const Vec2 &in) property` | Units a second, each second. |
 | `Color Scene::get_ambient() property` | The light everywhere, before lights add to it. White, as it starts, is no lighting at all; anything darker turns lighting on, so that entities' lights show and solid tiles and occluders cast shadows. |
 | `void Scene::set_ambient(const Color &in) property` | The light everywhere, before lights add to it: Color(0.1f, 0.1f, 0.2f) is a dark night. |
@@ -606,6 +899,22 @@ Entities that move, collide and are drawn by the engine. Each screen has its own
 | `void Scene::set_lightLayer(int) property` | Layers above this one are drawn after the lighting, as they are. |
 | `void Scene::burst(const string &in particles, const Vec2 &in position, uint count)` | Throws out some particles. |
 | `bool Scene::join(Entity@+ a, Entity@+ b, const Vec2 &in at, float softness = 0)` | Pins two rigid bodies together at a place; null for b pins to the scene. |
+| `bool Scene::hinge(Entity@+ a, Entity@+ b, const Vec2 &in at, float low = 0, float high = 0, float motorSpeed = 0, float motorTorque = 0)` | The same, with limits: a turns only between low and high degrees from how it is now, if low is less than high; and a motor that turns it at so many degrees a second, as strongly as its torque, if that isn't 0. A door, a flipper, a wheel that drives. |
+| `bool Scene::weld(Entity@+ a, Entity@+ b, const Vec2 &in at)` | Holds two together as one, turned as they are now; null for b holds a where it is. |
+| `bool Scene::rope(Entity@+ a, Entity@+ b, const Vec2 &in atA, const Vec2 &in atB, float length = -1)` | A place on each no further apart than a length, as a rope: it pulls, never pushes. Below 0, as far apart as they are now. |
+| `bool Scene::spring(Entity@+ a, Entity@+ b, const Vec2 &in atA, const Vec2 &in atB, float frequency = 3, float damping = 0.5, float length = -1)` | A place on each pulled towards a length and pushed away from it: frequency is how many times a second it would bounce, damping from 0, bouncing on, to 1, settling at once. The same whatever their weight. |
+| `bool Scene::slider(Entity@+ a, Entity@+ b, const Vec2 &in at, const Vec2 &in axis, float low = 0, float high = 0)` | Lets a move only along a line through a place on b, which turns with b, without turning itself: a lift, a piston, a drawer. Between low and high along it, from where it is now, if low is less than high. |
+| `bool Scene::drag(Entity@+ a, const Vec2 &in at, float strength = 5)` | Pulls a place on a body towards a place in the scene, softly, as a hand would: for picking things up with the mouse. No harder than strength times its weight. Move it on with dragTo; let go with unjoin. |
+| `void Scene::dragTo(Entity@+ a, const Vec2 &in place)` | Where a body's drag pulls towards now. |
+| `void Scene::motor(Entity@+ a, float speed, float torque)` | Changes the motor of a's hinges and wheels: degrees a second, and how strongly; 0 torque for none. |
+| `bool Scene::wheel(Entity@+ wheel, Entity@+ body, const Vec2 &in axis = Vec2(0, 1), float frequency = 4, float damping = 0.7, float motorSpeed = 0, float motorTorque = 0)` | A wheel on a car: it turns freely about its middle, and moves only along a line through where it is now, which turns with the body, sprung towards where it is: frequency is how many times a second it would bounce, damping how soon it settles. With a motor, as a hinge has, that motor() changes. Null for body puts it on the scene. |
+| `bool Scene::pulley(Entity@+ a, Entity@+ b, const Vec2 &in groundA, const Vec2 &in groundB, const Vec2 &in atA, const Vec2 &in atB, float ratio = 1)` | A rope from a place on a up over a fixed place, across to another and down to a place on b: as one goes down the other goes up, b ratio times as far as a. A lift and its weight, a block and tackle. |
+| `bool Scene::gear(Entity@+ a, Entity@+ b, float ratio = 1)` | As a turns one way, b turns the other, ratio times as far: two gears that mesh, each on its hinge. Below 0, the same way, as wheels joined by a chain. |
+| `bool Scene::friction(Entity@+ a, Entity@+ b = null, float strength = 1)` | Slows a's moving and turning against b's, or the scene's, no harder than strength times its weight: the ground under what is seen from above, with no gravity, such as pucks, cars and crates. |
+| `bool Scene::follow(Entity@+ a, Entity@+ b, float strength = 5, float correction = 0.3)` | Pushes b, no harder than strength times its weight, towards where it is now from a, as a moves and turns: something carried, a pet that keeps up. correction (0 to 1) is how much of the way it is put right each step. |
+| `void Scene::followTarget(Entity@+ a, Entity@+ b, const Vec2 &in offset, float degrees = 0)` | Where from a that b is pushed towards now, in a's own directions, and how far turned from it. |
+| `void Scene::unjoin(Entity@+ a)` | Every joint that a is in. |
+| `bool Scene::contact(Entity@+ a, Entity@+ b, Vec2 &out at, Vec2 &out normal, float &out impulse)` | Whether two rigid bodies, or a body and a wall, touched in the last step: where, which way from a to b, and how hard they pressed. For a sound as loud as a knock, or sparks where it was. |
 | `bool Scene::path(const Vec2 &in from, const Vec2 &in to, array<Vec2>@+ way, bool diagonal = true)` | The way from one place to another round the solid tiles of the maps, on the grid of the last: its corners, made as straight as it can be, ending at `to`. Diagonally too unless told not to, but never across a corner. False if there is none. |
 | `bool Scene::blocked(const Vec2 &in place)` | Whether a solid tile is there, in any map. |
 | `uint Scene::tile(const Vec2 &in position)` | What the map has there: 0 is nothing. |
@@ -663,6 +972,19 @@ Entities that move, collide and are drawn by the engine. Each screen has its own
 | `bool get_animated() const property` | Whether an animation that doesn't loop has finished. |
 | `float get_animationSpeed() const property` | How fast its animation plays. |
 | `void set_animationSpeed(float) property` | 1 is normal. |
+| `bool animateBlend(array<string>@+ names, array<float>@+ at, float change = 0.25)` | Plays several of its model's animations at once, mixed by `blendBy`: each is at a point along a line, as idle at 0, walk at 1.5 and run at 4 for its speed, and between two points it is some of each, their steps kept together. Changes to it over some seconds; asking again only changes the points. Up to 8. False if any isn't there, or the model hasn't arrived. |
+| `float get_blendBy() const property` | Where along the line of `animateBlend` it is. |
+| `void set_blendBy(float) property` | Where along the line of `animateBlend` it is: its speed, say. |
+| `bool animateLayer(const string &in name, const string &in bone, bool loop = true, float change = 0.25)` | Plays an animation over one bone and those that hang from it, on top of the rest, as waving while walking: "chest" for the top half. Comes in over some seconds. Asking again for what is playing does nothing. False if either isn't there. |
+| `void stopLayer(float change = 0.25)` | Lets the layer go over some seconds. |
+| `bool get_layerPlayed() const property` | Whether there is no layer, or one that doesn't loop has finished, or it is going. |
+| `bool get_rootMotion() const property` | Whether its animations move it. |
+| `void set_rootMotion(bool) property` | Where its animations carry the model's highest bone along the ground, the whole thing goes instead, so its feet don't slide: a walker so moved still stops at walls. |
+| `bool lookAt(const string &in bone, const Vec3 &in place, float amount = 1)` | Turns a bone of its model, as a head, toward a place, up to 75 degrees, over whatever its animation does; amount is how much. It turns there smoothly, and can be asked every update as the place moves. False if the bone isn't there. |
+| `void lookAway()` | Turns the bone back to what its animation does. |
+| `bool reach(const string &in bone, const Vec3 &in place, float amount = 1)` | Bends a bone and the one above it, over whatever the animation does, so that the bone's end touches a place: "hand.r" on a lever, "foot.l" on a step. Its end is where the bone below it starts, or as far again as it is from the one above. Up to four at once; amount 0 lets one go, smoothly, and it can be asked every update as the place moves. False if the bone isn't there. |
+| `bool ragdoll(bool limp, const Vec3 &in push = Vec3(), float change = 0.6f)` | Goes limp: a body for each bone of its model that moves some of its skin, pinned where the bones meet and swinging only so far, falls as it is pushed, sent off at a speed as well as how it was moving; its own collider isn't there meanwhile, and what hits a body hits it. `push` on it then pushes the body nearest the place. false gets it up again, into whatever it plays, over some seconds. False if its model doesn't bend. |
+| `bool get_ragdolled() const property` | Whether it is limp. |
 | `Vec3 get_motion() const property` | Metres a second. |
 | `void set_motion(const Vec3 &in) property` | Sets it going. |
 | `Vec3 get_turning() const property` | Degrees a second about each axis. |
@@ -718,6 +1040,17 @@ The scene in three dimensions: x right, y up, z towards you, in metres. Entities
 | `void Space::sun(const Vec3 &in direction, const Color &in color)` | Light from far away; the direction is towards it. |
 | `void Space::ambient(const Color &in sky, const Color &in ground)` | Light from everywhere: on what faces up, and on what faces down. |
 | `void Space::sky(const Color &in top, const Color &in horizon)` | Draws a sky, with the sun in it. Without one, what is on the canvas already is behind. |
+| `void Space::occlusion(float strength = 1, float radius = 0.6)` | Darkens corners, creases and what is under things, as light reaches them less: ambient occlusion, from how far away each pixel is, within so many metres. 0 for none. Where `depthEffects`. |
+| `void Space::reflections(float strength = 0.6)` | Shows what is around in what faces up, wet floors and still water, where it is on the screen: screen-space reflections. 0 for none. Where `depthEffects`. |
+| `void Space::focus(float distance, float depth = 1, float blur = 10, float falloff = 6, float bokeh = 1)` | Depth of field: sharp at so many metres and depth either side, blurred further from it, most so falloff metres on, by blur pixels across (at 720 high); the brightest spread into round bokeh, by bokeh. A distance of 0 for none. Where `depthEffects`. |
+| `void Space::autoExposure(float brightness = 0.4, float range = 2.5, float speed = 2)` | Makes the view brighter or darker, gradually, toward an average brightness (0 to 1), by as much as range times either way, as eyes adjust going in and out of the dark. 0 for none. Where `depthEffects`. |
+| `bool Space::get_showShapes() property` | Whether colliders are drawn. |
+| `void Space::set_showShapes(bool) property` | Draws every collider as lines over the view, to see what touches what: grey walls, green bodies (darker asleep), blue walkers, orange ragdolls, yellow areas that only feel. |
+| `bool Space::get_showNavigation() property` | Whether where things can walk is drawn. |
+| `void Space::set_showNavigation(bool) property` | Draws the squares that navigate found can be walked on, in green. |
+| `float Space::get_doppler() property` | How much sounds in space rise as they come closer and fall as they go, as a car or a siren passing does: 0, none, to begin with; 1 as they would. |
+| `void Space::set_doppler(float) property` | How much sounds in space rise as they come closer and fall as they go: 1 as they would, more to make it plain. |
+| `bool Space::get_depthEffects() property` | Whether this GPU can do occlusion, reflections, focus and autoExposure, and depthAt in picture effects: everywhere but the original Xbox. |
 | `void Space::fog(const Color &in color, float start, float end)` | Hides what is far away. |
 | `void Space::grass(Model@+ tuft, float perSquareMetre = 3, float distance = 30)` | Grows tufts of a model over the land near the camera, where it is green, flat enough and dry, coloured as the land is there; they bend in the wind. null for none. |
 | `bool Space::navigate(const Vec3 &in middle, float size, float cell = 1, float climb = 0.6f, uint groups = 0xFFFD)` | Works out where things can walk, in squares over a part of the world as it is now: what is under each square, of the groups given (all but group 1, those that walk, unless told otherwise), not too steep and not under water; a step from one to the next no higher than a climb. Up to 256 squares a side. Again if the world changes. |
@@ -786,14 +1119,19 @@ The scene in three dimensions: x right, y up, z towards you, in metres. Entities
 | `void Space::clearField()` | Takes them all away. To move them, clear and add them again each update. |
 | `void Space::fieldLook(float shine, float reflection = 0, float repeat = 0, float farthest = 60, uint steps = 80)` | How they look; repeat makes the whole thing again every so many metres. |
 | `void Space::burst(const string &in particles, const Vec3 &in place, uint count, const Vec3 &in aim = Vec3(0, 1, 0))` | Throws out some particles. A spread of 360 goes every way, 90 is a cone. |
-| `bool Space::join(Entity@+ a, Entity@+ b, const Vec3 &in at)` | Pins two bodies together at a place, free to turn about it; null for b pins a to the world there. Both need colliders, and a mass to move. |
-| `bool Space::hinge(Entity@+ a, Entity@+ b, const Vec3 &in at, const Vec3 &in axis)` | The same, turning only about an axis through that place, as a door, a lid or a wheel does. |
+| `bool Space::join(Entity@+ a, Entity@+ b, const Vec3 &in at, float swing = 0)` | Pins two bodies together at a place, free to turn about it; null for b pins a to the world there. Both need colliders, and a mass to move. A swing of more than 0 lets a swing no more than so many degrees from how it hangs from the pin now, as a shoulder or a neck does. |
+| `bool Space::hinge(Entity@+ a, Entity@+ b, const Vec3 &in at, const Vec3 &in axis, float low = 0, float high = 0)` | The same, turning only about an axis through that place, as a door, a lid or a wheel does. If low is less than high, it turns only between them, in degrees from how it is now: a door that opens one way to 100, say 0 and 100. |
 | `bool Space::rope(Entity@+ a, Entity@+ b, const Vec3 &in atA, const Vec3 &in atB, float length = -1)` | A place on each kept no further apart than a length, as a rope or a chain does: it pulls but never pushes. A length below 0 is as far apart as they are now. |
 | `bool Space::spring(Entity@+ a, Entity@+ b, const Vec3 &in atA, const Vec3 &in atB, float stiffness = 60, float damping = 3, float length = -1)` | A place on each pulled towards a length and pushed away from it: stiffness in newtons a metre, damping slows the bouncing. A length below 0 is as far apart as they are now. |
 | `void Space::unjoin(Entity@+ e)` | Lets go of every joint it is in. They also go when it does. |
 | `uint Space::get_joints() property` | How many there are. |
 | `bool Space::raycast(const Vec3 &in from, const Vec3 &in to, Vec3 &out hit, Vec3 &out normal, uint groups = 0xFFFF, Entity@+ except = null)` | Whether there is anything on a line, where, and which way it faces. The land counts as group 0. |
 | `Entity@ Space::pick(const Vec3 &in from, const Vec3 &in to, Vec3 &out hit, uint groups = 0xFFFF, Entity@+ except = null)` | The first collider on a line, or null if there is none or the land comes first. |
+| `bool Space::sphereCast(const Vec3 &in from, const Vec3 &in to, float radius, Vec3 &out at, Vec3 &out normal, uint groups = 0xFFFF, Entity@+ except = null)` | A ball moved along a line, as something that thick would: whether it touches anything, where its middle is when it first does, and which way that faces. For what a ray would slip past: a character's way ahead, a thrown thing, a camera kept out of walls. The land counts as group 0. |
+| `Entity@ Space::spherePick(const Vec3 &in from, const Vec3 &in to, float radius, Vec3 &out at, uint groups = 0xFFFF, Entity@+ except = null)` | What such a ball first touches, or null if nothing or the land. |
+| `Entity@ Space::decal(Texture@+ picture, const Vec3 &in place, const Vec3 &in facing, float size, float degrees = 0, const Color &in color = White)` | Lays a picture over whatever is at a place, as a sticker would be: a mark, a hole, a splash, a footprint. Facing is the way the surface there faces (a ray's normal), size how big across, degrees how it is turned. It wraps over the models and meshes there that don't bend, the land and the ground, and stays where it is put, as an entity of its own that can be coloured, faded or destroyed. null if there is nothing there. On every GPU. |
+| `uint Space::get_decals() property` | How many decals there can be; past it, the oldest goes. 64 to begin with. |
+| `void Space::set_decals(uint) property` | How many decals there can be; past it, the oldest goes. 0 for no limit. |
 | `array<Entity@>@ Space::within(const Vec3 &in place, float radius, uint groups = 0xFFFF)` | Everything whose collider touches a ball. |
 | `bool Space::toScreen(const Vec3 &in place, Vec2 &out screen)` | Where a place was when last drawn. False if it is behind the camera. |
 | `Vec3 Space::ray(const Vec2 &in screen)` | The direction from the camera through a place on the screen. |
@@ -1082,6 +1420,20 @@ Something asked of a web server, over http:// or https://, whose certificate is 
 | `uint get_received() const property` | Bytes that have come. |
 | `float get_progress() const property` | 0 to 1, or 0 while nobody knows. |
 
+## WebSocket
+
+Messages both ways with a web server, kept open: ws://, or wss:// whose certificate is checked. It connects by itself; what comes waits until it is read.
+
+| | |
+|---|---|
+| `bool get_connecting() const property` | Whether it is still connecting. |
+| `bool get_connected() const property` | Whether messages can go both ways. |
+| `bool get_closed() const property` | Whether it is over; error says why, unless it was closed here. |
+| `string get_error() const property` | Why it closed or never opened. |
+| `bool send(const string &in text)` | Sends a message, once it is connected; in order. False once it has closed. |
+| `bool receive(string &out message)` | The next message that has come, oldest first. False if there is none. |
+| `void close()` | Says goodbye, and closes it. |
+
 ## Connection
 
 A stream of text to or from another program, over TCP. What is sent arrives, and in order.
@@ -1188,6 +1540,63 @@ What only the original Xbox has. Elsewhere `available` is false, readings are -1
 | `int Xbox::busRead(uint address, uint command, bool word = false)` | Reads from something on the SMBus, or -1. 0x20 is the system controller. The console's settings at 0xA8 are refused, as there are calls for what is in them. |
 | `bool Xbox::busWrite(uint address, uint command, uint value, bool word = false)` | Writes to something on the SMBus. The console's settings are refused: a mistake there can't be undone. |
 
+## Pointer
+
+How the mouse pointer looks over the window.
+
+| | |
+|---|---|
+| `PointerArrow` | The usual arrow. |
+| `PointerHand` | A hand, over what can be clicked. |
+| `PointerText` | A bar, over text to type in. |
+| `PointerCrosshair` | A cross, for aiming or picking a point. |
+| `PointerWait` | Busy. |
+| `PointerMove` | Arrows four ways, for dragging something about. |
+| `PointerResizeAcross` | Left and right, for resizing across. |
+| `PointerResizeUpDown` | Up and down. |
+| `PointerNotAllowed` | Can't be done here. |
+
+## Window
+
+The window, on a computer: full-screen or not, its size, title and pointer, and messages. On a console there is only the screen: `available` is false, and changing it does nothing.
+
+| | |
+|---|---|
+| `bool Window::get_available() property` | Whether there is a window to change: on Windows, Linux and macOS. |
+| `bool Window::get_fullscreen() property` | Whether it fills the screen. |
+| `void Window::set_fullscreen(bool) property` | Fills the screen without a border, or goes back to a window. Alt and Enter does the same on Windows. |
+| `string Window::get_title() property` | What its title bar says. |
+| `void Window::set_title(const string &in) property` | Changes it. |
+| `uint Window::get_width() property` | Pixels across what is drawn: the window's inside, or the screen. |
+| `uint Window::get_height() property` | Pixels down. |
+| `bool Window::resize(uint width, uint height)` | Makes its inside so many pixels, while it isn't full-screen. False where it can't be. |
+| `bool Window::get_vsync() property` | Whether each frame waits for the screen's refresh: true to begin with. |
+| `void Window::set_vsync(bool) property` | Waits for the refresh, smooth and without tearing, or doesn't, for as many frames as it can make. Consoles always wait. |
+| `Pointer Window::get_pointer() property` | How the pointer looks. |
+| `void Window::set_pointer(Pointer) property` | Changes how it looks over the window, until changed again: a hand over a button, a bar over a field. |
+| `bool Window::get_focused() property` | Whether it is the window being used: false while the player is in another, which is a time to pause. |
+| `bool Window::message(const string &in title, const string &in text)` | The system's own box with a message and OK, waited for. False where there is none: on a console, or Linux with no zenity, kdialog or xmessage. |
+| `bool Window::ask(const string &in title, const string &in question)` | The same with Yes and No: true for yes. |
+
+## System
+
+What every machine can say about itself, and do, in the same way.
+
+| | |
+|---|---|
+| `string System::get_clipboard() property` | The text that was copied. Where the system has no clipboard, as on a console, the game keeps its own. |
+| `void System::set_clipboard(const string &in) property` | Copies text, to paste elsewhere or here. On Linux it needs wl-copy, xclip or xsel. |
+| `string System::get_locale() property` | The language and region it is set to, as "en-GB" or "pt-BR"; a console says the language only, as "ja". "en" if it can't be told. |
+| `string System::get_language() property` | The language alone, as "en": for choosing which words to show. |
+| `int System::get_hour() property` | The hour where the machine is, as its clock is set, 0 to 23; -1 if it can't be told. |
+| `int System::get_minute() property` | The minute, 0 to 59. |
+| `int System::get_second() property` | The second, 0 to 59. |
+| `string System::clock(bool twelveHour = false)` | The time as a clock shows it: "16:55", or "4:55 pm". Empty if it can't be told. |
+| `uint System::get_processors() property` | Threads it can run at once: 1 on the original Xbox, 6 on the 360. |
+| `bool System::open(const string &in address)` | A web page, file or folder, in what the system opens it with. False where it can't: the consoles but the Xbox One. |
+| `int System::get_battery() property` | How full the battery is, 0 to 100, or -1 without one. |
+| `bool System::get_charging() property` | Whether it is plugged in. |
+
 ## Xbox360
 
 What only the Xbox 360 has. Elsewhere `available` is false, readings are -1 or empty, and the rest do nothing.
@@ -1243,6 +1652,55 @@ What only Windows on a desktop has. Elsewhere `available` is false, readings are
 | `bool Windows::get_darkMode() property` | Whether apps are set to look dark. |
 | `string Windows::get_clipboard() property` | The text that was copied. |
 | `void Windows::set_clipboard(const string &in) property` | Copies text, to paste elsewhere. |
+
+## TitleLook
+
+Whether the window's frame is light or dark, on Windows.
+
+| | |
+|---|---|
+| `TitleSystem` | As the system's apps are set to look, and changing when they do. As it starts. |
+| `TitleLight` | Light. |
+| `TitleDark` | Dark. |
+
+## Corners
+
+How the window's corners are drawn, on Windows 11.
+
+| | |
+|---|---|
+| `CornersSystem` | As Windows draws them: round. As it starts. |
+| `CornersSquare` | Square. |
+| `CornersRound` | Round. |
+| `CornersSmall` | A little round. |
+
+## Backdrop
+
+What shows through the window's frame, on Windows 11.
+
+| | |
+|---|---|
+| `BackdropSystem` | As Windows chooses. As it starts. |
+| `BackdropNone` | Plain. |
+| `BackdropMica` | Mica: the desktop behind it, blurred far into a tint, as Windows' own apps have. |
+| `BackdropAcrylic` | Acrylic: what is behind it, frosted. |
+| `BackdropTabbed` | Mica, more strongly tinted, as behind tabs. |
+| `bool Windows::get_titleColors() property` | Whether the frame's colours, border and corners can be changed: on Windows 11. Elsewhere setting them does nothing. |
+| `bool Windows::get_backdrops() property` | Whether a backdrop can be chosen: on Windows 11 from its 2022 update on. |
+| `TitleLook Windows::get_titleLook() property` | Whether the window's frame is light or dark. |
+| `void Windows::set_titleLook(TitleLook) property` | Changes it: on Windows 10 too. |
+| `Color Windows::get_titleColor() property` | The colour of the title bar; see-through where it is the system's. |
+| `void Windows::set_titleColor(const Color &in) property` | Colours the title bar, on Windows 11, to suit the game. Anything see-through puts back the system's. |
+| `Color Windows::get_titleTextColor() property` | The colour of the title's words. |
+| `void Windows::set_titleTextColor(const Color &in) property` | Colours them, on Windows 11. |
+| `Color Windows::get_borderColor() property` | The colour of the line round the window. |
+| `void Windows::set_borderColor(const Color &in) property` | Colours it, on Windows 11. |
+| `bool Windows::get_noBorder() property` | Whether the line round the window is left out. |
+| `void Windows::set_noBorder(bool) property` | Leaves it out, on Windows 11, or puts back the system's. |
+| `Corners Windows::get_corners() property` | How the window's corners are drawn. |
+| `void Windows::set_corners(Corners) property` | Changes them, on Windows 11. |
+| `Backdrop Windows::get_backdrop() property` | What shows through the frame. |
+| `void Windows::set_backdrop(Backdrop) property` | Changes it, on Windows 11 from its 2022 update on: it shows in the title bar, the game covering the rest. |
 
 ## Mac
 
@@ -1324,6 +1782,7 @@ The machine and how it is doing.
 | `float App::get_time() property` | Seconds since the app started. |
 | `double App::get_now() property` | Seconds from some moment, to a millionth or so: for timing how long something takes. Unlike `time`, it goes on during a frame. |
 | `float App::get_fps() property` | Frames a second, averaged. |
+| `Pixels@ App::screenshot()` | The last frame shown, as pixels to look at, draw or save: from update(), not draw(). Null where the GPU can't read it back (the Xbox 360). |
 | `uint App::get_draws() property` | Draw calls in the last frame. |
 | `string App::get_platform() property` | What it is running on. |
 | `string App::get_gpu() property` | What is drawing. |
@@ -1349,6 +1808,13 @@ A place or a direction, across and down. Vec3 is the same with z.
 | `Vec2 + Vec2, Vec2 - Vec2, -Vec2` | Added, taken away, turned round. += and -= too. |
 | `Vec2 * float, Vec2 / float` | Longer or shorter. *= too. |
 | `float dot(const Vec2 &in other) const` | How far one goes along the other. |
+| `float cross(const Vec2 &in other) const` | Above 0 if the other turns clockwise from this one, on a screen whose y goes down; 0 if they are in line. |
+| `float length() const` | How long it is. |
+| `Vec2 normalized() const` | The same direction, 1 long; zero stays zero. |
+| `float distance(const Vec2 &in other) const` | How far apart two places are. |
+| `float angle() const` | Its direction in degrees: 0 is right, 90 down. |
+| `Vec2 rotated(float degrees) const` | Turned clockwise on the screen. |
+| `Vec2 perpendicular() const` | Turned a quarter clockwise on the screen: across a line, for its normal. |
 
 ## Vec3
 

@@ -9,7 +9,17 @@ namespace nx
 {
     using gpu::Color;
 
-    enum class Align : u8 { Left, Center, Right };
+    enum class Align : u8 { Left, Center, Right, Justify };
+
+    // One of a batch's sprites: where, turned about its middle by degrees, which part of the picture (0 to 1), and
+    // its colour.
+    struct BatchSprite
+    {
+        float x, y, w, h, rotation;
+        float u0, v0, u1, v1;  // or in the picture's own pixels, if pixels is set
+        Color color;
+        bool pixels;
+    };
 
     // Immediate 2D drawing. Positions are in design units from the top left, y down, and are scaled to
     // whatever screen there is. Everything that can share a draw call does.
@@ -67,6 +77,23 @@ namespace nx
         void ring(float x, float y, float radius, float thickness, const Color& color);
         void arc(float x, float y, float radius, float thickness, float startDegrees, float endDegrees, const Color& color);
         void triangle(const Vec2& a, const Vec2& b, const Vec2& c, const Color& ca, const Color& cb, const Color& cc);
+        // Up to kMostPoints corners, either way round, concave too, as long as its sides don't cross.
+        void polygon(const Vec2* points, u32 count, const Color& color);
+        // Lines through the points, mitred where they meet (bevelled where that would be sharp); closed back to the first.
+        void polyline(const Vec2* points, u32 count, float thickness, const Color& color, bool closed = false);
+        void ellipse(float x, float y, float rx, float ry, const Color& color);
+        void ellipseLine(float x, float y, float rx, float ry, float thickness, const Color& color);
+        // Triangles of a picture (or of plain colour, with none): a corner each three indices, or a fan from the first
+        // point without them. uvs from 0 to 1 over the picture; colors, if there are, tint each corner.
+        void mesh(const Asset* texture, const Vec2* points, const Vec2* uvs, const Color* colors, u32 count, const u32* indices, u32 indexCount, const Color& tint);
+        static constexpr u32 kMostPoints = 256;
+
+        // Masks: what is drawn after mask() is not seen but marks where; after masked(), only what is inside that
+        // (or outside it) is seen; unmask() is back to everything. Each mask() starts a new one. A mask doesn't last
+        // into or out of a picture, or into the next frame.
+        void mask();
+        void masked(bool inside = true);
+        void unmask();
 
         // --- Images ---
 
@@ -83,6 +110,8 @@ namespace nx
         // An image or, with none, a plain rectangle: centred on the origin of a transform, with the
         // part of the image given in 0 to 1. For the scene, which has a great many.
         void placed(const Asset* texture, const float (&m)[6], float w, float h, float u0, float v0, float u1, float v1, const Color& color);
+        // Many sprites of one picture (or plain rectangles, with none) at once, moved by (x, y) and tinted.
+        void batch(const Asset* texture, const BatchSprite* sprites, u32 count, float x, float y, const Color& tint);
         // A round glow, fading to nothing at its edge. Any number share a draw call.
         void glow(float x, float y, float radius, const Color& color);
 
@@ -119,6 +148,8 @@ namespace nx
         bool effect(const Asset& effect, const float (&values)[16], float time);
         // Light that spills from what is bright.
         bool bloom(float strength, float threshold, float spread);
+        // All drawn so far, blurred about so many pixels across (at 720 high), within the clip if there is one.
+        bool blur(float pixels);
         // Each colour of it as a look says, mixed with what it was by strength.
         bool grade(ColorLook& look, float strength);
 
@@ -154,6 +185,10 @@ namespace nx
         float lineWidth(const FontData& font, const char* text, const char* end) const;
         static const char* lineEnd(const Canvas& canvas, const FontData& font, const char* line, float width, const char*& next);
         float textRun(const Asset& font, const char* text, const char* end, float x, float y, u32 color);
+        // The same, with extra room after each space, for justified lines.
+        float spacedRun(const Asset& font, const char* text, const char* end, float x, float y, u32 color, float extra);
+        // How much room to add at each space of a line, to fill a width: none for the last of a paragraph.
+        float justifyGap(const FontData& font, const char* line, const char* stop, const char* next, float width) const;
 
         gpu::Device* m_device = nullptr;
         Assets* m_assets = nullptr;
@@ -172,6 +207,10 @@ namespace nx
         gpu::Blend m_batchBlend = gpu::Blend::Alpha;
         gpu::Filter m_batchFilter = gpu::Filter::Linear;
         gpu::Scissor m_batchScissor;
+        gpu::Stencil m_stencil = gpu::Stencil::None, m_batchStencil = gpu::Stencil::None;
+        u8 m_stencilRef = 0;
+        bool m_clearStencil = false;
+        void noMask() { m_stencil = gpu::Stencil::None; m_stencilRef = 0; m_clearStencil = false; }
         float m_uMax = 1, m_vMax = 1;
 
         float m_pixelWidth = 1, m_pixelHeight = 1;

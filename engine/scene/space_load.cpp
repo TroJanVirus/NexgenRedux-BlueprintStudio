@@ -75,6 +75,52 @@ namespace nx
         return 0;
     }
 
+    u32 Space::makeActor(Json json, const char* folder, const Vec3& at)
+    {
+        m_world.m_error[0]=0;
+        const auto entities=json["entities"],parents=json["parents"];
+        const u32 count=entities.count();
+        const auto invalid=[&]()->u32
+        {
+            m_world.fail("actor",json.line(),"%s","Invalid actor hierarchy");
+            return 0;
+        };
+        if(!json.isObject()||!entities.isArray()||!count||count>32||
+            json.count()!=(parents.exists()?2u:1u)||
+            (parents.exists()?(!parents.isArray()||parents.count()!=count):count!=1))return invalid();
+        u32 parent[32]={},depth[32]={},ids[32]={};
+        for(u32 i=0;i<count;++i)
+        {
+            const auto e=entities[i];
+            if(!e.isObject()||(i&&e["onLand"].exists()))return invalid();
+            if(!parents.exists())continue;
+            const auto p=parents[i];
+            if(!p.isNumber())return invalid();
+            const double n=p.exact();
+            if(!i){if(n!=-1)return invalid();continue;}
+            if(!(n>=0&&n<i))return invalid();
+            parent[i]=static_cast<u32>(n);
+            if(parent[i]!=n)return invalid();
+            depth[i]=depth[parent[i]]+1;
+            if(depth[i]>8)return invalid();
+        }
+        for(u32 i=0;i<count;++i)
+        {
+            // Only the root receives the placement offset. Children retain
+            // their authored local transforms under their native parent.
+            ids[i]=make(entities[i],folder,i?Vec3():at);
+            if(!ids[i])
+            {
+                if(i)m_world.destroyEntity(ids[0]);
+                return 0;
+            }
+            if(i)m_world.setParent(ids[i],ids[parent[i]]);
+        }
+        for(u32 i=0;i<count;++i)if(const auto* camera=getSpatial(ids[i]);camera&&camera->cameraFov>0)m_cameraEntity=ids[i];
+        refreshActorCamera(false);
+        return ids[0];
+    }
+
     bool Space::readThing(Json json, const Vec3& at, bool streamed, const char* file, u32& id)
     {
         id = m_world.spawn({});
@@ -180,6 +226,11 @@ namespace nx
                 {
                     m_assets.release(sound);
                 }
+            }
+            else if(is("camera"))
+            {
+                if(!v.isNumber()||!(v.exact()>=5&&v.exact()<=150))return m_world.fail(file,v.line(),"%s","Camera FOV must be 5 to 150 degrees");
+                s->cameraFov=v.number();
             }
             else if (is("shape"))
             {

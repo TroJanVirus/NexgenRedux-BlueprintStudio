@@ -54,6 +54,8 @@ namespace nx
         float padding[4] = { -1, -1, -1, -1 };
         UiPlace align = UiPlace::Inherit;    // of what is in it, across
         UiPlace justify = UiPlace::Start;    // and along
+        int anchor = -1;           // stack child: 3x3 anchor, -1 uses ordinary layout
+        float offsetX = 0, offsetY = 0;
         UiPlace self = UiPlace::Inherit;     // of itself, across what it is in
         u32 columns = 0;             // of a grid or a list; 0: as many as fit
         float columnWidth = 0;
@@ -75,6 +77,10 @@ namespace nx
         float naturalW = 0, naturalH = 0;
         float scroll = 0, scrollTo = 0, contentH = 0;
 
+        struct AnimationKey {float time,value;};
+        std::vector<AnimationKey> animationKeys[5];
+        float animationDuration=0,animationTime=0,animationValues[5]={0,0,1,1,0};
+        bool animationLoop=false;
         UiLook look;
         bool lookReady = false;
         float amount = 0;            // of a switch or a slider, as it moves
@@ -117,8 +123,12 @@ namespace nx
         // --- Pages ---
 
         bool loadTheme(const char* name);
+        bool loadThemeSource(const char* data,size_t size);
         // Widgets from a file, put into one of them. Click and change name methods of the screen.
         bool load(const char* name, Widget& into, asIScriptObject* screen);
+        bool loadPage(const char* data,size_t size,Widget& into,asIScriptObject* screen,const char* path="inline UI page",bool designOnly=false);
+        // Renders normal native layout/styles without processing input or callbacks.
+        void drawDesign(Canvas& canvas,float x,float y,float w,float h,const char* stateWidget=nullptr,int state=-1,float timelineTime=0);
         bool words(const char* name);
         const char* word(const char* key) const;
         const char* error() const { return m_error; }
@@ -219,7 +229,7 @@ namespace nx
         void drawText(Canvas& c, const Widget& w, const char* text, float x, float y, float width, float height, const Color& color, Align align);
         void drawField(Canvas& c, Widget& w, float x, float y);
         void drawScrollBar(Canvas& c, const Widget& w, float x, float y);
-        void animate(Widget& w, float dt);
+        void animate(Widget& w, float dt,const Widget* preview=nullptr,int state=-1,float timelineTime=-1);
 
         // ui.cpp
         Widget& top() { return m_layerCount ? *m_layers[m_layerCount - 1].root : *m_root; }
@@ -249,7 +259,7 @@ namespace nx
         bool readFile(const char* name, FileData& out, char (&path)[192]);
         bool fail(const char* file, u32 line, const char* what, const char* name);
         // load.cpp
-        Widget* build(JsonTree::Value v, Widget& into, const char* file, asIScriptObject* screen);
+        Widget* build(JsonTree::Value v, Widget& into, const char* file, asIScriptObject* screen,bool designOnly);
         bool watch(const char* path);
 
         Canvas& m_canvas;

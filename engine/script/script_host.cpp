@@ -59,17 +59,21 @@ namespace nx
         return result >= 0;
     }
 
-    void ScriptHost::messageCallback(const void* data, void*)
+    void ScriptHost::messageCallback(const void* data, void* self)
     {
         const asSMessageInfo* message = static_cast<const asSMessageInfo*>(data);
         const LogLevel level = message->type == asMSGTYPE_ERROR ? LogLevel::Error : message->type == asMSGTYPE_WARNING ? LogLevel::Warning : LogLevel::Info;
         log(level, "%s (%d, %d): %s", message->section, message->row, message->col, message->message);
+        auto* host=static_cast<ScriptHost*>(self);
+        if(host&&message->type==asMSGTYPE_ERROR&&!host->m_error[0])
+            snprintf(host->m_error,sizeof(host->m_error),"%s:%d: %s",message->section,message->row,message->message);
     }
 
     bool ScriptHost::init()
     {
         NX_ASSERT(m_engine == nullptr);
         asSetGlobalMemoryFunctions(scriptAlloc, scriptFree);
+        asPrepareMultithread();
 
         m_engine = asCreateScriptEngine();
         if (m_engine == nullptr)
@@ -129,6 +133,9 @@ namespace nx
         {
             m_engine->ShutDownAndRelease();
             m_engine = nullptr;
+            // What AngelScript keeps for this thread, made again if another engine here needs it.
+            asThreadCleanup();
+            asUnprepareMultithread();   // given back for the asPrepareMultithread in init
         }
     }
 
@@ -156,6 +163,7 @@ namespace nx
 
     bool ScriptHost::compile(const char* module, const char* file, const char* code, size_t length)
     {
+        m_error[0]=0;
         asIScriptModule* m = m_engine->GetModule(module, asGM_ALWAYS_CREATE);
         bool added = m != nullptr;
         for (const auto& section : m_sections)
@@ -165,7 +173,7 @@ namespace nx
         m_sections.clear();
         if (!added || (m_prelude && m->AddScriptSection("engine", m_prelude) < 0) || m->AddScriptSection(file, code, length) < 0 || m->Build() < 0)
         {
-            snprintf(m_error, sizeof(m_error), "%s did not compile", file);
+            if(!m_error[0])snprintf(m_error, sizeof(m_error), "%s did not compile", file);
             discard(module);
             return false;
         }
@@ -309,7 +317,7 @@ namespace nx
     void ScriptHost::lineCallback(asIScriptContext* context, void* data)
     {
         ScriptHost* host = static_cast<ScriptHost*>(data);
-        if (++host->m_statements > host->m_statementLimit)
+        if (host->m_stop ? host->m_stop->load(std::memory_order_relaxed) : ++host->m_statements > host->m_statementLimit)
         {
             context->Abort();
             return;
@@ -405,6 +413,11 @@ namespace nx
         {
             const int line = context->GetExceptionLineNumber(nullptr, &section);
             snprintf(m_error, sizeof(m_error), "%s:%d: %s", section ? section : "?", line, context->GetExceptionString());
+        }
+        else if (result == asEXECUTION_ABORTED && m_stop && m_stop->load())
+        {
+            snprintf(m_error, sizeof(m_error), "stopped");   // as asked: nothing went wrong
+            return false;
         }
         else if (result == asEXECUTION_ABORTED)
         {

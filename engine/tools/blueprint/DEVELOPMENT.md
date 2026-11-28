@@ -23,7 +23,7 @@ Blueprint Studio is a development tool for the desktop Nexgen application, not j
 
 - Use Redux's own native rendering, input, JSON and platform services. No external browser, embedded webview, Node.js or HTTP server is required by the native editor.
 - No projects have been made with the pre-release browser prototype. Prefer a clean native versioned schema over legacy compatibility. Keep compiler fixtures as behavioural references, not file-format obligations. Do not silently replace unsupported logic or claim feature parity prematurely.
-- Native v2 is the canonical authoring model. Use the generated script-reference catalogue, typed pins, stable node IDs, structured execution, per-instance variables, acyclic function graphs and bounded undo/redo. Keep editor and compiler on the same model; legacy browser files are not supported. Reuse the engine's JSON parser and writer.
+- Native v2 is the canonical authoring model. Use the generated script-reference catalogue, typed pins, stable node IDs, structured execution, per-instance variables, acyclic typed function graphs, explicit return paths and bounded undo/redo. Keep editor and compiler on the same model; legacy browser files are not supported. Reuse the engine's JSON parser and writer.
 - Do not ship the reference HTML/bridge as part of the desktop application; desktop development tooling stays out of Xbox game packages.
 - Reuse the native scene editor, debugger, profiler, asset cooker and runtime. Do not create duplicate implementations or put the desktop editor into Xbox game packages.
 
@@ -31,14 +31,14 @@ Blueprint Studio is a development tool for the desktop Nexgen application, not j
 
 | Area | Use from Nexgen | What Studio adds |
 |---|---|---|
-| Gameplay | AngelScript, Screens, Behaviours | Visual functions, graphs, variables and reusable logic. Ordinary compiled scripts. |
-| 3D levels | Original scene editor, Space, Level helper | Launch the original editor, bring its files into the project, assign Behaviours and connect load/update/draw nodes. Removed the duplicate browser 3D renderer and camera. |
+| Gameplay | AngelScript, Screens, Behaviours | Visual functions, graphs, variables and reusable native Behaviour classes. Ordinary compiled scripts; per-entity state and lifetime are managed by the original World. |
+| 3D levels | Original scene editor, Space, Level helper | Launch the exact installed original editor and theme in an isolated project session, save native scene JSON into the selected screen, and connect load/update/draw nodes. Behaviour assignment and richer scene-to-graph bindings remain separate work. Removed the duplicate browser 3D renderer and camera. |
 | 2D scenes | Scene, prefabs, children | Simple layout and native prefab selection. Prefer native prefabs to graph spawn trees unless named child output pins are needed. |
 | Animation and waiting | Sprite/model animation, Tween, coroutines | Native API nodes and visual state/curve graphs. Prefer native Tween for simple animation. Existing graph Delay and Timeline have their own continuation and multi-track semantics; keep old graphs compatible and use native helpers wherever equivalent. |
 | Menus and HUD | Native widgets, JSON pages and themes | Visual authoring of the same files and links to graph handlers, not a new widget runtime. Browser previews are approximate. |
-| Media | Native asset paths, loader, cache and Nexgen Cook | Project file library and reference checks. Use the existing cook tool to convert assets, not another converter. |
-| Play testing | Native engine and dev reload | Single-screen in-process preview uses the original screen stack and transient Save; multi-screen project play testing will need a dedicated project environment. |
-| Debugging and profiling | Native TCP debugger, VS Code extension, native sampling profiler | Node breakpoints and graph navigation; display the native profile and report without writing a second profiler. VS Code remains supported. |
+| Media | Native asset paths, loader, cache and Nexgen Cook | Native per-screen asset folders, portable paths, drag-and-drop copies and byte-verified exports. Use the existing cook tool to convert assets, not another converter. |
+| Play testing | Native engine and dev reload | Multi-screen in-process preview uses the original screen stack, isolated screen registry and transient Save. Project-relative native asset directories are used in preview and copied during export; full deployment remains separate work. |
+| Debugging and profiling | Native TCP debugger, VS Code extension, native sampling profiler | Native statement traces, persisted node watches and safe frame-boundary inspection through the original ScriptDebugger; exact statement breakpoints remain available externally. Display the native profile and report without writing a second profiler. VS Code remains supported. |
 | Multiplayer | Room, Message and native shared entities | Expose existing API nodes. Do not add a second transport or entity sync system. |
 
 References: [original scene editor](https://github.com/Team-Resurgent/NexgenRedux-Media/tree/main/media/showcase/editor), [native Level helper](https://github.com/Team-Resurgent/NexgenRedux-Media/blob/main/media/global/scene.as), [Cook](../cook-ui/README.md), [VS Code debugger](../vscode/README.md).
@@ -51,3 +51,9 @@ References: [original scene editor](https://github.com/Team-Resurgent/NexgenRedu
 - Can users change layout and appearance without changing the generated code?
 - Is the documentation simple, with clear instructions and honest test limits?
 - Test the graph compiler and real engine where possible. Report substitutes and untested platforms as such.
+
+## Native verification branch
+
+The dedicated draft pull request from `blueprint/review-native-ui` into `blueprint/verification-base` runs only the focused native Blueprint workflow. Keep this PR open for ongoing verification; do not merge it into the upstream mirror. Use the PR's actual head SHA and job logs to distinguish failed builds from missing results. One branch update should trigger one focused workflow, not a duplicate push workflow or the full release matrix.
+
+Reverse conversion starts with a bounded strict native source importer for standalone screens. Reject unsupported statements and ambiguous types instead of producing incomplete graphs. Validate both source forms through the existing engine; keep originals untouched and require Save as for the converted project. Whole-project discovery, includes and local/complex object state still require dedicated work.

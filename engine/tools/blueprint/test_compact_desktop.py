@@ -1,0 +1,305 @@
+"""Exercise real compact editor at 1920x1080 and after resize.
+Use the native renderer, not a simulated canvas or a screenshot mockup.
+"""
+import json
+import os
+import pathlib
+import subprocess
+import sys
+import time
+from Xlib import display, protocol, X
+
+binary = pathlib.Path(sys.argv[1]).resolve()
+root = pathlib.Path(sys.argv[2]).resolve()
+root.mkdir(parents=True, exist_ok=False)
+log = root / "compact-desktop.log"
+project = root / "own" / "blueprint-project-Compact Layout.bp.json"
+conn = display.Display()
+
+def xdo(*args):
+    return subprocess.check_output(["xdotool", *map(str, args)], text=True,
+                                   stderr=subprocess.DEVNULL, timeout=10).strip()
+
+with log.open("wb") as output:
+    process = subprocess.Popen([str(binary), "--blueprint-studio", "--silent",
+                                "--size", "1920", "1080", "--saves", str(root)],
+                               stdout=output, stderr=subprocess.STDOUT)
+    def wait_for(predicate, label, timeout=30):
+        until = time.monotonic() + timeout
+        while time.monotonic() < until:
+            if process.poll() is not None:
+                raise RuntimeError(f"Application exited while waiting for {label}: {process.returncode}")
+            try:
+                if predicate():
+                    return
+            except (OSError, ValueError, KeyError, IndexError, subprocess.CalledProcessError):
+                pass
+            time.sleep(0.15)
+        raise RuntimeError(f"Timed out waiting for {label}")
+
+    try:
+        def window_id():
+            return int(xdo("search", "--onlyvisible", "--name", "^Nexgen$").splitlines()[0])
+        wait_for(window_id, "visible desktop")
+        window = window_id()
+        win = conn.create_resource_object("window", window)
+        xdo("windowfocus", "--sync", window)
+        wait_for(lambda: "workspace ready" in log.read_text(errors="replace"), "workspace")
+        wait_for(lambda: (win.get_geometry().width, win.get_geometry().height) == (1920, 1080), "1080p client")
+        time.sleep(0.5)
+        def click(x,y):
+            xdo("mousemove", "--window", window, x, y)
+            time.sleep(0.1)
+            xdo("mousedown",1)
+            time.sleep(0.15)
+            xdo("mouseup",1)
+            time.sleep(0.3)
+        def key(name):
+            xdo("keydown",name)
+            time.sleep(0.18)
+            xdo("keyup",name)
+            time.sleep(0.3)
+        def drag(x1,y1,x2,y2,button=1):
+            xdo("mousemove","--window",window,x1,y1)
+            time.sleep(0.15)
+            xdo("mousedown",button)
+            time.sleep(0.18)
+            xdo("mousemove","--window",window,x2,y2)
+            time.sleep(0.3)
+            xdo("mouseup",button)
+            time.sleep(0.4)
+        def enter(value):
+            xdo("type","--delay",70,"--",value)
+            key("Return")
+        def shot(name):
+            geo = win.get_geometry()
+            subprocess.run(["ffmpeg","-hide_banner","-loglevel","error","-y",
+                            "-f","x11grab","-video_size",f"{geo.width}x{geo.height}",
+                            "-i",os.environ["DISPLAY"],"-frames:v","1","-threads","1",str(root/name)],
+                           timeout=20,check=True)
+        # At 1080p the right panel is at x=1652 rather than x=1012 scaled by 1.5.
+        click(1780,130)
+        enter("literal:int")
+        click(1780,167)
+        click(850,18)
+        # The library is centered in a 1920x1080 logical canvas (+320,+180).
+        click(1075,313)  # Save copy; preserve the already authored graph.
+        enter("Compact Layout")
+        wait_for(project.is_file,"save project")
+        assert any(n["kind"]=="literal:int" for n in json.loads(project.read_text())["graphs"][0]["nodes"])
+        shot("graph-1920.png")
+        # Categorized navigation is the default; exercise section collapse and both modes.
+        shot("graph-categories-1920.png")
+        click(100,245)
+        shot("graph-categories-collapsed-1920.png")
+        click(208,529)
+        wait_for(lambda:"graph navigator flat" in log.read_text(errors="replace"),"flat navigation")
+        click(208,529)
+        wait_for(lambda:"graph navigator categorized" in log.read_text(errors="replace"),"categorized navigation restored")
+        click(208,529)
+        before_overview=json.loads(project.read_text())
+        click(352,18)
+        click(425,470)
+        wait_for(lambda:"minimap enabled" in log.read_text(errors="replace"),"graph overview enabled")
+        shot("graph-overview-1920.png")
+        drag(1510,945,1570,965)
+        wait_for(lambda:"minimap navigation completed" in log.read_text(errors="replace"),"overview drag")
+        key("ctrl+s")
+        assert json.loads(project.read_text())==before_overview
+        click(352,18)
+        click(425,470)
+        wait_for(lambda:"minimap hidden" in log.read_text(errors="replace"),"graph overview hidden")
+        click(352,18)
+        click(425,500)
+        wait_for(lambda:"Navigator hidden." in log.read_text(errors="replace"),"navigator collapse")
+        click(352,18)
+        click(425,530)
+        wait_for(lambda:"Node library hidden." in log.read_text(errors="replace"),"node library collapse")
+        shot("graph-focus-1920.png")
+        click(352,18)
+        click(425,500)
+        wait_for(lambda:"Navigator shown." in log.read_text(errors="replace"),"navigator restore")
+        click(352,18)
+        click(425,530)
+        wait_for(lambda:"Node library shown." in log.read_text(errors="replace"),"node library restore")
+        # Centered legacy content modal has offset (320,180).
+        click(1027,18)
+        click(774,313)
+        click(679,352)
+        click(765,780)
+        wait_for(lambda:"Actor class preview ready" in log.read_text(errors="replace"),"actor preview")
+        # Native full-screen class editor adds a child and edits separate X/Y/Z fields.
+        click(110,989)
+        click(1666,218)
+        enter("2.5")
+        click(1764,218)
+        enter("1.25")
+        click(1862,218)
+        enter("-0.5")
+        click(540,54)
+        def place():
+            assets=json.loads(project.read_text())["visualAssets"]
+            actor=next(a for a in assets if a["kind"]=="actor")
+            return json.loads(actor["source"])["entities"][1]["place"]
+        wait_for(lambda: place()==[2.5,1.25,-0.5],"saved XYZ values")
+        shot("actor-1920.png")
+        # Collapse and expand the Transform category without altering the asset.
+        click(1760,181)
+        shot("actor-collapsed-details.png")
+        click(1760,181)
+        def actor_root():
+            assets=json.loads(project.read_text())["visualAssets"]
+            actor=next(a for a in assets if a["kind"]=="actor")
+            return json.loads(actor["source"])["entities"][0]
+        # Root is at the centre of the viewport; the projected positive Y handle is 52 px up.
+        click(100,134)
+        time.sleep(0.4)
+        original=actor_root().get("place",[0,0,0])
+        drag(929,525,929,475)
+        click(540,54)
+        wait_for(lambda:actor_root().get("place",[0,0,0])!=original,"native transform drag")
+        moved=actor_root()["place"]
+        assert moved[0]==original[0] and moved[1]>original[1] and moved[2]==original[2]
+        key("ctrl+z")
+        click(540,54)
+        wait_for(lambda:actor_root().get("place",[0,0,0])==original,"one-step gizmo undo")
+        # Divider is a real hit target; resize the right panel and then restore it.
+        drag(1610,700,1540,700)
+        shot("actor-wide-inspector.png")
+        drag(1540,700,1610,700)
+        # Return to the child and resize the client without losing selection.
+        click(100,164)
+        xdo("windowsize","--sync",window,1280,720)
+        wait_for(lambda:(win.get_geometry().width,win.get_geometry().height)==(1280,720),"720p client")
+        time.sleep(0.5)
+        click(1026,218)
+        enter("4.25")
+        click(540,54)
+        wait_for(lambda:place()==[4.25,1.25,-0.5],"resized actor edit")
+        # Jump from the class viewport to Construction and back, without closing the project.
+        click(978,54)
+        click(128,54)
+        time.sleep(0.4)
+        shot("actor-returned-tab.png")
+        click(1154,18)
+        wait_for(lambda:"isolated Construction preview ready" in log.read_text(errors="replace"),"isolated Construction execution")
+        shot("actor-construction-preview.png")
+        click(1154,18)
+        click(81,54)
+        click(930,133)
+        # Open two graph tabs and return to the original by its tab.
+        click(100,245)
+        click(100,276)
+        shot("graph-tabs.png")
+        click(285,660)
+        click(1200,688)
+        shot("graph-content-drawer.png")
+        wait_for(lambda:"native content preview ready" in log.read_text(errors="replace"),"native thumbnail")
+        click(850,514)
+        shot("content-floating.png")
+        # Floating default bounds: x=171, y=351, right=791. Dock button is near x=629.
+        click(629,365)
+        shot("content-redocked.png")
+        # Dock the content panel at the top, then restore bottom docking.
+        drag(410,515,410,90)
+        wait_for(lambda:"Content panel docked at top." in log.read_text(errors="replace"),"top dock")
+        shot("content-top-docked.png")
+        drag(410,90,270,320)
+        wait_for(lambda:"Content panel docked at left." in log.read_text(errors="replace"),"left dock")
+        shot("content-left-docked.png")
+        drag(280,90,990,320)
+        wait_for(lambda:"Content panel docked at right." in log.read_text(errors="replace"),"right dock")
+        shot("content-right-docked.png")
+        drag(740,90,410,650)
+        wait_for(lambda:"Content panel docked at bottom." in log.read_text(errors="replace"),"bottom dock")
+        click(310,560)
+        shot("actor-from-drawer.png")
+        drag(970,470,940,470)
+        shot("actor-tabs.png")
+        # The same widget designer expands to a full workspace at 1080p.
+        click(81,54)
+        click(530,172)
+        click(445,564)
+        xdo("windowsize","--sync",window,1920,1080)
+        wait_for(lambda:(win.get_geometry().width,win.get_geometry().height)==(1920,1080),"widget 1080p client")
+        time.sleep(0.5)
+        click(120,110)
+        click(90,160)
+        key("ctrl+s")
+        def widget_has_column():
+            assets=json.loads(project.read_text())["visualAssets"]
+            widget=next(a for a in assets if a["kind"]=="widget")
+            return "column" in widget["source"]
+        wait_for(widget_has_column,"wide widget hierarchy authoring")
+        shot("widget-designer-1920.png")
+        click(1812,110)
+        shot("widget-designer-4x3-1920.png")
+        click(1812,110)
+        # Return to content, choose the actor and open the expanded placement tab.
+        click(1628,110)
+        click(765,395)
+        click(765,744)
+        shot("scene-placement-1920.png")
+        def placements():
+            data=json.loads(project.read_text())
+            return [n for g in data["graphs"] if g["owner"]=="Screen" and g["name"]=="onEnter"
+                    for n in g["nodes"] if n["kind"]=="actor:spawn-asset"]
+        previous=len(placements())
+        # At 1920x1080: viewport (354,144)-(1908,932), world origin (1131,538).
+        drag(100,150,1201,580)
+        key("ctrl+s")
+        wait_for(lambda:len(placements())==previous+1,"wide scene drag and drop")
+        assert [float(v) for v in placements()[-1]["values"]["place"].split(",")]==[5,0,3]
+        click(635,110)
+        shot("scene-perspective-1920.png")
+        wait_for(lambda:"Framed scene actors." in log.read_text(errors="replace"),"scene camera framing")
+        click(687,945)
+        shot("scene-framed-1920.png")
+        # Camera navigation must never mutate actor placement or any graph data.
+        key("ctrl+s")
+        before_navigation=json.loads(project.read_text())
+        drag(1150,500,1280,540,button=3)
+        wait_for(lambda:"scene orbit completed" in log.read_text(errors="replace"),"native perspective orbit")
+        drag(1150,500,1200,540,button=2)
+        wait_for(lambda:"scene pan completed" in log.read_text(errors="replace"),"native perspective pan")
+        xdo("mousemove","--window",window,1150,500)
+        xdo("click",4)
+        wait_for(lambda:"scene wheel zoom" in log.read_text(errors="replace"),"native perspective zoom")
+        key("ctrl+s")
+        assert json.loads(project.read_text())==before_navigation
+        shot("scene-navigation-1920.png")
+        # Native tool runs the original Redux editor, then returns to this scene tab.
+        click(525,25)
+        wait_for(lambda:"native scene editor opened: Screen" in log.read_text(errors="replace"),"native scene tool")
+        shot("native-scene-editor-1920.png")
+        key("Escape")
+        key("Return")
+        wait_for(lambda:"restored scene placement tab" in log.read_text(errors="replace"),"return to placement")
+        shot("scene-returned-tab-1920.png")
+        # A close request exercises normal release of the isolated world.
+        msg=protocol.event.ClientMessage(window=win,client_type=conn.intern_atom("WM_PROTOCOLS"),
+            data=(32,[conn.intern_atom("WM_DELETE_WINDOW"),X.CurrentTime,0,0,0]))
+        win.send_event(msg,event_mask=0)
+        conn.sync()
+        assert process.wait(timeout=20)==0
+        layout=json.loads((root/"own"/"blueprint-editor-layout.json").read_text())
+        assert layout["version"]==1 and layout["actorRight"]==340 and layout["content"] is True, layout
+        # Restart the application, rather than only checking the written file.
+        with (root/"layout-restart.log").open("wb") as restarted_log:
+            restarted=subprocess.Popen([str(binary),"--blueprint-studio","--silent","--size","1280","720","--saves",str(root)],stdout=restarted_log,stderr=subprocess.STDOUT)
+            try:
+                until=time.monotonic()+30
+                while time.monotonic()<until and restarted.poll() is None:
+                    if "restored editor layout" in (root/"layout-restart.log").read_text(errors="replace"):break
+                    time.sleep(0.15)
+                else:raise RuntimeError("Editor did not restore layout on restart")
+            finally:
+                if restarted.poll() is None:restarted.terminate()
+                restarted.wait(timeout=15)
+        print("Compact desktop graph, centered modal, class preview and independent XYZ edits passed at 1080p and 720p.")
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait(timeout=15)
+        print(log.read_text(errors="replace"),flush=True)
+        conn.close()

@@ -1,0 +1,5 @@
+# Play test, build and profile
+
+- Play launches the selected native scene in an isolated save session. Ctrl+P pauses/resumes. The paused editor overlay offers one simulation update, restart from the initial scene, or stop. Ctrl+N steps one fixed update while paused; Ctrl+R starts a fresh isolated session. Escape returns to the editor. Trace remains a separate update-boundary debugger.
+- Ctrl+O toggles the desktop preview profiler. Values come from native engine counters: FPS, previous-frame draws, sampled update time, script calls during that update, tagged memory and peak, texture/buffer/scene/script/audio memory, audio voices, and scene counts. The 64 MiB line is only a comparison to the original Xbox physical RAM; desktop process overhead, drivers, renderer, allocator and real console memory usage differ. Do not use this as proof of Xbox fit or measured console performance.
+- Scenes & Cinematics > Build & Package validates all scene scripts, exports an installable Redux source/media folder, or validates and exports the editable Blueprint ZIP. Target-specific binary cooking remains in the Redux cooker.

@@ -332,11 +332,12 @@ namespace nx
             w->padding[3] = bottom;
             w->changed();
         }
-        UiPlace getAlign(const Widget* w) { return w->align; }
+        // Whole ints, as scripts' enums are.
+        int getAlign(const Widget* w) { return static_cast<int>(w->align); }
         void setAlign(UiPlace v, Widget* w) { if (v <= UiPlace::Inherit) { w->align = v; w->changed(); } }
-        UiPlace getJustify(const Widget* w) { return w->justify; }
+        int getJustify(const Widget* w) { return static_cast<int>(w->justify); }
         void setJustify(UiPlace v, Widget* w) { if (v <= UiPlace::Inherit) { w->justify = v; w->changed(); } }
-        UiPlace getSelf(const Widget* w) { return w->self; }
+        int getSelf(const Widget* w) { return static_cast<int>(w->self); }
         void setSelf(UiPlace v, Widget* w) { if (v <= UiPlace::Inherit) { w->self = v; w->changed(); } }
         Color getColor(const Widget* w) { return w->color; }
         void setColor(const Color& v, Widget* w) { w->color = v; }
@@ -392,6 +393,16 @@ namespace nx
         {
             Widget& w = into ? *into : ui().root();
             report(ui().load(name.c_str(), w, services().screens->object()));
+        }
+        void uiLoadThemeSource(const std::string& source)
+        {
+            if(source.size()>64*1024){scriptError("Inline UI theme exceeds 64 KiB.");return;}
+            report(ui().loadThemeSource(source.data(),source.size()));
+        }
+        void uiLoadPage(const std::string& source)
+        {
+            if(source.size()>64*1024){scriptError("Inline UI page exceeds 64 KiB.");return;}
+            report(ui().loadPage(source.data(),source.size(),ui().root(),services().screens->object()));
         }
         Widget* uiFind(const std::string& id) { return held(ui().find(id.c_str())); }
         void uiClear() { ui().root().removeAll(); }
@@ -549,6 +560,8 @@ namespace nx
         b.function("void draw(Canvas@ canvas, float x, float y, float width, float height)", NX_FN(uiDrawIn), "Over part of it.");
         b.function("void theme(const string &in name)", NX_FN(uiTheme), "Reads how everything looks from a file, over the engine's own. \"\" for only that.");
         b.function("void load(const string &in name, Widget@+ into = null)", NX_FN(uiLoad), "Adds widgets from a file, to the page or to one of it. See the guide.");
+        b.function("void loadThemeSource(const string &in source)", NX_FN(uiLoadThemeSource), "Loads an inline native UI theme.");
+        b.function("void loadPage(const string &in source)", NX_FN(uiLoadPage), "Adds widgets from inline native page JSON.");
         b.function("void words(const string &in name)", NX_FN(uiWords), "Reads what `@name` says, for another language. Anything not in it says its own name.");
         b.function("string word(const string &in name)", NX_FN(uiWord), "One of them.");
         b.function("Widget@ find(const string &in id)", NX_FN(uiFind), "The widget with that id, or null.");

@@ -1,56 +1,458 @@
 #pragma once
-#include "tools/blueprint/native_document.h"
+#include "tools/blueprint/native_compile.h"
+#include "tools/blueprint/native_assets.h"
+#include "audio/audio.h"
+#include <utility>
+
+class asIScriptContext;
 
 namespace nx
 {
     struct Services;
     class Canvas;
+    class Input;
+    class Ui;
+    class World;
     struct Asset;
+    class ScriptDebugger;
 
     // A desktop-only workspace in the existing Redux window.
     class BlueprintWorkspace
     {
     public:
         bool active() const { return m_font != nullptr; }
-        void open(Services& services);
+        void open(Services& services,bool projects=false);
         void close(Services& services);
         void update(Services& services);
         bool previewing() const { return m_playing; }
+        bool tracePaused() const { return m_playing&&m_tracePaused; }
+        bool playPaused() const { return m_playing&&m_playPaused; }
         void updatePreview(Services& services, float dt);
         void stopPreview(Services& services);
         void draw(Canvas& canvas);
+        void drawPreviewOverlay(Canvas& canvas);
         void recover(Services& services);
         void checkpoint(Services& services,bool force=false);
+        bool recoveryProtected() const
+        {return !m_document.dirty()||(m_checkpointPresent&&m_checkpointRevision==m_document.revision()&&m_recoveryWarning.empty());}
     private:
+        void returnToRedux(Services& services);
+        void recoveryWarning(const std::string& message);
         void selectGraph(size_t index);
+        struct NavigationRow {std::string key,label;size_t graph=static_cast<size_t>(-1);unsigned depth=0;};
+        std::vector<NavigationRow> navigationRows() const;
+        void revealNavigationGraph(size_t index);
+        bool m_graphTree=true;
+        bool m_minimap=false,m_minimapDragging=false;
+        bool m_graphHideLeft=false,m_graphHideRight=false;
+        float graphBaseLeft() const;
+        float graphBaseRight() const;
+        struct GraphMap {float x=0,y=0,w=0,h=0,ox=0,oy=0,scale=1,left=0,top=0;};
+        bool graphMap(GraphMap& map) const;
+        bool updateGraphMap(float x,float y,bool left,bool click);
+        void drawGraphMap(Canvas& c);
+        size_t m_navigationFirst=0;
+        std::vector<std::string> m_navigationCollapsed;
         void fitGraph();
+        void resizeWorkspace(const Canvas& canvas);
+        bool modalOpen() const;
+        float modalX() const {return (kWidth-1280.f)*0.5f;}
+        float modalY() const {return (kHeight-720.f)*0.5f;}
+        float kWidth=1280,kHeight=720,kLeft=248,kRight=1012,kBottom=674;
+        float m_leftPanel=248,m_graphRightPanel=268,m_actorRightPanel=310;
+        int m_splitter=0;
+        unsigned m_uiScale=0; // automatic, 100%, 125%, 150%
+        void openActorGraph(bool construction);
+        void loadLayout(Services& s);
+        void saveLayout(Services& s);
+        std::string layoutBytes() const;
+        std::string m_layoutBaseline;
+        struct GraphTab {std::string owner,name;float x=0,y=0,zoom=1;bool viewed=false;};
+        std::vector<GraphTab> m_graphTabs;
+        struct ActorTab {std::string id,screen;std::pair<std::string,std::string> returnGraph;size_t component=0,first=0;float yaw=0.65f,pitch=0.576375f,distance=8,focus[3]={},detailsScroll=0;unsigned mode=0;};
+        std::vector<ActorTab> m_actorTabs;
+        struct VisualTab
+        {
+            bool widget=false;
+            std::string id,screen,asset,selection,instance;
+            std::pair<std::string,std::string> graph;
+            size_t first=0;
+            bool fourThree=false,threeD=false,outliner=false;
+            float yaw=0.65f,distance=25,height=0,focusX=0,focusY=0,focusZ=0,pitch=0.576375f;
+            unsigned mode=0;
+        };
+        std::vector<VisualTab> m_visualTabs;
+        std::pair<bool,std::string> m_activeVisualTab;
+        bool visualTabOpen() const;
+        void rememberVisualTab();
+        void leaveVisualTab();
+        void openVisualTab(const VisualTab& tab);
+        void saveActorTab();
+        void leaveActorViewport(bool library);
+        float tabLeft() const;
+        float tabRight() const;
+        float graphAreaLeft() const;
+        float graphAreaRight() const;
+        bool contentSideActive() const;
+        float tabTop() const;
+        void revealTab(size_t index);
+        std::pair<std::string,std::string> m_activeTab;
+        size_t m_tabFirst=0;
+        void resetGraphTabs();
+        void pruneGraphTabs();
+        size_t graphTabIndex(const GraphTab& tab) const;
+        bool updateGraphTabs(Services& s,float x,float y,bool click);
+        void drawGraphTabs(Canvas& c);
+        void openActorViewport(const std::string& id);
+        bool updateContentDrawer(Services& s,float x,float y,bool left,bool click);
+        void drawContentDrawer(Canvas& c);
+        bool m_contentDrawer=false,m_contentFloating=false,m_contentPanelDrag=false,m_contentDockTop=false,m_contentResize=false;
+        unsigned m_contentDockSide=0; // 0 horizontal, 1 left, 2 right
+        float m_contentSideWidth=300;
+        float m_contentPanelHeight=174,m_contentResizeX=0,m_contentResizeY=0,m_contentStartWidth=620,m_contentStartHeight=174;
+        float graphAreaTop() const;
+
+        float m_contentPanelX=0.25f,m_contentPanelY=0.65f,m_contentPanelWidth=620,m_contentGrabX=0,m_contentGrabY=0;
+        struct ContentBounds {float left,top,right,bottom;};
+        ContentBounds contentBounds() const;
+        size_t contentColumns(const ContentBounds& bounds) const;
+        size_t contentRows(const ContentBounds& bounds) const;
+        struct ContentPreview {std::string id;World* world=nullptr;Ui* ui=nullptr;};
+        std::vector<ContentPreview> m_contentPreviews;
+        size_t m_contentPreviewRevision=static_cast<size_t>(-1);
+        std::string m_contentPreviewScreen;
+        void refreshContentPreviews(Services& s);
+        void releaseContentPreviews();
+        size_t m_contentFirst=0;
+        std::string m_contentDrag;
+        float m_contentDragX=0,m_contentDragY=0;
+        size_t m_contentDragRevision=0;
+        unsigned m_actorCollapsed=0;
+        float m_actorDetailsScroll=0;
+        struct DetailRow {int property;float y;};
+        std::vector<DetailRow> actorDetailRows() const;
+        bool actorRing(unsigned axis,float angle,float& x,float& y,float& dx,float& dy) const;
+        bool resizePanels(float x,float y,bool left,bool click,bool actor);
+        float kVariableTop=350,kVariableBottom=443,kPaletteExtra=0,kNavTop=220;
+        size_t m_componentNavFirst=0;
+        struct ComponentNavRow {std::string id,label;size_t index;unsigned depth;};
+        std::vector<ComponentNavRow> componentNavigation() const;
+        size_t kRows=8,kVariableRows=3,kPaletteRows=10;
         void rebuildPins();
         void filterCatalogue();
-        void clearWire(){m_pending=static_cast<size_t>(-1);m_pendingPin.clear();}
-        bool saveCopy(Services& services);
+        void clearWire(){m_pending=static_cast<size_t>(-1);m_pendingPin.clear();m_pinDrag=false;m_pendingOutput=true;}
+        void openPinMenu(float x,float y);
+        void closePinMenu(Services& services);
+        bool saveNamed(Services& services,const std::string& name);
+        bool openFile(Services& services,const std::string& file,bool managed);
+        bool importSource(Services& services,const std::string& file);
+        bool importProjectFolder(Services& services,const std::string& folder);
+        void browseFiles(Services& services);
+        bool createTemplate(Services& services,const std::string& id,const std::string& name);
+        void browseAssets(Services& services);
+        void launchSceneEditor(Services& services);
+        bool m_sceneEditor=false,m_sceneExit=false,m_sceneReturnToPlacement=false;
+        void importAsset(Services& services,const std::string& file);
+        std::string assetScreen() const;
+        bool m_assetBrowser=false,m_assetLibrary=false,m_actorEditor=false,m_sharedMedia=false;
+        void updateActorEditor(Services& services,float x,float y,bool left,bool click,unsigned pressed);
+        void drawActorEditor(Canvas& canvas);
+        bool editActorProperty(Services& services,const char* property);
+        std::string m_actorPreviewId;
+        unsigned m_actorPreviewRoot=0;
+        bool m_actorReplace=false;
+        int m_actorAxis=-1;
+        std::vector<std::string> m_actorAxisValues;
+        bool m_actorCollision=true,m_actorOrbit=false;
+        float m_actorPitch=0.576375f,m_actorOrbitX=0,m_actorOrbitY=0;
+        float m_actorFocus[3]={};
+        unsigned m_actorMode=0;
+        int m_actorDragAxis=-1;
+        size_t m_actorDragRevision=0;
+        float m_actorDragX=0,m_actorDragY=0,m_actorDragDx=0,m_actorDragDy=0,m_actorDragValues[3]={},m_actorDragStart[3]={};
+        unsigned actorPreviewEntity() const;
+        bool actorHandle(unsigned axis,float& x,float& y,float& dx,float& dy) const;
+        void cancelActorDrag();
+        std::string m_actorTabId,m_actorTabScreen;
+        size_t m_visualFirst=0,m_visualComponent=0,m_visualComponentFirst=0;
+        std::string m_visualSelection,m_visualText,m_visualProperty;
+        std::string m_themeStyle="button";
+        size_t m_themeState=0,m_themeMediaFirst=0;
+        bool m_themeMedia=false;
+        std::vector<std::string> m_themeMediaFiles;
+        int m_widgetPreviewState=-1;
+        bool m_visualInspector=false,m_visualPhysics=false,m_visualPlacement=false;
+        std::string m_placementAsset;
+        size_t m_placementGraph=static_cast<size_t>(-1),m_placementNode=static_cast<size_t>(-1);
+        float m_placementX=0,m_placementY=0;
+        bool m_placementDragging=false,m_placement3D=false,m_placementReady=false,m_placementOutliner=false;
+        std::string m_placementSelectedId,m_placementSelectedOwner,m_outlinerQuery;
+        size_t m_placementFirst=0,m_placementDragRevision=0;
+        float m_placementStartX=0,m_placementStartY=0;
+        int m_gizmoAxis=-1;
+        unsigned m_gizmoMode=0; // translate, rotate, scale
+        float m_gizmoDx=0,m_gizmoDy=0,m_gizmoInitial[3]={};
+        bool gizmoAxis(float wx,float wy,float wz,unsigned axis,float& x,float& y,float& dx,float& dy)const;
+        World* m_placementWorld=nullptr;
+        size_t m_placementRevision=static_cast<size_t>(-1);
+        std::string m_placementScreen;
+        float m_placementYaw=0.65f,m_placementDistance=25,m_placementHeight=0;
+        float m_sceneFocusX=0,m_sceneFocusY=0,m_sceneFocusZ=0,m_scenePitch=0.576375f;
+        bool m_sceneOrbit=false,m_scenePan=false;
+        float m_scenePointerX=0,m_scenePointerY=0,m_placementMoveHeight=0;
+        void frameScenePlacement();
+        unsigned m_placementOmitted=0,m_sceneNativeShown=0,m_sceneNativeOmitted=0;
+        std::string m_sceneNativeError;
+        std::vector<unsigned> m_sceneNativeEntities;
+        void releasePlacementPreview();
+        void refreshPlacementPreview(Services& s);
+        bool m_actorConstructionPreview=false,m_actorConstructionApplied=false;
+        std::string m_actorConstructionStatus;
+        void runConstructionPreview(Services& s,const std::string& owner,const std::string& id,const std::string& actorJson,const std::string& folder);
+        bool placementPoint(float x,float y,float height,float& wx,float& wz) const;
+        bool placementProject(float wx,float wy,float wz,float& x,float& y) const;
+        void updateVisualPlacement(Services& services,float x,float y,bool left,bool click);
+        void drawVisualPlacement(Canvas& canvas);
+        struct SceneLayout
+        {
+            bool wide=false;
+            float left=630,top=252,right=1000,bottom=548;
+            float sideDx=0,sideDy=0,toolsDx=0,toolsDy=0,bottomDy=0;
+        };
+        SceneLayout sceneLayout() const;
+        std::vector<std::pair<unsigned,std::string>> m_placementRoots;
+        float m_placementGrabWorldX=0,m_placementGrabWorldZ=0;
+        void cancelVisualPlacement(){m_placementGrabWorldX=m_placementGrabWorldZ=0;m_gizmoAxis=-1;m_placementDragging=false;m_placementAsset.clear();m_placementGraph=m_placementNode=static_cast<size_t>(-1);}
+        bool m_widgetDesigner=false,m_widgetPalette=false,m_widgetFourThree=false,m_widgetEvents=false,m_widgetUnbind=false,m_widgetAnchors=false;
+        bool m_widgetTimeline=false,m_widgetTimelinePlay=false;
+        unsigned m_widgetTimelineTrack=0;
+        float m_widgetTimelineTime=0;
+        double m_widgetTimelineLast=0;
+        bool m_widgetDragging=false,m_widgetPreviewDrag=false;
+        float m_widgetPreviewDx=0,m_widgetPreviewDy=0,m_widgetBaseX=0,m_widgetBaseY=0;
+        int m_widgetDragAnchor=0;
+        size_t m_widgetDragRevision=0;
+        float m_widgetDragX=0,m_widgetDragY=0;
+        std::string m_widgetDragId;
+        std::string m_widgetSelection,m_designPreviewAsset,m_designPreviewError;
+        size_t m_widgetFirst=0,m_designRevision=static_cast<size_t>(-1);
+        Ui* m_designUi=nullptr;
+        void releaseWidgetPreview();
+        void refreshWidgetPreview(Services& s);
+        void updateWidgetDesigner(Services& s,float x,float y,bool left,bool click);
+        void drawWidgetDesigner(Canvas& canvas);
+        struct WidgetLayout
+        {
+            bool wide=false;
+            float leftDx=0,leftDy=0,rightDx=0,rightDy=0,propsDy=0,headerDx=0,headerDy=0;
+            float previewX=0,previewY=0,previewWidth=0,previewHeight=208,previewScale=208.f/720.f;
+        };
+        WidgetLayout widgetLayout() const;
+        int m_visualInput=0; // 1 rename asset, 2 palette label, 3 actor property, 4 widget property
+        void updateVisualLibrary(Services& services,float x,float y,bool left,bool click,unsigned pressed);
+        void drawVisualLibrary(Canvas& canvas);
+        bool publishVisualWidget(Services& services);
+        std::vector<std::string> m_assetFiles;
+        size_t m_assetFirst=0;
+        bool m_audioEditor=false,m_toneEffects=false,m_toneRight=false;
+        BlueprintTone m_tone;
+        BlueprintAudioClip m_audioClip;
+        BlueprintClipEdit m_clipEdit;
+        std::string m_clipSource;
+        std::string m_toneWav;
+        Voice m_toneVoice;
+        unsigned m_toneVoices=0;
+        void stopTone(Services& s);
+        void refreshTone();
+        void updateTone(Services& s,float x,float y,bool click);
+        void drawTone(Canvas& c);
+        bool saveCurrent(Services& services);
+        bool preserveBeforeSwitch(Services& services);
+        bool ensureDraftAssets(Services& services);
+        bool writeVerified(Services& services,const std::string& path,const std::string& bytes);
         bool compileAndExport(Services& services);
-        void cancelDrag() { m_drag = false; }
-        struct NodePins { std::vector<std::string> inputs, outputs, inputTypes, outputTypes; float height = 72; };
+        bool validateProject(Services& services,const std::vector<BlueprintScreenOutput>& screens);
+        void focusDiagnostic(BlueprintLocation location);
+        void focusPreviewError(const std::string& error);
+        bool startTrace(Services& services);
+        void stopTrace();
+        void pauseTrace(Services& services);
+        void resumeTrace(Services& services,bool step);
+        void traceLine(const char* section,int line,unsigned run,asIScriptContext* context);
+        struct TraceHit { BlueprintLocation location; int line; unsigned run; std::vector<std::string> values{},stack{}; };
+        ScriptDebugger* m_traceDebugger=nullptr;
+        bool m_traceEnabled=false,m_tracePaused=false,m_tracePending=false,m_traceStep=false,m_traceKey=false;
+        bool m_tracePointer=false,m_traceTyping=false;
+        unsigned m_traceBudget=0;
+        std::vector<TraceHit> m_traceHits;
+        size_t m_traceSelected=0,m_traceFirst=0,m_traceDetailFirst=0;
+        bool m_traceShowStack=false;
+        void focusTraceNode();
+        BlueprintLocation m_traceLocation;
+        std::vector<std::string> m_traceValues;
+        std::vector<BlueprintScreenOutput> m_previewOutputs;
+        std::string m_previewStart;
+        bool m_playPaused=false,m_playPauseKey=false,m_playStepKey=false,m_playRestartKey=false,m_playPointer=false,m_playTyping=false;
+        bool m_profileOpen=false,m_profileKey=false;
+        double m_profileNext=0;
+        std::vector<std::string> m_profileRows;
+        void samplePreviewProfile(Services& s,double updateMs,unsigned scriptRuns);
+        void setPlayPaused(Services& s,bool paused);
+        bool launchCompiledPreview(Services& s,const std::string& owner);
+        BlueprintLocation m_diagnostic;
+        void cancelDrag() { m_drag = false; m_marquee=false; }
+        struct NodePins { std::vector<std::string> inputs, outputs, inputTypes, outputTypes; float height = 72, width = 196; std::string title; std::vector<std::string> fieldValue; std::vector<float> fieldX,fieldW; float literalFieldW=0; };
         struct WirePins { size_t output, input; };
         std::vector<NodePins> m_rows;
         std::vector<WirePins> m_wirePins;
         BlueprintDocument m_document;
         Asset* m_font = nullptr;
-        std::string m_status = "Drop a .bp.json or .bp.project.json file here.";
+        Canvas* m_measureCanvas = nullptr;
+        unsigned m_wireStyle=0; // curved, orthogonal, straight
+        std::string m_status = "Drop a .bp.json or supported .as file here.";
+        std::string m_notice;
         size_t m_graph = 0, m_selection = static_cast<size_t>(-1), m_first = 0;
         float m_x = 0, m_y = 0, m_zoom = 1, m_lastX = 0, m_lastY = 0;
         bool m_left = false, m_pan = false, m_wantedPointer = false;
         bool m_drag = false, m_dragMoved = false;
+        bool m_marquee=false;
+        float m_marqueeX=0,m_marqueeY=0,m_marqueeEndX=0,m_marqueeEndY=0;
+        double m_wireClickTime=-1;
+        float m_wireClickX=0,m_wireClickY=0;
+        size_t m_highlightWire=static_cast<size_t>(-1),m_moveWire=static_cast<size_t>(-1),m_lastClickedWire=static_cast<size_t>(-1);
+        bool m_moveWireOutput=false;
+        float m_moveWireX=0,m_moveWireY=0;
+        size_t hitWire(float x,float y,size_t* segment=nullptr) const;
+        std::string m_findText;
+        size_t m_findFirst=0;
+        struct FindResult {size_t graph,node;std::string label;};
+        std::vector<FindResult> findResults() const;
+        void openFindResult(const FindResult& result,Input& input);
         float m_dragX = 0, m_dragY = 0, m_grabX = 0, m_grabY = 0;
         float m_pressX = 0, m_pressY = 0;
         unsigned m_shortcuts = 0;
         size_t m_pending=static_cast<size_t>(-1),m_paletteFirst=0;
         std::string m_pendingPin,m_query,m_edit;
         std::vector<const BlueprintNodeSpec*> m_palette;
-        int m_focus=0; // 1 catalogue search, 2 literal, 3 reference, 4 new function
+        struct PaletteRow {const BlueprintNodeSpec* spec=nullptr;std::string label,group;};
+        std::vector<PaletteRow> m_paletteRows;
+        std::string m_paletteGroup,m_testGraphGeometry;
+        void rebuildPaletteRows();
+        int m_focus=0; // 1 catalogue search, 2 literal, 3 reference, 4 new function, 5 save as, 6 input value
+        std::string m_editPin,m_editType;
+        std::vector<std::string> m_inputComponents,m_inputChoices;
+        size_t m_inputComponent=0,m_inputChoiceFirst=0;
+        bool m_inputReplace=false;
+        float m_curveX[4]{},m_curveY[4]{},m_curveCenterX=0,m_curveCenterY=0,m_curveScale=1;
+        int m_curveDrag=-1;
+        bool m_curveChanged=false;
+        bool beginCurveEditor(Input& input);
+        std::vector<BlueprintCameraKey> m_sequenceKeys;
+        std::string m_sequenceAsset,m_sceneBrowserOwner,m_sceneBrowserAsset;
+        size_t m_sceneFirst=0,m_sceneAssetFirst=0;
+        bool m_sceneNaming=false;
+        std::string m_sceneNameDraft;
+        void openSceneBrowser(Input& input);
+        void updateSceneBrowser(Services& s,float x,float y,bool click);
+        void drawSceneBrowser(Canvas& c);
+        std::string m_actionName,m_actionKey;
+        unsigned m_actionButton=8,m_actionField=0;
+        size_t m_actionFirst=0;
+        void updateInputActions(Services& s,float x,float y,bool click);
+        void drawInputActions(Canvas& c);
+        void updateBuildManager(Services& s,float x,float y,bool click);
+        void drawBuildManager(Canvas& c);
+        bool beginSequenceAsset(const std::string& id,Input& input);
+        size_t m_sequenceKey=0;
+        float m_sequenceTime=0;
+        double m_sequenceLast=0;
+        bool m_sequencePlaying=false,m_sequenceScrub=false,m_sequenceReplace=true;
+        int m_sequenceField=-1;
+        std::string m_sequenceText;
+        bool beginSequenceEditor(Input& input);
+        void updateSequenceEditor(Services& s,float x,float y,bool left,bool click);
+        void drawSequenceEditor(Canvas& c);
+        bool finishSequenceField();
+        unsigned m_jointPlane=0;
+        std::string m_jointPin;
+        float m_jointExtent=4;
+        void beginJointEditor(Input& input);
+        void updateJointEditor(Input& input,float x,float y,bool click);
+        void drawJointEditor(Canvas& c);
+
+        void prepareInputEditor(size_t node);
+        struct InputDetail { std::string name,type,value,origin; bool editable=false; };
+        std::vector<InputDetail> inputDetails(size_t node) const;
+        bool jointPoint(const InputDetail& detail,float& x,float& y) const;
+        size_t m_inspectorFirst=0,m_inspectorRow=static_cast<size_t>(-1);
+        std::vector<InputDetail> m_inspectorRows;
+        std::vector<std::string> m_inspectorDraft;
+        std::vector<bool> m_inspectorChanged;
+        bool m_inspectorReplace=false,m_inspectorLiteral=false;
+        unsigned m_inspectorColour=0,m_commentColour=0,m_pinColour=0;
+        bool m_rgbOpen=false,m_rgbReplace=true,m_rgbApplied=false;
+        float m_rgbAlpha=1.f;
+        bool m_rgbAlphaEnabled=false;
+        void startRGB(const std::string& value,bool alpha=false,float opacity=1.f);
+        std::string m_rgbText;
+        bool updateRGB(Input& input,float x,float y,bool left,bool click,unsigned& colour);
+        void drawRGB(Canvas& c);
+        bool m_inspectorColourChanged=false,m_nodeContext=false;
+        float m_nodeContextX=0,m_nodeContextY=0;
+        bool removeSelectedNode(Input& input);
+        double m_nodeClickTime=-1;
+        size_t m_nodeClickGraph=static_cast<size_t>(-1),m_nodeClickIndex=static_cast<size_t>(-1);
+        float m_nodeClickX=0,m_nodeClickY=0;
+        void beginNodeEditor(size_t node,Input& input);
+        bool applyNodeEditor(Input& input);
+        bool beginInputEdit(size_t node,const std::string& pin,Input& input);
+        std::vector<std::string> namedSceneTargets() const;
+        struct VariableRow { BlueprintDocument::Field field; bool global=false,explicitField=true,inherited=false,inheritedExposure=false; };
+        std::vector<VariableRow> variableRows() const;
+        std::vector<std::string> variableTypeChoices() const;
+        void resetVariableEditor(bool global=false);
+        size_t m_variableFirst=0,m_variableTypeFirst=0;
+        std::string m_variableOld,m_variableName,m_variableType="int",m_variableValue;
+        bool m_variableGlobal=false,m_variableInitialized=false,m_variableTypes=false;
+        int m_variableInput=0; // 1 name, 2 initial value
+        size_t m_quickVariableFirst=0;
+        VariableRow m_quickVariable{};
+        bool m_quickDrag=false,m_quickMenu=false;
+        bool m_pinDrag=false,m_pinMenu=false,m_pendingOutput=true;
+        bool m_layoutMenu=false,m_layoutDragging=false,m_layoutMoved=false;
+        unsigned m_commentResize=0;
+        float m_commentX=0,m_commentY=0,m_commentW=0,m_commentH=0;
+        void resizedComment(float& x,float& y,float& w,float& h) const;
+        size_t m_layoutComment=static_cast<size_t>(-1),m_layoutLink=static_cast<size_t>(-1),m_layoutPoint=0;
+        float m_layoutStartX=0,m_layoutStartY=0,m_layoutX=0,m_layoutY=0;
+        std::vector<size_t> m_selectedNodes,m_layoutMembers,m_extractNodes;
+        std::vector<std::pair<std::string,std::string>> m_graphBack;
+        void openSelectedFunction();
+        void returnToCaller();
+        BlueprintDocument::Point nodeLayoutPosition(size_t node) const;
+        BlueprintDocument::Point routeLayoutPosition(size_t wire,size_t point) const;
+        std::vector<size_t> commentMembers(size_t comment) const;
+        bool commentBounds(size_t comment,float& x,float& y,float& w,float& h) const;
+        std::vector<BlueprintDocument::Point> wireRoute(size_t link,std::vector<size_t>* segments=nullptr) const;
+        bool m_rightDown=false,m_rightMoved=false;
+        float m_rightX=0,m_rightY=0;
+        struct ContextResult { std::string kind,reference,title,pin; bool conversion=false; };
+        std::vector<ContextResult> m_contextResults;
+        float m_pinStartX=0,m_pinStartY=0,m_pinX=0,m_pinY=0,m_pinMenuX=0,m_pinMenuY=0;
+        std::string m_pinQuery,m_pinType;
+        float m_quickX=0,m_quickY=0,m_quickMenuX=0,m_quickMenuY=0;
+        std::string m_filePath,m_fileBaseline;
+        std::vector<std::string> m_files;
+        size_t m_fileFirst=0;
+        bool m_browsing=false;
+        unsigned m_projectCreate=0;
+        std::string m_projectName;
         bool m_previousTyping=false;
         bool m_playing=false;
         bool m_checkpointPresent=false;
+        bool m_protectDamagedRecovery=false;
+        std::string m_recoveryWarning;
+        std::string m_checkpointBytes; // last recovery bytes read or verified by this workspace
         size_t m_checkpointRevision=static_cast<size_t>(-1);
         double m_nextCheckpoint=0;
     };

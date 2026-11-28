@@ -1,9 +1,13 @@
 #include "bindings/bindings.h"
+#include "audio/decoder.h"
 #include "script/debugger.h"
 #include "bindings/script_refs.h"
 #include "screens/screens.h"
 #include "net/net.h"
+#include "screens/playlist.h"
 #include "video/video.h"
+
+#include <scriptarray/scriptarray.h>
 
 #include <math.h>
 #include <stdio.h>
@@ -18,6 +22,9 @@ namespace nx
         int length;
         if (strncmp(name, "global:", 7) == 0)
         {
+#ifdef NX_DESKTOP_BLUEPRINT
+            if(services.screens&&services.screens->resolvePreviewGlobal(name+7,out,size))return true;
+#endif
             length = snprintf(out, size, "global/%s", name + 7);
         }
         else if (strncmp(name, "asset:", 6) == 0)
@@ -227,6 +234,23 @@ namespace nx
             return wrap<FontRef>(s.assets->font(path, size), *s.assets);
         }
 
+        FontRef* loadImageFont(const std::string& name, const std::string& glyphs, u32 size, u32 spacing)
+        {
+            Services& s = services();
+            char path[192];
+            if (!resolveAsset(s, name.c_str(), path, sizeof(path)))
+            {
+                scriptError("asset names start with asset: or global: (" + name + ")");
+                return nullptr;
+            }
+            if (glyphs.empty())
+            {
+                scriptError("an image font needs the glyphs it shows, in order");
+                return nullptr;
+            }
+            return wrap<FontRef>(s.assets->imageFont(path, glyphs.c_str(), spacing, size), *s.assets);
+        }
+
         SoundRef* loadSoundAsset(const std::string& name)
         {
             Services& s = services();
@@ -269,7 +293,202 @@ namespace nx
         }
 
         bool beginPicture(const TextureRef* t, const Color& clear, Canvas* c) { return t && t->asset && c->beginTarget(*t->asset, clear); }
+        void drawPolygon(const CScriptArray* points, const Color& color, Canvas* c)
+        {
+            Vec2 p[Canvas::kMostPoints];
+            c->polygon(p, copyArray(points, p, Canvas::kMostPoints), color);
+        }
+        void drawPolygonLine(const CScriptArray* points, float thickness, const Color& color, Canvas* c)
+        {
+            Vec2 p[Canvas::kMostPoints];
+            c->polyline(p, copyArray(points, p, Canvas::kMostPoints), thickness, color, true);
+        }
+        void drawPolyline(const CScriptArray* points, float thickness, const Color& color, Canvas* c)
+        {
+            Vec2 p[Canvas::kMostPoints];
+            c->polyline(p, copyArray(points, p, Canvas::kMostPoints), thickness, color, false);
+        }
+        void drawMesh(const TextureRef* t, const CScriptArray* points, const CScriptArray* uvs, const Color& tint, const CScriptArray* triangles, const CScriptArray* colors, Canvas* c)
+        {
+            constexpr u32 kMost = 4096;
+            const u32 count = points ? points->GetSize() : 0;
+            if ((uvs && uvs->GetSize() < count) || (colors && colors->GetSize() < count) || count > kMost)
+            {
+                scriptError(count > kMost ? "a mesh has up to 4096 points" : "a mesh needs as many uvs and colours as points");
+                return;
+            }
+            // One block for the points, uvs and colours, for this draw only.
+            const size_t bytes = count * (2 * sizeof(Vec2) + sizeof(Color));
+            u8* block = count ? static_cast<u8*>(memAlloc(bytes, MemTag::Frame)) : nullptr;
+            if (block == nullptr)
+            {
+                return;
+            }
+            Vec2* p = reinterpret_cast<Vec2*>(block);
+            Vec2* uv = p + count;
+            Color* k = reinterpret_cast<Color*>(uv + count);
+            copyArray(points, p, count);
+            copyArray(uvs, uv, count);
+            copyArray(colors, k, count);
+            const u32 indexCount = triangles ? triangles->GetSize() : 0;
+            c->mesh(t ? assetOf(t) : nullptr, p, uvs ? uv : nullptr, colors ? k : nullptr, count, indexCount ? static_cast<const u32*>(triangles->At(0)) : nullptr, indexCount, tint);
+            memFree(block);
+        }
         void endPicture(Canvas* c) { c->endTarget(); }
+        // Enums go to scripts as whole ints: a smaller one leaves the rest of the register as it was.
+        int canvasBlend(const Canvas* c) { return static_cast<int>(c->blend()); }
+        int canvasFilter(const Canvas* c) { return static_cast<int>(c->filter()); }
+
+        // --- Batches: many sprites of one picture, kept, and drawn at once ---
+
+        struct BatchRef
+        {
+            int refs = 1;
+            TextureRef* texture = nullptr;
+            GrowArray<BatchSprite, MemTag::Script> sprites;
+
+            void addRef() { refs++; }
+            void release()
+            {
+                if (--refs == 0)
+                {
+                    if (texture)
+                    {
+                        texture->release();
+                    }
+                    destroy(this);
+                }
+            }
+        };
+
+        constexpr u32 kMostInBatch = 65536;
+
+        BatchRef* makeBatch(TextureRef* texture)
+        {
+            BatchRef* b = create<BatchRef>(MemTag::Script);
+            if (b && texture)
+            {
+                texture->addRef();
+                b->texture = texture;
+            }
+            return b;
+        }
+        u32 batchPush(BatchRef* b, const BatchSprite& sprite)
+        {
+            if (b->sprites.count() >= kMostInBatch || !b->sprites.push(sprite))
+            {
+                scriptError("a batch holds up to 65536 sprites");
+                return 0;
+            }
+            return b->sprites.count() - 1;
+        }
+        u32 batchAdd(float x, float y, float w, float h, const Color& color, float rotation, BatchRef* b)
+        {
+            return batchPush(b, { x, y, w, h, rotation, 0, 0, 1, 1, color, false });
+        }
+        u32 batchAddPart(float x, float y, float w, float h, float sx, float sy, float sw, float sh, const Color& color, float rotation, BatchRef* b)
+        {
+            return batchPush(b, { x, y, w, h, rotation, sx, sy, sx + sw, sy + sh, color, true });
+        }
+        BatchSprite frameOf(u32 columns, u32 rows, u32 frame, float x, float y, float w, float h, const Color& color, float rotation)
+        {
+            columns = columns ? columns : 1;
+            rows = rows ? rows : 1;
+            frame %= columns * rows;
+            const float fw = 1.0f / static_cast<float>(columns), fh = 1.0f / static_cast<float>(rows);
+            const float u = static_cast<float>(frame % columns) * fw, v = static_cast<float>(frame / columns) * fh;
+            return { x, y, w, h, rotation, u, v, u + fw, v + fh, color, false };
+        }
+        u32 batchAddFrame(u32 columns, u32 rows, u32 frame, float x, float y, float w, float h, const Color& color, float rotation, BatchRef* b)
+        {
+            return batchPush(b, frameOf(columns, rows, frame, x, y, w, h, color, rotation));
+        }
+        BatchSprite* batchAt(BatchRef* b, u32 index)
+        {
+            if (index >= b->sprites.count())
+            {
+                scriptError("there is no sprite " + std::to_string(index) + " in the batch");
+                return nullptr;
+            }
+            return &b->sprites[index];
+        }
+        void batchMove(u32 index, float x, float y, float rotation, BatchRef* b)
+        {
+            if (BatchSprite* p = batchAt(b, index))
+            {
+                p->x = x;
+                p->y = y;
+                p->rotation = rotation;
+            }
+        }
+        void batchResize(u32 index, float w, float h, BatchRef* b)
+        {
+            if (BatchSprite* p = batchAt(b, index))
+            {
+                p->w = w;
+                p->h = h;
+            }
+        }
+        void batchColor(u32 index, const Color& color, BatchRef* b)
+        {
+            if (BatchSprite* p = batchAt(b, index))
+            {
+                p->color = color;
+            }
+        }
+        void batchFrame(u32 index, u32 columns, u32 rows, u32 frame, BatchRef* b)
+        {
+            if (BatchSprite* p = batchAt(b, index))
+            {
+                *p = frameOf(columns, rows, frame, p->x, p->y, p->w, p->h, p->color, p->rotation);
+            }
+        }
+        void batchPart(u32 index, float sx, float sy, float sw, float sh, BatchRef* b)
+        {
+            if (BatchSprite* p = batchAt(b, index))
+            {
+                p->u0 = sx;
+                p->v0 = sy;
+                p->u1 = sx + sw;
+                p->v1 = sy + sh;
+                p->pixels = true;
+            }
+        }
+        Vec2 batchPlace(u32 index, BatchRef* b)
+        {
+            const BatchSprite* p = batchAt(b, index);
+            return p ? Vec2(p->x, p->y) : Vec2();
+        }
+        void batchRemoveLast(BatchRef* b)
+        {
+            if (b->sprites.count())
+            {
+                b->sprites.resize(b->sprites.count() - 1);
+            }
+        }
+        void batchClear(BatchRef* b) { b->sprites.clear(); }
+        u32 batchCount(const BatchRef* b) { return b->sprites.count(); }
+        TextureRef* batchTexture(const BatchRef* b)
+        {
+            if (b->texture)
+            {
+                b->texture->addRef();
+            }
+            return b->texture;
+        }
+        void drawBatch(const BatchRef* b, float x, float y, const Color& tint, Canvas* c)
+        {
+            if (b == nullptr || b->sprites.count() == 0)
+            {
+                return;
+            }
+            const Asset* a = b->texture ? assetOf(b->texture) : nullptr;
+            if (b->texture && (a == nullptr || !a->ready))
+            {
+                return;  // not here yet: drawn when it is
+            }
+            c->batch(a, &b->sprites[0], b->sprites.count(), x, y, tint);
+        }
         void drawImage(const TextureRef* t, float x, float y, const Color& tint, Canvas* c)
         {
             if (const Asset* a = assetOf(t)) c->image(*a, x, y, t->width(), t->height(), tint);
@@ -299,10 +518,10 @@ namespace nx
             const Asset* a = assetOf(f);
             return a ? c->text(*a, text.c_str(), x, y, color, align) : 0;
         }
-        float drawParagraph(const FontRef* f, const std::string& text, float x, float y, float width, const Color& color, Canvas* c)
+        float drawParagraph(const FontRef* f, const std::string& text, float x, float y, float width, const Color& color, Align align, Canvas* c)
         {
             const Asset* a = assetOf(f);
-            return a ? c->paragraph(*a, text.c_str(), x, y, width, color) : 0;
+            return a ? c->paragraph(*a, text.c_str(), x, y, width, color, align) : 0;
         }
         float drawRich(const FontRef* f, const std::string& text, float x, float y, float width, const Color& color, Align align, Canvas* c)
         {
@@ -363,6 +582,303 @@ namespace nx
             return playSound(*sound, o);
         }
 
+        // --- Sound that scripts make ---
+
+        // Samples a script fills, one at a time, and plays: each play has a copy of its own, so they can be changed
+        // while it plays.
+        struct SamplesRef
+        {
+            int refs = 1;
+            u32 frames = 0, rate = 0, channels = 0;
+            i16* data = nullptr;
+            void addRef() { refs++; }
+            void release()
+            {
+                if (--refs == 0)
+                {
+                    memFree(data);
+                    destroy(this);
+                }
+            }
+        };
+
+        constexpr size_t kMostSampleBytes = 32u * 1024 * 1024;
+
+        SamplesRef* adoptSamples(i16* data, u32 frames, u32 rate, u32 channels)
+        {
+            SamplesRef* s = create<SamplesRef>(MemTag::Script);
+            if (s == nullptr)
+            {
+                memFree(data);
+                return nullptr;
+            }
+            s->data = data;
+            s->frames = frames;
+            s->rate = rate;
+            s->channels = channels;
+            return s;
+        }
+
+        SamplesRef* makeSamples(u32 frames, u32 rate, u32 channels)
+        {
+            if (frames == 0 || channels < 1 || channels > 2 || rate < 1000 || rate > 96000 ||
+                frames > kMostSampleBytes / (channels * sizeof(i16)))
+            {
+                scriptError("samples are 1 or 2 channels, 1000 to 96000 a second, and up to 32 MB");
+                return nullptr;
+            }
+            const size_t bytes = static_cast<size_t>(frames) * channels * sizeof(i16);
+            i16* data = static_cast<i16*>(memAlloc(bytes, MemTag::Audio));
+            if (data == nullptr)
+            {
+                scriptError("there isn't the memory for so many samples");
+                return nullptr;
+            }
+            memset(data, 0, bytes);
+            return adoptSamples(data, frames, rate, channels);
+        }
+
+        SamplesRef* loadSamples(const std::string& name)
+        {
+            Services& s = services();
+            FileData file;
+            if (!readOwn(s, name.c_str(), file))
+            {
+                return nullptr;
+            }
+            SoundData* sound = loadSound(file.data, file.size);
+            if (sound == nullptr)
+            {
+                scriptError(name + " isn't a sound that can be read: WAV, Ogg or cooked");
+                return nullptr;
+            }
+            u32 frames = 0;
+            i16* data = decodeAll(*sound, frames, kMostSampleBytes);
+            const u32 channels = sound->channels, rate = sound->rate;
+            freeSound(sound);
+            if (data == nullptr || frames == 0 || static_cast<size_t>(frames) * channels * sizeof(i16) > kMostSampleBytes)
+            {
+                memFree(data);
+                scriptError(name + " is too long to hold as samples: up to 32 MB");
+                return nullptr;
+            }
+            return adoptSamples(data, frames, rate, channels);
+        }
+
+        i16 toSample(float v) { return static_cast<i16>(!(v >= -1) ? (v < -1 ? -32767 : 0) : v >= 1 ? 32767 : v * 32767.0f); }
+        float samplesGet(u32 frame, u32 channel, const SamplesRef* s)
+        {
+            return frame < s->frames && channel < s->channels ? s->data[static_cast<size_t>(frame) * s->channels + channel] / 32767.0f : 0;
+        }
+        void samplesSet(u32 frame, float value, SamplesRef* s)
+        {
+            if (frame < s->frames)
+            {
+                for (u32 c = 0; c < s->channels; c++)
+                {
+                    s->data[static_cast<size_t>(frame) * s->channels + c] = toSample(value);
+                }
+            }
+        }
+        void samplesSetBoth(u32 frame, float left, float right, SamplesRef* s)
+        {
+            if (frame < s->frames)
+            {
+                i16* at = s->data + static_cast<size_t>(frame) * s->channels;
+                at[0] = toSample(s->channels == 2 ? left : (left + right) * 0.5f);
+                if (s->channels == 2)
+                {
+                    at[1] = toSample(right);
+                }
+            }
+        }
+        u32 samplesFrames(const SamplesRef* s) { return s->frames; }
+        u32 samplesRate(const SamplesRef* s) { return s->rate; }
+        u32 samplesChannels(const SamplesRef* s) { return s->channels; }
+        float samplesSeconds(const SamplesRef* s) { return static_cast<float>(s->frames) / static_cast<float>(s->rate); }
+
+        struct OwnSound
+        {
+            SoundData data;
+            static void free(void* p)
+            {
+                OwnSound* o = static_cast<OwnSound*>(p);
+                memFree(o->data.data);
+                destroy(o);
+            }
+        };
+
+        PlayingSound samplesPlay(float volume, float pan, float pitch, bool loop, const SamplesRef* s)
+        {
+            Services& services_ = services();
+            PlayingSound playing = { 0 };
+            const size_t bytes = static_cast<size_t>(s->frames) * s->channels * sizeof(i16);
+            OwnSound* own = create<OwnSound>(MemTag::Audio);
+            u8* copy = own ? static_cast<u8*>(memAlloc(bytes, MemTag::Audio)) : nullptr;
+            if (copy == nullptr)
+            {
+                destroy(own);
+                return playing;
+            }
+            memcpy(copy, s->data, bytes);
+            own->data.kind = SoundKind::Pcm;
+            own->data.channels = s->channels;
+            own->data.rate = s->rate;
+            own->data.frames = s->frames;
+            own->data.data = copy;
+            own->data.bytes = bytes;
+            PlayOptions o;
+            o.volume = volume;
+            o.pan = pan;
+            o.pitch = pitch;
+            o.loop = loop;
+            playing.value = services_.audio->playOwn(own->data, own, OwnSound::free, o).value;
+            if (playing.value == 0)
+            {
+                OwnSound::free(own);
+            }
+            return playing;
+        }
+
+        // Sound written as it plays, as a synthesiser or an emulator makes it: shared by the script and the voice
+        // playing it, and freed when both have let go.
+        struct StreamHolder
+        {
+            SoundData data;
+            SoundStream stream;
+            int users = 1;
+            static void letGo(void* p)
+            {
+                StreamHolder* h = static_cast<StreamHolder*>(p);
+                if (--h->users == 0)
+                {
+                    memFree(h->stream.samples);
+                    destroy(h);
+                }
+            }
+        };
+
+        struct StreamRef
+        {
+            int refs = 1;
+            StreamHolder* holder = nullptr;
+            PlayingSound voice = { 0 };
+            void addRef() { refs++; }
+            void release()
+            {
+                if (--refs == 0)
+                {
+                    // What has been written plays to its end.
+                    holder->stream.over.store(true, std::memory_order_release);
+                    StreamHolder::letGo(holder);
+                    destroy(this);
+                }
+            }
+        };
+
+        StreamRef* makeStream(u32 rate, u32 channels, float seconds)
+        {
+            if (channels < 1 || channels > 2 || rate < 1000 || rate > 96000)
+            {
+                scriptError("a stream is 1 or 2 channels, 1000 to 96000 a second");
+                return nullptr;
+            }
+            const float kept = !(seconds >= 0.02f) ? 0.02f : seconds > 4 ? 4 : seconds;
+            StreamHolder* h = create<StreamHolder>(MemTag::Audio);
+            StreamRef* r = h ? create<StreamRef>(MemTag::Script) : nullptr;
+            if (r == nullptr)
+            {
+                destroy(h);
+                return nullptr;
+            }
+            h->stream.capacity = static_cast<u32>(static_cast<float>(rate) * kept);
+            h->stream.channels = channels;
+            h->stream.samples = static_cast<i16*>(memAlloc(static_cast<size_t>(h->stream.capacity) * channels * sizeof(i16), MemTag::Audio));
+            if (h->stream.samples == nullptr)
+            {
+                destroy(r);
+                destroy(h);
+                scriptError("there isn't the memory for that stream");
+                return nullptr;
+            }
+            h->data.kind = SoundKind::Stream;
+            h->data.channels = channels;
+            h->data.rate = rate;
+            h->data.data = reinterpret_cast<u8*>(&h->stream);
+            r->holder = h;
+            return r;
+        }
+
+        u32 streamWrite(const CScriptArray& samples, StreamRef* r)
+        {
+            SoundStream& s = r->holder->stream;
+            const u32 channels = s.channels;
+            const u32 frames = samples.GetSize() / channels;
+            i16 chunk[512 * 2];
+            u32 done = 0;
+            while (done < frames)
+            {
+                const u32 count = frames - done < 512 ? frames - done : 512;
+                for (u32 i = 0; i < count * channels; i++)
+                {
+                    chunk[i] = toSample(*static_cast<const float*>(samples.At((done * channels) + i)));
+                }
+                const u32 wrote = s.write(chunk, count);
+                done += wrote;
+                if (wrote < count)
+                {
+                    break;
+                }
+            }
+            return done;
+        }
+        u32 streamRoom(const StreamRef* r) { return r->holder->stream.room(); }
+        u32 streamQueued(const StreamRef* r) { return r->holder->stream.waiting(); }
+        u32 streamRate(const StreamRef* r) { return r->holder->data.rate; }
+        u32 streamChannels(const StreamRef* r) { return r->holder->data.channels; }
+        void streamClear(StreamRef* r) { r->holder->stream.flush(); }
+        PlayingSound streamPlay(float volume, float pan, StreamRef* r)
+        {
+            Services& s = services();
+            if (r->voice.value && s.audio->playing(r->voice.voice()))
+            {
+                return r->voice;
+            }
+            PlayOptions o;
+            o.volume = volume;
+            o.pan = pan;
+            r->holder->users++;
+            r->voice.value = s.audio->playOwn(r->holder->data, r->holder, StreamHolder::letGo, o).value;
+            if (r->voice.value == 0)
+            {
+                r->holder->users--;
+            }
+            return r->voice;
+        }
+        PlayingSound streamVoice(const StreamRef* r) { return r->voice; }
+
+        Playlist* makePlaylist()
+        {
+            Services& s = services();
+            return create<Playlist>(MemTag::Script, *s.assets, *s.audio);
+        }
+        void playlistAdd(SoundRef* sound, Playlist* p)
+        {
+            if (sound == nullptr)
+            {
+                scriptError("null sound");
+                return;
+            }
+            p->add(sound->asset);
+        }
+        bool playlistShuffle(const Playlist* p) { return p->shuffle; }
+        void setPlaylistShuffle(bool v, Playlist* p) { p->shuffle = v; }
+        bool playlistLoop(const Playlist* p) { return p->loop; }
+        void setPlaylistLoop(bool v, Playlist* p) { p->loop = v; }
+        float playlistCrossfade(const Playlist* p) { return p->crossfade; }
+        void setPlaylistCrossfade(float v, Playlist* p) { p->crossfade = v > 0 ? v : 0; }
+        void setPlaylistIndex(u32 v, Playlist* p) { p->jump(v, -1); }
+
         PlayingSound soundPlayMusic(float volume, float fadeIn, bool loop, SoundRef* sound)
         {
             PlayOptions o;
@@ -384,7 +900,7 @@ namespace nx
             o.loop = loop;
             o.priority = loop ? 140 : 120;
             const PlayingSound playing = playSound(*sound, o);
-            space.follow(Voice{ playing.value }, entity, place, volume, range);
+            space.follow(Voice{ playing.value }, entity, place, volume, range, pitch);
             return playing;
         }
         PlayingSound soundPlayAt(const Vec3& place, float volume, float range, float pitch, SoundRef* sound)
@@ -424,6 +940,22 @@ namespace nx
         void audioEcho(Bus bus, float amount, float delay, float feedback, float seconds)
         {
             changeEffects(bus, seconds, [&](BusEffectSettings& s) { s.echo = amount; s.echoDelay = delay; s.echoFeedback = feedback; });
+        }
+        void audioBandPass(Bus bus, float hertz, float octaves, float seconds)
+        {
+            const float half = octaves > 0.1f ? powf(2, octaves * 0.5f) : powf(2, 0.05f);
+            changeEffects(bus, seconds, [&](BusEffectSettings& s) { s.lowPass = hertz * half; s.highPass = hertz / half; });
+        }
+        void audioDistortion(Bus bus, float amount, float seconds) { changeEffects(bus, seconds, [&](BusEffectSettings& s) { s.distortion = amount; }); }
+        void audioChorus(Bus bus, float amount, float rate, float seconds) { changeEffects(bus, seconds, [&](BusEffectSettings& s) { s.chorus = amount; s.chorusRate = rate; }); }
+        void audioFlanger(Bus bus, float amount, float rate, float feedback, float seconds)
+        {
+            changeEffects(bus, seconds, [&](BusEffectSettings& s) { s.flanger = amount; s.flangerRate = rate; s.flangerFeedback = feedback; });
+        }
+        void audioCompressor(Bus bus, float threshold, float ratio) { changeEffects(bus, 0, [&](BusEffectSettings& s) { s.threshold = threshold; s.ratio = ratio; }); }
+        void audioEqualizer(Bus bus, float low, float mid, float high, float seconds)
+        {
+            changeEffects(bus, seconds, [&](BusEffectSettings& s) { s.low = low; s.mid = mid; s.high = high; });
         }
         void audioClearEffects(float seconds) { services().audio->clearEffects(seconds); }
         void setMaster(float volume) { services().audio->setMasterVolume(volume); }
@@ -672,6 +1204,11 @@ namespace nx
             t->start = static_cast<float>(services().time);
         }
 
+        float toLinearPart(float c) { return c <= 0.04045f ? c / 12.92f : powf((c + 0.055f) / 1.055f, 2.4f); }
+        float toGammaPart(float c) { return c <= 0.0031308f ? c * 12.92f : 1.055f * powf(c, 1 / 2.4f) - 0.055f; }
+        Color toLinear(const Color& c) { return { toLinearPart(c.r), toLinearPart(c.g), toLinearPart(c.b), c.a }; }
+        Color toGamma(const Color& c) { return { toGammaPart(c.r < 0 ? 0 : c.r), toGammaPart(c.g < 0 ? 0 : c.g), toGammaPart(c.b < 0 ? 0 : c.b), c.a }; }
+
         Color hsv(float hue, float saturation, float value)
         {
             hue -= static_cast<float>(static_cast<int>(hue));
@@ -727,6 +1264,8 @@ namespace nx
             b.function("Color hsv(float hue, float saturation, float value)", NX_FN(hsv), "A colour from its hue (0 to 1 around the wheel), saturation and brightness.");
             b.function("Color lerp(const Color &in a, const Color &in b, float t)", NX_FN(lerpColor), "From a to b as t goes from 0 to 1.");
             b.function("Color fade(const Color &in color, float alpha)", NX_FN(fade), "The same colour, more transparent.");
+            b.function("Color toLinear(const Color &in color)", NX_FN(toLinear), "A colour as screens show it (sRGB) as the light it stands for: for mixing, adding and fading lights as they really would. Alpha is kept.");
+            b.function("Color toGamma(const Color &in color)", NX_FN(toGamma), "Back again, to draw.");
         }
 
         void bindAssets(Binder& b)
@@ -741,13 +1280,13 @@ namespace nx
 
             bindSpaceTypes(b);
 
-            b.refType("Font", 0, "A scalable SSFN font at one size.");
+            b.refType("Font", 0, "A font at one size: a scalable SSFN one, or one drawn beforehand in a picture.");
             b.behaviour(asBEHAVE_ADDREF, "void f()", NX_METHOD(FontRef, addRef));
             b.behaviour(asBEHAVE_RELEASE, "void f()", NX_METHOD(FontRef, release));
             b.method("Vec2 measure(const string &in text) const", NX_OBJ_LAST(fontMeasure), "How much room some text takes.");
             b.method("bool get_failed() const property", NX_METHOD(FontRef, failed), "Whether the file could not be loaded.");
 
-            b.refType("Sound", 0, "Something to play: WAV, Ogg Vorbis, MP3 or cooked. Short effects are kept ready; long music is decoded while it plays.");
+            b.refType("Sound", 0, "Something to play: WAV, Ogg Vorbis or cooked; the cook tool makes MP3 and FLAC into these. Short effects are kept ready; long music is decoded while it plays.");
             b.behaviour(asBEHAVE_ADDREF, "void f()", NX_METHOD(SoundRef, addRef));
             b.behaviour(asBEHAVE_RELEASE, "void f()", NX_METHOD(SoundRef, release));
 
@@ -783,7 +1322,8 @@ namespace nx
             b.function("uint get_textureKilobytes() property", NX_FN(cacheTextureKilobytes), "Memory that images and fonts take.");
             b.function("uint get_soundKilobytes() property", NX_FN(cacheSoundKilobytes), "Memory that sounds take.");
             b.function("uint get_soundBudgetKilobytes() property", NX_FN(cacheSoundBudgetKilobytes), "Memory that sounds may take.");
-            b.function("Font@ font(const string &in name, uint size)", NX_FN(loadFont), "A font at a size in design units.");
+            b.function("Font@ font(const string &in name, uint size)", NX_FN(loadFont), "A font at a size in design units: an SSFN font, drawn sharp at any size; or a BMFont .fnt, with its one picture beside it, as BMFont, Hiero and Littera make them, its line that many units high (0 as it was drawn).");
+            b.function("Font@ imageFont(const string &in name, const string &in glyphs, uint size = 0, uint spacing = 1)", NX_FN(loadImageFont), "A font drawn in a picture, as pixel art often is: its glyphs side by side in the order given, with a column of the top left pixel's colour between each. Its letters as tall as the picture, or size units, with a quarter of that between lines; spacing is the pixels between letters. Draw it with FilterNearest to keep it sharp. Its own colours are kept, tinted by the text's colour, so white shows them as they are.");
             b.function("uint get_inUse() property", NX_FN(cacheInUse), "Assets that something is holding.");
             b.function("uint get_warm() property", NX_FN(cacheWarm), "Assets kept ready though nothing holds them.");
             b.function("uint get_hits() property", NX_FN(cacheHits), "Requests served without reading a file.");
@@ -809,6 +1349,7 @@ namespace nx
             b.enumValue("AlignLeft", static_cast<int>(Align::Left), "Its left edge.");
             b.enumValue("AlignCenter", static_cast<int>(Align::Center), "Its middle.");
             b.enumValue("AlignRight", static_cast<int>(Align::Right), "Its right edge.");
+            b.enumValue("AlignJustify", static_cast<int>(Align::Justify), "In a paragraph, each line but the last of it spread to fill the width, as a book's are. Elsewhere, its left edge.");
 
             b.refType("Look", 0, "What each colour of a picture becomes: warmer, colder, faded, harder. Settings, a preset by name, or a .cube table from a grading program, or all of them: the table first, then the settings. Given to `Canvas.grade`.");
             b.behaviour(asBEHAVE_FACTORY, "Look@ f()", NX_FN(makeLook));
@@ -831,6 +1372,24 @@ namespace nx
             b.method("bool get_loaded() const property", NX_OBJ_LAST(lookLoaded), "Whether it has a table.");
             b.method("Color apply(const Color &in color)", NX_OBJ_LAST(lookApply), "What it makes of one colour, worked out here rather than on the GPU.");
 
+            b.refType("Batch", 0, "Many sprites of one picture, kept from frame to frame and drawn at once with Canvas.batch: a crowd, a starfield, a map of tiles, bullets. Each has a place, a size, a turn about its middle, a part of the picture and a colour, and is changed by its number, from 0 in the order they were added. Up to 65536.");
+            b.behaviour(asBEHAVE_FACTORY, "Batch@ f(Texture@+ texture = null)", NX_FN(makeBatch));
+            b.behaviour(asBEHAVE_ADDREF, "void f()", NX_METHOD(BatchRef, addRef));
+            b.behaviour(asBEHAVE_RELEASE, "void f()", NX_METHOD(BatchRef, release));
+            b.method("uint add(float x, float y, float w, float h, const Color &in color = White, float rotation = 0)", NX_OBJ_LAST(batchAdd), "The whole picture, or a plain rectangle if there is none, turned by degrees about its middle. Returns its number.");
+            b.method("uint addPart(float x, float y, float w, float h, float sx, float sy, float sw, float sh, const Color &in color = White, float rotation = 0)", NX_OBJ_LAST(batchAddPart), "Part of the picture, given in its own pixels.");
+            b.method("uint addFrame(uint columns, uint rows, uint frame, float x, float y, float w, float h, const Color &in color = White, float rotation = 0)", NX_OBJ_LAST(batchAddFrame), "One frame from a sheet of equal frames, counting along each row.");
+            b.method("void move(uint index, float x, float y, float rotation = 0)", NX_OBJ_LAST(batchMove), "Puts one somewhere else.");
+            b.method("void resize(uint index, float w, float h)", NX_OBJ_LAST(batchResize), "Changes one's size.");
+            b.method("void color(uint index, const Color &in color)", NX_OBJ_LAST(batchColor), "Changes one's colour; see-through ones aren't drawn.");
+            b.method("void frame(uint index, uint columns, uint rows, uint frame)", NX_OBJ_LAST(batchFrame), "Shows another frame of the sheet: to animate one.");
+            b.method("void part(uint index, float sx, float sy, float sw, float sh)", NX_OBJ_LAST(batchPart), "Shows another part of the picture, in its pixels.");
+            b.method("Vec2 place(uint index)", NX_OBJ_LAST(batchPlace), "Where one is.");
+            b.method("void removeLast()", NX_OBJ_LAST(batchRemoveLast), "Takes away the one added last. To hide another, make it see-through.");
+            b.method("void clear()", NX_OBJ_LAST(batchClear), "Takes them all away.");
+            b.method("uint get_count() const property", NX_OBJ_LAST(batchCount), "How many there are.");
+            b.method("Texture@ get_texture() const property", NX_OBJ_LAST(batchTexture), "The picture they are of.");
+
             b.refType("Canvas", asOBJ_NOCOUNT, "2D drawing, passed to a screen's draw(). Positions are in design units from the top left, y down.");
             b.method("void design(float width, float height)", NX_METHOD(Canvas, design), "Draws on a screen of this size, fitted inside the real one. Call it first.");
             b.method("void designHeight(float height)", NX_METHOD(Canvas, designHeight), "The same, but as wide as the real screen's shape allows. Lay out by width.");
@@ -843,9 +1402,9 @@ namespace nx
             b.method("void scale(float x, float y)", NX_METHOD(Canvas, scale), "Resizes it.");
             b.method("float get_alpha() const property", NX_METHOD(Canvas, alpha), "How opaque what is drawn next will be.");
             b.method("void set_alpha(float) property", NX_METHOD(Canvas, setAlpha), "Fades everything drawn next.");
-            b.method("Blend get_blend() const property", NX_METHOD(Canvas, blend), "How what is drawn next combines with what is behind.");
+            b.method("Blend get_blend() const property", NX_OBJ_LAST(canvasBlend), "How what is drawn next combines with what is behind.");
             b.method("void set_blend(Blend) property", NX_METHOD(Canvas, setBlend), "Chooses how it combines.");
-            b.method("Filter get_filter() const property", NX_METHOD(Canvas, filter), "How images that are drawn larger will look.");
+            b.method("Filter get_filter() const property", NX_OBJ_LAST(canvasFilter), "How images that are drawn larger will look.");
             b.method("void set_filter(Filter) property", NX_METHOD(Canvas, setFilter), "Chooses how images are scaled.");
             b.method("void clip(float x, float y, float w, float h)", NX_METHOD(Canvas, clip), "Draws nothing outside an area. Clips within clips overlap.");
             b.method("void noClip()", NX_METHOD(Canvas, noClip), "Removes all clips.");
@@ -859,7 +1418,18 @@ namespace nx
             b.method("void arc(float x, float y, float radius, float thickness, float from, float to, const Color &in color)", NX_METHOD(Canvas, arc), "Part of a ring, or a slice of a circle, between two angles in degrees.");
             b.method("void glow(float x, float y, float radius, const Color &in color)", NX_METHOD(Canvas, glow), "A round glow, fading to nothing at its edge. With BlendAdd it is light.");
             b.method("void triangle(const Vec2 &in a, const Vec2 &in b, const Vec2 &in c, const Color &in ca, const Color &in cb, const Color &in cc)", NX_METHOD(Canvas, triangle), "A triangle with a colour at each corner.");
+            b.method("void polygon(const array<Vec2> &in corners, const Color &in color)", NX_OBJ_LAST(drawPolygon), "A filled polygon of up to 256 corners, either way round: concave ones too, as long as their sides don't cross.");
+            b.method("void polygonLine(const array<Vec2> &in corners, float thickness, const Color &in color)", NX_OBJ_LAST(drawPolygonLine), "A polygon's outline, with mitred corners.");
+            b.method("void polyline(const array<Vec2> &in points, float thickness, const Color &in color)", NX_OBJ_LAST(drawPolyline), "Lines through up to 256 points, joined with mitres where they meet (bevelled where that would be sharp): a path, a graph, a trail.");
+            b.method("void ellipse(float x, float y, float rx, float ry, const Color &in color)", NX_METHOD(Canvas, ellipse), "A filled ellipse, so far across to each side and up and down.");
+            b.method("void ellipseLine(float x, float y, float rx, float ry, float thickness, const Color &in color)", NX_METHOD(Canvas, ellipseLine), "An ellipse's outline.");
+            b.method("void mesh(const Texture@+ texture, const array<Vec2> &in points, const array<Vec2> &in uvs, const Color &in tint = White, const array<uint>@+ triangles = null, const array<Color>@+ colors = null)", NX_OBJ_LAST(drawMesh), "Triangles of a picture, each corner a point and where in the picture it comes from (uvs, 0 to 1 across it): bent, stretched, torn. Three indices to a triangle, or a fan from the first point without them. A colour for each point, if given, tints it; null texture is plain colour. For a water surface, cloth, a picture wrapped round a shape.");
+            b.method("void batch(const Batch@+ batch, float x = 0, float y = 0, const Color &in tint = White)", NX_OBJ_LAST(drawBatch), "Draws all a batch's sprites at once, moved by x and y and tinted: thousands cost little more than one, and nothing until the picture has arrived.");
+            b.method("void mask()", NX_METHOD(Canvas, mask), "What is drawn after this is not seen but marks out a mask: shapes, lines, text, images (all of each image's square). Each mask() starts a new mask.");
+            b.method("void masked(bool inside = true)", NX_METHOD(Canvas, masked), "Then what is drawn is seen only inside the mask, or only outside it: a spotlight, a torn edge, a window into another scene. A mask doesn't last into or out of a picture, or into the next frame.");
+            b.method("void unmask()", NX_METHOD(Canvas, unmask), "Everything is seen again.");
             b.method("bool effect(Effect@+ effect)", NX_OBJ_LAST(canvasEffect), "Puts all that has been drawn so far through a shader. False where there are none.");
+            b.method("bool blur(float pixels = 8)", NX_METHOD(Canvas, blur), "Blurs all that has been drawn so far, about so many pixels across on a screen 720 high: only inside the clip, if there is one, for frosted glass behind a panel. Draw the panel after. On every GPU; false where it can't be done.");
             b.method("bool bloom(float strength = 0.8, float threshold = 0.7, float spread = 1)", NX_METHOD(Canvas, bloom), "Lets light spill from what is bright, of all that has been drawn so far. False where it can't be done.");
             b.method("bool grade(Look@+ look, float strength = 1)", NX_OBJ_LAST(canvasGrade), "Turns each colour of all that has been drawn so far into what a look makes of it, mixed with what it was by strength (0 to 1). Only inside the clip, if there is one, so a part can be shown before and after. One pass over the screen, on every GPU; the look is worked out again only when it changes. Usually last, before text that should stay as it is. False where it can't be done.");
             b.method("bool beginPicture(Texture@+ picture, const Color &in clear = Color(0, 0, 0, 0))", NX_OBJ_LAST(beginPicture), "Draws into a picture from Assets::picture instead of the screen, 2D and 3D alike, until endPicture: cleared to a colour first, and with a design of its own pixels until it is changed. One at a time; effects, bloom and grading are for the screen and do nothing in it. False if it can't be, and drawing goes on to the screen.");
@@ -871,7 +1441,7 @@ namespace nx
             b.method("void nineSlice(const Texture@+ texture, float x, float y, float w, float h, float corner, const Color &in tint = White)", NX_OBJ_LAST(drawNineSlice), "A stretchy panel whose corners keep their size.");
             b.method("void tile(const Texture@+ texture, float x, float y, float w, float h, float tileW, float tileH, float offsetX, float offsetY, const Color &in tint = White)", NX_OBJ_LAST(drawTile), "An image repeated over an area.");
             b.method("float text(const Font@+ font, const string &in text, float x, float y, const Color &in color = White, Align align = AlignLeft)", NX_OBJ_LAST(drawText), "Text from its top. Returns its width.");
-            b.method("float paragraph(const Font@+ font, const string &in text, float x, float y, float width, const Color &in color = White)", NX_OBJ_LAST(drawParagraph), "Text broken into lines to fit a width. Returns its height.");
+            b.method("float paragraph(const Font@+ font, const string &in text, float x, float y, float width, const Color &in color = White, Align align = AlignLeft)", NX_OBJ_LAST(drawParagraph), "Text broken into lines to fit a width, each line from the left, centred, from the right, or justified to fill it. Returns its height.");
             b.method("float rich(const Font@+ font, const string &in text, float x, float y, float width, const Color &in color = White, Align align = AlignLeft)", NX_OBJ_LAST(drawRich), "A paragraph with parts of it marked: `[color=#ff8000]` or `[color=orange]` ... `[/color]`, `[b]` bold `[/b]`, `[u]` underlined `[/u]`, `[s]` struck through `[/s]`; `[[` is a [ itself. The colours are white, black, red, green, blue, yellow, orange, pink, purple, cyan and gray, or #rrggbb and #rrggbbaa. Returns its height.");
             b.method("float richHeight(const Font@+ font, const string &in text, float width)", NX_OBJ_LAST(richHeight), "How tall that would be, with nothing drawn.");
         }
@@ -940,6 +1510,62 @@ namespace nx
             b.method("bool get_ready() const property", NX_METHOD(SoundRef, ready), "Whether it has arrived. Until then it plays as silence.");
             b.method("bool get_failed() const property", NX_METHOD(SoundRef, failed), "Whether the file could not be loaded.");
 
+            b.refType("Samples", 0, "Sound as numbers, -1 to 1, that a script writes and reads one at a time: a laser made from a sine, an explosion from noise, a sound loaded and played backwards. Each play has a copy of its own.");
+            b.behaviour(asBEHAVE_FACTORY, "Samples@ f(uint frames, uint rate = 48000, uint channels = 1)", NX_FN(makeSamples));
+            b.behaviour(asBEHAVE_ADDREF, "void f()", NX_METHOD(SamplesRef, addRef));
+            b.behaviour(asBEHAVE_RELEASE, "void f()", NX_METHOD(SamplesRef, release));
+            b.method("uint get_frames() const property", NX_OBJ_LAST(samplesFrames), "How many: one a channel in each.");
+            b.method("uint get_rate() const property", NX_OBJ_LAST(samplesRate), "How many a second.");
+            b.method("uint get_channels() const property", NX_OBJ_LAST(samplesChannels), "1 or 2.");
+            b.method("float get_seconds() const property", NX_OBJ_LAST(samplesSeconds), "How long it is.");
+            b.method("float get(uint frame, uint channel = 0) const", NX_OBJ_LAST(samplesGet), "One sample, -1 to 1; 0 past the end.");
+            b.method("void set(uint frame, float value)", NX_OBJ_LAST(samplesSet), "Every channel of one frame.");
+            b.method("void set(uint frame, float left, float right)", NX_OBJ_LAST(samplesSetBoth), "The left and right of one frame; their middle if there is only one channel.");
+            b.method("Voice play(float volume = 1, float pan = 0, float pitch = 1, bool loop = false) const", NX_OBJ_LAST(samplesPlay), "Plays them as an effect, as they are now.");
+            b.names("Assets");
+            b.function("Samples@ samples(const string &in name)", NX_FN(loadSamples), "A sound's samples, read now, to look at or change: `asset:`, `global:` or `own:`. Null if there is none.");
+            b.names("");
+
+            b.refType("AudioStream", 0, "Sound written as it plays, by a synthesiser, a tracker or an emulator: write() as much as there is room for each frame, and it plays as it comes, quiet while there is none. It plays out what it has after it is let go.");
+            b.behaviour(asBEHAVE_FACTORY, "AudioStream@ f(uint rate = 48000, uint channels = 1, float seconds = 0.25f)", NX_FN(makeStream));
+            b.behaviour(asBEHAVE_ADDREF, "void f()", NX_METHOD(StreamRef, addRef));
+            b.behaviour(asBEHAVE_RELEASE, "void f()", NX_METHOD(StreamRef, release));
+            b.method("uint write(const array<float> &in samples)", NX_OBJ_LAST(streamWrite), "Samples, -1 to 1, left then right for two channels: as many frames as there is room for. How many were taken.");
+            b.method("uint get_room() const property", NX_OBJ_LAST(streamRoom), "Frames there is room for. It holds so many seconds, as made: more is later, less risks gaps.");
+            b.method("uint get_queued() const property", NX_OBJ_LAST(streamQueued), "Frames written and not yet heard.");
+            b.method("uint get_rate() const property", NX_OBJ_LAST(streamRate), "Frames a second.");
+            b.method("uint get_channels() const property", NX_OBJ_LAST(streamChannels), "1 or 2.");
+            b.method("void clear()", NX_OBJ_LAST(streamClear), "Leaves out what has been written and not yet heard.");
+            b.method("Voice play(float volume = 1, float pan = 0)", NX_OBJ_LAST(streamPlay), "Starts it; the same voice if it is playing already.");
+            b.method("Voice get_voice() const property", NX_OBJ_LAST(streamVoice), "What is playing it, to change its volume, pan or pitch.");
+
+            b.refType("Playlist", 0, "Music, one track after another, the next fading in as the last fades out: in order or shuffled, round again or not. It moves on by itself while its screen is on top.");
+            b.behaviour(asBEHAVE_FACTORY, "Playlist@ f()", NX_FN(makePlaylist));
+            b.behaviour(asBEHAVE_ADDREF, "void f()", NX_METHOD(Playlist, addRef));
+            b.behaviour(asBEHAVE_RELEASE, "void f()", NX_METHOD(Playlist, release));
+            b.method("void add(Sound@+ track)", NX_OBJ_LAST(playlistAdd), "One more, at the end. Up to 64.");
+            b.method("void clear()", NX_METHOD(Playlist, clear), "None, and quiet.");
+            b.method("void play(float fadeSeconds = 0)", NX_METHOD(Playlist, play), "From the track it is at, fading in. A track that hasn't arrived starts once it has.");
+            b.method("void next(float fadeSeconds = -1)", NX_METHOD(Playlist, next), "On to the next now, over crossfade seconds unless told.");
+            b.method("void previous(float fadeSeconds = -1)", NX_METHOD(Playlist, previous), "Back to the one before.");
+            b.method("void stop(float fadeSeconds = 1)", NX_METHOD(Playlist, stop), "Quiet, fading out; play starts the same track again.");
+            b.method("uint get_count() const property", NX_METHOD(Playlist, count), "How many tracks.");
+            b.method("uint get_index() const property", NX_METHOD(Playlist, index), "Which is playing, from 0.");
+            b.method("void set_index(uint) property", NX_OBJ_LAST(setPlaylistIndex), "Straight to one, fading across.");
+            b.method("bool get_playing() const property", NX_METHOD(Playlist, playing), "Whether it is playing, or about to.");
+            b.method("bool get_shuffle() const property", NX_OBJ_LAST(playlistShuffle), "Whether each next is any but the last.");
+            b.method("void set_shuffle(bool) property", NX_OBJ_LAST(setPlaylistShuffle), "Each next any but the last, or in order.");
+            b.method("bool get_loop() const property", NX_OBJ_LAST(playlistLoop), "Whether it goes round again after the last; true to begin with.");
+            b.method("void set_loop(bool) property", NX_OBJ_LAST(setPlaylistLoop), "Round again after the last, or stop.");
+            b.method("float get_crossfade() const property", NX_OBJ_LAST(playlistCrossfade), "Seconds each track overlaps the next; 2 to begin with.");
+            b.method("void set_crossfade(float) property", NX_OBJ_LAST(setPlaylistCrossfade), "Seconds each track overlaps the next; 0 for one straight after another.");
+            b.method("float get_volume() const property", NX_METHOD(Playlist, volume), "How loud, 1 as it is.");
+            b.method("void set_volume(float) property", NX_METHOD(Playlist, setVolume), "Louder or softer, gradually.");
+            b.method("bool get_paused() const property", NX_METHOD(Playlist, paused), "Whether it is held where it is.");
+            b.method("void set_paused(bool) property", NX_METHOD(Playlist, setPaused), "Holds it where it is, or lets it go on.");
+            b.method("float get_position() const property", NX_METHOD(Playlist, position), "Seconds into the track playing.");
+            b.method("float get_seconds() const property", NX_METHOD(Playlist, seconds), "How long the track playing is; 0 if that isn't known.");
+
             b.section("Audio", "Volumes, and what is being heard. A screen's sounds pause while it is covered and stop when it closes.");
             b.names("Audio");
             b.function("void setVolume(Bus bus, float volume)", NX_FN(setBus), "0 to 1.");
@@ -950,6 +1576,12 @@ namespace nx
             b.function("void highPass(Bus bus, float hertz, float seconds = 0)", NX_FN(audioHighPass), "Takes away what is lower, as a small radio or a telephone does: 1000 is thin, 0 is everything again.");
             b.function("void reverb(Bus bus, float amount, float room = 0.6f, float seconds = 0)", NX_FN(audioReverb), "A room's echoes: amount 0 to 1, how much is heard; room 0 to 1, from a small, dead one to a hall or a cave. 0 for none.");
             b.function("void echo(Bus bus, float amount, float delay = 0.3f, float feedback = 0.4f, float seconds = 0)", NX_FN(audioEcho), "Each sound again, after so many seconds (up to 0.75), and again, quieter each time by feedback (0 to 0.9). 0 for none.");
+            b.function("void bandPass(Bus bus, float hertz, float octaves = 1, float seconds = 0)", NX_FN(audioBandPass), "Only what is near so many hertz, so many octaves wide: a radio, a voice through a pipe. lowPass(20000) and highPass(0) take it away.");
+            b.function("void distortion(Bus bus, float amount, float seconds = 0)", NX_FN(audioDistortion), "Driven too hard, as an amplifier pushed past what it can: amount 0 to 1, from none to fuzz. Glides there over so many seconds.");
+            b.function("void chorus(Bus bus, float amount, float rate = 1.5f, float seconds = 0)", NX_FN(audioChorus), "A copy a little behind, swaying in time, so that one sounds like several: amount 0 to 1, rate in sways a second.");
+            b.function("void flanger(Bus bus, float amount, float rate = 0.25f, float feedback = 0.5f, float seconds = 0)", NX_FN(audioFlanger), "A copy very close behind, sweeping, fed back by feedback (0 to 0.9): the whoosh of a jet, or a robot's voice.");
+            b.function("void compressor(Bus bus, float threshold = -18, float ratio = 4)", NX_FN(audioCompressor), "Presses down what is louder than threshold decibels below full by ratio (1 to 20): quick to press, slow to let go, so loud and soft come closer. 0 for none.");
+            b.function("void equalizer(Bus bus, float low, float mid, float high, float seconds = 0)", NX_FN(audioEqualizer), "Turns the lows (about 250 Hz), middle (1000 Hz) and highs (4000 Hz) up or down, in decibels from -24 to 24: 0, 0, 0 is as it is.");
             b.function("void clearEffects(float seconds = 0)", NX_FN(audioClearEffects), "Every bus back to none. A screen starts with none, and they go when it closes.");
             b.function("float get_level() property", NX_FN(audioLevel), "How loud it has been lately, 0 to 1.");
             b.function("float spectrum(uint band)", NX_FN(audioSpectrum), "How strong one of 32 bands is, low to high, 0 to 1.");
@@ -1011,6 +1643,7 @@ namespace nx
             b.function("float get_time() property", NX_FN(appTime), "Seconds since the app started.");
             b.function("double get_now() property", NX_FN(appNow), "Seconds from some moment, to a millionth or so: for timing how long something takes. Unlike `time`, it goes on during a frame.");
             b.function("float get_fps() property", NX_FN(appFps), "Frames a second, averaged.");
+            b.function("Pixels@ screenshot()", NX_FN(takeScreenshot), "The last frame shown, as pixels to look at, draw or save: from update(), not draw(). Null where the GPU can't read it back (the Xbox 360).");
             b.function("uint get_draws() property", NX_FN(appDraws), "Draw calls in the last frame.");
             b.function("string get_platform() property", NX_FN(appPlatform), "What it is running on.");
             b.function("string get_gpu() property", NX_FN(appGpu), "What is drawing.");
@@ -1033,6 +1666,13 @@ namespace nx
             b.callback("Vec2 + Vec2, Vec2 - Vec2, -Vec2", "Added, taken away, turned round. += and -= too.");
             b.callback("Vec2 * float, Vec2 / float", "Longer or shorter. *= too.");
             b.callback("float dot(const Vec2 &in other) const", "How far one goes along the other.");
+            b.callback("float cross(const Vec2 &in other) const", "Above 0 if the other turns clockwise from this one, on a screen whose y goes down; 0 if they are in line.");
+            b.callback("float length() const", "How long it is.");
+            b.callback("Vec2 normalized() const", "The same direction, 1 long; zero stays zero.");
+            b.callback("float distance(const Vec2 &in other) const", "How far apart two places are.");
+            b.callback("float angle() const", "Its direction in degrees: 0 is right, 90 down.");
+            b.callback("Vec2 rotated(float degrees) const", "Turned clockwise on the screen.");
+            b.callback("Vec2 perpendicular() const", "Turned a quarter clockwise on the screen: across a line, for its normal.");
             b.section("Vec3", "A place or a direction in space: x right, y up, z towards you, in metres.");
             b.callback("Vec3()", "Zero.");
             b.callback("Vec3(float x, float y, float z)", "From its parts.");
@@ -1113,6 +1753,8 @@ namespace nx
         }
     }
 
+    void bindColorType(Binder& binder) { bindColor(binder); }
+
     bool bindEngine(Binder& binder, Services& s)
     {
         s.host->engine()->SetUserData(&s);
@@ -1124,6 +1766,8 @@ namespace nx
         bindCoroutines(binder);
         bindSave(binder);
         bindJson(binder);
+        bindData(binder);
+        bindThreads(binder);
         bindPath(binder);
         bindScene(binder);
         bindSpace(binder);

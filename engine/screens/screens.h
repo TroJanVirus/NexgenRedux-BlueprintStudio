@@ -61,18 +61,28 @@ namespace nx
         void setCanQuit(bool can) { m_canQuit = can; }
         // Native desktop host may supply an optional development-tool action.
         void setBlueprintLauncher(bool (*launch)()) { m_blueprintLauncher = launch; }
+#ifdef NX_DESKTOP_BLUEPRINT
+        void setBlueprintProjectLauncher(bool (*launch)()) { m_blueprintProjectLauncher=launch; }
+#endif
+        // A deferred native workspace launch can fail after the menu has closed.
+        void blueprintLaunchFailed() { setMenu(true); m_blueprintError = true; }
         // The desktop workspace takes input while the home screen stays paused.
         void setDevelopmentPaused(bool paused) { setMenu(paused); }
 
 #ifdef NX_DESKTOP_BLUEPRINT
         // Desktop authoring only: transient screen, no files staged or replaced.
+        struct PreviewScreen { ScreenInfo info; std::string source; std::string manifest{}; };
         bool startPreview(const std::string& source, std::string& error);
+        bool startProjectPreview(const std::vector<PreviewScreen>& screens,const std::string& start,std::string& error,const std::string& assetRoot="");
+        bool startSceneEditor(const std::string& assetRoot,const std::string& screen,std::string& error);
+        bool validateBlueprintSource(const std::string& source,std::string& error);
         void stopPreview();
         bool previewing() const { return m_previewSave != nullptr; }
+        bool resolvePreviewGlobal(const char* name,char* out,size_t size) const;
 #endif
 
-        u32 count() const { return m_count; }
-        const ScreenInfo* info(u32 index) const { return index < m_count ? &m_infos[index] : nullptr; }
+        u32 count() const;
+        const ScreenInfo* info(u32 index) const;
 
     private:
         static constexpr u32 kMaxDepth = 8;
@@ -138,10 +148,16 @@ namespace nx
         bool m_canQuit = true;
         bool m_quit = false;
         bool (*m_blueprintLauncher)() = nullptr;
+#ifdef NX_DESKTOP_BLUEPRINT
+        bool (*m_blueprintProjectLauncher)() = nullptr;
+#endif
         bool m_blueprintError = false;
         std::vector<std::string> m_included;
 #ifdef NX_DESKTOP_BLUEPRINT
-        std::string m_previewSource;
+        bool startPreviewSession(const std::vector<PreviewScreen>& screens,const std::string& start,std::string& error,const std::string& assetRoot,bool sceneEditor);
+        std::vector<PreviewScreen> m_previewScreens;
+        std::string m_previewRoot;
+        bool m_previewNavigation=false;
         Save* m_previewSave = nullptr;
         Save* m_previewSettings = nullptr;
         Save* m_originalSave = nullptr;

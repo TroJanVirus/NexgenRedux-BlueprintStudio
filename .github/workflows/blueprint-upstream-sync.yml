@@ -1,0 +1,74 @@
+name: Verify upstream integration and shared media
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: ["blueprint/portable-projects"]
+    types: [opened, reopened, synchronize]
+permissions:
+  contents: read
+concurrency:
+  group: blueprint-upstream-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  refresh:
+    if: github.repository == 'TroJanVirus/NexgenRedux-BlueprintStudio' && (startsWith(github.head_ref, 'blueprint/integration-') || startsWith(github.ref, 'refs/heads/blueprint/integration-'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      contents: write
+    outputs:
+      revision: ${{ steps.generate.outputs.revision }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Regenerate reference-derived files and validate original fixtures
+        id: generate
+        shell: bash
+        run: |
+          set -euo pipefail
+          old_count=$(node -p "require('./engine/tools/blueprint/catalog.js').nodes.length")
+          python3 engine/tools/blueprint/generate_catalog.py
+          python3 engine/tools/blueprint/generate_native_catalog.py
+          new_count=$(node -p "require('./engine/tools/blueprint/catalog.js').nodes.length")
+          python3 - "$old_count" "$new_count" <<'PY'
+          from pathlib import Path
+          import re, sys
+          p = Path('engine/tests/test_blueprint_document.cpp')
+          text = p.read_text()
+          matches = re.findall(r'blueprintCatalogue\(\)\.size\(\)==(\d+)', text)
+          assert len(matches) == 1, matches
+          before = int(matches[0])
+          after = before + int(sys.argv[2]) - int(sys.argv[1])
+          p.write_text(text.replace(f'blueprintCatalogue().size()=={before}', f'blueprintCatalogue().size()=={after}'))
+          print(f'Native catalogue expected {before} -> {after}')
+          PY
+          node engine/tools/blueprint/make_examples.js
+          python3 engine/tools/blueprint/generate_catalog.py --check
+          python3 engine/tools/blueprint/generate_native_catalog.py --check
+          node engine/tools/blueprint/make_examples.js --check
+          node engine/tools/blueprint/test_compiler.js
+          node - <<'JS'
+          const assert = require('node:assert/strict');
+          const nodes = require('./engine/tools/blueprint/catalog.js').nodes;
+          for (const id of ['api:Windows:Windows::set_titleLook:TitleLook','api:Windows:Windows::set_backdrop:Backdrop','api:Windows:Windows::set_corners:Corners','api:Windows:Windows::get_titleColors:','api:Packed:writeI64:Packed@,int64','api:Packed:readI64:Packed@','api:Curve:Curve:','api:Curve:at:Curve@,float','api:Curve:triangulate:array<Vec2>@','api:Batch:Batch:','api:Packed:Packed:','api:Zip:Zip:','api:Vec2:rotated:Vec2,float','api:Data:Data::crc32:string','api:Thread:Thread:string','api:Channel:Channel:string','api:Channel:pop:Channel@:string out','api:Window:Window::resize:uint,uint','api:System:System::get_processors:','api:System:System::get_hour:','api:System:System::get_minute:','api:System:System::get_second:','api:System:System::clock:bool','api:Samples:Samples:uint,uint,uint','api:AudioStream:AudioStream:uint,uint,float']) assert(nodes.some(n => n.id === id), id);
+          for (const call of ['wait','demand','Worker::sleep']) assert(!nodes.some(n => ['Thread','Channel'].includes(n.category) && n.call === call), call);
+          JS
+          git diff --check
+          git add engine/tools/blueprint/catalog.js engine/tools/blueprint/native_catalog.inc engine/tools/blueprint/native_enums.inc engine/tools/blueprint/examples engine/tests/blueprint_fixtures.h engine/tests/test_blueprint_document.cpp
+          git diff --cached --stat
+          git diff --quiet
+          if ! git diff --cached --quiet; then
+            git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m "Regenerate Blueprint catalogues and fixtures after upstream integration"
+            branch="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+            [[ "$branch" == blueprint/integration-* ]]
+            git push origin "HEAD:refs/heads/$branch"
+          fi
+          echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+  verify:
+    needs: refresh
+    uses: ./.github/workflows/blueprint-native.yml
+    with:
+      source_ref: ${{ needs.refresh.outputs.revision }}
+    permissions:
+      contents: read

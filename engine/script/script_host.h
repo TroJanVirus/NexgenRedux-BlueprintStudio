@@ -8,6 +8,7 @@ class asIScriptFunction;
 class asIScriptObject;
 class asITypeInfo;
 
+#include <atomic>
 #include <string>
 #include <utility>
 #include <vector>
@@ -48,6 +49,7 @@ namespace nx
         bool compile(const char* module, const char* file, const char* code, size_t length);
         // Other files, put in with the next to be compiled: those that it includes.
         void addSection(const char* file, const char* code, size_t length);
+        void clearSections() { m_sections.clear(); }
         void discard(const char* module);
 
         // Looks up a function by declaration; nullptr if the module doesn't have it.
@@ -91,6 +93,8 @@ namespace nx
 
         // Statements a single call may run before it is treated as stuck.
         void setStatementLimit(u32 statements) { m_statementLimit = statements; }
+        // No limit, for a thread's script: it runs until it is done, or this is set, at its next statement.
+        void setStop(const std::atomic<bool>* stop) { m_stop = stop; }
 
         // Some garbage collection, for calling every frame: more when there is more to look at.
         void collectStep();
@@ -117,6 +121,7 @@ namespace nx
         std::vector<std::pair<std::string, std::string>> m_sections;
         asITypeInfo* m_held[kHeldTypes] = {};
         u32 m_statementLimit = 20000000;
+        const std::atomic<bool>* m_stop = nullptr;
         u32 m_statements = 0;
         char m_error[256] = {};
         ScriptWatcher* m_watcher = nullptr;
