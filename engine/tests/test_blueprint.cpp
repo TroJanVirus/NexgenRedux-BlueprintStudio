@@ -3647,3 +3647,35 @@ NX_TEST(nativeCompiledScriptIdentityTracksReloadAndDiscard)
     NX_EXPECT(scriptFingerprint(first,strlen(first))==r.host.compiledFingerprint("identity","identity.as"));
     r.host.discard("identity");NX_EXPECT(!*r.host.compiledFingerprint("identity","identity.as"));
 }
+
+#ifdef NX_DESKTOP_BLUEPRINT
+NX_TEST(nativeSegmentedHudTemplateRespondsToCapacityChanges)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    BlueprintDocument doc;std::string error,source,bytes;
+    if(!blueprintProjectTemplate("hud-health",doc,error)||!compileBlueprint(doc,source,error)||!doc.serialize(bytes,error))
+    {NX_ERROR("Health HUD template: %s",error.c_str());NX_EXPECT(false);return;}
+    for(const auto& g:doc.graphs)NX_EXPECT(!g.comments.empty());
+    r.platform.files["showcase/main/screen.json"]="{\"title\":\"Health HUD\"}";
+    r.platform.files["showcase/main/main.as"]=source;
+    if(!r.screens.init(r.services,"showcase","main")){NX_EXPECT(false);return;}
+    r.step(3);NX_EXPECT(!r.screens.failed());if(!r.services.ui)return;
+    auto& ui=*r.services.ui;
+    auto* health=ui.find("healthGroup");auto* armour=ui.find("armourGroup");auto* shield=ui.find("shieldGroup");
+    auto* input=ui.find("healthInput");auto* armourInput=ui.find("armourInput");auto* shieldInput=ui.find("shieldInput");
+    auto* h0=ui.find("health0");auto* h1=ui.find("health1");auto* a0=ui.find("armour0");auto* a1=ui.find("armour1");
+    NX_EXPECT(health&&armour&&shield&&input&&armourInput&&shieldInput&&h0&&h1&&a0&&a1);
+    if(!health||!armour||!shield||!input||!armourInput||!shieldInput||!h0||!h1||!a0||!a1)return;
+    const float before=health->w;
+    auto change=[&](Widget& w,float value){w.value=value;ui.queue(w,UiEvent::Change);r.step(3);};
+    change(*input,30);NX_EXPECT(!r.screens.failed()&&health->grow==150&&h0->value==1&&fabsf(h1->value-0.2f)<0.001f);
+    NX_EXPECT(fabsf(health->w-before)<0.01f);
+    change(*armourInput,40);NX_EXPECT(armour->visible&&armour->grow==40&&a0->grow==25&&a1->grow==15);
+    NX_EXPECT(health->w>before);
+    change(*armourInput,0);change(*shieldInput,0);
+    NX_EXPECT(!armour->visible&&!shield->visible&&!a0->visible&&health->visible);
+    change(*armourInput,75);NX_EXPECT(armour->visible&&a0->visible&&a0->grow==25);
+    NX_EXPECT(!r.screens.failed());
+    BlueprintDocument restored;NX_EXPECT(restored.load(bytes.data(),bytes.size(),error)&&compileBlueprint(restored,source,error));
+}
+#endif

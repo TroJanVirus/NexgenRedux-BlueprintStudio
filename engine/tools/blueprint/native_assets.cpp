@@ -386,6 +386,105 @@ namespace nx
     {
         BlueprintDocument candidate;candidate.create();
         if(id=="blank"){document=std::move(candidate);error.clear();return true;}
+        if(id=="hud-health")
+        {
+            candidate.name="Segmented Health HUD";
+            // The demo uses ordinary widget assets, callbacks and graph nodes.
+            // Fixed pool: six health, four armour, four shield segments.
+            std::string page=R"HUD([{"column":[{"label":"SEGMENTED HEALTH HUD","style":"heading","id":"title"},{"label":"Permanent health / temporary armour / shield","style":"small","id":"subtitle"},{"row":[)HUD";
+            const char* groups[]={"health","armour","shield"};
+            const char* styles[]={"healthSegment","armourSegment","shieldSegment"};
+            const int counts[]={6,4,4},initial[]={150,75,50};
+            for(unsigned g=0;g<3;++g)
+            {
+                if(g)page+=",";
+                page+="{\"row\":[";
+                for(int i=0;i<counts[g];++i)
+                {
+                    if(i)page+=",";
+                    const int amount=std::max(0,std::min(25,initial[g]-i*25));
+                    page+="{\"progress\":1,\"id\":\""+std::string(groups[g])+std::to_string(i)+
+                        "\",\"style\":\""+styles[g]+"\",\"height\":18,\"grow\":"+std::to_string(amount)+
+                        ",\"visible\":"+(amount?"true":"false")+"}";
+                }
+                page+="],\"id\":\""+std::string(groups[g])+"Group\",\"style\":\"plain\",\"padding\":0,\"gap\":2,\"height\":18,\"grow\":"+std::to_string(initial[g])+"}";
+            }
+            page+=R"HUD(],"style":"plain","id":"meter","padding":0,"gap":2,"height":20,"align":"center"},{"label":"Base health (capacity stays 150)","style":"small"},{"slider":150,"id":"healthInput","low":0,"high":150,"step":5,"height":48,"change":"bp_fn_HealthChanged"},{"label":"Temporary armour (capacity follows value)","style":"small"},{"slider":75,"id":"armourInput","low":0,"high":100,"step":5,"height":48,"change":"bp_fn_ArmourChanged"},{"label":"Temporary shield (capacity follows value)","style":"small"},{"slider":50,"id":"shieldInput","low":0,"high":100,"step":5,"height":48,"change":"bp_fn_ShieldChanged"},{"label":"Move the sliders with mouse or gamepad. Empty armour/shield frees space for base health.","wrap":true,"style":"small"}],"id":"hud","padding":20,"gap":8,"align":"stretch","grow":1}])HUD";
+            const std::string theme=R"HUD({"styles":{"healthSegment":{"base":"plain","line":"#EEF2F7","track":"#303944","minWidth":0,"minHeight":0},"armourSegment":{"base":"plain","line":"#E9B849","track":"#523D19","minWidth":0,"minHeight":0},"shieldSegment":{"base":"plain","line":"#58B8E9","track":"#1B3C51","minWidth":0,"minHeight":0}}})HUD";
+            if(!candidate.replaceVisualAssets({{"theme-1","theme","HUD colours",theme,{}},{"widget-2","widget","Segmented HUD",page,{"theme-1"}}},error)||
+                !candidate.connectVisualWidget("Screen","widget-2",error))return false;
+            bool ok=true;
+            const auto add=[&](size_t g,const char* kind,float x,float y,const char* target="")
+            {if(!ok)return size_t(0);const auto n=candidate.graphs[g].nodes.size();ok=candidate.addNode(g,kind,x,y,error,target);return n;};
+            const auto val=[&](size_t g,size_t n,const char* pin,const std::string& value){if(ok)ok=candidate.setInputValue(g,n,pin,value,error);};
+            const auto wire=[&](size_t g,size_t a,const char* out,size_t b,const char* in){if(ok)ok=candidate.connect(g,a,out,b,in,error);};
+            const auto chain=[&](size_t g,size_t a,size_t b){wire(g,a,"then",b,"in");};
+            const auto note=[&](size_t g,const char* title)
+            {if(!ok)return;std::vector<size_t> nodes;for(size_t n=0;n<candidate.graphs[g].nodes.size();++n)nodes.push_back(n);ok=candidate.addComment(g,nodes,title,error);};
+            const auto helper=[&](const char* name,bool temporary)
+            {
+                const size_t g=candidate.graphs.size();
+                ok=ok&&candidate.addFunction(name,error)&&candidate.setFunctionSignature(g,{{"segment","Widget@"},{"amount","float"}},"void",error);
+                if(!ok)return g;
+                if(temporary)
+                {
+                    const auto weight=add(g,"api:Widget:set_grow:Widget@,float",320,60);
+                    const auto visible=add(g,"api:Widget:set_visible:Widget@,bool",650,60);
+                    const auto positive=add(g,"greater:float",320,280);
+                    wire(g,0,"arg_amount",positive,"a");val(g,positive,"b","0");
+                    chain(g,0,weight);chain(g,weight,visible);
+                    wire(g,0,"arg_segment",weight,"target");wire(g,0,"arg_amount",weight,"value");
+                    wire(g,0,"arg_segment",visible,"target");wire(g,positive,"result",visible,"value");
+                    note(g,"TEMPORARY SLOT | The remaining capacity is the Fill weight. Hide zero-capacity segments; no widget allocation.");
+                }
+                else
+                {
+                    const auto fraction=add(g,"divide:float",320,260);
+                    const auto set=add(g,"api:Widget:set_value:Widget@,float",650,60);
+                    wire(g,0,"arg_amount",fraction,"a");val(g,fraction,"b","25");
+                    chain(g,0,set);wire(g,0,"arg_segment",set,"target");wire(g,fraction,"result",set,"value");
+                    note(g,"PERMANENT SLOT | Convert 0..25 health into progress 0..1. Never change the slot weight.");
+                }
+                return g;
+            };
+            helper("SetBaseSegment",false);helper("SetTemporarySegment",true);
+            const char* callbacks[]={"HealthChanged","ArmourChanged","ShieldChanged"};
+            for(unsigned group=0;group<3&&ok;++group)
+            {
+                size_t g=0;while(g<candidate.graphs.size()&&candidate.graphs[g].name!=callbacks[group])++g;
+                if(g==candidate.graphs.size()){error="Missing HUD callback.";return false;}
+                const auto amount=add(g,"api:Widget:get_value:Widget@",300,300);
+                wire(g,0,"arg_widget",amount,"target");size_t tail=0;
+                float x=600;
+                if(group)
+                {
+                    const auto find=add(g,"api:Ui:Ui::find:string",x,60);val(g,find,"id",std::string(groups[group])+"Group");chain(g,tail,find);
+                    const auto grow=add(g,"api:Widget:set_grow:Widget@,float",x+300,60);
+                    const auto visible=add(g,"api:Widget:set_visible:Widget@,bool",x+600,60);
+                    const auto positive=add(g,"greater:float",x+300,300);
+                    wire(g,amount,"result",positive,"a");val(g,positive,"b","0");
+                    chain(g,find,grow);chain(g,grow,visible);wire(g,find,"result",grow,"target");
+                    wire(g,amount,"result",grow,"value");wire(g,find,"result",visible,"target");wire(g,positive,"result",visible,"value");
+                    tail=visible;x+=930;
+                }
+                for(int i=0;i<counts[group]&&ok;++i,x+=660)
+                {
+                    const auto find=add(g,"api:Ui:Ui::find:string",x,60);
+                    val(g,find,"id",std::string(groups[group])+std::to_string(i));chain(g,tail,find);
+                    const auto sub=add(g,"subtract:float",x,300);
+                    wire(g,amount,"result",sub,"a");val(g,sub,"b",std::to_string(i*25));
+                    const auto clamp=add(g,"api:Maths:clamp:float,float,float",x+300,300);
+                    wire(g,sub,"result",clamp,"value");val(g,clamp,"low","0");val(g,clamp,"high","25");
+                    const auto call=add(g,"call:function",x+330,60,group?"SetTemporarySegment":"SetBaseSegment");
+                    chain(g,find,call);wire(g,find,"result",call,"arg_segment");wire(g,clamp,"result",call,"arg_amount");tail=call;
+                }
+                note(g,group?"CAPACITY CHANGED | Resize this group by remaining HP. Each segment gets clamp(capacity - index*25, 0, 25); a partial last segment has proportional width.":"HEALTH CHANGED | Each of six 25-HP slots receives its clamped remaining HP. The 150-HP group keeps its original Fill weight.");
+            }
+            for(size_t g=0;g<6&&ok;++g)note(g,g==0?"LOAD | The authored HUD and shared theme are instantiated once.":g==2?"DRAW | Native UI draws the linked page in its authored coordinate system.":"LIFECYCLE | No per-frame polling; slider Change callbacks drive the meter.");
+            if(!ok)return false;
+            std::string source,bytes;if(!compileBlueprint(candidate,source,error)||!candidate.serialize(bytes,error))return false;
+            BlueprintDocument checked;if(!checked.load(bytes.data(),bytes.size(),error))return false;document=std::move(checked);error.clear();return true;
+        }
         if(id=="cinematic")
         {
             candidate.name="Cinematic Showcase";std::string sequence;
@@ -676,7 +775,7 @@ namespace nx
     }
     bool blueprintStageTemplateMedia(Platform& p,const std::string& root,const std::string& id,std::string& error)
     {
-        if(id=="blank"||id=="cinematic"||id=="flight"||id=="rolling-ball"){error.clear();return true;}
+        if(id=="blank"||id=="cinematic"||id=="flight"||id=="rolling-ball"||id=="hud-health"){error.clear();return true;}
         if((id!="first-person"&&id!="third-person")||!blueprintAssetRoot(root)){error="Invalid template media request.";return false;}
         if(!ensure(p,root+"/_global")||!ensure(p,root+"/_global/model"))
         {error="Cannot create template model folder.";return false;}

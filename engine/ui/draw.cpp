@@ -269,8 +269,8 @@ namespace nx
             const float from = left + knob, length = inner - knob * 2;
             const float ty = y + (w.h - thick) * 0.5f;
             const float part = w.amount < 0 ? 0 : w.amount > 1 ? 1 : w.amount;
-            c.roundRect(from, ty, length, thick, thick * 0.5f, look.track);
-            if (length * part > thick)
+            if(length>0&&thick>0)c.roundRect(from, ty, length, thick, thick * 0.5f, look.track);
+            if (length > 0 && (slider ? length * part > thick : part > 0))
             {
                 c.roundRect(from, ty, length * part, thick, thick * 0.5f, look.line);
             }
