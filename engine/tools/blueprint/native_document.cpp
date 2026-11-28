@@ -2167,6 +2167,19 @@ namespace nx
         }
         error="The selected linked instance no longer exists.";return false;
     }
+    bool BlueprintDocument::createPlacedPrimitive(const std::string& owner,const std::string& shape,const std::string& place,std::string& id,std::string& error)
+    {
+        if(shape!="box"&&shape!="sphere"&&shape!="capsule"&&shape!="plane"){error="Unsupported placement primitive.";return false;}
+        BlueprintDocument staged;staged.name=name;staged.assetRoot=assetRoot;staged.graphs=graphs;staged.manifests=manifests;
+        staged.m_visualAssets=m_visualAssets;staged.m_visualSerial=m_visualSerial;staged.m_nextId=m_nextId;
+        std::string next;const auto label=shape=="box"?"Cube":shape=="sphere"?"Sphere":shape=="capsule"?"Capsule":"Plane";
+        if(!staged.createVisualAsset("actor",next,error)||!staged.renameVisualAsset(next,label,error)||!staged.setVisualActorShape(next,shape,error)||
+           !staged.setVisualActorProperty(next,0,"name",label,error))return false;
+        if(shape=="box"&&!staged.setVisualActorProperty(next,0,"simpleCollision","1,1,1;0,0,0",error))return false;
+        if(!staged.placeVisualActor(owner,next,place,error))return false;
+        std::string checked;if(!staged.serialize(checked,error))return false;
+        recordGraphList();graphs.swap(staged.graphs);m_visualAssets.swap(staged.m_visualAssets);m_visualSerial=staged.m_visualSerial;m_nextId=staged.m_nextId;id=next;error.clear();return true;
+    }
     bool BlueprintDocument::placeVisualActor(const std::string& owner,const std::string& id,const std::string& place,std::string& error)
     {
         std::string json;std::vector<std::string> components;

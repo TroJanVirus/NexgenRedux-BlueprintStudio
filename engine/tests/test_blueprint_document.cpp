@@ -1533,6 +1533,15 @@ NX_TEST(nativeActorInspectorEditsSharedComponentProperties)
     NX_EXPECT(copy.undo()&&copy.undo()&&!copy.removeBehaviour("Movement",error));
 }
 
+NX_TEST(nativeScenePrimitivePlacementIsAtomicAndCompiles)
+{
+    BlueprintDocument doc;doc.create();std::string id,error,source,bytes;
+    NX_EXPECT(doc.createPlacedPrimitive("Screen","box","3,1,-5",id,error));
+    NX_EXPECT(doc.visualAsset(id)&&doc.graphs[0].nodes.size()==2&&compileBlueprint(doc,source,error));
+    NX_EXPECT(doc.visualActorSource(id,bytes,error)&&bytes.find("cube")!=std::string::npos);
+    NX_EXPECT(doc.undo()&&doc.visualAssets().empty()&&doc.graphs[0].nodes.size()==1);
+    NX_EXPECT(doc.redo()&&doc.visualAsset(id)&&compileBlueprint(doc,source,error));
+}
 NX_TEST(nativeActorGeneratedSimpleCollision)
 {
     BlueprintDocument doc;doc.create();std::string error,id,child,before,after,source;

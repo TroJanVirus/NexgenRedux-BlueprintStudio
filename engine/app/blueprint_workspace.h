@@ -78,7 +78,7 @@ namespace nx
             std::string id,screen,asset,selection,instance;
             std::pair<std::string,std::string> graph;
             size_t first=0;
-            bool fourThree=false,threeD=false,outliner=false;
+            bool fourThree=false,threeD=false,outliner=false,workspace=false;
             float yaw=0.65f,distance=25,height=0,focusX=0,focusY=0,focusZ=0,pitch=0.576375f;
             unsigned mode=0;
         };
@@ -88,6 +88,16 @@ namespace nx
         void rememberVisualTab();
         void leaveVisualTab();
         void openVisualTab(const VisualTab& tab);
+        void openSceneWorkspace(Services& s);
+        void openWidgetWorkspace(Services& s,bool createNew=false);
+        void drawWorkspaceModes(Canvas& c);
+        bool updateWorkspaceModes(Services& s,float x,float y,bool click);
+        void drawSceneWorkspace(Canvas& c);
+        void updateSceneWorkspace(Services& s,float x,float y,bool left,bool click);
+        bool m_visualWorkspace=false;
+        std::string m_placementPrimitive;
+        size_t m_sceneContentFirst=0;
+        void playWorkspace(Services& s);
         void saveActorTab();
         void leaveActorViewport(bool library);
         float tabLeft() const;
@@ -223,7 +233,7 @@ namespace nx
         SceneLayout sceneLayout() const;
         std::vector<std::pair<unsigned,std::string>> m_placementRoots;
         float m_placementGrabWorldX=0,m_placementGrabWorldZ=0;
-        void cancelVisualPlacement(){m_placementGrabWorldX=m_placementGrabWorldZ=0;m_gizmoAxis=-1;m_placementDragging=false;m_placementAsset.clear();m_placementGraph=m_placementNode=static_cast<size_t>(-1);}
+        void cancelVisualPlacement(){m_placementGrabWorldX=m_placementGrabWorldZ=0;m_gizmoAxis=-1;m_placementDragging=false;m_placementAsset.clear();m_placementPrimitive.clear();m_placementGraph=m_placementNode=static_cast<size_t>(-1);}
         bool m_widgetDesigner=false,m_widgetPalette=false,m_widgetFourThree=false,m_widgetEvents=false,m_widgetUnbind=false,m_widgetAnchors=false;
         bool m_widgetTimeline=false,m_widgetTimelinePlay=false;
         unsigned m_widgetTimelineTrack=0;
