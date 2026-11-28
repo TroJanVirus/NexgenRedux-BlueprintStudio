@@ -14,5 +14,5 @@ namespace nx
     bool rewindDecoder(SoundDecoder& decoder);
 
     // All of a sound as samples, for tools. Free with memFree.
-    i16* decodeAll(const SoundData& sound, u32& frames);
+    i16* decodeAll(const SoundData& sound, u32& frames, size_t maxBytes = static_cast<size_t>(-1));
 }
