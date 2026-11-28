@@ -106,3 +106,7 @@ Layout menu and actor toolbar cycle Auto / 100% / 125% / 150% (bounded by the mi
 ## Grouped Details, rotation rings and content drawer
 
 Actor Details now groups identity, transforms, rendering/animation, class/camera and collision/physics with independent collapse state and wheel scrolling. Rotation mode draws three projected parent-axis rings and selects the nearest ring tangent for angular drag; this edits the native Euler field and preserves a single undo step. The graph's bottom Content drawer shows reusable assets, opens actor viewports directly, and links actors into the active screen via drag/drop (default origin; use the placement viewport for world coordinates). Other asset types open the existing library. This is a docked drawer, not a general-purpose floating-panel/docking framework. Native desktop regression updated for category coordinates and drawer access; CI pending.
+
+### Actor viewport polish
+
+Explicit Translate/Rotate/Scale toolbar glyphs replace the mode-cycle button. Focus frames the selected component; clicking near a projected component origin also selects it and scrolls the hierarchy into view. Class preview asset resolution retains the originating screen when a class graph has no screen owner. Dragging an asset into a Behaviour graph is rejected rather than implicitly placing it in an unrelated screen. Verification pending.

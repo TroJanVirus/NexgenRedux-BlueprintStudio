@@ -88,6 +88,7 @@ namespace nx
         std::vector<std::string> m_actorAxisValues;
         bool m_actorCollision=true,m_actorOrbit=false;
         float m_actorPitch=0.576375f,m_actorOrbitX=0,m_actorOrbitY=0;
+        float m_actorFocus[3]={};
         unsigned m_actorMode=0;
         int m_actorDragAxis=-1;
         size_t m_actorDragRevision=0;

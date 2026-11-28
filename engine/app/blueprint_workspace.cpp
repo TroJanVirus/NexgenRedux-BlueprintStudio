@@ -1702,10 +1702,20 @@ namespace nx
         if(!asset||asset->kind!="actor")return;
         const auto selected=id; // id can alias m_visualSelection.
         m_actorEditor=true;m_assetBrowser=true;m_assetLibrary=true;m_visualSelection=selected;
-        m_actorTabId=selected;m_actorTabScreen=assetScreen();m_actorTabGraph=m_graph;
+        m_actorTabId=selected;
+        const auto screen=assetScreen();
+        if(!screen.empty())m_actorTabScreen=screen;
+        else
+        {
+            const auto screens=m_document.screens();
+            if(std::find(screens.begin(),screens.end(),m_actorTabScreen)==screens.end())
+                m_actorTabScreen=screens.empty()?std::string():screens.front();
+        }
+        m_actorTabGraph=m_graph;
         m_visualInspector=m_visualPhysics=m_visualPlacement=m_widgetDesigner=false;
         m_visualComponent=m_visualComponentFirst=0;m_visualInput=0;m_actorDetailsScroll=0;
         m_placementYaw=0.65f;m_actorPitch=0.576375f;m_placementDistance=8.f;
+        m_actorFocus[0]=m_actorFocus[1]=m_actorFocus[2]=0;
         clearWire();cancelDrag();releasePlacementPreview();
         m_status="Actor class viewport: select a component to edit its properties.";
     }
@@ -1884,6 +1894,27 @@ namespace nx
                 m_actorDragAxis=picked;m_actorDragRevision=m_document.revision();m_actorDragX=x;m_actorDragY=y;m_actorDragDx=pickedDx;m_actorDragDy=pickedDy;
                 m_status="Drag axis; release to apply one undoable change.";return;
             }
+            if(m_placementWorld&&m_placementReady)
+            {
+                size_t component=0,nearest=count;float distance=18.f;auto& space=m_placementWorld->space();
+                m_placementWorld->eachEntity([&](u32 id,const World::Entity&)
+                {
+                    Vec2 projected;
+                    if(space.toScreen(space.worldPlace(id),projected))
+                    {
+                        const float d=std::hypot(projected.x-x,projected.y-y);
+                        if(d<distance){distance=d;nearest=component;}
+                    }
+                    ++component;
+                });
+                if(nearest<count)
+                {
+                    m_visualComponent=nearest;
+                    if(nearest<m_visualComponentFirst)m_visualComponentFirst=nearest;
+                    else if(nearest>=m_visualComponentFirst+rows)m_visualComponentFirst=nearest-rows+1;
+                    m_status="Selected component in viewport.";return;
+                }
+            }
         }
         if(in(x,y,12,39,150,69)){m_actorEditor=false;releasePlacementPreview();if(m_actorTabGraph<m_document.graphs.size())selectGraph(m_actorTabGraph);return;}
         if(in(x,y,158,39,308,69)){openActorGraph(false);return;}
@@ -1894,8 +1925,13 @@ namespace nx
         if(in(x,y,474,39,610,69)){saveCurrent(s);return;}
         if(in(x,y,kLeft+12,kTop+8,kLeft+102,kTop+36)){m_placementYaw-=0.35f;return;}
         if(in(x,y,kLeft+108,kTop+8,kLeft+198,kTop+36)){m_placementYaw+=0.35f;return;}
-        if(in(x,y,kLeft+204,kTop+8,kLeft+294,kTop+36)){m_placementYaw=0.65f;m_actorPitch=0.576375f;m_placementDistance=8;return;}
-        if(in(x,y,618,39,738,69)){m_actorMode=(m_actorMode+1)%3;return;}
+        if(in(x,y,kLeft+204,kTop+8,kLeft+294,kTop+36)){m_placementYaw=0.65f;m_actorPitch=0.576375f;m_placementDistance=8;m_actorFocus[0]=m_actorFocus[1]=m_actorFocus[2]=0;return;}
+        if(in(x,y,kLeft+300,kTop+8,kLeft+390,kTop+36))
+        {
+            if(const auto id=actorPreviewEntity();id){const auto p=m_placementWorld->space().worldPlace(id);m_actorFocus[0]=p.x;m_actorFocus[1]=p.y;m_actorFocus[2]=p.z;m_placementDistance=4;m_status="Focused selected component.";}
+            return;
+        }
+        if(in(x,y,618,39,738,69)){m_actorMode=std::min(2u,static_cast<unsigned>((x-618)/40));m_status=m_actorMode==0?"Translate component":m_actorMode==1?"Rotate component":"Scale component";return;}
         if(in(x,y,746,39,892,69)){m_actorCollision=!m_actorCollision;return;}
         if(in(x,y,8,kBottom-60,kLeft-8,kBottom-32)||in(x,y,8,kBottom-30,kLeft-8,kBottom-2))
         {
@@ -1945,7 +1981,28 @@ namespace nx
         button(12,39,138,"Content");button(158,39,150,"Event graph");button(316,39,150,"Add to screen");button(474,39,136,"Save");
         const float right=kWidth-m_actorRightPanel;
         const float fieldWidth=(m_actorRightPanel-16.f)/3.f;
-        button(618,39,120,m_actorMode==0?"Translate":m_actorMode==1?"Rotate":"Scale");button(746,39,146,m_actorCollision?"Collision on":"Collision off");button(900,39,158,"Construction");
+        // Compact independent transform tools, with selected state and glyphs.
+        for(unsigned mode=0;mode<3;++mode)
+        {
+            const float xx=618+40.f*static_cast<float>(mode),cx=xx+19,cy=54;
+            c.rect(xx,39,38,30,m_actorMode==mode?Color{0.52f,0.42f,0.19f,1}:Color{0.24f,0.24f,0.26f,1});
+            if(mode==0)
+            {
+                c.line(cx-10,cy,cx+10,cy,2,text);c.line(cx,cy-10,cx,cy+10,2,text);
+                c.line(cx+10,cy,cx+6,cy-4,2,text);c.line(cx+10,cy,cx+6,cy+4,2,text);
+                c.line(cx,cy-10,cx-4,cy-6,2,text);c.line(cx,cy-10,cx+4,cy-6,2,text);
+            }
+            else if(mode==1)
+            {
+                for(unsigned i=0;i<24;++i){const float p=5.2f*static_cast<float>(i)/24.f,q=5.2f*static_cast<float>(i+1)/24.f;c.line(cx+9*std::cos(p),cy+9*std::sin(p),cx+9*std::cos(q),cy+9*std::sin(q),2,text);}
+                c.line(cx+4,cy-8,cx+4,cy-2,2,text);c.line(cx+4,cy-8,cx-2,cy-9,2,text);
+            }
+            else
+            {
+                c.line(cx-8,cy+8,cx+8,cy-8,2,text);c.rect(cx-11,cy+5,6,6,text);c.rect(cx+4,cy-12,8,8,text);
+            }
+        }
+        button(746,39,146,m_actorCollision?"Collision on":"Collision off");button(900,39,158,"Construction");
         button(1066,39,142,m_uiScale==0?"UI: Auto":m_uiScale==1?"UI: 100%":m_uiScale==2?"UI: 125%":"UI: 150%");
         c.rect(0,kTop,kLeft,kBottom-kTop,{0.16f,0.16f,0.17f,1});
         c.rect(right,kTop,kWidth-right,kBottom-kTop,{0.16f,0.16f,0.17f,1});
@@ -2010,7 +2067,8 @@ namespace nx
         {
             auto& space=m_placementWorld->space();const float d=m_placementDistance;
             const float horizontal=d*std::cos(m_actorPitch);
-            space.setCamera({std::sin(m_placementYaw)*horizontal,d*std::sin(m_actorPitch),std::cos(m_placementYaw)*horizontal},{0,0,0},55);
+            const Vec3 focus(m_actorFocus[0],m_actorFocus[1],m_actorFocus[2]);
+            space.setCamera(focus+Vec3(std::sin(m_placementYaw)*horizontal,d*std::sin(m_actorPitch),std::cos(m_placementYaw)*horizontal),focus,55);
             space.m_showShapes=m_actorCollision;
             space.draw(c,kLeft,top,right-kLeft,kBottom-top);m_placementReady=true;
             c.clip(kLeft,top,right-kLeft,kBottom-top);
@@ -2052,8 +2110,8 @@ namespace nx
             c.noClip();
         }
         else c.text(*m_font,"Preparing isolated native preview",kLeft+16,top+14,muted);
-        button(kLeft+12,kTop+8,90,"Orbit L");button(kLeft+108,kTop+8,90,"Orbit R");button(kLeft+204,kTop+8,90,"Reset");
-        c.text(*m_font,"Perspective",right-12,kTop+14,muted,Align::Right);
+        button(kLeft+12,kTop+8,90,"Orbit L");button(kLeft+108,kTop+8,90,"Orbit R");button(kLeft+204,kTop+8,90,"Reset");button(kLeft+300,kTop+8,90,"Focus");
+        if(right-kLeft>540)c.text(*m_font,"Perspective",right-12,kTop+14,muted,Align::Right);
         c.rect(kLeft-2,kTop,4,kBottom-kTop,{0.32f,0.32f,0.34f,1});c.rect(right-2,kTop,4,kBottom-kTop,{0.32f,0.32f,0.34f,1});
         c.rect(0,kBottom,kWidth,kHeight-kBottom,{0.16f,0.16f,0.17f,1});
         c.clip(10,kBottom+4,kWidth-20,34);c.text(*m_font,(m_placementOmitted?"Preview unavailable for this definition; "+m_status:m_status).c_str(),12,kBottom+10,text);c.noClip();
@@ -2076,7 +2134,9 @@ namespace nx
             if(m_contentDragRevision!=m_document.revision()||!m_document.visualAsset(id))return true;
             if(in(x,y,kLeft,kTop,kRight,top)&&std::hypot(x-m_contentDragX,y-m_contentDragY)>8)
             {
-                if(m_document.placeVisualActor(assetScreen(),id,"0,0,0",m_status)){rebuildPins();filterCatalogue();m_status="Linked actor added to screen. Use the placement viewport to position it.";}
+                const auto screen=assetScreen();
+                if(screen.empty())m_status="Open a screen graph before placing an actor instance.";
+                else if(m_document.placeVisualActor(screen,id,"0,0,0",m_status)){rebuildPins();filterCatalogue();m_status="Linked actor added to screen. Use the placement viewport to position it.";}
             }
             else if(in(x,y,kLeft,top,kRight,kBottom)&&std::hypot(x-m_contentDragX,y-m_contentDragY)<8)openActorViewport(id);
             return true;
@@ -2092,13 +2152,14 @@ namespace nx
             if(in(x,y,kRight-110,top+3,kRight-8,top+28)){browseAssets(s);return true;}
             if(y>=top+37&&y<top+145)
             {
+                if(x<kLeft+8)return true;
                 const auto index=m_contentFirst+static_cast<size_t>((x-kLeft-8)/148.f);
-                if(x>=kLeft+8&&index<assets.size()&&index<m_contentFirst+columns)
+                if(index<assets.size()&&index<m_contentFirst+columns)
                 {
                     const auto& asset=assets[index];
                     if(asset.kind=="actor")
                     {m_contentDrag=asset.id;m_contentDragX=x;m_contentDragY=y;m_contentDragRevision=m_document.revision();}
-                    else {browseAssets(s);m_assetLibrary=true;m_visualSelection=asset.id;}
+                    else {browseAssets(s);if(m_assetBrowser){m_assetLibrary=true;m_visualSelection=asset.id;}}
                 }
             }
         }
