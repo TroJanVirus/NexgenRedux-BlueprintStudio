@@ -8,4 +8,8 @@ Preset + saves a versioned `sound/synth-N.bptone.json` with all oscillator, enve
 
 The source tone is at most four seconds, plus up to two seconds of effect tail. 22.05 kHz mono is the default. Original Xbox has a default 6 MiB sound cache and Redux has 32 mixer voices; the displayed PCM estimate is the generated clip only, not total RAM or actual hardware performance. Use native Cook for ADPCM or Ogg where appropriate. Saw and square are simple oscillators, not band-limited; high notes can alias.
 
-The game needs no editor dependency. Imported audio manipulation, independent stereo oscillator sources, graph-based synthesis and streaming authoring remain separate work. Runtime Samples, AudioStream, bus effects and playback nodes are available through the existing catalogue.
+The game needs no editor dependency. Independent stereo oscillator sources, graph-based synthesis and streaming authoring remain separate work. Runtime Samples, AudioStream, bus effects and playback nodes are available through the existing catalogue.
+
+## Existing audio assets
+
+Click a WAV, Ogg or .adpcm asset in Media to open it in the clip editor. Native loadSound/decodeAll read mono or stereo clips at 8–48 kHz, limited to 8 MiB on disk and 12 seconds of decoded audio. Start/end and fades are fractions of the clip or selected range, respectively. Reverse, normalize, gain, channel conversion, output rate and the Effects tab are non-destructive: Preview and Save WAV asset render a copy, and Save never changes the source. MP3/FLAC must be cooked first. Clip settings are not currently persisted as editable presets; save the edited WAV. The waveform summarizes the rendered output, not the original selection. Long music editing and stream authoring remain separate work.

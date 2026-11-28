@@ -30,6 +30,24 @@ namespace nx
         const BlueprintTone& tone,std::string& relative,std::string& error);
     bool blueprintLoadTonePreset(Platform& platform,const std::string& root,const std::string& screen,
         const std::string& relative,BlueprintTone& tone,std::string& error);
+    struct BlueprintAudioClip
+    {
+        unsigned rate=0,channels=0;
+        std::vector<short> pcm;
+    };
+    struct BlueprintClipEdit
+    {
+        float start=0,end=1,gain=1,fadeIn=0,fadeOut=0;
+        bool reverse=false,normalize=false;
+    };
+    bool blueprintAudioAsset(const std::string& relative);
+    bool blueprintLoadAudioClip(Platform& platform,const std::string& root,const std::string& screen,
+        const std::string& relative,BlueprintAudioClip& clip,std::string& error);
+    bool blueprintEditAudioClip(const BlueprintAudioClip& clip,const BlueprintClipEdit& edit,
+        const BlueprintTone& output,std::string& wav,std::string& error);
+    bool blueprintSaveEditedAudio(Platform& platform,const std::string& root,const std::string& screen,
+        const BlueprintAudioClip& clip,const BlueprintClipEdit& edit,const BlueprintTone& output,
+        std::string& relative,std::string& error);
     bool blueprintToneWave(const BlueprintTone& tone,std::string& wav,std::string& error);
     bool blueprintSaveTone(Platform& platform,const std::string& root,const std::string& screen,
         const BlueprintTone& tone,std::string& relative,std::string& error);

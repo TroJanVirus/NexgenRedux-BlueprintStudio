@@ -972,6 +972,31 @@ NX_TEST(nativeAudioEffectsAndPresetRoundTrip)
     tone.effects.echoFeedback=1.1f;NX_EXPECT(!blueprintToneWave(tone,again,error));
     tone.effects.echoFeedback=0.4f;tone.channels=0;NX_EXPECT(!blueprintToneWave(tone,again,error));
 }
+NX_TEST(nativeImportedAudioEditsAreNonDestructive)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    r.platform.workspaceFiles=true;
+    BlueprintDocument doc;doc.create();std::string error,wav,edited,relative;
+    NX_EXPECT(blueprintCreateAssetRoot(r.platform,doc.assetRoot,error));
+    BlueprintTone tone;tone.channels=2;tone.rate=22050;tone.seconds=1;
+    NX_EXPECT(blueprintSaveTone(r.platform,doc.assetRoot,"Screen",tone,relative,error));
+    const auto source="own/"+doc.assetRoot+"/Screen/asset/"+relative;
+    const auto original=r.platform.files[source];
+    BlueprintAudioClip clip;
+    NX_EXPECT(blueprintLoadAudioClip(r.platform,doc.assetRoot,"Screen",relative,clip,error));
+    NX_EXPECT(clip.channels==2&&clip.rate==22050&&clip.pcm.size()==44100);
+    BlueprintClipEdit edit;edit.start=0.25f;edit.end=0.75f;edit.reverse=true;edit.normalize=true;edit.fadeIn=0.1f;edit.fadeOut=0.1f;
+    NX_EXPECT(blueprintEditAudioClip(clip,edit,tone,edited,error));
+    auto* sound=loadSound(reinterpret_cast<const u8*>(edited.data()),edited.size());
+    NX_EXPECT(sound!=nullptr);if(!sound)return;
+    NX_EXPECT(sound->frames==11025&&sound->channels==2);freeSound(sound);
+    NX_EXPECT(blueprintSaveEditedAudio(r.platform,doc.assetRoot,"Screen",clip,edit,tone,relative,error));
+    NX_EXPECT(r.platform.files[source]==original);
+    NX_EXPECT(r.platform.files["own/"+doc.assetRoot+"/Screen/asset/"+relative]==edited);
+    edit.end=edit.start;NX_EXPECT(!blueprintEditAudioClip(clip,edit,tone,wav,error));
+    NX_EXPECT(!blueprintLoadAudioClip(r.platform,doc.assetRoot,"Screen","../bad.wav",clip,error));
+    NX_EXPECT(clip.pcm.size()==44100);
+}
 NX_TEST(nativeBitmapFontImportsCompanionAndRejectsInvalidPairs)
 {
     Rig r;NX_EXPECT(r.ok);if(!r.ok)return;

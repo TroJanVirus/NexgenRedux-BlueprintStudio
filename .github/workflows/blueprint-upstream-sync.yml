@@ -1,4 +1,4 @@
-name: Verify portable Blueprint projects and lossless audio presets
+name: Verify portable Blueprint projects and non-destructive audio editing
 on:
   workflow_dispatch:
   push:

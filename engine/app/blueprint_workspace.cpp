@@ -157,7 +157,7 @@ namespace nx
     {
         if (!active()) return;
         stopPreview(s);
-        stopTone(s);m_audioEditor=false;m_toneWav.clear();
+        stopTone(s);m_audioEditor=false;m_toneWav.clear();m_clipSource.clear();m_audioClip=BlueprintAudioClip{};
         s.platform->setEditorChrome(false);
         saveActorTab();cancelActorDrag();m_actorOrbit=false;m_splitter=0;m_actorEditor=false;m_contentDrag.clear();m_contentPanelDrag=false;releaseContentPreviews();
         releaseWidgetPreview();releasePlacementPreview();m_widgetDesigner=m_visualPlacement=false;
@@ -3376,7 +3376,9 @@ namespace nx
     }
     void BlueprintWorkspace::refreshTone()
     {
-        if(!blueprintToneWave(m_tone,m_toneWav,m_status))m_toneWav.clear();
+        const bool ok=m_clipSource.empty()?blueprintToneWave(m_tone,m_toneWav,m_status):
+            blueprintEditAudioClip(m_audioClip,m_clipEdit,m_tone,m_toneWav,m_status);
+        if(!ok)m_toneWav.clear();
     }
     void BlueprintWorkspace::updateTone(Services& s,float x,float y,bool click)
     {
@@ -3387,6 +3389,7 @@ namespace nx
         if(in(x,y,650,116,750,150)){m_toneEffects=true;return;}
         if(in(x,y,750,116,850,150))
         {
+            if(!m_clipSource.empty()){m_status="Clip edits are exported as a new WAV; synth presets are separate.";return;}
             std::string relative;
             if(blueprintSaveTonePreset(*s.platform,m_document.assetRoot,assetScreen(),m_tone,relative,m_status)&&
                 blueprintListAssets(*s.platform,m_document.assetRoot,assetScreen(),m_assetFiles,m_status))
@@ -3413,7 +3416,27 @@ namespace nx
         }
         else
         {
-        if(in(x,y,280,158,1000,190))
+        if(!m_clipSource.empty())
+        {
+            if(in(x,y,280,158,455,190)){m_clipEdit.reverse=!m_clipEdit.reverse;changed=true;}
+            if(in(x,y,460,158,635,190)){m_clipEdit.normalize=!m_clipEdit.normalize;changed=true;}
+            if(in(x,y,640,158,1000,190)){m_clipEdit=BlueprintClipEdit{};changed=true;}
+            struct ClipControl{float* value;float lo,hi;};
+            const ClipControl controls[]={{&m_clipEdit.start,0,0.99f},{&m_clipEdit.end,0.01f,1},
+                {&m_clipEdit.gain,0,2},{&m_clipEdit.fadeIn,0,1},{&m_clipEdit.fadeOut,0,1}};
+            for(unsigned i=0;i<5;++i)
+            {
+                const float xx=280.f+360.f*(i%2),yy=240.f+36.f*(i/2);
+                if(in(x,y,xx+150,yy,xx+344,yy+30))
+                {
+                    *controls[i].value=controls[i].lo+(controls[i].hi-controls[i].lo)*std::clamp((x-xx-150)/194.f,0.f,1.f);
+                    if(i==0)m_clipEdit.start=std::min(m_clipEdit.start,m_clipEdit.end-0.01f);
+                    if(i==1)m_clipEdit.end=std::max(m_clipEdit.end,m_clipEdit.start+0.01f);
+                    changed=true;
+                }
+            }
+        }
+        else if(in(x,y,280,158,1000,190))
         {
             const auto index=static_cast<unsigned>((x-280)/144);
             if(index<5){m_tone.wave=index;changed=true;}
@@ -3428,7 +3451,7 @@ namespace nx
         const Control controls[]={{&m_tone.frequency,20,4000},{&m_tone.endFrequency,20,4000},
             {&m_tone.seconds,0.05f,4},{&m_tone.amplitude,0,1},{&m_tone.attack,0,0.33f},
             {&m_tone.decay,0,0.33f},{&m_tone.sustain,0,1},{&m_tone.release,0,0.33f}};
-        for(unsigned i=0;i<8;++i)
+        if(m_clipSource.empty())for(unsigned i=0;i<8;++i)
         {
             const float xx=280.f+360.f*(i%2),yy=240.f+36.f*(i/2);
             if(in(x,y,xx+150,yy,xx+344,yy+30))
@@ -3456,12 +3479,13 @@ namespace nx
         else if(in(x,y,610,530,825,565))
         {
             std::string relative;
-            if(blueprintSaveTone(*s.platform,m_document.assetRoot,assetScreen(),m_tone,relative,m_status)&&
-                blueprintListAssets(*s.platform,m_document.assetRoot,assetScreen(),m_assetFiles,m_status))
+            const bool saved=m_clipSource.empty()?blueprintSaveTone(*s.platform,m_document.assetRoot,assetScreen(),m_tone,relative,m_status):
+                blueprintSaveEditedAudio(*s.platform,m_document.assetRoot,assetScreen(),m_audioClip,m_clipEdit,m_tone,relative,m_status);
+            if(saved&&blueprintListAssets(*s.platform,m_document.assetRoot,assetScreen(),m_assetFiles,m_status))
                 m_status="Saved asset:"+relative;
         }
         else if(in(x,y,835,530,1000,565))
-        {stopTone(s);m_tone=BlueprintTone{};refreshTone();m_status="Tone reset.";}
+        {stopTone(s);m_tone=BlueprintTone{};m_clipEdit=BlueprintClipEdit{};if(!m_clipSource.empty())m_tone.channels=m_audioClip.channels;refreshTone();m_status="Audio settings reset.";}
     }
     void BlueprintWorkspace::drawTone(Canvas& c)
     {
@@ -3472,9 +3496,10 @@ namespace nx
             c.text(*m_font,name,x+width/2,y+6,text,Align::Center);
         };
         c.roundRect(260,100,760,525,9,{0.16f,0.16f,0.17f,1});
-        c.text(*m_font,"AUDIO SYNTHESIS",280,122,accent);
-        button(550,116,96,34,"Synth",!m_toneEffects);button(650,116,96,34,"Effects",m_toneEffects);
-        button(750,116,100,34,"Preset +",false);button(860,116,140,34,"Back",false);
+        c.text(*m_font,m_clipSource.empty()?"AUDIO SYNTHESIS":"AUDIO CLIP EDITOR",280,122,accent);
+        button(550,116,96,34,m_clipSource.empty()?"Synth":"Clip",!m_toneEffects);button(650,116,96,34,"Effects",m_toneEffects);
+        if(m_clipSource.empty())button(750,116,100,34,"Preset +",false);
+        button(860,116,140,34,"Back",false);
         if(m_toneEffects)
         {
             unsigned i=0;
@@ -3492,8 +3517,17 @@ namespace nx
         }
         else
         {
-        const char* waves[]={"Sine","Triangle","Saw","Square","Noise"};
-        for(unsigned i=0;i<5;++i)button(280.f+i*144,158,138,32,waves[i],m_tone.wave==i);
+        if(m_clipSource.empty())
+        {
+            const char* waves[]={"Sine","Triangle","Saw","Square","Noise"};
+            for(unsigned i=0;i<5;++i)button(280.f+i*144,158,138,32,waves[i],m_tone.wave==i);
+        }
+        else
+        {
+            button(280,158,175,32,"Reverse",m_clipEdit.reverse);
+            button(460,158,175,32,"Normalize",m_clipEdit.normalize);
+            button(640,158,360,32,"Reset clip edits",false);
+        }
         const unsigned rates[]={11025,22050,44100,48000};
         for(unsigned i=0;i<4;++i)
             button(280.f+i*180,197,174,32,(std::to_string(rates[i])+" Hz").c_str(),m_tone.rate==rates[i]);
@@ -3502,13 +3536,26 @@ namespace nx
             {"Seconds",m_tone.seconds,0.05f,4},{"Gain",m_tone.amplitude,0,1},
             {"Attack",m_tone.attack,0,0.33f},{"Decay",m_tone.decay,0,0.33f},
             {"Sustain",m_tone.sustain,0,1},{"Release",m_tone.release,0,0.33f}};
-        for(unsigned i=0;i<8;++i)
+        if(m_clipSource.empty())for(unsigned i=0;i<8;++i)
         {
             const auto& item=items[i];const float x=280.f+360.f*(i%2),y=240.f+36.f*(i/2);
             char label[64];std::snprintf(label,sizeof(label),"%s %.2f",item.name,static_cast<double>(item.value));
             c.text(*m_font,label,x,y+6,text);
             c.rect(x+150,y+10,194,8,normal);
             c.rect(x+150,y+10,194*(item.value-item.lo)/(item.hi-item.lo),8,accent);
+        }
+        if(!m_clipSource.empty())
+        {
+            const Item edits[]={{"Start",m_clipEdit.start,0,0.99f},{"End",m_clipEdit.end,0.01f,1},
+                {"Gain",m_clipEdit.gain,0,2},{"Fade in",m_clipEdit.fadeIn,0,1},{"Fade out",m_clipEdit.fadeOut,0,1}};
+            for(unsigned i=0;i<5;++i)
+            {
+                const auto& item=edits[i];const float x=280.f+360.f*(i%2),y=240.f+36.f*(i/2);
+                char label[64];std::snprintf(label,sizeof(label),"%s %.2f",item.name,static_cast<double>(item.value));
+                c.text(*m_font,label,x,y+6,text);c.rect(x+150,y+10,194,8,normal);
+                c.rect(x+150,y+10,194*(item.value-item.lo)/(item.hi-item.lo),8,accent);
+            }
+            c.clip(280,350,720,32);c.text(*m_font,("Source: "+m_clipSource).c_str(),280,356,muted);c.noClip();
         }
         }
         const float waveTop=m_toneEffects?410.f:388.f;
@@ -4431,7 +4478,7 @@ namespace nx
         {
             if(m_audioEditor){updateTone(s,x,y,click);m_left=left;return;}
             if(m_assetLibrary){updateVisualLibrary(s,x,y,left,click,pressed);m_left=left;return;}
-            if(click&&in(x,y,280,116,380,150)){m_audioEditor=true;m_toneEffects=false;refreshTone();m_status="Create a sound effect, then save a native WAV asset.";m_left=left;return;}
+            if(click&&in(x,y,280,116,380,150)){m_clipSource.clear();m_audioClip=BlueprintAudioClip{};m_clipEdit=BlueprintClipEdit{};m_audioEditor=true;m_toneEffects=false;refreshTone();m_status="Create a sound effect, then save a native WAV asset.";m_left=left;return;}
             if(click&&in(x,y,384,116,524,150)){m_assetLibrary=true;m_visualInput=0;m_visualText.clear();m_visualFirst=0;m_status="Project-wide reusable actors and widget pages.";m_left=left;return;}
             if(input.wheel()<0&&m_assetFirst+10<m_assetFiles.size())++m_assetFirst;
             if(input.wheel()>0&&m_assetFirst)--m_assetFirst;
@@ -4445,7 +4492,18 @@ namespace nx
                 {
                     BlueprintTone candidate;
                     if(blueprintLoadTonePreset(*s.platform,m_document.assetRoot,assetScreen(),m_assetFiles[row],candidate,m_status))
-                    {stopTone(s);m_tone=candidate;m_audioEditor=true;m_toneEffects=false;refreshTone();if(!m_toneWav.empty())m_status="Loaded editable audio preset.";}
+                    {stopTone(s);m_clipSource.clear();m_audioClip=BlueprintAudioClip{};m_tone=candidate;m_audioEditor=true;m_toneEffects=false;refreshTone();if(!m_toneWav.empty())m_status="Loaded editable audio preset.";}
+                }
+                else if(row<m_assetFiles.size()&&blueprintAudioAsset(m_assetFiles[row]))
+                {
+                    BlueprintAudioClip candidate;
+                    if(blueprintLoadAudioClip(*s.platform,m_document.assetRoot,assetScreen(),m_assetFiles[row],candidate,m_status))
+                    {
+                        stopTone(s);m_audioClip=std::move(candidate);m_clipSource=m_assetFiles[row];m_clipEdit=BlueprintClipEdit{};
+                        m_tone=BlueprintTone{};m_tone.channels=m_audioClip.channels;
+                        if(m_audioClip.rate==11025||m_audioClip.rate==22050||m_audioClip.rate==44100||m_audioClip.rate==48000)m_tone.rate=m_audioClip.rate;
+                        m_audioEditor=true;m_toneEffects=false;refreshTone();if(!m_toneWav.empty())m_status="Clip opened. Save creates a new WAV; original is unchanged.";
+                    }
                 }
             }
             m_left=left;return;
@@ -5481,7 +5539,7 @@ namespace nx
                     c.clip(286,y,708,33);c.text(*m_font,("asset:"+m_assetFiles[m_assetFirst+i]).c_str(),290,y+8,text);c.noClip();
                 }
                 if(m_assetFiles.empty())c.text(*m_font,"Drop a file here to import it.",640,330,muted,Align::Center);
-                c.text(*m_font,"Import media here; Scene editor opens Redux\x27s original tool.",640,565,muted,Align::Center);
+                c.text(*m_font,"Click a sound or preset to edit; drop files to import.",640,565,muted,Align::Center);
                 c.clip(280,591,720,26);c.text(*m_font,m_status.c_str(),280,595,text);c.noClip();
             }
             else if(m_browsing)

@@ -6,6 +6,7 @@
 #include "assets/bitmap_font.h"
 #include "assets/formats.h"
 #include "audio/audio.h"
+#include "audio/decoder.h"
 #include <memory>
 #include <sstream>
 #include <iomanip>
@@ -175,13 +176,10 @@ namespace nx
             error="No unused audio asset name.";return false;
         }
     }
-    bool blueprintToneWave(const BlueprintTone& t,std::string& wav,std::string& error)
+    // Input is interleaved stereo at the original mix rate, in signed PCM units.
+    static bool renderAudio(const BlueprintTone& t,std::vector<float>& stereo,std::string& wav,std::string& error)
     {
-        if(!toneValid(t,error))return false;
-        BusEffects processor;
-        processor.set(t.effects,0);
-        // Preserve the exact original mono output when no effect is requested.
-        if(!processor.busy()&&t.channels==1)return dryToneWave(t,wav,error);
+        BusEffects processor;processor.set(t.effects,0);
         const auto& fx=t.effects;
         // Isolated copies: never change the live mixer's bus or its effect state.
         std::unique_ptr<ReverbMemory,decltype(&destroyReverbMemory)> reverb(fx.reverb>0?createReverbMemory():nullptr,destroyReverbMemory);
@@ -190,20 +188,12 @@ namespace nx
         if((fx.reverb>0&&!reverb)||(fx.echo>0&&!echo)||((fx.chorus>0||fx.flanger>0)&&!waver))
         {error="Not enough memory for audio effects.";return false;}
         processor.giveReverb(reverb.get());processor.giveEcho(echo.get());processor.giveWaver(waver.get());
-        BlueprintTone dry=t;dry.rate=kMixRate;
-        std::string pcm;
-        if(!dryToneWave(dry,pcm,error))return false;
-        const unsigned inputFrames=static_cast<unsigned>((pcm.size()-44)/2);
+
+        const unsigned inputFrames=static_cast<unsigned>(stereo.size()/2);
         const unsigned tailFrames=(fx.reverb>0||fx.echo>0||fx.chorus>0||fx.flanger>0)?
             static_cast<unsigned>(std::round(t.tail*kMixRate)):0;
         const unsigned total=inputFrames+tailFrames;
-        std::vector<float> stereo(static_cast<size_t>(total)*2,0);
-        for(unsigned i=0;i<inputFrames;++i)
-        {
-            const unsigned v=static_cast<unsigned char>(pcm[44+2*i])|
-                (static_cast<unsigned>(static_cast<unsigned char>(pcm[45+2*i]))<<8);
-            stereo[2*i]=stereo[2*i+1]=static_cast<float>(v>=32768?static_cast<int>(v)-65536:static_cast<int>(v));
-        }
+        stereo.resize(static_cast<size_t>(total)*2,0);
         for(unsigned at=0;at<total;at+=256)
             processor.process(stereo.data()+2*at,std::min(256u,total-at));
         const unsigned frames=static_cast<unsigned>(std::round(static_cast<double>(total)*t.rate/kMixRate));
@@ -236,6 +226,105 @@ namespace nx
             }
         }
         wav.swap(result);error.clear();return true;
+
+    }
+    bool blueprintToneWave(const BlueprintTone& t,std::string& wav,std::string& error)
+    {
+        if(!toneValid(t,error))return false;
+        BusEffects processor;processor.set(t.effects,0);
+        if(!processor.busy()&&t.channels==1)return dryToneWave(t,wav,error);
+        BlueprintTone dry=t;dry.rate=kMixRate;
+        std::string pcm;
+        if(!dryToneWave(dry,pcm,error))return false;
+        const unsigned inputFrames=static_cast<unsigned>((pcm.size()-44)/2);
+        std::vector<float> stereo(static_cast<size_t>(inputFrames)*2);
+        for(unsigned i=0;i<inputFrames;++i)
+        {
+            const unsigned v=static_cast<unsigned char>(pcm[44+2*i])|
+                (static_cast<unsigned>(static_cast<unsigned char>(pcm[45+2*i]))<<8);
+            stereo[2*i]=stereo[2*i+1]=static_cast<float>(v>=32768?static_cast<int>(v)-65536:static_cast<int>(v));
+        }
+        return renderAudio(t,stereo,wav,error);
+    }
+    bool blueprintAudioAsset(const std::string& relative)
+    {
+        if(relative.empty()||relative.size()>90)return false;
+        size_t at=0;unsigned depth=0;
+        for(;;)
+        {
+            const auto slash=relative.find('/',at);
+            if(!blueprintAssetName(relative.substr(at,slash==std::string::npos?slash:slash-at),slash!=std::string::npos))return false;
+            if(slash==std::string::npos)break;
+            if(++depth>4)return false;
+            at=slash+1;
+        }
+        return relative.ends_with(".wav")||relative.ends_with(".ogg")||relative.ends_with(".adpcm");
+    }
+    bool blueprintLoadAudioClip(Platform& p,const std::string& root,const std::string& screen,
+        const std::string& relative,BlueprintAudioClip& clip,std::string& error)
+    {
+        if(!blueprintAssetRoot(root)||!folderId(screen)||!blueprintAudioAsset(relative))
+        {error="Invalid audio asset path.";return false;}
+        FileData file;
+        if(!p.readFile(("own/"+root+"/"+screen+"/asset/"+relative).c_str(),file,MemTag::General)||!file.size||file.size>8*1024*1024)
+        {error="Cannot read audio asset (8 MiB file limit).";return false;}
+        std::unique_ptr<SoundData,decltype(&freeSound)> sound(loadSound(file.data,file.size),freeSound);
+        if(!sound||sound->kind==SoundKind::Stream||sound->rate<8000||sound->rate>48000||sound->channels<1||sound->channels>2)
+        {error="Use a native WAV, Ogg or cooked ADPCM clip at 8-48 kHz.";return false;}
+        u32 frames=0;
+        const size_t limit=static_cast<size_t>(sound->rate)*12*sound->channels*sizeof(i16);
+        i16* pcm=decodeAll(*sound,frames,limit);
+        if(!pcm||!frames){memFree(pcm);error="Cannot decode audio or clip exceeds 12 seconds.";return false;}
+        BlueprintAudioClip candidate;
+        candidate.rate=sound->rate;candidate.channels=sound->channels;
+        candidate.pcm.assign(pcm,pcm+static_cast<size_t>(frames)*sound->channels);memFree(pcm);
+        clip=std::move(candidate);error.clear();return true;
+    }
+    bool blueprintEditAudioClip(const BlueprintAudioClip& clip,const BlueprintClipEdit& edit,
+        const BlueprintTone& output,std::string& wav,std::string& error)
+    {
+        if(!toneValid(output,error))return false;
+        const auto valid=[](float v,float lo,float hi){return std::isfinite(v)&&v>=lo&&v<=hi;};
+        if(clip.channels<1||clip.channels>2||clip.rate<8000||clip.rate>48000||
+            clip.pcm.empty()||clip.pcm.size()%clip.channels||
+            clip.pcm.size()/clip.channels>static_cast<size_t>(clip.rate)*12||
+            !valid(edit.start,0,1)||!valid(edit.end,0,1)||edit.start>=edit.end||
+            !valid(edit.gain,0,2)||!valid(edit.fadeIn,0,1)||!valid(edit.fadeOut,0,1))
+        {error="Invalid clip or edit range.";return false;}
+        const auto n=static_cast<unsigned>(clip.pcm.size()/clip.channels);
+        const auto start=std::min(n-1,static_cast<unsigned>(edit.start*n));
+        const auto end=std::min(n,std::max(start+1,static_cast<unsigned>(std::ceil(edit.end*n))));
+        const unsigned count=end-start;
+        float peak=0;
+        if(edit.normalize)for(unsigned i=start;i<end;++i)for(unsigned ch=0;ch<clip.channels;++ch)
+            peak=std::max(peak,std::abs(static_cast<float>(clip.pcm[i*clip.channels+ch])));
+        const float gain=edit.gain*(edit.normalize&&peak>0?32767.f/peak:1.f);
+        const unsigned frames=std::max(1u,static_cast<unsigned>(std::round(static_cast<double>(count)*kMixRate/clip.rate)));
+        std::vector<float> stereo(static_cast<size_t>(frames)*2);
+        const auto get=[&](unsigned frame,unsigned channel)
+        {
+            const unsigned source=edit.reverse?end-1-frame:start+frame;
+            return static_cast<float>(clip.pcm[source*clip.channels+std::min(channel,clip.channels-1)]);
+        };
+        for(unsigned i=0;i<frames;++i)
+        {
+            const double pos=std::min(static_cast<double>(count-1),static_cast<double>(i)*clip.rate/kMixRate);
+            const auto lo=static_cast<unsigned>(pos),hi=std::min(count-1,lo+1);
+            const float frac=static_cast<float>(pos-lo);
+            const float progress=frames>1?static_cast<float>(i)/(frames-1):0;
+            const float envelope=std::min(edit.fadeIn>0?std::min(1.f,progress/edit.fadeIn):1.f,
+                edit.fadeOut>0?std::min(1.f,(1-progress)/edit.fadeOut):1.f);
+            for(unsigned ch=0;ch<2;++ch)
+                stereo[2*i+ch]=(get(lo,ch)+(get(hi,ch)-get(lo,ch))*frac)*envelope*gain;
+        }
+        return renderAudio(output,stereo,wav,error);
+    }
+    bool blueprintSaveEditedAudio(Platform& p,const std::string& root,const std::string& screen,
+        const BlueprintAudioClip& clip,const BlueprintClipEdit& edit,const BlueprintTone& output,
+        std::string& relative,std::string& error)
+    {
+        std::string wav;
+        return blueprintEditAudioClip(clip,edit,output,wav,error)&&newToneAsset(p,root,screen,"-edited.wav",wav,relative,error);
     }
     bool blueprintSaveTonePreset(Platform& p,const std::string& root,const std::string& screen,
         const BlueprintTone& tone,std::string& relative,std::string& error)
@@ -453,7 +542,7 @@ namespace nx
             if(ext==type)return "model/"+file;
         for(const char* type:{".png",".jpg",".jpeg",".tga",".bmp",".dds"})
             if(ext==type)return "picture/"+file;
-        for(const char* type:{".wav",".ogg",".mp3"})
+        for(const char* type:{".wav",".ogg",".adpcm",".mp3",".flac"})
             if(ext==type)return "sound/"+file;
         return file;
     }

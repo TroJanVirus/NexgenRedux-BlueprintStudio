@@ -251,6 +251,9 @@ namespace nx
         size_t m_assetFirst=0;
         bool m_audioEditor=false,m_toneEffects=false;
         BlueprintTone m_tone;
+        BlueprintAudioClip m_audioClip;
+        BlueprintClipEdit m_clipEdit;
+        std::string m_clipSource;
         std::string m_toneWav;
         Voice m_toneVoice;
         unsigned m_toneVoices=0;
