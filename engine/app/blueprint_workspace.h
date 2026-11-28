@@ -342,7 +342,11 @@ namespace nx
         std::vector<std::string> m_inspectorDraft;
         std::vector<bool> m_inspectorChanged;
         bool m_inspectorReplace=false,m_inspectorLiteral=false;
-        unsigned m_inspectorColour=0;
+        unsigned m_inspectorColour=0,m_commentColour=0;
+        bool m_rgbOpen=false,m_rgbReplace=true;
+        std::string m_rgbText;
+        bool updateRGB(Input& input,float x,float y,bool left,bool click,unsigned& colour);
+        void drawRGB(Canvas& c);
         bool m_inspectorColourChanged=false,m_nodeContext=false;
         float m_nodeContextX=0,m_nodeContextY=0;
         bool removeSelectedNode(Input& input);
@@ -366,6 +370,9 @@ namespace nx
         bool m_quickDrag=false,m_quickMenu=false;
         bool m_pinDrag=false,m_pinMenu=false,m_pendingOutput=true;
         bool m_layoutMenu=false,m_layoutDragging=false,m_layoutMoved=false;
+        unsigned m_commentResize=0;
+        float m_commentX=0,m_commentY=0,m_commentW=0,m_commentH=0;
+        void resizedComment(float& x,float& y,float& w,float& h) const;
         size_t m_layoutComment=static_cast<size_t>(-1),m_layoutLink=static_cast<size_t>(-1),m_layoutPoint=0;
         float m_layoutStartX=0,m_layoutStartY=0,m_layoutX=0,m_layoutY=0;
         std::vector<size_t> m_selectedNodes,m_layoutMembers,m_extractNodes;

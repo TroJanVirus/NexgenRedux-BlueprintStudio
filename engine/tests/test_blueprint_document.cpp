@@ -232,7 +232,7 @@ NX_TEST(nativeNodeAnnotationsAndDisconnectRoundTrip)
     BlueprintDocument doc;doc.create();std::string error,saved;
     NX_EXPECT(doc.addNode(0,"api:Save:Save::set:string,string",0,0,error)&&doc.addNode(1,"api:Save:Save::set:string,string",0,0,error));
     NX_EXPECT(doc.connect(0,0,"then",1,"in",error));
-    const std::string alias="Save checkpoint",comment="Writes checkpoint data";const unsigned colour=3;
+    const std::string alias="Save checkpoint",comment="Writes checkpoint data";const unsigned colour=0x1A1672Cu;
     NX_EXPECT(doc.editNodeValues(0,1,{},nullptr,error,&alias,&comment,&colour));
     NX_EXPECT(doc.graphs[0].nodes[1].displayName==alias&&doc.graphs[1].nodes[1].displayName==alias);
     NX_EXPECT(doc.graphs[0].nodes[1].comment==comment&&doc.graphs[1].nodes[1].comment.empty());
@@ -242,6 +242,19 @@ NX_TEST(nativeNodeAnnotationsAndDisconnectRoundTrip)
     NX_EXPECT(copy.disconnectNode(0,1)&&copy.graphs[0].links.empty()&&copy.undo()&&copy.graphs[0].links.size()==1);
     const std::string reset;NX_EXPECT(copy.editNodeValues(0,1,{},nullptr,error,&reset));
     NX_EXPECT(copy.nodeDisplayName(1,copy.graphs[1].nodes[1]).empty()&&copy.undo()&&copy.nodeDisplayName(1,copy.graphs[1].nodes[1])==alias);
+}
+
+NX_TEST(nativeResizableCommentAndRGBRoundTrip)
+{
+    BlueprintDocument doc;doc.create();std::string error,bytes;
+    unsigned colour=0,black=0;NX_EXPECT(blueprintParseRGB("#a1b2c3",colour)&&blueprintRGBHex(colour)=="A1B2C3");
+    NX_EXPECT(blueprintParseRGB("000000",black)&&black!=0&&blueprintRGBHex(black)=="000000");
+    NX_EXPECT(!blueprintParseRGB("#XYZ123",colour));
+    NX_EXPECT(doc.addComment(0,{0},"Group",error)&&doc.resizeComment(0,0,-32,-16,600,300));
+    NX_EXPECT(doc.editComment(0,0,"Group",colour,error)&&doc.serialize(bytes,error));
+    BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error));
+    const auto& item=copy.graphs[0].comments[0];NX_EXPECT(item.width==600&&item.height==300&&item.x==-32&&item.colour==colour);
+    NX_EXPECT(copy.resizeComment(0,0,0,0,800,450)&&copy.undo()&&copy.graphs[0].comments[0].width==600);
 }
 
 NX_TEST(nativeCompilerDiagnosticsAndSourceMapLocateExactGraphNodes)

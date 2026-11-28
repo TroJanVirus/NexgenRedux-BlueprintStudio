@@ -393,6 +393,18 @@ namespace nx
         const auto element=type.substr(6,type.size()-7);
         return element=="int"||element=="uint"||element=="float"||element=="bool"||element=="string"||element=="Vec2"||element=="Color"?element:"";
     }
+    bool blueprintParseRGB(const std::string& text,unsigned& colour)
+    {
+        const auto offset=!text.empty()&&text.front()=='#'?1u:0u;
+        if(text.size()!=offset+6||text.find_first_not_of("0123456789abcdefABCDEF",offset)!=std::string::npos)return false;
+        colour=0x1000000u+static_cast<unsigned>(std::strtoul(text.c_str()+offset,nullptr,16));return true;
+    }
+    std::string blueprintRGBHex(unsigned colour)
+    {
+        if(!colour)return {};
+        constexpr unsigned legacy[]={0x34577A,0x963B3D,0x407850,0xA1672C,0x594D91,0x2E7A82,0x8A4A75,0x595E66};
+        if(colour<8)colour=legacy[colour];char out[7];snprintf(out,sizeof(out),"%06X",colour&0xFFFFFFu);return out;
+    }
     bool blueprintVariableType(const std::string& type){return type=="Entity@"||blueprintLiteralType(type)||!blueprintArrayElement(type).empty()||type=="Playlist@"||type=="WebSocket@"||type=="Widget@"||type=="Thread@"||type=="Channel@"||type=="Samples@"||type=="AudioStream@"||type=="Voice"||type=="Sound@"||type=="Curve@"||type=="Batch@"||type=="Packed@"||type=="Zip@"||type=="Font@"||type=="Texture@"||type=="BP_MapInt"||type=="BP_MapString"||type=="BP_SetInt"||type=="BP_SetString"||customTypeName(type)||classTypeName(type);}
     bool blueprintLosslessConversion(const std::string& from,const std::string& to)
     {return arrayBorrow(from,to)||(to=="double"&&(from=="int"||from=="uint"||from=="float"))||(to=="int64"&&(from=="int"||from=="uint"))||(to=="uint64"&&from=="uint");}
@@ -2277,7 +2289,11 @@ namespace nx
                 node.watch=n["watch"].flag();
                 for(const char* key:{"displayName","comment"})if(n[key].exists()&&(!n[key].isString()||n[key].text().size()>(std::string(key)=="displayName"?96u:256u)||n[key].text().find('\0')!=std::string::npos)){error="Invalid node annotation.";return false;}
                 node.displayName=n["displayName"].text();node.comment=n["comment"].text();
-                if(n["colour"].exists()){const float colour=n["colour"].number();if(!n["colour"].isNumber()||colour<0||colour>7||std::floor(colour)!=colour){error="Invalid node colour.";return false;}node.colour=static_cast<unsigned>(colour);}
+                if(n["colour"].exists())
+                {
+                    if(n["colour"].isString()){if(!blueprintParseRGB(n["colour"].text(),node.colour)){error="Invalid node RGB colour.";return false;}}
+                    else {const float colour=n["colour"].number();if(!n["colour"].isNumber()||colour<0||colour>7||std::floor(colour)!=colour){error="Invalid legacy node colour.";return false;}node.colour=static_cast<unsigned>(colour);}
+                }
                 BlueprintNodeSpec resolved;
                 const auto values=n["values"];
                 if(kind=="actor:spawn-asset"&&values["id"].isString())node.values.push_back({"id",values["id"].text()});
@@ -2330,6 +2346,13 @@ namespace nx
                     if(!item.isObject()||!item["title"].isString()||title.empty()||title.size()>256||!members.isArray()||!members.count()||members.count()>kMaxNodes)
                     {error="Invalid comment group.";return false;}
                     Comment comment{title,{}};
+                    if(item["width"].exists())
+                    {
+                        if(!item["x"].isNumber()||!item["y"].isNumber()||!item["width"].isNumber()||!item["height"].isNumber()){error="Invalid comment bounds.";return false;}
+                        comment.x=item["x"].number();comment.y=item["y"].number();comment.width=item["width"].number();comment.height=item["height"].number();
+                        if(!coordinate(comment.x)||!coordinate(comment.y)||!coordinate(comment.width)||!coordinate(comment.height)||comment.width<80||comment.height<48){error="Invalid comment bounds.";return false;}
+                    }
+                    if(item["colour"].exists()&&(!item["colour"].isString()||!blueprintParseRGB(item["colour"].text(),comment.colour))){error="Invalid comment colour.";return false;}
                     for(auto member=members.first();member.exists();member=member.next())
                     {
                         const std::string id=member.text();
@@ -2477,7 +2500,7 @@ namespace nx
                 if(n.watch){auto* watch=j->put("watch");if(!watch)return fail();watch->setFlag(true);}
                 if(!n.displayName.empty()&&!text(*j,"displayName",n.displayName))return fail();
                 if(!n.comment.empty()&&!text(*j,"comment",n.comment))return fail();
-                if(n.colour&&!number(*j,"colour",static_cast<float>(n.colour)))return fail();
+                if(n.colour&&!text(*j,"colour",blueprintRGBHex(n.colour)))return fail();
                 if(!n.values.empty())
                 {
                     auto* values=j->put("values");if(!values)return fail();
@@ -2490,6 +2513,8 @@ namespace nx
                 for(const auto& comment:g.comments)
                 {
                     auto* item=comments->add();if(!item||!text(*item,"title",comment.title))return fail();
+                    if(comment.width>0&&(!number(*item,"x",comment.x)||!number(*item,"y",comment.y)||!number(*item,"width",comment.width)||!number(*item,"height",comment.height)))return fail();
+                    if(comment.colour&&!text(*item,"colour",blueprintRGBHex(comment.colour)))return fail();
                     auto* members=item->put("members");if(!members)return fail();members->setArray();
                     for(const auto& id:comment.members){auto* member=members->add();if(!member)return fail();member->setText(id);}
                 }
@@ -2533,6 +2558,7 @@ namespace nx
         record(graph);
         for(const auto i:selected){g.nodes[i].x+=dx;g.nodes[i].y+=dy;}
         for(auto& l:g.links)if(selected.count(l.from)&&selected.count(l.to))for(auto& p:l.route){p.x+=dx;p.y+=dy;}
+        for(auto& item:g.comments)if(item.width>0&&!item.members.empty()&&std::all_of(item.members.begin(),item.members.end(),[&](const std::string& id){return std::any_of(selected.begin(),selected.end(),[&](size_t i){return g.nodes[i].id==id;});})){item.x+=dx;item.y+=dy;}
         return true;
     }
     bool BlueprintDocument::arrange(size_t graph,std::string& error,const std::vector<float>& widths)
@@ -2586,6 +2612,17 @@ namespace nx
             comment.members.push_back(id);
         }
         record(graph);g.comments.push_back(std::move(comment));error.clear();return true;
+    }
+    bool BlueprintDocument::resizeComment(size_t graph,size_t comment,float x,float y,float width,float height)
+    {
+        if(graph>=graphs.size()||comment>=graphs[graph].comments.size()||!coordinate(x)||!coordinate(y)||!coordinate(width)||!coordinate(height)||width<80||height<48)return false;
+        auto& item=graphs[graph].comments[comment];if(item.x==x&&item.y==y&&item.width==width&&item.height==height)return true;
+        record(graph);item.x=x;item.y=y;item.width=width;item.height=height;return true;
+    }
+    bool BlueprintDocument::editComment(size_t graph,size_t comment,const std::string& title,unsigned colour,std::string& error)
+    {
+        if(graph>=graphs.size()||comment>=graphs[graph].comments.size()||title.empty()||title.size()>256||title.find('\0')!=std::string::npos||colour>0x1FFFFFFu){error="Invalid comment title or colour.";return false;}
+        auto& item=graphs[graph].comments[comment];if(item.title!=title||item.colour!=colour){record(graph);item.title=title;item.colour=colour;}error.clear();return true;
     }
     bool BlueprintDocument::renameComment(size_t graph,size_t comment,const std::string& title,std::string& error)
     {
@@ -2842,7 +2879,7 @@ namespace nx
     {
         if(graph>=graphs.size()||node>=graphs[graph].nodes.size()){error="Unknown node.";return false;}
         if(values.empty()&&!literalValue&&!displayName&&!comment&&!colour){error.clear();return true;}
-        if((displayName&&(displayName->size()>96||displayName->find_first_of("\r\n\t")!=std::string::npos||displayName->find('\0')!=std::string::npos))||(comment&&(comment->size()>256||comment->find('\0')!=std::string::npos))||(colour&&*colour>7)){error="Invalid node name, comment or colour.";return false;}
+        if((displayName&&(displayName->size()>96||displayName->find_first_of("\r\n\t")!=std::string::npos||displayName->find('\0')!=std::string::npos))||(comment&&(comment->size()>256||comment->find('\0')!=std::string::npos))||(colour&&*colour>0x1FFFFFFu)){error="Invalid node name, comment or colour.";return false;}
         BlueprintDocument staged;staged.name=name;staged.assetRoot=assetRoot;staged.graphs=graphs;staged.manifests=manifests;staged.m_visualAssets=m_visualAssets;staged.m_visualSerial=m_visualSerial;staged.m_nextId=m_nextId;
         if(literalValue&&!staged.setLiteral(graph,node,*literalValue,error))return false;
         for(const auto& value:values)if(!staged.setInputValue(graph,node,value.pin,value.value,error)){error=value.pin+": "+error;return false;}

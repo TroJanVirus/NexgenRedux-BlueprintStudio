@@ -37,6 +37,8 @@ namespace nx
     bool blueprintFileName(const std::string& file);
     bool blueprintManagedName(const std::string& name,std::string& file);
     bool blueprintAssetRoot(const std::string& root);
+    bool blueprintParseRGB(const std::string& text,unsigned& colour);
+    std::string blueprintRGBHex(unsigned colour);
     bool blueprintAssetName(const std::string& name,bool folder=false);
 
     // Native version 2: one canonical model. Node indices are internal; persisted links use stable IDs.
@@ -47,7 +49,7 @@ namespace nx
         struct Node { std::string id, kind, ref; float x=0,y=0; std::vector<InputValue> values{}; bool watch=false; std::string displayName{},comment{}; unsigned colour=0; };
         struct Point { float x=0,y=0; };
         struct Link { size_t from=0,to=0; std::string output,input; std::vector<Point> route{}; };
-        struct Comment { std::string title; std::vector<std::string> members; };
+        struct Comment { std::string title; std::vector<std::string> members; float x=0,y=0,width=0,height=0; unsigned colour=0; };
         struct Field { std::string name,type,value; bool initialized=false; bool exposed=false; };
         struct Graph
         {
@@ -128,6 +130,8 @@ namespace nx
         bool alignNodes(size_t graph,const std::vector<size_t>& nodes,bool horizontal,std::string& error);
         bool addComment(size_t graph,const std::vector<size_t>& nodes,const std::string& title,std::string& error);
         bool renameComment(size_t graph,size_t comment,const std::string& title,std::string& error);
+        bool resizeComment(size_t graph,size_t comment,float x,float y,float width,float height);
+        bool editComment(size_t graph,size_t comment,const std::string& title,unsigned colour,std::string& error);
         bool deleteComment(size_t graph,size_t comment);
         bool insertRoutePoint(size_t graph,size_t link,size_t point,float x,float y);
         bool moveRoutePoint(size_t graph,size_t link,size_t point,float x,float y);

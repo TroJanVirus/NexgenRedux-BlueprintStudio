@@ -43,6 +43,12 @@ namespace nx
         bool in(float x, float y, float left, float top, float right, float bottom)
         { return x >= left && x < right && y >= top && y < bottom; }
         constexpr Color nodeColours[]={{0.20f,0.34f,0.48f,1},{0.59f,0.23f,0.24f,1},{0.25f,0.47f,0.31f,1},{0.63f,0.40f,0.17f,1},{0.35f,0.30f,0.57f,1},{0.18f,0.48f,0.51f,1},{0.54f,0.29f,0.46f,1},{0.35f,0.37f,0.40f,1}};
+        Color rgbColour(unsigned colour,Color fallback)
+        {
+            if(!colour)return fallback;
+            if(colour<8)return nodeColours[colour];
+            return {static_cast<float>((colour>>16)&255u)/255.f,static_cast<float>((colour>>8)&255u)/255.f,static_cast<float>(colour&255u)/255.f,1};
+        }
         std::string title(const BlueprintDocument::Node& node)
         {
             if(!node.displayName.empty())return node.displayName;
@@ -1704,14 +1710,15 @@ namespace nx
         }
         Color themePickerColor(const std::string& value)
         {
-            if((value.size()!=7&&value.size()!=9)||value[0]!='#'||value.find_first_not_of("0123456789abcdefABCDEF",1)!=std::string::npos)return {1,1,1,1};
+            const auto start=!value.empty()&&value.front()=='#'?1u:0u;
+            if((value.size()!=start+6&&value.size()!=start+8)||value.find_first_not_of("0123456789abcdefABCDEF",start)!=std::string::npos)return {1,1,1,1};
             const auto byte=[&](size_t at){return static_cast<float>(std::strtoul(value.substr(at,2).c_str(),nullptr,16))/255.f;};
-            return {byte(1),byte(3),byte(5),value.size()==9?byte(7):1.f};
+            return {byte(start),byte(start+2),byte(start+4),value.size()==start+8?byte(start+6):1.f};
         }
         std::string themePickerHex(Color color)
         {
             char value[10];const auto byte=[](float n){return static_cast<unsigned>(std::round(std::clamp(n,0.f,1.f)*255.f));};
-            snprintf(value,sizeof(value),"#%02X%02X%02X%02X",byte(color.r),byte(color.g),byte(color.b),byte(color.a));return value;
+            snprintf(value,sizeof(value),"%02X%02X%02X%02X",byte(color.r),byte(color.g),byte(color.b),byte(color.a));return value;
         }
         constexpr const char* timelineTracks[]={"x","y","scale","opacity","rotation"};
         JsonTree::Value designItem(JsonTree::Value node,const std::string& id)
@@ -2169,7 +2176,7 @@ namespace nx
                             (m_visualText.front()>='0'&&m_visualText.front()<='9')){m_status="Enter a valid style identifier.";break;}
                         m_themeStyle=m_visualText;
                     }
-                    if(m_visualInput==7&&!m_document.setVisualThemeProperty(m_visualSelection,m_themeStyle,themeStates[m_themeState],m_visualProperty,m_visualText,m_status))break;
+                    if(m_visualInput==7){const auto nativeValue=themeColorProperty(m_visualProperty)&&!m_visualText.empty()&&m_visualText.front()!='#'?"#"+m_visualText:m_visualText;if(!m_document.setVisualThemeProperty(m_visualSelection,m_themeStyle,themeStates[m_themeState],m_visualProperty,nativeValue,m_status))break;}
                     if(m_visualInput==10&&!m_document.editVisualActorPlacement(m_placementSelectedOwner,m_placementSelectedId,m_visualProperty,m_visualText,m_status))break;
                     if(m_visualInput==9&&!m_document.setWidgetKey(m_visualSelection,m_widgetSelection,m_visualProperty,m_visualText,m_widgetTimelineTime,m_status))break;
                     if(m_visualInput==8)
@@ -4258,7 +4265,7 @@ namespace nx
     {
         const auto& n=m_document.graphs[m_graph].nodes[node];
         if(m_drag&&m_dragMoved&&std::find(m_selectedNodes.begin(),m_selectedNodes.end(),node)!=m_selectedNodes.end())return {n.x+m_dragX-m_grabX,n.y+m_dragY-m_grabY};
-        if(m_layoutDragging&&m_layoutMoved&&m_layoutLink==static_cast<size_t>(-1)&&std::binary_search(m_layoutMembers.begin(),m_layoutMembers.end(),node))
+        if(m_layoutDragging&&!m_commentResize&&m_layoutMoved&&m_layoutLink==static_cast<size_t>(-1)&&std::binary_search(m_layoutMembers.begin(),m_layoutMembers.end(),node))
             return {n.x+(m_layoutX-m_layoutStartX)/m_zoom,n.y+(m_layoutY-m_layoutStartY)/m_zoom};
         return {n.x,n.y};
     }
@@ -4269,13 +4276,30 @@ namespace nx
         if(m_layoutDragging&&m_layoutMoved)
         {
             if(m_layoutLink==wire&&m_layoutPoint==point)return {(m_layoutX-kLeft-m_x)/m_zoom,(m_layoutY-kTop-m_y)/m_zoom};
-            if(m_layoutLink==static_cast<size_t>(-1)&&std::binary_search(m_layoutMembers.begin(),m_layoutMembers.end(),l.from)&&std::binary_search(m_layoutMembers.begin(),m_layoutMembers.end(),l.to))
+            if(!m_commentResize&&m_layoutLink==static_cast<size_t>(-1)&&std::binary_search(m_layoutMembers.begin(),m_layoutMembers.end(),l.from)&&std::binary_search(m_layoutMembers.begin(),m_layoutMembers.end(),l.to))
                 return {p.x+(m_layoutX-m_layoutStartX)/m_zoom,p.y+(m_layoutY-m_layoutStartY)/m_zoom};
         }
         return p;
     }
+    void BlueprintWorkspace::resizedComment(float& x,float& y,float& w,float& h) const
+    {
+        x=m_commentX;y=m_commentY;w=m_commentW;h=m_commentH;
+        const float dx=(m_layoutX-m_layoutStartX)/m_zoom,dy=(m_layoutY-m_layoutStartY)/m_zoom;
+        if(m_commentResize&1u){const float delta=std::min(dx,w-80.f);x+=delta;w-=delta;}
+        if(m_commentResize&2u)w=std::max(80.f,w+dx);
+        if(m_commentResize&4u){const float delta=std::min(dy,h-48.f);y+=delta;h-=delta;}
+        if(m_commentResize&8u)h=std::max(48.f,h+dy);
+    }
     bool BlueprintWorkspace::commentBounds(size_t comment,float& x,float& y,float& w,float& h) const
     {
+        const auto& item=m_document.graphs[m_graph].comments[comment];
+        if((m_layoutDragging&&m_commentResize&&m_layoutComment==comment)||item.width>0)
+        {
+            float gx=item.x,gy=item.y,gw=item.width,gh=item.height;
+            if(m_layoutDragging&&m_layoutComment==comment&&m_commentResize)resizedComment(gx,gy,gw,gh);
+            else if(m_layoutDragging&&m_layoutComment==comment&&m_layoutMoved){gx+=(m_layoutX-m_layoutStartX)/m_zoom;gy+=(m_layoutY-m_layoutStartY)/m_zoom;}
+            x=kLeft+m_x+gx*m_zoom;y=kTop+m_y+gy*m_zoom;w=gw*m_zoom;h=gh*m_zoom;return true;
+        }
         const auto members=commentMembers(comment);if(members.empty())return false;
         float left=1000000.f,top=1000000.f,right=-1000000.f,bottom=-1000000.f;
         for(const auto i:members)
@@ -4355,6 +4379,40 @@ namespace nx
             details.push_back(std::move(row));
         }
         return details;
+    }
+    bool BlueprintWorkspace::updateRGB(Input& input,float x,float y,bool left,bool click,unsigned& colour)
+    {
+        if(!m_rgbOpen)return false;
+        if(click&&(!in(x,y,390,205,890,515)||in(x,y,750,462,870,500))){m_rgbOpen=false;return true;}
+        if(left&&in(x,y,495,274,865,376))
+        {
+            unsigned current=0;blueprintParseRGB(m_rgbText,current);
+            const unsigned channel=static_cast<unsigned>((y-274)/34.f),shift=(2u-channel)*8u;
+            const unsigned value=static_cast<unsigned>(std::round(std::clamp((x-495)/370.f,0.f,1.f)*255.f));
+            current=(current&~(255u<<shift))|(value<<shift)|0x1000000u;m_rgbText=blueprintRGBHex(current);m_rgbReplace=true;
+        }
+        if(click&&in(x,y,410,398,870,436))m_rgbReplace=true;
+        bool apply=click&&in(x,y,620,462,740,500);
+        for(u32 i=0;i<input.typedCount();++i){const auto ch=input.typed(i);if(ch==13){apply=true;break;}if(ch==8){if(m_rgbReplace)m_rgbText.clear();else if(!m_rgbText.empty())m_rgbText.pop_back();m_rgbReplace=false;}else if(ch<128&&std::string("0123456789abcdefABCDEF#").find(static_cast<char>(ch))!=std::string::npos){if(m_rgbReplace){m_rgbText.clear();m_rgbReplace=false;}appendCharacter(m_rgbText,ch,7);}}
+        if(click&&in(x,y,410,462,530,500)){colour=0;m_rgbOpen=false;return true;}
+        if(apply){unsigned value;if(blueprintParseRGB(m_rgbText,value)){colour=value;m_rgbText=blueprintRGBHex(value);m_rgbOpen=false;}else m_status="Enter six hexadecimal RGB digits (optional #).";}
+        return true;
+    }
+    void BlueprintWorkspace::drawRGB(Canvas& c)
+    {
+        c.rect(0,0,1280,720,{0,0,0,0.48f});c.roundRect(390,205,500,310,7,{0.12f,0.16f,0.21f,1});c.text(*m_font,"RGB COLOUR",410,218,accent);
+        unsigned packed=0;blueprintParseRGB(m_rgbText,packed);const Color base=rgbColour(packed,{1,1,1,1});c.rect(410,244,460,22,base);
+        for(unsigned i=0;i<3;++i)
+        {
+            const float y=274.f+34.f*static_cast<float>(i);c.text(*m_font,i==0?"R":i==1?"G":"B",420,y+4,text);
+            for(unsigned j=0;j<64;++j){Color sample=base;const float v=static_cast<float>(j)/63.f;if(i==0)sample.r=v;else if(i==1)sample.g=v;else sample.b=v;c.rect(495.f+370.f*static_cast<float>(j)/64.f,y,370.f/64.f+0.5f,24,sample);}
+            const float channel=i==0?base.r:i==1?base.g:base.b;c.rect(495+370*channel-2,y,4,24,text);
+        }
+        c.roundRect(410,398,460,38,4,{0.24f,0.35f,0.48f,1});c.text(*m_font,("HEX  "+m_rgbText).c_str(),420,407,text);
+        c.text(*m_font,"Enter = Apply | Escape = Cancel",410,438,muted);
+        c.roundRect(410,462,120,38,4,{0.22f,0.31f,0.43f,1});c.text(*m_font,"Default",470,471,text,Align::Center);
+        c.roundRect(620,462,120,38,4,{0.19f,0.4f,0.3f,1});c.text(*m_font,"Apply",680,471,text,Align::Center);
+        c.roundRect(750,462,120,38,4,{0.22f,0.31f,0.43f,1});c.text(*m_font,"Cancel",810,471,text,Align::Center);
     }
     void BlueprintWorkspace::beginNodeEditor(size_t node,Input& input)
     {
@@ -4558,11 +4616,12 @@ namespace nx
             if(m_actorEditor){if(m_visualInput){m_visualInput=0;m_visualText.clear();input.setTyping(false);}else if(m_actorDragAxis>=0){cancelActorDrag();m_status="Component drag cancelled.";}else{leaveActorViewport(true);}return;}
             if(m_assetBrowser){if(m_visualInput){m_visualInput=0;m_visualText.clear();input.setTyping(false);m_status="Input cancelled.";return;}if(m_placementDragging){cancelVisualPlacement();m_status="Placement cancelled.";return;}if(m_visualPlacement){m_visualPlacement=false;return;}if(m_widgetDesigner){if(m_widgetPreviewDrag){m_widgetPreviewDrag=false;m_status="Widget drag cancelled.";return;}if(m_widgetDragging){m_widgetDragging=false;m_widgetDragId.clear();return;}m_widgetDesigner=false;releaseWidgetPreview();return;}m_assetBrowser=false;m_status="Asset browser closed.";return;}
             if(m_browsing){if(m_projectCreate){m_projectCreate=0;m_projectName.clear();input.setTyping(false);}else{m_browsing=false;m_status="Project browser closed.";}return;}
+            if(m_rgbOpen){m_rgbOpen=false;return;}
             if(m_focus){m_focus=0;input.setTyping(false);m_status="Input cancelled.";return;}
             if(m_marquee){m_marquee=false;m_selectedNodes.clear();m_selection=static_cast<size_t>(-1);m_left=input.raw().mouseButtons[0];return;}
             if(m_minimapDragging){m_minimapDragging=false;return;}
             if(m_nodeContext){m_nodeContext=false;return;}
-            if(m_layoutDragging||m_layoutMenu){m_layoutDragging=m_layoutMenu=false;m_status="Layout action cancelled.";return;}
+            if(m_layoutDragging||m_layoutMenu){m_commentResize=0;m_layoutDragging=m_layoutMenu=false;m_status="Layout action cancelled.";return;}
             if(m_quickDrag||m_quickMenu){m_quickDrag=m_quickMenu=false;m_status="Variable placement cancelled.";return;}
             if(m_pinMenu){closePinMenu(s);m_status="Node search cancelled.";return;}
             if(m_pending!=static_cast<size_t>(-1)){clearWire();m_status="Connection cancelled.";return;}
@@ -4645,8 +4704,9 @@ namespace nx
                 }
                 else if(m_layoutComment!=static_cast<size_t>(-1))
                 {
-                    if(m_layoutMoved)m_document.moveNodes(m_graph,m_layoutMembers,(x-m_layoutStartX)/m_zoom,(y-m_layoutStartY)/m_zoom);
-                    else {m_edit=m_document.graphs[m_graph].comments[m_layoutComment].title;m_focus=11;input.setTyping(true);m_status="Edit comment title.";}
+                    if(m_commentResize){float gx,gy,gw,gh;resizedComment(gx,gy,gw,gh);if(m_layoutMoved)m_document.resizeComment(m_graph,m_layoutComment,gx,gy,gw,gh);m_commentResize=0;}
+                    else if(m_layoutMoved)m_document.moveNodes(m_graph,m_layoutMembers,(x-m_layoutStartX)/m_zoom,(y-m_layoutStartY)/m_zoom);
+                    else {m_edit=m_document.graphs[m_graph].comments[m_layoutComment].title;m_commentColour=m_document.graphs[m_graph].comments[m_layoutComment].colour;m_focus=11;input.setTyping(true);m_status="Edit comment title or colour.";}
                 }
             }
             m_left=left;return;
@@ -4665,7 +4725,7 @@ namespace nx
                 else if(in(x,y,300,125,550,155))
                 {
                     if(m_document.addComment(m_graph,nodes,"Comment",m_status))
-                    {m_layoutComment=m_document.graphs[m_graph].comments.size()-1;m_edit="Comment";m_focus=11;input.setTyping(true);}
+                    {m_layoutComment=m_document.graphs[m_graph].comments.size()-1;m_edit="Comment";m_commentColour=0;m_focus=11;input.setTyping(true);}
                 }
                 else if(in(x,y,300,155,550,185))
                 {m_extractNodes=nodes;m_edit.clear();m_focus=12;input.setTyping(true);m_status="Name the extracted function.";}
@@ -4935,6 +4995,7 @@ namespace nx
             }
             m_left=left;return;
         }
+        if(m_rgbOpen&&(m_focus==15||m_focus==11)){auto& colour=m_focus==15?m_inspectorColour:m_commentColour;const auto before=colour;updateRGB(input,x,y,left,click,colour);if(m_focus==15&&colour!=before)m_inspectorColourChanged=true;m_left=left;return;}
         if(click&&((m_focus==10&&!in(x,y,150,100,1130,625))||(m_focus==17&&!in(x,y,210,100,1070,620))||(m_focus==15&&!in(x,y,160,68,1140,652))||(m_focus==6&&!in(x,y,340,226,940,m_inputChoices.empty()?450.f:628.f))||(m_focus==5&&!in(x,y,340,240,940,445))||(m_focus==9&&!in(x,y,200,226,1080,466))||(m_focus>=11&&m_focus<=14&&!in(x,y,260,230,1020,450))))
         {m_focus=0;input.setTyping(false);m_left=left;return;}
         if(m_focus==10)
@@ -5086,7 +5147,7 @@ namespace nx
         if(m_focus==15)
         {
             if(click&&in(x,y,650,603,840,640)){removeSelectedNode(input);m_left=left;return;}
-            if(click&&in(x,y,760,82,1104,116)){m_inspectorColour=std::min(7u,static_cast<unsigned>((x-760)/43.f));m_inspectorColourChanged=true;m_left=left;return;}
+            if(click&&in(x,y,760,82,1104,116)){m_rgbOpen=true;m_rgbReplace=true;m_rgbText=blueprintRGBHex(m_inspectorColour);if(m_rgbText.empty())m_rgbText="34577A";m_left=left;return;}
             const auto count=m_inspectorRows.size();m_inspectorFirst=std::min(m_inspectorFirst,count>9?count-9:0);
             if(input.wheel()<0&&m_inspectorFirst+9<count)++m_inspectorFirst;
             if(input.wheel()>0&&m_inspectorFirst)--m_inspectorFirst;
@@ -5157,6 +5218,7 @@ namespace nx
         if(m_focus)
         {
             const int focus=m_focus;
+            if(focus==11&&click&&in(x,y,820,244,1000,280)){m_rgbOpen=true;m_rgbReplace=true;m_rgbText=blueprintRGBHex(m_commentColour);if(m_rgbText.empty())m_rgbText="405F6B";m_left=left;return;}
             const bool form=focus==5||focus==9||(focus>=11&&focus<=14);
             const float footerY=focus==9?420.f:focus==5?400.f:400.f;
             const bool applyClick=inputApply||(form&&click&&in(x,y,720,footerY,840,footerY+36));
@@ -5199,7 +5261,7 @@ namespace nx
                         if(!m_document.duplicateFunction(m_graph,m_edit,m_status))break;
                         selectGraph(m_document.graphs.size()-1);
                     }
-                    if(focus==11&&!m_document.renameComment(m_graph,m_layoutComment,m_edit,m_status))break;
+                    if(focus==11&&!m_document.editComment(m_graph,m_layoutComment,m_edit,m_commentColour,m_status))break;
                     if(focus==9)
                     {
                         if(!m_document.editFunctionSignature(m_graph,m_edit,m_status))break;
@@ -5460,8 +5522,13 @@ namespace nx
             }
             for(size_t i=layout.comments.size();i>0;--i)
             {
-                float cx,cy,cw,ch;if(!commentBounds(i-1,cx,cy,cw,ch)||!in(x,y,cx,cy,cx+cw,cy+26*m_zoom))continue;
-                if(control){m_document.deleteComment(m_graph,i-1);m_layoutComment=static_cast<size_t>(-1);}
+                float cx,cy,cw,ch;if(!commentBounds(i-1,cx,cy,cw,ch)||!in(x,y,cx-5,cy-5,cx+cw+5,cy+ch+5))continue;
+                const float grip=std::max(5.f,8.f*m_zoom);unsigned edges=0;
+                if(std::abs(x-cx)<grip)edges|=1u;else if(std::abs(x-cx-cw)<grip)edges|=2u;
+                if(std::abs(y-cy)<grip)edges|=4u;else if(std::abs(y-cy-ch)<grip)edges|=8u;
+                if(!edges&&!in(x,y,cx,cy,cx+cw,cy+26*m_zoom))continue;
+                m_commentResize=edges;m_commentX=(cx-kLeft-m_x)/m_zoom;m_commentY=(cy-kTop-m_y)/m_zoom;m_commentW=cw/m_zoom;m_commentH=ch/m_zoom;
+                if(control){m_document.deleteComment(m_graph,i-1);m_layoutComment=static_cast<size_t>(-1);m_commentResize=0;}
                 else {m_layoutDragging=true;m_layoutMoved=false;m_layoutLink=static_cast<size_t>(-1);m_layoutComment=i-1;m_layoutMembers=commentMembers(i-1);m_layoutStartX=m_layoutX=x;m_layoutStartY=m_layoutY=y;}
                 clearWire();m_left=left;return;
             }
@@ -5744,8 +5811,9 @@ namespace nx
             {
                 float cx,cy,cw,ch;if(!commentBounds(i,cx,cy,cw,ch))continue;
                 if(cx+cw<kLeft||cx>kRight||cy+ch<kTop||cy>kBottom)continue;
-                c.rect(cx,cy,cw,ch,{0.17f,0.24f,0.29f,0.65f});c.roundLine(cx,cy,cw,ch,5,1,{0.38f,0.49f,0.55f,1});
-                c.rect(cx,cy,cw,26*m_zoom,{0.25f,0.37f,0.42f,1});c.push();c.clip(cx+4,cy,cw-8,26*m_zoom);c.text(*m_font,graph.comments[i].title.c_str(),cx+8,cy+4,text);c.pop();
+                const Color ink=rgbColour(graph.comments[i].colour,{0.25f,0.37f,0.42f,1});
+                c.rect(cx,cy,cw,ch,{ink.r,ink.g,ink.b,0.25f});c.roundLine(cx,cy,cw,ch,5,1.5f,ink);
+                c.rect(cx,cy,cw,26*m_zoom,ink);const float grip=std::max(5.f,8.f*m_zoom);c.rect(cx+cw-grip,cy+ch-grip,grip,grip,ink);c.rect(cx,cy+ch-grip,grip,grip,ink);c.push();c.clip(cx+4,cy,cw-8,26*m_zoom);c.text(*m_font,graph.comments[i].title.c_str(),cx+8,cy+4,text);c.pop();
             }
             for(size_t wire=0;wire<graph.links.size();++wire)
             {
@@ -5800,7 +5868,7 @@ namespace nx
                 const bool event=n.kind=="entry"||n.kind.rfind("event:",0)==0;
                 const bool pure=spec&&spec->pure;
                 const bool flow=n.kind=="branch"||n.kind=="sequence"||n.kind=="repeat"||n.kind.rfind("flow:",0)==0;
-                const Color header=n.colour&&n.colour<8?nodeColours[n.colour]:event?Color{0.49f,0.19f,0.23f,1}:pure?Color{0.22f,0.39f,0.27f,1}:flow?Color{0.35f,0.29f,0.44f,1}:Color{0.20f,0.34f,0.48f,1};
+                const Color header=rgbColour(n.colour,event?Color{0.49f,0.19f,0.23f,1}:pure?Color{0.22f,0.39f,0.27f,1}:flow?Color{0.35f,0.29f,0.44f,1}:Color{0.20f,0.34f,0.48f,1});
                 c.roundRect(x+3*m_zoom,y+4*m_zoom,w,h,5,{0,0,0,0.16f});
                 c.roundRect(x,y,w,h,5,{0.115f,0.12f,0.14f,0.83f});
                 const float headerHeight=std::max(11.f,24*m_zoom);
@@ -6179,7 +6247,7 @@ namespace nx
                 c.roundRect(160,68,980,584,8,{0.16f,0.16f,0.17f,1});
                 const auto& selected=m_document.graphs[m_graph].nodes[m_selection];
                 c.push();c.clip(180,82,470,34);c.text(*m_font,("EDIT NODE / "+title(selected)).c_str(),180,88,accent);c.pop();
-                c.text(*m_font,"Colour",680,90,muted);for(unsigned i=0;i<8;++i){const float xx=760.f+43.f*static_cast<float>(i);c.roundRect(xx+2,82,39,32,4,nodeColours[i]);if(i==m_inspectorColour)c.roundLine(xx+2,82,39,32,4,2,text);if(i==0)c.text(*m_font,"Auto",xx+21,88,text,Align::Center);}
+                c.text(*m_font,"Colour",680,90,muted);c.roundRect(760,82,344,32,4,rgbColour(m_inspectorColour,{0.20f,0.34f,0.48f,1}));c.text(*m_font,m_inspectorColour?blueprintRGBHex(m_inspectorColour).c_str():"Default / Choose colour",932,88,text,Align::Center);
                 c.text(*m_font,"Input / type",190,130,muted);c.text(*m_font,"Value",430,130,muted);c.text(*m_font,"State",920,130,muted);
                 for(size_t i=m_inspectorFirst;i<std::min(m_inspectorFirst+9,m_inspectorRows.size());++i)
                 {
@@ -6205,7 +6273,7 @@ namespace nx
             }
             else if(m_focus==11)
             {
-                c.roundRect(260,230,760,220,8,{0.16f,0.16f,0.17f,1});c.text(*m_font,"COMMENT TITLE",280,250,accent);
+                c.roundRect(260,230,760,220,8,{0.16f,0.16f,0.17f,1});c.text(*m_font,"COMMENT TITLE",280,250,accent);c.roundRect(820,244,180,36,4,rgbColour(m_commentColour,{0.25f,0.37f,0.42f,1}));c.text(*m_font,"Change Colour",910,252,text,Align::Center);
                 c.rect(280,290,720,36,{0.24f,0.35f,0.48f,1});c.clip(286,290,708,36);c.text(*m_font,m_edit.c_str(),290,297,text);c.noClip();
                 c.paragraph(*m_font,m_status.c_str(),280,340,720,muted);c.text(*m_font,"Enter = Apply | Escape = Cancel",280,409,muted);c.roundRect(720,400,120,36,4,{0.19f,0.4f,0.3f,1});c.text(*m_font,"Apply",780,407,text,Align::Center);c.roundRect(850,400,130,36,4,{0.22f,0.31f,0.43f,1});c.text(*m_font,"Cancel",915,407,text,Align::Center);
             }
@@ -6263,6 +6331,7 @@ namespace nx
                 c.paragraph(*m_font,m_status.c_str(),360,351,560,muted);
                 c.text(*m_font,"Enter = Apply | Escape = Cancel",360,409,muted);c.roundRect(720,400,120,36,4,{0.19f,0.4f,0.3f,1});c.text(*m_font,"Apply",780,407,text,Align::Center);c.roundRect(850,400,70,36,4,{0.22f,0.31f,0.43f,1});c.text(*m_font,"Cancel",885,407,text,Align::Center);
             }
+            if(m_rgbOpen)drawRGB(c);
             c.pop();
             if(visualTabOpen())drawGraphTabs(c);
         }
