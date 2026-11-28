@@ -608,7 +608,7 @@ namespace nx
         {
             auto& row=m_rows[i];const auto& n=graph.nodes[i];
             row.height=std::max(kNodeHeight,kPinStart+kPinStep*static_cast<float>(std::max(row.inputs.size(),row.outputs.size()))+8);
-            const auto alias=m_document.nodeDisplayName(m_graph,n);
+            const auto& alias=n.displayName;
             row.title=!alias.empty()?alias:n.kind=="call:function"&&m_document.function(graph.owner,n.ref)&&m_document.function(graph.owner,n.ref)->inlineMacro?"Macro "+n.ref:title(n);
             row.width=std::max(kNodeWidth,measure(row.title)*1.45f+54);
             // A stable field column, shared by rendering and pointer hit testing.
@@ -4368,7 +4368,7 @@ namespace nx
         m_inspectorColour=n.colour;m_inspectorColourChanged=false;
         m_inspectorDraft.clear();for(const auto& row:m_inspectorRows)m_inspectorDraft.push_back(row.origin=="Required"||row.value=="Event delta time"||row.value=="Native default"?"":row.value);
         m_inspectorChanged.assign(m_inspectorRows.size(),false);m_inspectorFirst=0;m_inspectorRow=static_cast<size_t>(-1);
-        m_focus=15;input.setTyping(true);m_status="Edit values, then Apply. Connected inputs are read-only.";NX_INFO("Blueprint Studio: Edit Node opened");
+        m_focus=15;input.setTyping(true);m_status="Apply changes together. Clear display name to restore default. Connected inputs are read-only.";NX_INFO("Blueprint Studio: Edit Node opened");
     }
     bool BlueprintWorkspace::applyNodeEditor(Input& input)
     {
@@ -6010,8 +6010,9 @@ namespace nx
         if(m_nodeContext&&m_selection<m_rows.size())
         {
             const float x=m_nodeContextX,y=m_nodeContextY;c.roundRect(x,y,270,224,6,{0.16f,0.16f,0.17f,1});c.clip(x+8,y,254,32);c.text(*m_font,m_rows[m_selection].title.c_str(),x+10,y+7,accent);c.noClip();
-            const char* labels[]={"Edit Node","Rename Node","Delete Node","Disconnect","Change Colour","Add comment"};
-            for(unsigned i=0;i<6;++i){const float yy=y+32.f+32.f*static_cast<float>(i);c.rect(x+4,yy+2,262,28,i==2?Color{0.38f,0.19f,0.23f,1}:Color{0.22f,0.22f,0.24f,1});c.text(*m_font,labels[i],x+12,yy+6,text);}
+            const auto& nodeTitle=m_rows[m_selection].title;
+            const std::string labels[]={"Edit "+nodeTitle,"Rename "+nodeTitle,"Delete "+nodeTitle,"Disconnect","Change Colour","Add comment"};
+            for(unsigned i=0;i<6;++i){const float yy=y+32.f+32.f*static_cast<float>(i);c.rect(x+4,yy+2,262,28,i==2?Color{0.38f,0.19f,0.23f,1}:Color{0.22f,0.22f,0.24f,1});c.clip(x+10,yy+2,250,28);c.text(*m_font,labels[i].c_str(),x+12,yy+6,text);c.noClip();}
         }
         if(m_pinMenu)
         {
@@ -6186,7 +6187,7 @@ namespace nx
                     c.rect(180,yy,920,40,{0.15f,0.20f,0.27f,1});
                     c.push();c.clip(190,yy,225,40);c.text(*m_font,row.name.c_str(),190,yy+2,text);c.text(*m_font,row.type.c_str(),190,yy+20,muted);c.pop();
                     if(row.editable)c.roundRect(425,yy+4,480,32,4,i==m_inspectorRow?Color{0.26f,0.42f,0.59f,1}:Color{0.22f,0.28f,0.35f,1});
-                    c.push();c.clip(430,yy,474,40);c.text(*m_font,(i==0&&m_inspectorDraft[i].empty()?std::string("Default node name (shared)"):i==1&&m_inspectorDraft[i].empty()?std::string("Add comment..."):row.editable?m_inspectorDraft[i]:row.value).c_str(),435,yy+11,text);c.pop();
+                    c.push();c.clip(430,yy,474,40);c.text(*m_font,(i==0&&m_inspectorDraft[i].empty()?title(selected)+" (default)":i==1&&m_inspectorDraft[i].empty()?std::string("Add comment..."):row.editable?m_inspectorDraft[i]:row.value).c_str(),435,yy+11,text);c.pop();
                     c.text(*m_font,m_inspectorChanged[i]?"Modified":row.origin.c_str(),920,yy+10,muted);
                 }
                 if(m_inspectorRows.empty())c.text(*m_font,"This node has no editable literal inputs.",190,175,muted);
