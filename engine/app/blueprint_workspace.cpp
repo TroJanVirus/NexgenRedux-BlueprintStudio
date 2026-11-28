@@ -282,7 +282,7 @@ namespace nx
         return true;
     }
     bool BlueprintWorkspace::modalOpen() const
-    {return m_assetBrowser||m_browsing||m_focus==5||m_focus==6||m_focus==9||m_focus==10||m_focus==11||m_focus==12||m_focus==13||m_focus==14||m_focus==15||m_focus==17||m_focus==18||m_focus==20;}
+    {return m_assetBrowser||m_browsing||m_focus==5||m_focus==6||m_focus==9||m_focus==10||m_focus==11||m_focus==12||m_focus==13||m_focus==14||m_focus==15||m_focus==17||m_focus==18||m_focus==20||m_focus==21;}
     void BlueprintWorkspace::resetGraphTabs()
     {
         releaseContentPreviews();m_graphTabs.clear();m_actorTabs.clear();m_visualTabs.clear();m_activeVisualTab={};m_activeTab={};m_tabFirst=0;
@@ -728,7 +728,7 @@ namespace nx
                 ((node.id!="attach:behaviour"&&node.id!="level:attach")||(!behaviour&&hasBehaviours))&&(node.id!="attach:direct"||hasBehaviours)&&(!behaviour||node.id.rfind("level:",0)!=0)&&(node.id!="event:delta"||m_document.graphs[m_graph].name=="update")&&
                 (node.id!="event:canvas"||m_document.graphs[m_graph].name=="draw")&&
                 ((node.id!="async:wait"&&node.id!="async:next")||graph.dataRole=="coroutine")&&
-                ((node.id!="time:timeline"&&node.id!="camera:orbit-timed")||graph.name=="update")&&(node.id!="render:space"||(!behaviour&&graph.name=="draw"))&&
+                (node.id!="camera:sequence"||(!behaviour&&graph.name=="update"))&&((node.id!="time:timeline"&&node.id!="camera:orbit-timed")||graph.name=="update")&&(node.id!="render:space"||(!behaviour&&graph.name=="draw"))&&
                 (m_pinMenu||lower(node.category+" "+node.title+" "+node.id).find(query)!=std::string::npos))m_palette.push_back(&node);
         if(!m_pinMenu){rebuildPaletteRows();return;}
         const auto namedVariables=variableRows();
@@ -4535,6 +4535,93 @@ namespace nx
         }
         if(n.kind=="camera:orbit-timed"&&m_editPin=="name")m_inputChoices=namedSceneTargets();
     }
+    bool BlueprintWorkspace::beginSequenceEditor(Input& input)
+    {
+        if(m_selection>=m_document.graphs[m_graph].nodes.size())return false;
+        const auto& node=m_document.graphs[m_graph].nodes[m_selection];if(node.kind!="camera:sequence")return false;
+        std::string raw="0,0,2,8,0,1,0,60,0;3,5,3,5,0,1,0,50,0;6,0,2,4,0,1,0,60,0";
+        for(const auto& v:node.values)if(v.pin=="keys")raw=v.value;
+        if(!blueprintCameraKeys(raw,m_sequenceKeys,m_status))return false;
+        m_sequenceKey=0;m_sequenceTime=0;m_sequenceLast=0;m_sequencePlaying=m_sequenceScrub=false;m_sequenceField=-1;m_focus=21;input.setTyping(true);clearWire();m_status="Edit camera keys. Apply commits the sequence.";return true;
+    }
+    bool BlueprintWorkspace::finishSequenceField()
+    {
+        if(m_sequenceField<0)return true;
+        char* end=nullptr;const float v=std::strtof(m_sequenceText.c_str(),&end);
+        if(m_sequenceText.empty()||end!=m_sequenceText.c_str()+m_sequenceText.size()||!std::isfinite(v)){m_status="Enter a finite number.";return false;}
+        auto candidate=m_sequenceKeys;auto& key=candidate[m_sequenceKey];
+        if(m_sequenceField==0)key.time=v;else if(m_sequenceField<=3)key.from[m_sequenceField-1]=v;else if(m_sequenceField<=6)key.to[m_sequenceField-4]=v;else key.fov=v;
+        std::vector<BlueprintCameraKey> checked;if(!blueprintCameraKeys(blueprintCameraKeyText(candidate),checked,m_status))return false;
+        m_sequenceKeys=std::move(checked);m_sequenceTime=m_sequenceKeys[m_sequenceKey].time;m_sequenceField=-1;return true;
+    }
+    void BlueprintWorkspace::updateSequenceEditor(Services& s,float x,float y,bool left,bool click)
+    {
+        auto& input=*s.input;
+        if(click&&(!in(x,y,100,64,1180,658)||in(x,y,1040,610,1160,646))){m_focus=0;input.setTyping(false);return;}
+        const double now=s.platform->seconds();if(m_sequencePlaying&&m_sequenceLast>0){m_sequenceTime=std::min(m_sequenceKeys.back().time,m_sequenceTime+static_cast<float>(std::clamp(now-m_sequenceLast,0.0,0.1)));if(m_sequenceTime>=m_sequenceKeys.back().time)m_sequencePlaying=false;}m_sequenceLast=now;
+        bool apply=click&&in(x,y,910,610,1030,646);
+        for(u32 i=0;i<input.typedCount();++i)
+        {
+            const auto ch=input.typed(i);if(ch==13){if(m_sequenceField>=0){finishSequenceField();return;}apply=true;break;}
+            if(m_sequenceField<0)continue;
+            if(ch==8){if(m_sequenceReplace)m_sequenceText.clear();else if(!m_sequenceText.empty())m_sequenceText.pop_back();m_sequenceReplace=false;}
+            else if(ch<128&&std::string("0123456789.eE+-").find(static_cast<char>(ch))!=std::string::npos){if(m_sequenceReplace){m_sequenceText.clear();m_sequenceReplace=false;}appendCharacter(m_sequenceText,ch,48);}
+        }
+        if(apply){if(finishSequenceField()&&m_document.setInputValue(m_graph,m_selection,"keys",blueprintCameraKeyText(m_sequenceKeys),m_status)){m_focus=0;input.setTyping(false);rebuildPins();m_status="Camera sequence applied."; }return;}
+        if(click&&!finishSequenceField())return;
+        if(click&&in(x,y,120,115,230,148)){if(m_sequenceTime>=m_sequenceKeys.back().time)m_sequenceTime=0;m_sequencePlaying=!m_sequencePlaying;return;}
+        if(click&&in(x,y,240,115,350,148)){m_sequencePlaying=false;m_sequenceTime=0;return;}
+        if(click&&in(x,y,360,115,500,148))
+        {
+            m_sequencePlaying=false;
+            if(m_sequenceKeys.size()>=64){m_status="Maximum 64 keys.";return;}
+            auto key=blueprintCameraSample(m_sequenceKeys,m_sequenceTime);key.time=m_sequenceTime;key.cut=false;
+            if(std::any_of(m_sequenceKeys.begin(),m_sequenceKeys.end(),[&](const BlueprintCameraKey& k){return std::abs(k.time-key.time)<0.001f;})){key=m_sequenceKeys.back();key.time+=1.f;if(key.time>3600){m_status="Maximum sequence duration is 3600 seconds.";return;}}
+            const auto at=std::lower_bound(m_sequenceKeys.begin(),m_sequenceKeys.end(),key.time,[](const BlueprintCameraKey& k,float time){return k.time<time;});
+            m_sequenceKey=static_cast<size_t>(at-m_sequenceKeys.begin());m_sequenceKeys.insert(at,key);m_sequenceTime=key.time;return;
+        }
+        if(click&&in(x,y,510,115,650,148)){if(m_sequenceKey>0&&m_sequenceKeys.size()>2){m_sequenceKeys.erase(m_sequenceKeys.begin()+static_cast<std::ptrdiff_t>(m_sequenceKey));m_sequenceKey=std::min(m_sequenceKey,m_sequenceKeys.size()-1);m_sequenceTime=m_sequenceKeys[m_sequenceKey].time;}else m_status="Keep the first key and at least two keys.";return;}
+        if(click&&in(x,y,660,115,820,148)){m_sequenceKeys[m_sequenceKey].cut=!m_sequenceKeys[m_sequenceKey].cut;return;}
+        const float duration=m_sequenceKeys.back().time;
+        if(click&&in(x,y,280,175,1150,320))
+        {
+            m_sequencePlaying=false;const float time=duration*std::clamp((x-280)/870.f,0.f,1.f);
+            if(y>=207){float distance=9;for(size_t i=0;i<m_sequenceKeys.size();++i){const float d=std::abs(x-(280+870*m_sequenceKeys[i].time/duration));if(d<distance){distance=d;m_sequenceKey=i;}}if(distance<9){m_sequenceTime=m_sequenceKeys[m_sequenceKey].time;return;}}
+            m_sequenceScrub=true;m_sequenceTime=time;
+        }
+        if(m_sequenceScrub){if(left)m_sequenceTime=duration*std::clamp((x-280)/870.f,0.f,1.f);else m_sequenceScrub=false;}
+        if(click&&in(x,y,120,374,1152,421))
+        {
+            const int field=std::min(7,static_cast<int>((x-120)/129.f));const auto& key=m_sequenceKeys[m_sequenceKey];const float values[]={key.time,key.from[0],key.from[1],key.from[2],key.to[0],key.to[1],key.to[2],key.fov};
+            m_sequenceField=field;m_sequenceText=std::to_string(values[field]);m_sequenceReplace=true;m_sequencePlaying=false;
+        }
+    }
+    void BlueprintWorkspace::drawSequenceEditor(Canvas& c)
+    {
+        c.roundRect(100,64,1080,594,8,{0.15f,0.17f,0.20f,1});c.text(*m_font,("SEQUENCER / "+m_document.graphs[m_graph].owner).c_str(),120,78,accent);
+        const auto button=[&](float x,float y,float w,const char* label){c.roundRect(x,y,w,33,4,{0.20f,0.32f,0.45f,1});c.text(*m_font,label,x+w/2,y+7,text,Align::Center);};
+        button(120,115,110,m_sequencePlaying?"Pause":"Play");button(240,115,110,"Rewind");button(360,115,140,"+ Camera key");button(510,115,140,"Delete key");button(660,115,160,m_sequenceKeys[m_sequenceKey].cut?"Cut":"Interpolate");
+        const float duration=m_sequenceKeys.back().time;
+        c.text(*m_font,("Time "+std::to_string(m_sequenceTime).substr(0,5)+" / "+std::to_string(duration).substr(0,5)+" s").c_str(),850,123,text);
+        c.rect(120,165,1030,165,{0.10f,0.12f,0.15f,1});const char* tracks[]={"Camera position","Look target","Field of view"};
+        for(unsigned i=0;i<3;++i){const float yy=207.f+38.f*static_cast<float>(i);c.rect(120,yy,1030,35,{0.22f,0.24f,0.28f,1});c.text(*m_font,tracks[i],132,yy+8,text);}
+        for(unsigned i=0;i<=10;++i){const float xx=280.f+87.f*static_cast<float>(i);c.line(xx,184,xx,320,1,{0.33f,0.35f,0.38f,1});c.text(*m_font,std::to_string(duration*static_cast<float>(i)/10.f).substr(0,4).c_str(),xx,169,muted,Align::Center);}
+        for(size_t i=0;i<m_sequenceKeys.size();++i){const float xx=280+870*m_sequenceKeys[i].time/duration;for(unsigned j=0;j<3;++j)c.circle(xx,224.f+38.f*static_cast<float>(j),i==m_sequenceKey?6.f:4.f,i==m_sequenceKey?Color{1,0.75f,0.25f,1}:accent);}
+        const float cursor=280+870*m_sequenceTime/duration;c.line(cursor,181,cursor,320,2,{1,0.45f,0.25f,1});
+        const auto& key=m_sequenceKeys[m_sequenceKey];const float values[]={key.time,key.from[0],key.from[1],key.from[2],key.to[0],key.to[1],key.to[2],key.fov};const char* labels[]={"Time (s)","Position X","Position Y","Position Z","Target X","Target Y","Target Z","FOV"};
+        c.text(*m_font,"SELECTED CAMERA KEY",120,344,accent);
+        for(unsigned i=0;i<8;++i){const float xx=120.f+129.f*static_cast<float>(i);c.text(*m_font,labels[i],xx,374,muted);c.roundRect(xx,395,123,26,3,static_cast<int>(i)==m_sequenceField?Color{0.24f,0.35f,0.48f,1}:Color{0.20f,0.23f,0.28f,1});const auto value=static_cast<int>(i)==m_sequenceField?m_sequenceText:std::to_string(values[i]);c.clip(xx+4,395,115,26);c.text(*m_font,value.c_str(),xx+5,400,text);c.noClip();}
+        c.text(*m_font,"CAMERA PATH PREVIEW / XZ (schematic)",120,438,muted);
+        float loX=key.from[0],hiX=loX,loZ=key.from[2],hiZ=loZ;
+        for(const auto& k:m_sequenceKeys){loX=std::min({loX,k.from[0],k.to[0]});hiX=std::max({hiX,k.from[0],k.to[0]});loZ=std::min({loZ,k.from[2],k.to[2]});hiZ=std::max({hiZ,k.from[2],k.to[2]});}
+        const float scale=std::min(650.f/std::max(1.f,hiX-loX),100.f/std::max(1.f,hiZ-loZ));const auto px=[&](float v){return 445+(v-(loX+hiX)/2)*scale;};const auto pz=[&](float v){return 520+(v-(loZ+hiZ)/2)*scale;};
+        c.rect(120,460,650,120,{0.10f,0.12f,0.15f,1});
+        for(size_t i=1;i<m_sequenceKeys.size();++i){const auto& a=m_sequenceKeys[i-1];const auto& b=m_sequenceKeys[i];if(!b.cut)c.line(px(a.from[0]),pz(a.from[2]),px(b.from[0]),pz(b.from[2]),2,accent);}
+        const auto sample=blueprintCameraSample(m_sequenceKeys,m_sequenceTime);c.line(px(sample.from[0]),pz(sample.from[2]),px(sample.to[0]),pz(sample.to[2]),2,{1,0.75f,0.25f,1});c.circle(px(sample.from[0]),pz(sample.from[2]),5,accent);c.circle(px(sample.to[0]),pz(sample.to[2]),4,{1,0.75f,0.25f,1});
+        c.text(*m_font,"Camera  /  Target",800,470,text);c.text(*m_font,"Play in Redux to view the scene.",800,500,muted);
+        c.clip(120,582,1040,25);c.text(*m_font,m_status.c_str(),120,586,muted);c.noClip();
+        c.text(*m_font,"Enter = Apply (field first) | Escape = Cancel",120,620,muted);button(910,610,120,"Apply");button(1040,610,120,"Cancel");
+    }
     bool BlueprintWorkspace::beginCurveEditor(Input& input)
     {
         std::vector<std::string> values;
@@ -4753,6 +4840,7 @@ namespace nx
             if(updateContentDrawer(s,x,y,left,click)||updateGraphTabs(s,x,y,click)||updateGraphMap(x,y,left,click)){m_left=left;return;}
         }
         if(modalOpen()){x-=modalX();y-=modalY();}
+        if(m_focus==21){updateSequenceEditor(s,x,y,left,click);m_left=left;return;}
         if(m_focus==20){const auto results=findResults();if(click&&!in(x,y,220,100,1060,620)){m_focus=0;input.setTyping(false);m_left=left;return;}if(input.wheel()<0&&m_findFirst+10<results.size())++m_findFirst;if(input.wheel()>0&&m_findFirst)--m_findFirst;if(click&&in(x,y,240,190,1040,570)){const auto at=m_findFirst+static_cast<size_t>((y-190)/38);if(at<results.size()){openFindResult(results[at],input);m_left=left;return;}}for(u32 i=0;i<input.typedCount();++i){const auto ch=input.typed(i);if(ch==13){if(!results.empty())openFindResult(results[std::min(m_findFirst,results.size()-1)],input);break;}if(ch==8&&!m_findText.empty())m_findText.pop_back();else if(ch>=32)appendCharacter(m_findText,ch,128);m_findFirst=0;}m_left=left;return;}
         else if(!m_focus&&!m_layoutDragging&&!m_layoutMenu&&!m_pinMenu&&!m_pinDrag&&!m_drag&&!m_quickDrag&&!m_quickMenu&&resizePanels(x,y,left,click,false)){m_left=left;return;}
         if(m_layoutDragging)
@@ -5530,7 +5618,8 @@ namespace nx
             if(click&&m_selection<m_document.graphs[m_graph].nodes.size())
             {
                 const auto& n=m_document.graphs[m_graph].nodes[m_selection];
-                if(blueprintPhysicsJoint(n.kind)&&in(x,y,kRight+8,kTop+456+kPaletteExtra,kWidth-8,kTop+486+kPaletteExtra)){beginJointEditor(input);}
+                if(n.kind=="camera:sequence"&&in(x,y,kRight+8,kTop+456+kPaletteExtra,kWidth-8,kTop+486+kPaletteExtra)){beginSequenceEditor(input);}
+                else if(blueprintPhysicsJoint(n.kind)&&in(x,y,kRight+8,kTop+456+kPaletteExtra,kWidth-8,kTop+486+kPaletteExtra)){beginJointEditor(input);}
                 else if(n.kind=="curve:cubic"&&in(x,y,kRight+8,kTop+456+kPaletteExtra,kWidth-8,kTop+486+kPaletteExtra))
                 {beginCurveEditor(input);}
                 else if(in(x,y,kRight+8,kTop+456+kPaletteExtra,kWidth-8,kTop+486+kPaletteExtra)&&(n.kind.rfind("literal:",0)==0||n.kind.rfind("var:",0)==0||n.kind.rfind("global:",0)==0||n.kind.rfind("capture:",0)==0||blueprintNamedCall(n.kind)||blueprintBehaviourReference(n.kind)||n.kind.rfind("data:",0)==0||n.kind.rfind("typed:",0)==0))
@@ -5687,7 +5776,7 @@ namespace nx
                 }
                 const double now=s.platform->seconds();
                 if(!held(Key::Shift)&&m_nodeClickTime>=0&&now-m_nodeClickTime<0.35&&m_nodeClickGraph==m_graph&&m_nodeClickIndex==i-1&&std::hypot(x-m_nodeClickX,y-m_nodeClickY)<9)
-                {m_selection=i-1;const auto& kind=n.kind;if(kind=="call:function"||kind=="call:library"||kind=="call:parent"||kind=="call:event"||kind=="async:start")openSelectedFunction();else beginNodeEditor(i-1,input);m_left=left;return;}
+                {m_selection=i-1;const auto& kind=n.kind;if(kind=="call:function"||kind=="call:library"||kind=="call:parent"||kind=="call:event"||kind=="async:start")openSelectedFunction();else if(kind=="camera:sequence")beginSequenceEditor(input);else beginNodeEditor(i-1,input);m_left=left;return;}
                 m_nodeClickTime=held(Key::Shift)?-1:now;m_nodeClickGraph=m_graph;m_nodeClickIndex=i-1;m_nodeClickX=x;m_nodeClickY=y;
                 if(found==m_selectedNodes.end())m_selectedNodes={i-1};
                 m_selection=i-1;m_drag=true;m_dragMoved=false;m_dragX=n.x;m_dragY=n.y;
@@ -6114,7 +6203,8 @@ namespace nx
             }
             if(blueprintPhysicsJoint(n.kind))
             {c.roundRect(kRight+8,kTop+456+kPaletteExtra,kWidth-kRight-16,30,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Configure joint",(kWidth+kRight)*0.5f,kTop+461+kPaletteExtra,text,Align::Center);}
-            if(n.kind=="curve:cubic")
+            if(n.kind=="camera:sequence"){c.roundRect(kRight+8,kTop+456+kPaletteExtra,kWidth-kRight-16,30,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Open Sequencer",(kWidth+kRight)*0.5f,kTop+461+kPaletteExtra,text,Align::Center);}
+            else if(n.kind=="curve:cubic")
             {c.roundRect(kRight+8,kTop+456+kPaletteExtra,kWidth-kRight-16,30,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Edit curve", (kWidth+kRight)*0.5f,kTop+461+kPaletteExtra,text,Align::Center);}
             if(m_selection<m_document.graphs[m_graph].nodes.size())
             {c.roundRect(kRight+8,kTop+520+kPaletteExtra,kWidth-kRight-16,32,5,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Edit Node", (kWidth+kRight)*0.5f,kTop+526+kPaletteExtra,text,Align::Center);}
@@ -6246,6 +6336,7 @@ namespace nx
                 c.text(*m_font,("Active: "+m_document.name+(m_document.dirty()?"  /  Unsaved changes":"")).c_str(),28,638,accent);
                 c.clip(28,665,1220,40);c.text(*m_font,m_status.c_str(),28,673,text);c.noClip();
             }
+            else if(m_focus==21)drawSequenceEditor(c);
             else if(m_focus==20){c.roundRect(220,100,840,520,8,{0.16f,0.18f,0.22f,1});c.text(*m_font,"FIND IN BLUEPRINT",240,115,accent);c.roundRect(240,145,800,36,4,{0.24f,0.35f,0.48f,1});c.text(*m_font,m_findText.empty()?"Search nodes, functions, comments and values...":m_findText.c_str(),250,152,text);const auto results=findResults();for(size_t i=0;i<10&&m_findFirst+i<results.size();++i){const float yy=190.f+38.f*static_cast<float>(i);c.rect(240,yy,800,34,{0.22f,0.25f,0.3f,1});c.clip(250,yy,780,34);c.text(*m_font,results[m_findFirst+i].label.c_str(),250,yy+7,text);c.noClip();}c.text(*m_font,(std::to_string(results.size())+" results | Enter = Open | Escape = Close").c_str(),240,585,muted);}
             else if(m_focus==18)drawJointEditor(c);
             else if(m_focus==17)

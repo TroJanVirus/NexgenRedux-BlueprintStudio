@@ -338,6 +338,17 @@ namespace nx
         int m_curveDrag=-1;
         bool m_curveChanged=false;
         bool beginCurveEditor(Input& input);
+        std::vector<BlueprintCameraKey> m_sequenceKeys;
+        size_t m_sequenceKey=0;
+        float m_sequenceTime=0;
+        double m_sequenceLast=0;
+        bool m_sequencePlaying=false,m_sequenceScrub=false,m_sequenceReplace=true;
+        int m_sequenceField=-1;
+        std::string m_sequenceText;
+        bool beginSequenceEditor(Input& input);
+        void updateSequenceEditor(Services& s,float x,float y,bool left,bool click);
+        void drawSequenceEditor(Canvas& c);
+        bool finishSequenceField();
         unsigned m_jointPlane=0;
         std::string m_jointPin;
         float m_jointExtent=4;
