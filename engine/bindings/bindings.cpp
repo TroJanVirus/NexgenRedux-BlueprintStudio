@@ -450,12 +450,13 @@ namespace nx
 
         SamplesRef* makeSamples(u32 frames, u32 rate, u32 channels)
         {
-            const size_t bytes = static_cast<size_t>(frames) * channels * sizeof(i16);
-            if (frames == 0 || channels < 1 || channels > 2 || rate < 1000 || rate > 96000 || bytes > kMostSampleBytes)
+            if (frames == 0 || channels < 1 || channels > 2 || rate < 1000 || rate > 96000 ||
+                frames > kMostSampleBytes / (channels * sizeof(i16)))
             {
                 scriptError("samples are 1 or 2 channels, 1000 to 96000 a second, and up to 32 MB");
                 return nullptr;
             }
+            const size_t bytes = static_cast<size_t>(frames) * channels * sizeof(i16);
             i16* data = static_cast<i16*>(memAlloc(bytes, MemTag::Audio));
             if (data == nullptr)
             {
@@ -481,7 +482,7 @@ namespace nx
                 return nullptr;
             }
             u32 frames = 0;
-            i16* data = decodeAll(*sound, frames);
+            i16* data = decodeAll(*sound, frames, kMostSampleBytes);
             const u32 channels = sound->channels, rate = sound->rate;
             freeSound(sound);
             if (data == nullptr || frames == 0 || static_cast<size_t>(frames) * channels * sizeof(i16) > kMostSampleBytes)
@@ -493,7 +494,7 @@ namespace nx
             return adoptSamples(data, frames, rate, channels);
         }
 
-        i16 toSample(float v) { return static_cast<i16>(v <= -1 ? -32767 : v >= 1 ? 32767 : v * 32767.0f); }
+        i16 toSample(float v) { return static_cast<i16>(!(v >= -1) ? (v < -1 ? -32767 : 0) : v >= 1 ? 32767 : v * 32767.0f); }
         float samplesGet(u32 frame, u32 channel, const SamplesRef* s)
         {
             return frame < s->frames && channel < s->channels ? s->data[static_cast<size_t>(frame) * s->channels + channel] / 32767.0f : 0;
@@ -611,7 +612,7 @@ namespace nx
                 scriptError("a stream is 1 or 2 channels, 1000 to 96000 a second");
                 return nullptr;
             }
-            const float kept = seconds < 0.02f ? 0.02f : seconds > 4 ? 4 : seconds;
+            const float kept = !(seconds >= 0.02f) ? 0.02f : seconds > 4 ? 4 : seconds;
             StreamHolder* h = create<StreamHolder>(MemTag::Audio);
             StreamRef* r = h ? create<StreamRef>(MemTag::Script) : nullptr;
             if (r == nullptr)
