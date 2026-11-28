@@ -78,7 +78,11 @@ namespace nx
         void openVisualTab(const VisualTab& tab);
         void saveActorTab();
         void leaveActorViewport(bool library);
+        float tabLeft() const;
         float tabRight() const;
+        float graphAreaLeft() const;
+        float graphAreaRight() const;
+        bool contentSideActive() const;
         float tabTop() const;
         void revealTab(size_t index);
         std::pair<std::string,std::string> m_activeTab;
@@ -92,6 +96,8 @@ namespace nx
         bool updateContentDrawer(Services& s,float x,float y,bool left,bool click);
         void drawContentDrawer(Canvas& c);
         bool m_contentDrawer=false,m_contentFloating=false,m_contentPanelDrag=false,m_contentDockTop=false,m_contentResize=false;
+        unsigned m_contentDockSide=0; // 0 horizontal, 1 left, 2 right
+        float m_contentSideWidth=300;
         float m_contentPanelHeight=174,m_contentResizeX=0,m_contentResizeY=0,m_contentStartWidth=620,m_contentStartHeight=174;
         float graphAreaTop() const;
 

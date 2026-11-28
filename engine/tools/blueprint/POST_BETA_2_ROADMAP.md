@@ -182,3 +182,8 @@ Added an optional categorized My Blueprint navigation tree with collapsible scre
 ## Inline node fields and toolbar refinement (verification pending)
 
 Selected nodes at readable zoom display explicit editable value fields for unconnected inputs on rows without competing output labels. Scalar values can be edited in place; Enter validates and commits through the existing document command, Escape or an outside click discards the draft. Compound values and named entity choices retain the established typed editor. Pins, Ctrl-disconnect, selection and graph hit targets are preserved. The graph toolbar now uses neutral chrome, native vector-drawn action icons and a distinct Play state. Added real desktop input/undo coverage. This is not yet universal inline editing of every pin layout or a finished visual parity pass.
+
+
+## Four-edge content docking (verification pending)
+
+Content can now dock against all four graph edges, float or hide; side panels have their own persisted width, compact header actions and resize handles. The available graph rectangle, fit-to-view, tab strip and drag hit targets exclude docked content. Added native left/right docking captures and a return to bottom docking regression. This remains content-specific docking, not a general multi-panel split tree or OS window detachment.
