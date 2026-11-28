@@ -1,3 +1,4 @@
+#include "script/source_fingerprint.h"
 #include "test.h"
 #include "script/source_fingerprint.h"
 #include "rig.h"
@@ -3796,4 +3797,33 @@ NX_TEST(nativeScaleBoxGeometryAndInteraction)
     NX_EXPECT(!box->setScaleMode("bad")&&!slider->setScaleMode("fit"));
     NX_EXPECT(box->add(WidgetKind::Label,"")==nullptr);
     ui.focus(slider);r.press(Action::Down);NX_EXPECT(ui.focused()==nested);
+}
+
+NX_TEST(runtimeLiveSourceRestartsScreenWithoutChangingDisk)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    r.services.development=true;
+    const std::string oldCode="class LiveTest : Screen { void onEnter(){ Save::set(\"live_result\",\"original\"); } }";
+    const std::string newCode="class LiveTest : Screen { void onEnter(){ Save::set(\"live_result\",\"updated\"); } }";
+    r.platform.files["showcase/main/screen.json"]="{\"title\":\"Live Test\"}";
+    r.platform.files["showcase/main/main.as"]=oldCode;
+    if(!r.screens.init(r.services,"showcase","main")){NX_EXPECT(false);return;}
+    r.step(4);
+    const auto oldHash=scriptFingerprint(oldCode.data(),oldCode.size()),newHash=scriptFingerprint(newCode.data(),newCode.size());
+    NX_EXPECT(r.screens.liveFingerprint()==oldHash);
+    NX_EXPECT(strcmp(r.save.get("live_result","missing"),"original")==0);
+    std::string error;
+    NX_EXPECT(!r.screens.applyLiveSource("main","0000000000000000",newCode,error));
+    NX_EXPECT(!r.screens.applyLiveSource("main",oldHash,"invalid script !!",error));
+    NX_EXPECT(!r.screens.failed()&&r.screens.liveFingerprint()==oldHash);
+    NX_EXPECT(r.screens.applyLiveSource("main",oldHash,newCode,error));
+    r.step(4);
+    NX_EXPECT(!r.screens.failed()&&r.screens.liveFingerprint()==newHash);
+    NX_EXPECT(strcmp(r.save.get("live_result","missing"),"updated")==0);
+    NX_EXPECT(r.platform.files["showcase/main/main.as"]==oldCode);
+    r.screens.shutdown();
+    if(!r.screens.init(r.services,"showcase","main")){NX_EXPECT(false);return;}
+    r.step(4);
+    NX_EXPECT(r.screens.liveFingerprint()==oldHash);
+    NX_EXPECT(strcmp(r.save.get("live_result","missing"),"original")==0);
 }

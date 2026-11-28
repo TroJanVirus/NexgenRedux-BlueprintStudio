@@ -8,11 +8,11 @@
 #include "video/video.h"
 #include "save/save.h"
 #include <algorithm>
+#include <utility>
 #ifdef NX_DESKTOP_BLUEPRINT
 #include "base/json_tree.h"
 #include <cmath>
 #include <limits>
-#include <utility>
 #endif
 
 #include <stdio.h>

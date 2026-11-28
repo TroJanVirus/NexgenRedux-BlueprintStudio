@@ -83,7 +83,7 @@ namespace nx
         }
         void control(unsigned action)
         {
-            if(!m_ready)return;
+            if(!m_ready||liveBusy())return;
             if(action==0&&!m_paused)queue("{\"cmd\":\"pause\"}");
             else if(m_paused)
             {
