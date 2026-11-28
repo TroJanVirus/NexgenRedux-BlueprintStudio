@@ -212,3 +212,8 @@ Workflow 46090383210 succeeded across Windows x64, macOS ARM64, Linux native des
 ## Native scene context integration
 
 The placement viewport now reads the selected saved Redux scene from scenes.json and renders up to 512 supported visual entities as read-only context in the same preview World as linked Blueprint actor instances. The loader never writes the original scene, validates scene filenames, filters through a visual-only field allowlist and excludes behaviour, audio, physics, cameras and emitters. Native context participates in frame-all without becoming a selectable Blueprint instance. Unsupported entities are counted rather than silently converted. A runtime test verifies the filtered data and original bytes. Native terrain, triggers, direct editing of the original scene from the placement tab, and a true unified scene undo stack remain unimplemented; the original editor remains the authority for native scene edits. Verification pending.
+
+
+## Graph panel visibility and full-width focus layout
+
+The navigator and node library/details dock can independently hide or restore via Layout, preserving the original dock widths and graph coordinate system. Graph clip, minimap, tabs and content docking expand into reclaimed width; hidden panel input/resize targets are disabled. Visibility persists. Native desktop coverage exercises hiding/restoring both. This is a useful dock visibility feature, not universal drag docking or a detachable OS-window implementation. The engine still presents through one Platform native window and GPU Device; separate render targets, per-window input, resize/close lifecycles and shared resource ownership must be designed before true multi-window editing can safely ship.

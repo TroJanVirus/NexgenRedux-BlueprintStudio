@@ -175,12 +175,13 @@ namespace nx
             ",\"contentY\":"+std::to_string(m_contentPanelY)+",\"contentWidth\":"+std::to_string(m_contentPanelWidth)+
             ",\"contentTop\":"+(m_contentDockTop?"true":"false")+",\"contentHeight\":"+std::to_string(m_contentPanelHeight)+
             ",\"graphTree\":"+(m_graphTree?"true":"false")+",\"contentSide\":"+std::to_string(m_contentDockSide)+
-            ",\"contentSideWidth\":"+std::to_string(m_contentSideWidth)+",\"minimap\":"+(m_minimap?"true":"false")+"}\n";
+            ",\"contentSideWidth\":"+std::to_string(m_contentSideWidth)+",\"minimap\":"+(m_minimap?"true":"false")+
+            ",\"hideGraphLeft\":"+(m_graphHideLeft?"true":"false")+",\"hideGraphRight\":"+(m_graphHideRight?"true":"false")+"}\n";
     }
     void BlueprintWorkspace::loadLayout(Services& s)
     {
         m_leftPanel=248;m_graphRightPanel=268;m_actorRightPanel=310;m_uiScale=0;m_actorCollapsed=0;m_contentDrawer=false;m_contentFloating=false;m_contentPanelX=0.25f;m_contentPanelY=0.65f;m_contentPanelWidth=620;m_contentDockTop=false;m_contentPanelHeight=174;m_contentDockSide=0;m_contentSideWidth=300;
-        m_graphTree=false;m_minimap=m_minimapDragging=false;m_navigationFirst=0;m_navigationCollapsed.clear();
+        m_graphTree=false;m_minimap=m_minimapDragging=false;m_graphHideLeft=m_graphHideRight=false;m_navigationFirst=0;m_navigationCollapsed.clear();
         FileData file;JsonTree tree;
         if(s.platform->readFile("own/blueprint-editor-layout.json",file,MemTag::General)&&file.size&&file.size<=4096&&
             tree.parse(reinterpret_cast<const char*>(file.data),file.size))
@@ -201,6 +202,7 @@ namespace nx
                 m_contentPanelWidth=bounded("contentWidth",620,460,1000);
                 m_contentDockTop=root["contentTop"].flag();m_contentPanelHeight=bounded("contentHeight",174,174,510);
                 m_graphTree=root["graphTree"].flag();m_minimap=root["minimap"].flag();
+                m_graphHideLeft=root["hideGraphLeft"].flag();m_graphHideRight=root["hideGraphRight"].flag();
                 m_contentDockSide=static_cast<unsigned>(bounded("contentSide",0,0,2));
                 m_contentSideWidth=bounded("contentSideWidth",300,260,480);
                 NX_INFO("Blueprint Studio: restored editor layout");
@@ -247,8 +249,8 @@ namespace nx
         const float right=actor?kWidth-m_actorRightPanel:kRight;
         if(click&&y>=kTop&&y<kBottom)
         {
-            if(std::abs(x-kLeft)<=4)m_splitter=1;
-            else if(std::abs(x-right)<=4)m_splitter=2;
+            if((actor||!m_graphHideLeft)&&std::abs(x-kLeft)<=4)m_splitter=1;
+            else if((actor||!m_graphHideRight)&&std::abs(x-right)<=4)m_splitter=2;
         }
         if(!m_splitter)return false;
         if(left)
@@ -432,10 +434,14 @@ namespace nx
 
     bool BlueprintWorkspace::contentSideActive() const
     {return !m_actorEditor&&!visualTabOpen()&&m_contentDrawer&&!m_contentFloating&&m_contentDockSide!=0;}
+    float BlueprintWorkspace::graphBaseLeft() const
+    {return !m_actorEditor&&!visualTabOpen()&&m_graphHideLeft?0.f:kLeft;}
+    float BlueprintWorkspace::graphBaseRight() const
+    {return !m_actorEditor&&!visualTabOpen()&&m_graphHideRight?kWidth:kRight;}
     float BlueprintWorkspace::graphAreaLeft() const
-    {return contentSideActive()&&m_contentDockSide==1?contentBounds().right:kLeft;}
+    {return contentSideActive()&&m_contentDockSide==1?contentBounds().right:graphBaseLeft();}
     float BlueprintWorkspace::graphAreaRight() const
-    {return contentSideActive()&&m_contentDockSide==2?contentBounds().left:kRight;}
+    {return contentSideActive()&&m_contentDockSide==2?contentBounds().left:graphBaseRight();}
     float BlueprintWorkspace::tabLeft() const
     {return graphAreaLeft();}
     float BlueprintWorkspace::tabRight() const
@@ -2834,10 +2840,11 @@ namespace nx
         {
             if(m_contentDockSide)
             {
-                const float width=std::min(m_contentSideWidth,std::max(156.f,kRight-kLeft-200));
-                return m_contentDockSide==1?ContentBounds{kLeft,kTop,kLeft+width,kBottom}:ContentBounds{kRight-width,kTop,kRight,kBottom};
+                const float left=graphBaseLeft(),right=graphBaseRight();
+                const float width=std::min(m_contentSideWidth,std::max(156.f,right-left-200));
+                return m_contentDockSide==1?ContentBounds{left,kTop,left+width,kBottom}:ContentBounds{right-width,kTop,right,kBottom};
             }
-            return m_contentDockTop?ContentBounds{kLeft,kTop,kRight,kTop+height}:ContentBounds{kLeft,kBottom-height,kRight,kBottom};
+            return m_contentDockTop?ContentBounds{graphBaseLeft(),kTop,graphBaseRight(),kTop+height}:ContentBounds{graphBaseLeft(),kBottom-height,graphBaseRight(),kBottom};
         }
         const float width=std::min(m_contentPanelWidth,kWidth-24);
         const float x=12+m_contentPanelX*std::max(0.f,kWidth-width-24);
@@ -2965,12 +2972,12 @@ namespace nx
             else
             {
                 m_contentPanelDrag=false;
-                if(x>=kLeft&&x<=kRight)
+                if(x>=graphBaseLeft()&&x<=graphBaseRight())
                 {
                     if(y>kBottom-38){m_contentFloating=false;m_contentDockTop=false;m_contentDockSide=0;}
                     else if(y<kTop+38){m_contentFloating=false;m_contentDockTop=true;m_contentDockSide=0;}
-                    else if(x<kLeft+44){m_contentFloating=false;m_contentDockSide=1;}
-                    else if(x>kRight-44){m_contentFloating=false;m_contentDockSide=2;}
+                    else if(x<graphBaseLeft()+44){m_contentFloating=false;m_contentDockSide=1;}
+                    else if(x>graphBaseRight()-44){m_contentFloating=false;m_contentDockSide=2;}
                 }
                 if(contentSideActive())fitGraph();
                 m_status=m_contentFloating?"Content panel floating. Drag its title to a graph edge to dock.":m_contentDockSide==1?"Content panel docked at left.":m_contentDockSide==2?"Content panel docked at right.":m_contentDockTop?"Content panel docked at top.":"Content panel docked at bottom.";
@@ -3098,10 +3105,10 @@ namespace nx
             c.line(right-7,bounds.bottom-3,right-3,bounds.bottom-7,1,muted);
             if(m_contentPanelDrag)
             {
-                c.roundLine(kLeft,kTop,kRight-kLeft,32,0,2,accent);
-                c.roundLine(kLeft,kBottom-32,kRight-kLeft,32,0,2,accent);
-                c.roundLine(kLeft,kTop+38,38,kBottom-kTop-76,0,2,accent);
-                c.roundLine(kRight-38,kTop+38,38,kBottom-kTop-76,0,2,accent);
+                c.roundLine(graphBaseLeft(),kTop,graphBaseRight()-graphBaseLeft(),32,0,2,accent);
+                c.roundLine(graphBaseLeft(),kBottom-32,graphBaseRight()-graphBaseLeft(),32,0,2,accent);
+                c.roundLine(graphBaseLeft(),kTop+38,38,kBottom-kTop-76,0,2,accent);
+                c.roundLine(graphBaseRight()-38,kTop+38,38,kBottom-kTop-76,0,2,accent);
             }
         }
         else if(m_contentDockSide)c.rect(m_contentDockSide==1?right-3:left,top,3,height,{0.36f,0.36f,0.39f,1});
@@ -4086,8 +4093,10 @@ namespace nx
                     }
                 }
                 else if(in(x,y,300,395,550,425)){m_uiScale=(m_uiScale+1)%4;m_status="Changed desktop UI density (small windows fit automatically).";}
-                else if(in(x,y,300,425,550,455)){m_leftPanel=248;m_graphRightPanel=268;m_actorRightPanel=310;m_uiScale=0;m_actorCollapsed=0;m_actorDetailsScroll=0;m_contentDrawer=false;m_contentFloating=false;m_contentPanelX=0.25f;m_contentPanelY=0.65f;m_contentPanelWidth=620;m_contentDockTop=false;m_contentPanelHeight=174;m_contentDockSide=0;m_contentSideWidth=300;m_graphTree=false;m_minimap=m_minimapDragging=false;m_navigationFirst=0;m_navigationCollapsed.clear();resizeWorkspace(canvas);fitGraph();m_status="Reset editor panel sizes and density.";}
+                else if(in(x,y,300,425,550,455)){m_leftPanel=248;m_graphRightPanel=268;m_actorRightPanel=310;m_uiScale=0;m_actorCollapsed=0;m_actorDetailsScroll=0;m_contentDrawer=false;m_contentFloating=false;m_contentPanelX=0.25f;m_contentPanelY=0.65f;m_contentPanelWidth=620;m_contentDockTop=false;m_contentPanelHeight=174;m_contentDockSide=0;m_contentSideWidth=300;m_graphTree=false;m_minimap=m_minimapDragging=false;m_graphHideLeft=m_graphHideRight=false;m_navigationFirst=0;m_navigationCollapsed.clear();resizeWorkspace(canvas);fitGraph();m_status="Reset editor panel sizes and density.";}
                 else if(in(x,y,300,455,550,485)){m_minimap=!m_minimap;m_status=m_minimap?"Graph overview enabled. Click or drag to navigate.":"Graph overview hidden.";NX_INFO("Blueprint Studio: minimap %s",m_minimap?"enabled":"hidden");}
+                else if(in(x,y,300,485,550,515)){m_graphHideLeft=!m_graphHideLeft;m_status=m_graphHideLeft?"Navigator hidden.":"Navigator shown.";NX_INFO("Blueprint Studio: %s",m_status.c_str());}
+                else if(in(x,y,300,515,550,545)){m_graphHideRight=!m_graphHideRight;m_status=m_graphHideRight?"Node library hidden.":"Node library shown.";NX_INFO("Blueprint Studio: %s",m_status.c_str());}
                 m_layoutMenu=false;
             }
             m_left=left;return;
@@ -4526,37 +4535,37 @@ namespace nx
             if(((pressed&4u)||(click&&in(x,y,954,39,1038,69)))&&m_document.redo()){selectGraph(std::min(m_graph,m_document.graphs.size()-1));m_status="Redid graph change.";}
             if(click&&in(x,y,1044,39,1128,69))fitGraph();
         }
-        if(click&&in(x,y,8,kBottom-225,kLeft-8,kBottom-193))
+        if(!m_graphHideLeft&&click&&in(x,y,8,kBottom-225,kLeft-8,kBottom-193))
         {
             m_variableFirst=0;resetVariableEditor();m_focus=10;input.setTyping(true);m_status="Select a variable or create a new one.";m_left=left;return;
         }
-        if(click&&in(x,y,8,kBottom-188,kLeft-8,kBottom-156))
+        if(!m_graphHideLeft&&click&&in(x,y,8,kBottom-188,kLeft-8,kBottom-156))
         {
             m_edit.clear();m_focus=7;input.setTyping(true);m_status="Type a lowercase screen ID, then Enter.";m_left=left;return;
         }
-        if(click&&in(x,y,8,kBottom-151,kLeft-8,kBottom-119))
+        if(!m_graphHideLeft&&click&&in(x,y,8,kBottom-151,kLeft-8,kBottom-119))
         {
             const std::string owner=m_document.graphs[m_graph].owner;
             const bool removed=owner.rfind("behaviour:",0)==0?m_document.removeBehaviour(owner.substr(10),m_status):m_document.removeScreen(owner,m_status);
             if(removed){m_first=0;selectGraph(0);m_status="Removed owner. Undo restores it.";}
             m_left=left;return;
         }
-        if(click&&in(x,y,8,kBottom-114,kLeft-8,kBottom-82))
+        if(!m_graphHideLeft&&click&&in(x,y,8,kBottom-114,kLeft-8,kBottom-82))
         {
             m_edit.clear();m_focus=4;input.setTyping(true);m_status="Type a new function name, then Enter.";m_left=left;return;
         }
-        if(click&&in(x,y,8,kBottom-77,kLeft-8,kBottom-45))
+        if(!m_graphHideLeft&&click&&in(x,y,8,kBottom-77,kLeft-8,kBottom-45))
         {
             if(m_document.removeFunction(m_graph,m_status)){m_first=0;selectGraph(0);m_status="Removed function.";}
             m_left=left;return;
         }
-        if(click&&in(x,y,8,kBottom-40,kLeft-8,kBottom-8))
+        if(!m_graphHideLeft&&click&&in(x,y,8,kBottom-40,kLeft-8,kBottom-8))
         {
             if(m_document.dirty())m_status="Save changes before creating a new Blueprint.";
             else{m_actorTabId.clear();m_actorTabScreen.clear();m_contentFirst=0;m_contentDrag.clear();resetGraphTabs();m_document.create();m_filePath.clear();m_fileBaseline.clear();m_checkpointRevision=static_cast<size_t>(-1);m_graphBack.clear();m_first=0;selectGraph(0);m_status="New Blueprint.";}
             m_left=left;return;
         }
-        if(!m_drag&&in(x,y,kRight,kTop,kWidth,kBottom))
+        if(!m_graphHideRight&&!m_drag&&in(x,y,kRight,kTop,kWidth,kBottom))
         {
             if(input.wheel()<0&&m_paletteFirst+kPaletteRows<m_palette.size())++m_paletteFirst;
             if(input.wheel()>0&&m_paletteFirst)--m_paletteFirst;
@@ -4603,7 +4612,7 @@ namespace nx
             }
             m_left=left;return;
         }
-        if(in(x,y,0,kVariableTop,kLeft,kVariableBottom))
+        if(!m_graphHideLeft&&in(x,y,0,kVariableTop,kLeft,kVariableBottom))
         {
             const auto vars=variableRows();
             m_quickVariableFirst=std::min(m_quickVariableFirst,vars.size()>kVariableRows?vars.size()-kVariableRows:0);
@@ -4616,7 +4625,7 @@ namespace nx
             }
             m_left=left;return;
         }
-        if(click&&in(x,y,kLeft-77,kVariableTop-24,kLeft-4,kVariableTop-2))
+        if(!m_graphHideLeft&&click&&in(x,y,kLeft-77,kVariableTop-24,kLeft-4,kVariableTop-2))
         {
             m_graphTree=!m_graphTree;m_navigationFirst=0;
             revealNavigationGraph(m_graph);
@@ -4624,7 +4633,7 @@ namespace nx
             NX_INFO("Blueprint Studio: graph navigator %s",m_graphTree?"tree":"flat");
             m_left=left;return;
         }
-        if (left && !m_left && in(x,y,0,kTop,kLeft,kTop+kRows*31))
+        if (!m_graphHideLeft && left && !m_left && in(x,y,0,kTop,kLeft,kTop+kRows*31))
         {
             const size_t row = static_cast<size_t>((y-kTop)/31);
             if(m_graphTree)
@@ -4810,7 +4819,7 @@ namespace nx
             m_x = x-kLeft-(x-kLeft-m_x)*m_zoom/previous;
             m_y = y-kTop-(y-kTop-m_y)*m_zoom/previous;
         }
-        else if (in(x,y,0,kTop,kLeft,kTop+kRows*31) && wheel != 0)
+        else if (!m_graphHideLeft && in(x,y,0,kTop,kLeft,kTop+kRows*31) && wheel != 0)
         {
             if(m_graphTree)
             {
@@ -4879,9 +4888,8 @@ namespace nx
         button(504,100,"Play test",!m_document.graphs.empty());
         button(610,132,"Export project",!m_document.graphs.empty());button(748,110,"Save",!m_document.graphs.empty());button(864,84,"Undo",m_document.canUndo());
         button(954,84,"Redo",m_document.canRedo());button(1044,84,"Fit",!m_document.graphs.empty());button(1134,132,"Return",true);
-        c.rect(0,kTop,kLeft,kBottom-kTop,{0.17f,0.17f,0.18f,1});
-        c.rect(kRight,kTop,kWidth-kRight,kBottom-kTop,{0.17f,0.17f,0.18f,1});
-        c.rect(kLeft-2,kTop,4,kBottom-kTop,{0.32f,0.32f,0.34f,1});c.rect(kRight-2,kTop,4,kBottom-kTop,{0.32f,0.32f,0.34f,1});
+        if(!m_graphHideLeft){c.rect(0,kTop,kLeft,kBottom-kTop,{0.17f,0.17f,0.18f,1});c.rect(kLeft-2,kTop,4,kBottom-kTop,{0.32f,0.32f,0.34f,1});}
+        if(!m_graphHideRight){c.rect(kRight,kTop,kWidth-kRight,kBottom-kTop,{0.17f,0.17f,0.18f,1});c.rect(kRight-2,kTop,4,kBottom-kTop,{0.32f,0.32f,0.34f,1});}
         c.clip(graphAreaLeft(),graphAreaTop(),graphAreaRight()-graphAreaLeft(),std::max(1.f,tabTop()-graphAreaTop()));
         const float step=32*m_zoom;
         for(float gx=kLeft+std::fmod(m_x,step);gx<kRight;gx+=step)
@@ -5035,6 +5043,8 @@ namespace nx
             }
         }
         c.noClip();
+        if(!m_graphHideLeft)
+        {
         const auto navigation=navigationRows();
         const size_t navFirst=m_graphTree?std::min(m_navigationFirst,navigation.size()>kRows?navigation.size()-kRows:0):m_first;
         for(size_t row=0;row<kRows&&navFirst+row<navigation.size();++row)
@@ -5086,6 +5096,9 @@ namespace nx
         c.text(*m_font,"Delete function",kLeft*0.5f,kBottom-71,m_document.graphs[m_graph].kind=="function"?text:muted,Align::Center);
         c.roundRect(8,kBottom-40,kLeft-16,32,5,{0.19f,0.33f,0.50f,1});
         c.text(*m_font,"New Blueprint",kLeft*0.5f,kBottom-34,text,Align::Center);
+        }
+        if(!m_graphHideRight)
+        {
         c.text(*m_font,"NODE LIBRARY",kRight+12,kTop+10,accent);
         c.roundRect(kRight+8,kTop+38,kWidth-kRight-16,30,4,m_focus==1?Color{0.24f,0.35f,0.48f,1}:Color{0.16f,0.21f,0.28f,1});
         c.clip(kRight+12,kTop+38,kWidth-kRight-24,30);
@@ -5117,6 +5130,7 @@ namespace nx
             c.roundRect(kRight+8,kBottom-40,kWidth-kRight-16,32,5,{0.38f,0.19f,0.23f,1});
             c.text(*m_font,"Delete selected", (kWidth+kRight)*0.5f,kBottom-34,text,Align::Center);
         }
+        }
         c.rect(0,kBottom,kWidth,kHeight-kBottom,{0.16f,0.16f,0.17f,1});
         c.text(*m_font,shorten(m_status,110).c_str(),12,kBottom+6,text);
         if(!m_recoveryWarning.empty())
@@ -5133,11 +5147,11 @@ namespace nx
         if(m_contentFloating){drawGraphTabs(c);drawContentDrawer(c);}else{drawContentDrawer(c);drawGraphTabs(c);}
         if(m_layoutMenu)
         {
-            c.roundRect(300,35,250,450,5,{0.16f,0.16f,0.17f,1});
-            const char* labels[]={"Arrange graph","Align selected left","Align selected top","Comment selection","Collapse to function","Rename function","Duplicate function","Open selected function","Back to caller",m_document.graphs[m_graph].inlineMacro?"Convert to function":"Convert to inline macro",m_document.graphs[m_graph].sharedLibrary?"Make library graph local":"Publish to project library","Export project library",m_uiScale==0?"UI scale: Auto":m_uiScale==1?"UI scale: 100%":m_uiScale==2?"UI scale: 125%":"UI scale: 150%","Reset editor layout",m_minimap?"Hide graph overview":"Show graph overview"};
+            c.roundRect(300,35,250,510,5,{0.16f,0.16f,0.17f,1});
+            const char* labels[]={"Arrange graph","Align selected left","Align selected top","Comment selection","Collapse to function","Rename function","Duplicate function","Open selected function","Back to caller",m_document.graphs[m_graph].inlineMacro?"Convert to function":"Convert to inline macro",m_document.graphs[m_graph].sharedLibrary?"Make library graph local":"Publish to project library","Export project library",m_uiScale==0?"UI scale: Auto":m_uiScale==1?"UI scale: 100%":m_uiScale==2?"UI scale: 125%":"UI scale: 150%","Reset editor layout",m_minimap?"Hide graph overview":"Show graph overview",m_graphHideLeft?"Show navigator":"Hide navigator",m_graphHideRight?"Show node library":"Hide node library"};
             const auto& activeGraph=m_document.graphs[m_graph];
             const bool hasSelection=m_selection<activeGraph.nodes.size()||!m_selectedNodes.empty();
-            for(size_t i=0;i<15;++i)
+            for(size_t i=0;i<17;++i)
             {
                 const bool enabled=i==0||i>=11||(i<=2&&m_selectedNodes.size()>=2)||((i==3||i==4)&&hasSelection)||((i==5||i==6)&&activeGraph.kind=="function")||
                     (i==7&&m_selection<activeGraph.nodes.size()&&(activeGraph.nodes[m_selection].kind=="call:function"||activeGraph.nodes[m_selection].kind=="call:library"))||(i==8&&!m_graphBack.empty())||((i==9||i==10)&&activeGraph.kind=="function");

@@ -41,6 +41,9 @@ namespace nx
         void revealNavigationGraph(size_t index);
         bool m_graphTree=false;
         bool m_minimap=false,m_minimapDragging=false;
+        bool m_graphHideLeft=false,m_graphHideRight=false;
+        float graphBaseLeft() const;
+        float graphBaseRight() const;
         struct GraphMap {float x=0,y=0,w=0,h=0,ox=0,oy=0,scale=1,left=0,top=0;};
         bool graphMap(GraphMap& map) const;
         bool updateGraphMap(float x,float y,bool left,bool click);
