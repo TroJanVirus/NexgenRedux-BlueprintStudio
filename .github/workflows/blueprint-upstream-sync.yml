@@ -1,7 +1,8 @@
 name: Verify upstream integration
 on:
+  workflow_dispatch:
   push:
-    branches: ["blueprint/upstream-ceeb83b"]
+    branches: ["blueprint/integration-17ee0d3"]
     paths: [".github/workflows/blueprint-upstream-sync.yml"]
 permissions:
   contents: read
@@ -10,9 +11,9 @@ concurrency:
   cancel-in-progress: false
 jobs:
   refresh:
-    if: github.repository == 'TroJanVirus/NexgenRedux-BlueprintStudio' && github.ref == 'refs/heads/blueprint/upstream-ceeb83b'
+    if: github.repository == 'TroJanVirus/NexgenRedux-BlueprintStudio' && github.ref == 'refs/heads/blueprint/integration-17ee0d3'
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 12
     permissions:
       contents: write
     outputs:
@@ -47,13 +48,19 @@ jobs:
           python3 engine/tools/blueprint/generate_native_catalog.py --check
           node engine/tools/blueprint/make_examples.js --check
           node engine/tools/blueprint/test_compiler.js
+          node - <<'JS'
+          const assert = require('node:assert/strict');
+          const nodes = require('./engine/tools/blueprint/catalog.js').nodes;
+          for (const id of ['api:Thread:Thread:string','api:Channel:Channel:string','api:Channel:pop:Channel@:string out','api:Window:Window::resize:uint,uint','api:System:System::get_processors:','api:Samples:Samples:uint,uint,uint','api:AudioStream:AudioStream:uint,uint,float']) assert(nodes.some(n => n.id === id), id);
+          for (const call of ['wait','demand','Worker::sleep']) assert(!nodes.some(n => ['Thread','Channel'].includes(n.category) && n.call === call), call);
+          JS
           git diff --check
           git add engine/tools/blueprint/catalog.js engine/tools/blueprint/native_catalog.inc engine/tools/blueprint/examples engine/tests/blueprint_fixtures.h engine/tests/test_blueprint_document.cpp
           git diff --cached --stat
           git diff --quiet
           if ! git diff --cached --quiet; then
             git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m "Regenerate Blueprint catalogues and fixtures after upstream integration"
-            git push origin HEAD:refs/heads/blueprint/upstream-ceeb83b
+            git push origin HEAD:refs/heads/blueprint/integration-17ee0d3
           fi
           echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
   verify:

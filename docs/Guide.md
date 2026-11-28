@@ -877,7 +877,7 @@ screen is instant, until the budget needs the room. A missing image draws as a c
 | What | Formats |
 |---|---|
 | Images | PNG, JPEG, TGA, BMP and GIF, up to 2048 pixels a side |
-| Sounds | WAV, Ogg Vorbis and MP3 |
+| Sounds | WAV and Ogg Vorbis; the cook tool makes MP3 and FLAC into these, and short sounds into ADPCM |
 | Fonts | SSFN |
 | Models | glTF 2.0 (`.glb`, `.gltf`), FBX, OBJ, STL and PLY. Pictures in them up to 4096 pixels a side, made smaller if need be |
 
@@ -899,6 +899,12 @@ Audio::lowPass(BusEffects, 600, 0.4f);     // muffled, as under water or through
 Audio::highPass(BusEffects, 1000);         // thin, as a small radio
 Audio::reverb(BusEffects, 0.7f, 0.9f);     // how much of the room, and how big it is
 Audio::echo(BusEffects, 0.5f, 0.4f, 0.3f); // how loud, how late, and how much echoes again
+Audio::bandPass(BusEffects, 900, 1);       // only what is near 900 Hz, an octave wide: a voice through a pipe
+Audio::distortion(BusEffects, 0.7f);       // driven too hard, 0 to 1
+Audio::chorus(BusMusic, 0.6f);             // a swaying copy, so that one sounds like several
+Audio::flanger(BusEffects, 0.8f, 0.25f, 0.6f);  // a sweeping copy fed back: a jet's whoosh, a robot's voice
+Audio::compressor(BusMusic, -18, 4);       // what is louder than -18 dB pressed down four times; 0 for none
+Audio::equalizer(BusMusic, 6, -3, 4);      // lows, middle and highs, in dB
 Audio::clearEffects();
 ```
 
@@ -922,6 +928,41 @@ list.next();                        // now, over crossfade; previous(), stop(), 
 ```
 
 It goes on by itself while its screen is on top, round again unless `loop` is false. The Music demo is one.
+
+### Sound a script makes
+
+`Samples` is sound as numbers, -1 to 1, written and read one at a time, and played like a sound: each play has a copy of its own.
+`Assets::samples` reads a sound's own, to look at or change.
+
+```cpp
+Samples@ zap = Samples(12000);                      // a quarter of a second at 48000 a second, one channel
+float p = 0;
+for (uint i = 0; i < zap.frames; i++)
+{
+    float t = float(i) / zap.frames;
+    p += (1800 - 1500 * t) * 6.2831853f / 48000;    // falling in pitch
+    zap.set(i, sin(p) * (1 - t));                    // and fading
+}
+zap.play();
+```
+
+An `AudioStream` plays sound as it is written, for a synthesiser, a tracker or an emulator: write as much as there is `room` for
+each frame. It holds so many seconds, as made; it is quiet while it has none, and plays out what it has after it is let go.
+
+```cpp
+AudioStream@ out = AudioStream(48000, 1, 0.1f);
+array<float> chunk;
+
+void update(float dt)
+{
+    chunk.resize(out.room);
+    for (uint i = 0; i < chunk.length(); i++)
+        chunk[i] = nextSample();
+    out.write(chunk);
+}
+```
+
+The Synth demo plays an arpeggio this way, with a laser made from `Samples`, through every effect.
 
 ### Video
 
@@ -1005,6 +1046,45 @@ void intro()
 
 A `Tween` is a number that moves by itself. There is nothing to update: read `value` when drawing. `go()` starts from wherever
 it is, so changing course never jumps.
+
+## Threads
+
+A coroutine shares the frame; a `Thread` doesn't. It runs a script file of its own, from its `void main()`, on a thread of its
+own, in an engine of its own: strings, arrays, maths, Json, Data and Random, and nothing that draws, plays or loads. It shares
+nothing with the screen but `Channel`s: text passed one way or the other, first in, first out. Channels of the same name are the
+same, in every thread.
+
+```cpp
+// asset:worker.as
+void main()
+{
+    Channel jobs("jobs"), results("results");
+    while (!Worker::stopping)                    // true as the screen closes
+    {
+        string job = jobs.demand(0.5f);          // waits for one, here only
+        if (!job.isEmpty()) results.push(work(job));
+    }
+}
+```
+
+```cpp
+Thread@ worker = Thread("asset:worker.as");
+Channel jobs("jobs"), results("results");
+
+void onEnter() { worker.start(); jobs.push("level 3"); }
+
+void update(float dt)
+{
+    string done;
+    while (results.pop(done)) use(done);         // never waits
+    if (!worker.error.isEmpty()) print(worker.error);
+}
+```
+
+Numbers go as text and anything with parts as Json's. A thread is asked to stop, and waited for, when nothing holds it any more,
+as its screen closes: its `demand` and `Worker::sleep` end at once, and long loops should look at `Worker::stopping`. Up to 8 at
+once. `System::processors` says how many can truly run together: on the original Xbox one, so a thread there gets the time the
+screen leaves. The Threads demo draws the Mandelbrot set this way while the screen turns smoothly.
 
 ## Networking
 
@@ -1113,6 +1193,33 @@ Messages may be up to 4 MB, and pings are answered for you.
 ### Anything else
 
 `Connection` is a stream of text over TCP, to a server or from those who connect to you; `Datagrams` sends short texts over UDP.
+
+## The window and the system
+
+On a computer, `Window` changes the window; on a console there is only the screen, `Window::available` is false, and changing it
+does nothing:
+
+```cpp
+Window::fullscreen = true;                 // over the whole screen, without a border; Alt and Enter too, on Windows
+Window::title = "Level 3";
+Window::resize(1600, 900);                 // its inside, in pixels, while it isn't full-screen
+Window::vsync = false;                     // as many frames as it can make; consoles always wait for the refresh
+Window::pointer = PointerHand;             // over a button; PointerText over a field, PointerCrosshair to aim
+if (!Window::focused) pause();             // the player is in another window
+if (Window::ask("Quit", "Leave without saving?")) Screens::home();   // the system's own box, waited for
+```
+
+`System` is the same on every machine:
+
+```cpp
+System::clipboard = code;                  // copied, to paste elsewhere; a console keeps one of the game's own
+string words = System::language;           // "en", "ja": which words to show; System::locale is "en-GB"
+uint threads = System::processors;
+System::open("https://example.com");       // in the browser, or a file in what opens it
+int left = System::battery;                // 0 to 100, or -1 without one; System::charging
+```
+
+On Linux the clipboard needs wl-copy, xclip or xsel, and messages zenity, kdialog or xmessage. The System demo has them all.
 
 ## What only an Xbox can do
 

@@ -5,9 +5,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 HERE = Path(__file__).resolve().parent
 text = (ROOT / 'docs/ScriptReference.md').read_text(encoding='utf-8')
-handles = {'Texture','Model','Effect','Mesh','Font','Sound','Video','Look','Canvas','Entity','Widget','Room','Message','Request','Connection','Datagrams','Json','Path','Playlist','WebSocket','Pixels','Random'}
-values = {'bool','int','uint','float','double','string','Vec2','Vec3','Color','Blend','Filter','Align','Ease','Bus','FieldShape','FieldJoin','Solid','Place','RoomState','Voice','Tween','Tray','XboxText'}
-sections = handles | {'Assets','Input','Audio','Save','Scene','Space','Screens','App','Maths','Ui','Net','Paths and noise','Vec2','Vec3','Color','Coroutines','Voice','Tween','Xbox','Xbox360','XboxOne','Windows','Mac','Linux','Data'}
+handles = {'Texture','Model','Effect','Mesh','Font','Sound','Video','Look','Canvas','Entity','Widget','Room','Message','Request','Connection','Datagrams','Json','Path','Playlist','WebSocket','Pixels','Random','Thread','Channel','Samples','AudioStream'}
+values = {'bool','int','uint','float','double','string','Vec2','Vec3','Color','Blend','Filter','Align','Ease','Bus','FieldShape','FieldJoin','Solid','Place','RoomState','Voice','Tween','Tray','XboxText','Pointer'}
+sections = handles | {'Assets','Input','Audio','Save','Scene','Space','Screens','App','Maths','Ui','Net','Paths and noise','Vec2','Vec3','Color','Coroutines','Voice','Tween','Xbox','Xbox360','XboxOne','Windows','Mac','Linux','Data','Window','System'}
 
 def split(s):
     parts=[]; start=0; depth=0; quote=False; escape=False
@@ -60,6 +60,8 @@ for line in text.splitlines():
     m=re.fullmatch(r'([\w@<>]+) ([\w:]+)\((.*)\)(?: const)?( property)?',sig)
     if not m: continue
     ret,name,args,prop=m.groups(); ret='void' if ret=='void' else parse_type(ret)
+    # Blocking worker-only operations must not become ordinary game-thread nodes.
+    if (section == 'Thread' and name in ('wait','Worker::sleep','Worker::get_stopping','Worker::get_inThread')) or (section == 'Channel' and name == 'demand'): continue
     if not ret or (section in {'Vec2','Vec3','Color'} and not '::' in name and name not in ('hsv','lerp','fade')): continue
     target=(section+'@' if section in handles else section) if section in handles|{'Voice','Tween'} and '::' not in name else None
     if not target and '::' not in name and section not in ('Maths','Color','Paths and noise'): continue
@@ -95,6 +97,15 @@ for line in text.splitlines():
     pure=not outputs and (isget or (section in ('Maths','Color') and not short.startswith('random')) or (section=='Input' and short in ('held','pressed','released','repeated','key','mouseDown','padConnected','padLeft','padRight','padTriggers','padButton','keys','buttons')))
     label=(('Get ' if isget else 'Set ' if isset else '')+short[4:] if isget or isset else short)
     nodes.append({'id':'api:'+section+':'+name+':'+','.join(p['type'] for p in pins)+(':'+','.join(p['type']+' out' for p in outputs) if outputs else ''),'title':label,'category':section,'description':desc,'inputs':pins,'outputs':outputs,'arguments':arguments,'result':ret,'pure':pure,'call':name,'member':bool(target),'property':'get' if isget else 'set' if isset else ''})
+# Factory declarations are registered by the engine but not emitted as reference table rows.
+# Keep these signatures aligned with bind_threads.cpp and bindings.cpp.
+for category, title, inputs in [
+    ('Thread', 'Create worker thread', [{'name':'script','type':'string'}]),
+    ('Channel', 'Get named channel', [{'name':'name','type':'string'}]),
+    ('Samples', 'Create samples', [{'name':'frames','type':'uint'}, {'name':'rate','type':'uint','default':48000}, {'name':'channels','type':'uint','default':1}]),
+    ('AudioStream', 'Create audio stream', [{'name':'rate','type':'uint','default':48000}, {'name':'channels','type':'uint','default':1}, {'name':'seconds','type':'float','default':0.25}]),
+]:
+    nodes.append({'id':'api:'+category+':'+category+':'+','.join(p['type'] for p in inputs),'title':title,'category':category,'description':'Creates a native Nexgen '+category+' handle.','inputs':inputs,'outputs':[],'arguments':[{'name':p['name'],'out':False,'type':p['type']} for p in inputs],'result':category+'@','pure':False,'call':category,'member':False,'property':''})
 # Enums are collected from the same reference, not inferred from name strings.
 enums={}
 for name in values-{'bool','int','uint','float','double','string','Vec2','Vec3','Color','Voice','Tween'}:

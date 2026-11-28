@@ -112,7 +112,7 @@ A scalable SSFN font at one size.
 
 ## Sound
 
-Something to play: WAV, Ogg Vorbis, MP3 or cooked. Short effects are kept ready; long music is decoded while it plays.
+Something to play: WAV, Ogg Vorbis or cooked; the cook tool makes MP3 and FLAC into these. Short effects are kept ready; long music is decoded while it plays.
 
 | | |
 |---|---|
@@ -351,6 +351,37 @@ Something that is playing. Safe to use after it has ended.
 | `bool get_ready() const property` | Whether it has arrived. Until then it plays as silence. |
 | `bool get_failed() const property` | Whether the file could not be loaded. |
 
+## Samples
+
+Sound as numbers, -1 to 1, that a script writes and reads one at a time: a laser made from a sine, an explosion from noise, a sound loaded and played backwards. Each play has a copy of its own.
+
+| | |
+|---|---|
+| `uint get_frames() const property` | How many: one a channel in each. |
+| `uint get_rate() const property` | How many a second. |
+| `uint get_channels() const property` | 1 or 2. |
+| `float get_seconds() const property` | How long it is. |
+| `float get(uint frame, uint channel = 0) const` | One sample, -1 to 1; 0 past the end. |
+| `void set(uint frame, float value)` | Every channel of one frame. |
+| `void set(uint frame, float left, float right)` | The left and right of one frame; their middle if there is only one channel. |
+| `Voice play(float volume = 1, float pan = 0, float pitch = 1, bool loop = false) const` | Plays them as an effect, as they are now. |
+| `Samples@ Assets::samples(const string &in name)` | A sound's samples, read now, to look at or change: `asset:`, `global:` or `own:`. Null if there is none. |
+
+## AudioStream
+
+Sound written as it plays, by a synthesiser, a tracker or an emulator: write() as much as there is room for each frame, and it plays as it comes, quiet while there is none. It plays out what it has after it is let go.
+
+| | |
+|---|---|
+| `uint write(const array<float> &in samples)` | Samples, -1 to 1, left then right for two channels: as many frames as there is room for. How many were taken. |
+| `uint get_room() const property` | Frames there is room for. It holds so many seconds, as made: more is later, less risks gaps. |
+| `uint get_queued() const property` | Frames written and not yet heard. |
+| `uint get_rate() const property` | Frames a second. |
+| `uint get_channels() const property` | 1 or 2. |
+| `void clear()` | Leaves out what has been written and not yet heard. |
+| `Voice play(float volume = 1, float pan = 0)` | Starts it; the same voice if it is playing already. |
+| `Voice get_voice() const property` | What is playing it, to change its volume, pan or pitch. |
+
 ## Playlist
 
 Music, one track after another, the next fading in as the last fades out: in order or shuffled, round again or not. It moves on by itself while its screen is on top.
@@ -394,6 +425,12 @@ Volumes, and what is being heard. A screen's sounds pause while it is covered an
 | `void Audio::highPass(Bus bus, float hertz, float seconds = 0)` | Takes away what is lower, as a small radio or a telephone does: 1000 is thin, 0 is everything again. |
 | `void Audio::reverb(Bus bus, float amount, float room = 0.6f, float seconds = 0)` | A room's echoes: amount 0 to 1, how much is heard; room 0 to 1, from a small, dead one to a hall or a cave. 0 for none. |
 | `void Audio::echo(Bus bus, float amount, float delay = 0.3f, float feedback = 0.4f, float seconds = 0)` | Each sound again, after so many seconds (up to 0.75), and again, quieter each time by feedback (0 to 0.9). 0 for none. |
+| `void Audio::bandPass(Bus bus, float hertz, float octaves = 1, float seconds = 0)` | Only what is near so many hertz, so many octaves wide: a radio, a voice through a pipe. lowPass(20000) and highPass(0) take it away. |
+| `void Audio::distortion(Bus bus, float amount, float seconds = 0)` | Driven too hard, as an amplifier pushed past what it can: amount 0 to 1, from none to fuzz. Glides there over so many seconds. |
+| `void Audio::chorus(Bus bus, float amount, float rate = 1.5f, float seconds = 0)` | A copy a little behind, swaying in time, so that one sounds like several: amount 0 to 1, rate in sways a second. |
+| `void Audio::flanger(Bus bus, float amount, float rate = 0.25f, float feedback = 0.5f, float seconds = 0)` | A copy very close behind, sweeping, fed back by feedback (0 to 0.9): the whoosh of a jet, or a robot's voice. |
+| `void Audio::compressor(Bus bus, float threshold = -18, float ratio = 4)` | Presses down what is louder than threshold decibels below full by ratio (1 to 20): quick to press, slow to let go, so loud and soft come closer. 0 for none. |
+| `void Audio::equalizer(Bus bus, float low, float mid, float high, float seconds = 0)` | Turns the lows (about 250 Hz), middle (1000 Hz) and highs (4000 Hz) up or down, in decibels from -24 to 24: 0, 0, 0 is as it is. |
 | `void Audio::clearEffects(float seconds = 0)` | Every bus back to none. A screen starts with none, and they go when it closes. |
 | `float Audio::get_level() property` | How loud it has been lately, 0 to 1. |
 | `float Audio::spectrum(uint band)` | How strong one of 32 bands is, low to high, 0 to 1. |
@@ -538,6 +575,44 @@ A generator of its own.
 | `string get_state() const property` | Where it has got to, as text, to keep in a save. |
 | `void set_state(const string &in) property` | Goes on from where it had got to. |
 | `float randomNormal(float mean = 0, float deviation = 1)` | From the shared generator, as Random.normal. |
+
+## Threads
+
+Scripts of their own, each on a thread of its own, for work that would hold up the screen: making a world, finding a way, squeezing a file. A thread's script has strings, arrays, maths, Json, Data and Random, and nothing that draws, plays or loads; it begins at its `void main()`, and shares nothing with the screen but what goes through channels. On the original Xbox, with one processor, a thread runs in the time the screen leaves.
+
+| | |
+|---|---|
+
+## Channel
+
+Text passed from one thread to another, first in, first out, and safe to use from any of them. Channels of the same name are the same channel, in every thread. Numbers go as text, and anything with parts as Json's text.
+
+| | |
+|---|---|
+| `string get_name() const property` | What it is called. |
+| `void push(const string &in value)` | Puts one at the end. |
+| `bool pop(string &out value)` | Takes the first, if there is one: false if there isn't. Never waits. |
+| `string pop()` | Takes the first, or gives empty text if there is none. |
+| `string peek()` | The first, left where it is. |
+| `string demand(float seconds = -1)` | In a thread: waits for one, for so many seconds or for ever, and takes it; empty if none came, or the thread is asked to stop. |
+| `uint get_count() property` | How many are waiting. |
+| `void clear()` | Takes them all away. |
+
+## Thread
+
+A script file run on a thread of its own. It is asked to stop, and waited for, when nothing holds it any more: as its screen closes.
+
+| | |
+|---|---|
+| `bool start()` | Runs its main(), once. |
+| `bool get_started() const property` | Whether it has been started. |
+| `bool get_running() const property` | Whether its main() is still going. |
+| `string get_error() property` | What went wrong in it, with its line, or empty. |
+| `void stop()` | Asks it to stop: its waits end, and Worker::stopping is true. |
+| `void wait()` | Waits until its main() has returned: for ever, if it never does. stop() first to end it sooner. |
+| `void Worker::sleep(float seconds)` | In a thread: waits so long, waking at once if it is asked to stop. 0 lets others run. |
+| `bool Worker::get_stopping() property` | In a thread: whether it has been asked to stop, as its screen closes. Long loops should look, and return. |
+| `bool Worker::get_inThread() property` | Whether the script running is a thread's. |
 
 ## Paths and noise
 
@@ -1349,6 +1424,59 @@ What only the original Xbox has. Elsewhere `available` is false, readings are -1
 | `void Xbox::powerOff()` | Turns the console off. |
 | `int Xbox::busRead(uint address, uint command, bool word = false)` | Reads from something on the SMBus, or -1. 0x20 is the system controller. The console's settings at 0xA8 are refused, as there are calls for what is in them. |
 | `bool Xbox::busWrite(uint address, uint command, uint value, bool word = false)` | Writes to something on the SMBus. The console's settings are refused: a mistake there can't be undone. |
+
+## Pointer
+
+How the mouse pointer looks over the window.
+
+| | |
+|---|---|
+| `PointerArrow` | The usual arrow. |
+| `PointerHand` | A hand, over what can be clicked. |
+| `PointerText` | A bar, over text to type in. |
+| `PointerCrosshair` | A cross, for aiming or picking a point. |
+| `PointerWait` | Busy. |
+| `PointerMove` | Arrows four ways, for dragging something about. |
+| `PointerResizeAcross` | Left and right, for resizing across. |
+| `PointerResizeUpDown` | Up and down. |
+| `PointerNotAllowed` | Can't be done here. |
+
+## Window
+
+The window, on a computer: full-screen or not, its size, title and pointer, and messages. On a console there is only the screen: `available` is false, and changing it does nothing.
+
+| | |
+|---|---|
+| `bool Window::get_available() property` | Whether there is a window to change: on Windows, Linux and macOS. |
+| `bool Window::get_fullscreen() property` | Whether it fills the screen. |
+| `void Window::set_fullscreen(bool) property` | Fills the screen without a border, or goes back to a window. Alt and Enter does the same on Windows. |
+| `string Window::get_title() property` | What its title bar says. |
+| `void Window::set_title(const string &in) property` | Changes it. |
+| `uint Window::get_width() property` | Pixels across what is drawn: the window's inside, or the screen. |
+| `uint Window::get_height() property` | Pixels down. |
+| `bool Window::resize(uint width, uint height)` | Makes its inside so many pixels, while it isn't full-screen. False where it can't be. |
+| `bool Window::get_vsync() property` | Whether each frame waits for the screen's refresh: true to begin with. |
+| `void Window::set_vsync(bool) property` | Waits for the refresh, smooth and without tearing, or doesn't, for as many frames as it can make. Consoles always wait. |
+| `Pointer Window::get_pointer() property` | How the pointer looks. |
+| `void Window::set_pointer(Pointer) property` | Changes how it looks over the window, until changed again: a hand over a button, a bar over a field. |
+| `bool Window::get_focused() property` | Whether it is the window being used: false while the player is in another, which is a time to pause. |
+| `bool Window::message(const string &in title, const string &in text)` | The system's own box with a message and OK, waited for. False where there is none: on a console, or Linux with no zenity, kdialog or xmessage. |
+| `bool Window::ask(const string &in title, const string &in question)` | The same with Yes and No: true for yes. |
+
+## System
+
+What every machine can say about itself, and do, in the same way.
+
+| | |
+|---|---|
+| `string System::get_clipboard() property` | The text that was copied. Where the system has no clipboard, as on a console, the game keeps its own. |
+| `void System::set_clipboard(const string &in) property` | Copies text, to paste elsewhere or here. On Linux it needs wl-copy, xclip or xsel. |
+| `string System::get_locale() property` | The language and region it is set to, as "en-GB" or "pt-BR"; a console says the language only, as "ja". "en" if it can't be told. |
+| `string System::get_language() property` | The language alone, as "en": for choosing which words to show. |
+| `uint System::get_processors() property` | Threads it can run at once: 1 on the original Xbox, 6 on the 360. |
+| `bool System::open(const string &in address)` | A web page, file or folder, in what the system opens it with. False where it can't: the consoles but the Xbox One. |
+| `int System::get_battery() property` | How full the battery is, 0 to 100, or -1 without one. |
+| `bool System::get_charging() property` | Whether it is plugged in. |
 
 ## Xbox360
 

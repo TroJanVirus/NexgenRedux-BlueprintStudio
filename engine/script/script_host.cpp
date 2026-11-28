@@ -73,6 +73,7 @@ namespace nx
     {
         NX_ASSERT(m_engine == nullptr);
         asSetGlobalMemoryFunctions(scriptAlloc, scriptFree);
+        asPrepareMultithread();
 
         m_engine = asCreateScriptEngine();
         if (m_engine == nullptr)
@@ -132,6 +133,9 @@ namespace nx
         {
             m_engine->ShutDownAndRelease();
             m_engine = nullptr;
+            // What AngelScript keeps for this thread, made again if another engine here needs it.
+            asThreadCleanup();
+            asUnprepareMultithread();   // given back for the asPrepareMultithread in init
         }
     }
 
@@ -313,7 +317,7 @@ namespace nx
     void ScriptHost::lineCallback(asIScriptContext* context, void* data)
     {
         ScriptHost* host = static_cast<ScriptHost*>(data);
-        if (++host->m_statements > host->m_statementLimit)
+        if (host->m_stop ? host->m_stop->load(std::memory_order_relaxed) : ++host->m_statements > host->m_statementLimit)
         {
             context->Abort();
             return;
@@ -409,6 +413,11 @@ namespace nx
         {
             const int line = context->GetExceptionLineNumber(nullptr, &section);
             snprintf(m_error, sizeof(m_error), "%s:%d: %s", section ? section : "?", line, context->GetExceptionString());
+        }
+        else if (result == asEXECUTION_ABORTED && m_stop && m_stop->load())
+        {
+            snprintf(m_error, sizeof(m_error), "stopped");   // as asked: nothing went wrong
+            return false;
         }
         else if (result == asEXECUTION_ABORTED)
         {
