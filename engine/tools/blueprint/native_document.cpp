@@ -3,6 +3,7 @@
 #include "base/json_value.h"
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <cstdlib>
 #include <unordered_map>
@@ -2830,6 +2831,44 @@ namespace nx
         if(it==n.values.end())n.values.push_back({pin,value});
         else it->value=value;
         error.clear();return true;
+    }
+    bool blueprintPhysicsJoint(const std::string& kind)
+    {
+        for(const char* name:{"join","hinge","weld","rope","spring","slider","drag","dragTo","motor","wheel"})
+            if(kind.rfind(std::string("api:Scene:Scene::")+name+":",0)==0)return true;
+        for(const char* name:{"join","hinge","rope","spring"})
+            if(kind.rfind(std::string("api:Space:Space::")+name+":",0)==0)return true;
+        return false;
+    }
+    bool BlueprintDocument::setJointProjection(size_t graph,size_t node,const std::string& pin,
+        unsigned plane,float horizontal,float vertical,std::string& error)
+    {
+        if(graph>=graphs.size()||node>=graphs[graph].nodes.size()||!blueprintPhysicsJoint(graphs[graph].nodes[node].kind)||
+            plane>2||!std::isfinite(horizontal)||!std::isfinite(vertical)||std::abs(horizontal)>1000000.f||std::abs(vertical)>1000000.f)
+        {error="Invalid physics joint projection.";return false;}
+        const auto& g=graphs[graph];const auto& n=g.nodes[node];BlueprintNodeSpec spec;
+        if(!nodeSpec(g,n,spec)){error="Invalid physics joint.";return false;}
+        const auto* input=findPin(spec.inputs,pin);
+        if(!input||(input->type!="Vec2"&&input->type!="Vec3")||(input->type=="Vec2"&&plane!=0))
+        {error="Select a vector pin and valid projection.";return false;}
+        if(std::any_of(g.links.begin(),g.links.end(),[&](const Link& l){return l.to==node&&l.input==pin;}))
+        {error="Connected vector pins must be edited at their source.";return false;}
+        const auto prefix=input->type+"(";std::string value=input->type=="Vec2"?"0,0":"0,0,0";
+        for(const auto& def:spec.defaults)if(def.name==pin&&def.type.rfind(prefix,0)==0&&def.type.ends_with(")"))
+            value=def.type.substr(prefix.size(),def.type.size()-prefix.size()-1);
+        for(const auto& v:n.values)if(v.pin==pin)value=v.value;
+        std::vector<std::string> parts;
+        if(!blueprintInputComponents(input->type,value,parts)){error="Invalid joint vector.";return false;}
+        const unsigned u=plane==2?1:0,v=plane==0?1:2;
+        char first[64],second[64];std::snprintf(first,sizeof(first),"%.9g",static_cast<double>(horizontal));
+        std::snprintf(second,sizeof(second),"%.9g",static_cast<double>(vertical));parts[u]=first;parts[v]=second;
+        std::string combined;for(const auto& part:parts){if(!combined.empty())combined+=",";combined+=part;}
+        if(pin=="axis")
+        {
+            bool nonzero=false;for(const auto& part:parts)if(std::strtod(part.c_str(),nullptr)!=0)nonzero=true;
+            if(!nonzero){error="A joint axis cannot be zero.";return false;}
+        }
+        return setInputValue(graph,node,pin,combined,error);
     }
     bool BlueprintDocument::cubicPoints(size_t graph,size_t node,std::vector<std::string>& points,std::string& error)const
     {

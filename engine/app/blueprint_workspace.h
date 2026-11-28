@@ -314,9 +314,17 @@ namespace nx
         int m_curveDrag=-1;
         bool m_curveChanged=false;
         bool beginCurveEditor(Input& input);
+        unsigned m_jointPlane=0;
+        std::string m_jointPin;
+        float m_jointExtent=4;
+        void beginJointEditor(Input& input);
+        void updateJointEditor(Input& input,float x,float y,bool click);
+        void drawJointEditor(Canvas& c);
+
         void prepareInputEditor(size_t node);
         struct InputDetail { std::string name,type,value,origin; bool editable=false; };
         std::vector<InputDetail> inputDetails(size_t node) const;
+        bool jointPoint(const InputDetail& detail,float& x,float& y) const;
         size_t m_inspectorFirst=0;
         bool beginInputEdit(size_t node,const std::string& pin,Input& input);
         std::vector<std::string> namedSceneTargets() const;

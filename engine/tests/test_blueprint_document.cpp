@@ -2047,6 +2047,22 @@ NX_TEST(nativeImportUpstreamObjectsAndWideIntegers)
     NX_EXPECT(source.find("@bp_var_path = null")!=std::string::npos);
 }
 
+NX_TEST(nativePhysicsJointProjectionPreservesOtherAxesAndConnections)
+{
+    BlueprintDocument doc;doc.create();std::string error;
+    const char* joint="api:Space:Space::hinge:Entity@,Entity@,Vec3,Vec3,float,float";
+    NX_EXPECT(blueprintPhysicsJoint(joint)&&!blueprintPhysicsJoint("api:Space:Space::raycast:"));
+    NX_EXPECT(doc.addNode(0,joint,0,0,error));
+    NX_EXPECT(doc.setInputValue(0,1,"at","1,2,3",error));
+    NX_EXPECT(doc.setJointProjection(0,1,"at",1,4,5,error));
+    const auto value=[&](){for(const auto& v:doc.graphs[0].nodes[1].values)if(v.pin=="at")return v.value;return std::string();};
+    NX_EXPECT(value()=="4,2,5");
+    NX_EXPECT(doc.undo()&&value()=="1,2,3");
+    NX_EXPECT(doc.redo()&&value()=="4,2,5");
+    NX_EXPECT(!doc.setJointProjection(0,1,"axis",0,0,0,error));
+    NX_EXPECT(doc.addNode(0,"make:Vec3",0,0,error)&&doc.connect(0,2,"result",1,"at",error));
+    NX_EXPECT(!doc.setJointProjection(0,1,"at",0,9,9,error));
+}
 NX_TEST(nativeCubicCurveVisualEditIsAtomic)
 {
     BlueprintDocument doc;doc.create();std::string error,source,bytes;

@@ -272,7 +272,7 @@ namespace nx
         return true;
     }
     bool BlueprintWorkspace::modalOpen() const
-    {return m_assetBrowser||m_browsing||m_focus==5||m_focus==6||m_focus==9||m_focus==10||m_focus==11||m_focus==12||m_focus==13||m_focus==14||m_focus==15||m_focus==17;}
+    {return m_assetBrowser||m_browsing||m_focus==5||m_focus==6||m_focus==9||m_focus==10||m_focus==11||m_focus==12||m_focus==13||m_focus==14||m_focus==15||m_focus==17||m_focus==18;}
     void BlueprintWorkspace::resetGraphTabs()
     {
         releaseContentPreviews();m_graphTabs.clear();m_actorTabs.clear();m_visualTabs.clear();m_activeVisualTab={};m_activeTab={};m_tabFirst=0;
@@ -4290,6 +4290,110 @@ namespace nx
         m_curveDrag=-1;m_curveChanged=false;m_focus=17;input.setTyping(false);clearWire();
         m_status="Drag the four control points. Apply saves all four in one undo step.";NX_INFO("Blueprint Studio: cubic curve editor opened");return true;
     }
+    bool BlueprintWorkspace::jointPoint(const InputDetail& detail,float& x,float& y) const
+    {
+        if(detail.type!="Vec2"&&detail.type!="Vec3")return false;
+        if(!detail.editable)return false;
+        std::vector<std::string> parts;
+        const auto value=detail.origin=="Required"?(detail.type=="Vec2"?"0,0":"0,0,0"):detail.value;
+        if(!blueprintInputComponents(detail.type,value,parts))return false;
+        const unsigned a=m_jointPlane==2?1:0,b=m_jointPlane==0?1:2;
+        if(a>=parts.size()||b>=parts.size())return false;
+        x=std::strtof(parts[a].c_str(),nullptr);y=std::strtof(parts[b].c_str(),nullptr);
+        return std::isfinite(x)&&std::isfinite(y);
+    }
+    void BlueprintWorkspace::beginJointEditor(Input& input)
+    {
+        m_jointPlane=0;m_jointPin.clear();m_jointExtent=4;
+        for(const auto& detail:inputDetails(m_selection))
+        {
+            float x=0,y=0;
+            if(jointPoint(detail,x,y))
+            {
+                if(m_jointPin.empty())m_jointPin=detail.name;
+                m_jointExtent=std::max(m_jointExtent,std::max(std::abs(x),std::abs(y))*1.15f);
+            }
+        }
+        m_focus=18;input.setTyping(false);clearWire();
+        m_status="Select a constant vector and click the grid. Other values: click Edit.";
+    }
+    void BlueprintWorkspace::updateJointEditor(Input& input,float x,float y,bool click)
+    {
+        if(!click)return;
+        if(in(x,y,990,110,1090,144)){m_focus=0;return;}
+        const auto details=inputDetails(m_selection);
+        const bool three=std::any_of(details.begin(),details.end(),[](const InputDetail& row){return row.type=="Vec3";});
+        if(in(x,y,230,155,510,186))
+        {
+            if(three)m_jointPlane=std::min(2u,static_cast<unsigned>((x-230)/94));
+            m_jointExtent=4;
+            for(const auto& detail:details){float a=0,b=0;if(jointPoint(detail,a,b))m_jointExtent=std::max(m_jointExtent,std::max(std::abs(a),std::abs(b))*1.15f);}
+            return;
+        }
+        if(in(x,y,520,155,610,186)){m_jointExtent=std::max(0.25f,m_jointExtent*0.5f);return;}
+        if(in(x,y,620,155,710,186)){m_jointExtent=std::min(1000000.f,m_jointExtent*2.f);return;}
+        for(size_t i=0;i<details.size();++i)
+        {
+            const auto& detail=details[i];const float yy=196+40*static_cast<float>(i);
+            if(!in(x,y,730,yy,1090,yy+36)||!detail.editable)continue;
+            if(x>=1000){beginInputEdit(m_selection,detail.name,input);return;}
+            if(detail.type=="Vec2"||detail.type=="Vec3"){m_jointPin=detail.name;m_status="Selected "+detail.name+"; click the grid to place it.";}
+            else beginInputEdit(m_selection,detail.name,input);
+            return;
+        }
+        if(!m_jointPin.empty()&&in(x,y,230,196,710,556))
+        {
+            const float u=(x-470)/170*m_jointExtent,v=(376-y)/170*m_jointExtent;
+            if(m_document.setJointProjection(m_graph,m_selection,m_jointPin,m_jointPlane,u,v,m_status))
+            {rebuildPins();m_diagnostic={};m_status="Updated "+m_jointPin+" (undo available).";}
+        }
+    }
+    void BlueprintWorkspace::drawJointEditor(Canvas& c)
+    {
+        const auto details=inputDetails(m_selection);
+        const bool three=std::any_of(details.begin(),details.end(),[](const InputDetail& row){return row.type=="Vec3";});
+        const Color panel={0.19f,0.33f,0.50f,1},dark={0.13f,0.15f,0.18f,1};
+        const auto button=[&](float x,float y,float width,const char* label,bool active)
+        {c.roundRect(x,y,width,31,4,active?panel:dark);c.text(*m_font,label,x+width/2,y+5,text,Align::Center);};
+        c.roundRect(210,95,900,530,8,{0.16f,0.16f,0.17f,1});
+        const auto& node=m_document.graphs[m_graph].nodes[m_selection];
+        c.text(*m_font,("PHYSICS JOINT / "+title(node)).c_str(),230,117,accent);button(990,110,100,"Close",false);
+        button(230,155,90,"XY",m_jointPlane==0);if(three){button(324,155,90,"XZ",m_jointPlane==1);button(418,155,90,"YZ",m_jointPlane==2);}
+        button(520,155,90,"Zoom +",false);button(620,155,90,"Zoom -",false);
+        c.rect(230,196,480,360,dark);c.push();c.clip(230,196,480,360);
+        for(int i=-4;i<=4;++i)
+        {
+            const float offset=42.5f*static_cast<float>(i);const Color ink=i==0?muted:Color{0.23f,0.26f,0.30f,1};
+            c.line(470+offset,196,470+offset,556,1,ink);c.line(230,376+offset,710,376+offset,1,ink);
+        }
+        c.text(*m_font,m_jointPlane==2?"Y":"X",690,379,muted);c.text(*m_font,m_jointPlane==0?"Y":"Z",475,200,muted);
+        std::vector<Vec2> anchors;
+        for(const auto& row:details)
+        {
+            float u=0,v=0;if(!jointPoint(row,u,v))continue;
+            if(row.name!="axis")anchors.push_back({470+u/m_jointExtent*170,376-v/m_jointExtent*170});
+        }
+        if(anchors.size()>=2)c.line(anchors[0].x,anchors[0].y,anchors[1].x,anchors[1].y,2,muted);
+        for(const auto& row:details)
+        {
+            float u=0,v=0;if(!jointPoint(row,u,v))continue;
+            const float px=470+u/m_jointExtent*170,py=376-v/m_jointExtent*170;
+            const auto ink=row.name==m_jointPin?accent:Color{0.35f,0.82f,0.58f,1};
+            if(row.name=="axis")c.line(470,376,px,py,2,ink);
+            c.circle(px,py,6,ink);c.text(*m_font,row.name.c_str(),px+9,py-16,ink);
+        }
+        c.pop();
+        for(size_t i=0;i<details.size();++i)
+        {
+            const auto& row=details[i];const float yy=196+40*static_cast<float>(i);
+            c.rect(730,yy,360,36,row.name==m_jointPin?panel:dark);
+            c.push();c.clip(738,yy,255,36);
+            c.text(*m_font,(row.name+" / "+row.type).c_str(),738,yy+1,text);c.text(*m_font,row.value.c_str(),738,yy+18,muted);c.pop();
+            if(row.editable)button(1000,yy+2,90,"Edit",false);
+        }
+        c.clip(230,569,860,42);c.text(*m_font,m_status.c_str(),230,573,muted);c.noClip();
+        c.text(*m_font,"World-coordinate schematic | Connected body/parameter pins remain graph-driven.",230,595,muted);
+    }
     void BlueprintWorkspace::update(Services& s)
     {
         auto& input = *s.input;
@@ -4669,6 +4773,7 @@ namespace nx
             const auto count=variableRows().size();m_variableFirst=std::min(m_variableFirst,count>10?count-10:0);
             m_left=left;return;
         }
+        if(m_focus==18){updateJointEditor(input,x,y,click);m_left=left;return;}
         if(m_focus==17)
         {
             if(click&&in(x,y,940,555,1050,595)){m_focus=0;m_curveDrag=-1;m_status="Curve edit cancelled.";}
@@ -5003,7 +5108,8 @@ namespace nx
             if(click&&m_selection<m_document.graphs[m_graph].nodes.size())
             {
                 const auto& n=m_document.graphs[m_graph].nodes[m_selection];
-                if(n.kind=="curve:cubic"&&in(x,y,kRight+8,kTop+456+kPaletteExtra,kWidth-8,kTop+486+kPaletteExtra))
+                if(blueprintPhysicsJoint(n.kind)&&in(x,y,kRight+8,kTop+456+kPaletteExtra,kWidth-8,kTop+486+kPaletteExtra)){beginJointEditor(input);}
+                else if(n.kind=="curve:cubic"&&in(x,y,kRight+8,kTop+456+kPaletteExtra,kWidth-8,kTop+486+kPaletteExtra))
                 {beginCurveEditor(input);}
                 else if(in(x,y,kRight+8,kTop+456+kPaletteExtra,kWidth-8,kTop+486+kPaletteExtra)&&(n.kind.rfind("literal:",0)==0||n.kind.rfind("var:",0)==0||n.kind.rfind("global:",0)==0||n.kind.rfind("capture:",0)==0||blueprintNamedCall(n.kind)||blueprintBehaviourReference(n.kind)||n.kind.rfind("data:",0)==0||n.kind.rfind("typed:",0)==0))
                 {m_edit=n.ref;m_focus=n.kind.rfind("literal:",0)==0?2:3;input.setTyping(true);}
@@ -5530,6 +5636,8 @@ namespace nx
                 c.text(*m_font,((m_focus==2||m_focus==3)?m_edit:n.ref).c_str(),kRight+14,kTop+461+kPaletteExtra,text);c.noClip();
                 c.text(*m_font,"Click to edit, Enter confirms",kRight+12,kTop+490+kPaletteExtra,muted);
             }
+            if(blueprintPhysicsJoint(n.kind))
+            {c.roundRect(kRight+8,kTop+456+kPaletteExtra,kWidth-kRight-16,30,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Configure joint",(kWidth+kRight)*0.5f,kTop+461+kPaletteExtra,text,Align::Center);}
             if(n.kind=="curve:cubic")
             {c.roundRect(kRight+8,kTop+456+kPaletteExtra,kWidth-kRight-16,30,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Edit curve", (kWidth+kRight)*0.5f,kTop+461+kPaletteExtra,text,Align::Center);}
             if(!inputDetails(m_selection).empty())
@@ -5630,6 +5738,7 @@ namespace nx
                 if(m_files.empty())c.text(*m_font,"No projects, archives, source or project folders in own/.",640,330,muted,Align::Center);
                 c.clip(280,603,720,22);c.text(*m_font,shorten(m_status,90).c_str(),280,603,muted);c.noClip();
             }
+            else if(m_focus==18)drawJointEditor(c);
             else if(m_focus==17)
             {
                 c.roundRect(210,100,860,520,9,{0.16f,0.16f,0.17f,1});

@@ -19,6 +19,7 @@ namespace nx
     };
     const std::vector<BlueprintNodeSpec>& blueprintCatalogue();
     const BlueprintNodeSpec* blueprintSpec(const std::string& kind);
+    bool blueprintPhysicsJoint(const std::string& kind);
     bool blueprintLiteralType(const std::string& type);
     bool blueprintInputLiteralType(const std::string& type);
     std::vector<std::string> blueprintEnumChoices(const std::string& type);
@@ -147,6 +148,7 @@ namespace nx
         // Constant four-point curves can be edited as a single undoable transaction.
         bool cubicPoints(size_t graph,size_t node,std::vector<std::string>& points,std::string& error)const;
         bool setCubicPoints(size_t graph,size_t node,const std::vector<std::string>& points,std::string& error);
+        bool setJointProjection(size_t graph,size_t node,const std::string& pin,unsigned plane,float horizontal,float vertical,std::string& error);
         bool setReference(size_t graph,size_t node,const std::string& value,std::string& error);
         bool addFunction(const std::string& name,std::string& error,const std::string& owner="Screen");
         const Graph* function(const std::string& owner,const std::string& name) const;

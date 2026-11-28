@@ -1,0 +1,5 @@
+# Joint configuration
+
+Select a native Scene or Space joint node and choose Configure joint in Details. The inspector displays all native pins, including wired body references and runtime values. Constant anchor and axis vectors can be placed on a zoomable coordinate grid (XY, XZ or YZ for 3D); the unshown component is preserved. Select a vector then click the grid. Edit opens the existing typed inspector for exact values, angular limits, spring properties, motor settings and other native parameters. Each change is undoable and leaves connected pins untouched.
+
+Supports Scene join, hinge, weld, rope, spring, slider, drag, dragTo, motor and wheel; Space join, hinge, rope and spring. The schematic is a coordinate editor, not a live simulation or mesh viewport. Native entity references are connected on the graph; there is no separate physics implementation.
