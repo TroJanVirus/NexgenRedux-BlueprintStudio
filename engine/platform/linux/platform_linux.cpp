@@ -56,6 +56,7 @@ namespace nx
             case XK_Shift_R: return Key::Shift;
             case XK_Control_L:
             case XK_Control_R: return Key::Control;
+            case XK_Alt_L: case XK_Alt_R: return Key::Alt;
             default: return Key::None;
             }
         }

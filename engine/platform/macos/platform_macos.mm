@@ -429,6 +429,7 @@ namespace nx
                 case NSEventTypeFlagsChanged:
                     m_input.keys[static_cast<size_t>(Key::Shift)] = ([event modifierFlags] & NSEventModifierFlagShift) != 0;
                     m_input.keys[static_cast<size_t>(Key::Control)] = ([event modifierFlags] & NSEventModifierFlagControl) != 0;
+                    m_input.keys[static_cast<size_t>(Key::Alt)] = ([event modifierFlags] & NSEventModifierFlagOption) != 0;
                     break;
                 case NSEventTypeMouseMoved:
                 case NSEventTypeLeftMouseDragged:

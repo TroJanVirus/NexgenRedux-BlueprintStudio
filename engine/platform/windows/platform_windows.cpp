@@ -59,6 +59,7 @@ namespace nx
         case VK_BACK: return Key::Backspace;
         case VK_SHIFT: return Key::Shift;
         case VK_CONTROL: return Key::Control;
+        case VK_MENU: case VK_LMENU: case VK_RMENU: return Key::Alt;
         default: return Key::None;
         }
     }
