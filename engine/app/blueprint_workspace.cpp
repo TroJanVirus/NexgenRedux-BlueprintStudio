@@ -3992,7 +3992,7 @@ namespace nx
         m_curveCenterX=(minX+maxX)*0.5f;m_curveCenterY=(minY+maxY)*0.5f;
         m_curveScale=std::min(650.f/std::max(1.f,maxX-minX),330.f/std::max(1.f,maxY-minY));
         m_curveDrag=-1;m_curveChanged=false;m_focus=17;input.setTyping(false);clearWire();
-        m_status="Drag the four control points. Apply saves all four in one undo step.";return true;
+        m_status="Drag the four control points. Apply saves all four in one undo step.";NX_INFO("Blueprint Studio: cubic curve editor opened");return true;
     }
     void BlueprintWorkspace::update(Services& s)
     {
@@ -4333,7 +4333,7 @@ namespace nx
                 std::vector<std::string> points;
                 for(size_t i=0;i<4;++i){char pair[96];snprintf(pair,sizeof(pair),"%.9g,%.9g",m_curveX[i],m_curveY[i]);points.emplace_back(pair);}
                 if(!m_curveChanged||m_document.setCubicPoints(m_graph,m_selection,points,m_status))
-                {m_focus=0;m_curveDrag=-1;m_diagnostic={};m_status="Curve points applied.";}
+                {m_focus=0;m_curveDrag=-1;m_diagnostic={};m_status="Curve points applied.";NX_INFO("Blueprint Studio: cubic curve points applied");}
             }
             else
             {
@@ -5291,7 +5291,7 @@ namespace nx
                 Curve preview;Vec2 controlPoints[4];
                 for(int i=0;i<4;++i){controlPoints[i]={640+(m_curveX[i]-m_curveCenterX)*m_curveScale,350+(m_curveY[i]-m_curveCenterY)*m_curveScale};preview.add(controlPoints[i]);}
                 for(int i=1;i<4;++i)c.line(controlPoints[i-1].x,controlPoints[i-1].y,controlPoints[i].x,controlPoints[i].y,1.5f,muted);
-                Vec2 samples[65];preview.points(65,samples);c.polyline(samples,65,3,accent);
+                Vec2 samples[65];if(preview.count()==4){const auto count=preview.points(65,samples);if(count>1)c.polyline(samples,count,3,accent);}
                 for(int i=0;i<4;++i)
                 {
                     const auto p=controlPoints[i];c.circle(p.x,p.y,7,(i==0||i==3)?Color{0.28f,0.85f,0.6f,1}:accent);c.ring(p.x,p.y,9,1.5f,text);

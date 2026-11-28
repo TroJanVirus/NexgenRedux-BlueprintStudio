@@ -147,6 +147,16 @@ jobs:
             ${{ runner.temp }}/bp-camera-authored/
             ${{ runner.temp }}/bp-camera-timed-authored/
           if-no-files-found: ignore
+      - name: Exercise native cubic Bezier control-point editing
+        if: ${{ !cancelled() }}
+        run: xvfb-run -a -s "-screen 0 1280x720x24 -noreset" /usr/bin/python3 engine/tools/blueprint/test_curve_desktop.py build/showcase/nexgen "$RUNNER_TEMP/bp-curve-desktop"
+      - name: Retain native curve editor evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: native-curve-editor-evidence
+          path: ${{ runner.temp }}/bp-curve-desktop/
+          if-no-files-found: ignore
       - name: Verify native process contention and crash release
         run: python3 engine/tools/blueprint/test_native_lease.py build/showcase/nexgen "$RUNNER_TEMP/bp-linux-lease"
       - name: Retain operational test logs
