@@ -254,9 +254,10 @@ namespace nx
         }
         kWidth=logicalWidth;kHeight=logicalHeight;kLeft=m_leftPanel;kRight=kWidth-m_graphRightPanel;kBottom=kHeight-46;
         const float extra=std::max(0.f,kHeight-kBaseHeight);
-        kRows=8+static_cast<size_t>(extra/62.f);
-        kVariableTop=350+31.f*static_cast<float>(kRows-8);
-        kVariableRows=3+static_cast<size_t>(std::max(0.f,extra-(kVariableTop-350))/31.f);
+        kNavTop=kTop+154.f;
+        kRows=4+static_cast<size_t>(extra/62.f);
+        kVariableTop=kNavTop+31.f*static_cast<float>(kRows)+32.f;
+        kVariableRows=static_cast<size_t>(std::max(1.f,std::floor((kBottom-72.f-kVariableTop)/31.f)));
         kVariableBottom=kVariableTop+31.f*static_cast<float>(kVariableRows);
         kPaletteRows=10+static_cast<size_t>(extra/26.f);kPaletteExtra=26.f*static_cast<float>(kPaletteRows-10);
         if(m_graph<m_document.graphs.size()&&m_graph>=m_first+kRows)m_first=m_graph-kRows+1;
@@ -304,6 +305,23 @@ namespace nx
             const auto* asset=m_document.visualAsset(tab.id);return !asset||asset->kind!="widget";
         }),m_visualTabs.end());
         if(m_tabFirst>=m_graphTabs.size()+m_actorTabs.size()+m_visualTabs.size())m_tabFirst=0;
+    }
+    std::vector<BlueprintWorkspace::ComponentNavRow> BlueprintWorkspace::componentNavigation() const
+    {
+        std::vector<ComponentNavRow> rows;
+        const auto& owner=m_document.graphs[m_graph].owner;
+        for(const auto& asset:m_document.visualAssets())
+        {
+            if(asset.kind!="actor")continue;
+            const auto behaviour=m_document.actorBehaviour(asset.id);
+            if(owner.rfind("behaviour:",0)==0&&behaviour!=owner&&"behaviour:"+behaviour!=owner)continue;
+            if(owner.rfind("behaviour:",0)!=0&&asset.id!=m_actorTabId&&m_document.moduleForOwner(behaviour)!=owner)continue;
+            rows.push_back({asset.id,asset.title,static_cast<size_t>(-1),0});
+            std::string resolved,error;JsonTree tree;if(!m_document.visualActorSource(asset.id,resolved,error)||!tree.parse(resolved.data(),resolved.size()))continue;
+            const auto entities=tree.root()["entities"],parents=tree.root()["parents"];
+            for(size_t i=0;i<entities.count();++i){const auto item=entities[static_cast<u32>(i)];unsigned depth=1;int parent=static_cast<int>(parents[static_cast<u32>(i)].number(-1));for(unsigned j=0;parent>=0&&static_cast<size_t>(parent)<i&&j<8;++j){++depth;parent=static_cast<int>(parents[static_cast<u32>(parent)].number(-1));}rows.push_back({asset.id,std::string(item["name"].text("Component"))+" / "+item["shape"].text(item["camera"].exists()?"camera":"model"),i,depth});}
+        }
+        return rows;
     }
     std::vector<BlueprintWorkspace::NavigationRow> BlueprintWorkspace::navigationRows() const
     {
@@ -372,7 +390,7 @@ namespace nx
         revealTab(static_cast<size_t>(found-m_graphTabs.begin()));
         cancelDrag();clearWire();m_highlightWire=m_moveWire=m_lastClickedWire=static_cast<size_t>(-1);m_nodeClickTime=m_wireClickTime=-1;m_diagnostic={};
         m_quickDrag=m_quickMenu=m_pinMenu=m_rightDown=false;m_quickVariableFirst=0;
-        m_nodeContext=false;m_rgbOpen=false;m_commentResize=0;m_layoutMenu=m_layoutDragging=false;m_layoutComment=m_layoutLink=static_cast<size_t>(-1);m_selectedNodes.clear();
+        m_componentNavFirst=0;m_nodeContext=false;m_rgbOpen=false;m_commentResize=0;m_layoutMenu=m_layoutDragging=false;m_layoutComment=m_layoutLink=static_cast<size_t>(-1);m_selectedNodes.clear();
         m_graph = index; m_selection = static_cast<size_t>(-1);
         rebuildPins();fitGraph();filterCatalogue();
         if(found->viewed){m_x=found->x;m_y=found->y;m_zoom=found->zoom;}
@@ -5433,31 +5451,40 @@ namespace nx
             if(((pressed&4u)||(click&&in(x,y,954,39,1038,69)))&&m_document.redo()){selectGraph(std::min(m_graph,m_document.graphs.size()-1));m_status="Redid graph change.";}
             if(click&&in(x,y,1044,39,1128,69))fitGraph();
         }
-        if(!m_graphHideLeft&&click&&in(x,y,8,kBottom-225,kLeft-8,kBottom-193))
+        if(!m_graphHideLeft&&in(x,y,0,kTop,kLeft,kNavTop-30))
+        {
+            const auto components=componentNavigation();const size_t count=3;
+            m_componentNavFirst=std::min(m_componentNavFirst,components.size()>count?components.size()-count:0);
+            if(input.wheel()<0&&m_componentNavFirst+count<components.size())++m_componentNavFirst;
+            if(input.wheel()>0&&m_componentNavFirst)--m_componentNavFirst;
+            if(click&&in(x,y,kLeft-76,kTop+2,kLeft-4,kTop+26)){m_assetBrowser=true;m_assetLibrary=true;m_left=left;return;}
+            if(click&&y>=kTop+30){const auto index=m_componentNavFirst+static_cast<size_t>((y-kTop-30)/29);if(index<components.size()&&index<m_componentNavFirst+count){const auto item=components[index];openActorViewport(item.id);if(item.index!=static_cast<size_t>(-1)){m_visualComponent=item.index;m_visualComponentFirst=item.index>2?item.index-2:0;}}m_left=left;return;}
+        }
+        if(!m_graphHideLeft&&click&&in(x,y,0,kBottom-66,kLeft/3.f,kBottom-36))
         {
             m_variableFirst=0;resetVariableEditor();m_focus=10;input.setTyping(true);m_status="Select a variable or create a new one.";m_left=left;return;
         }
-        if(!m_graphHideLeft&&click&&in(x,y,8,kBottom-188,kLeft-8,kBottom-156))
+        if(!m_graphHideLeft&&click&&in(x,y,kLeft/3.f,kBottom-66,2*kLeft/3.f,kBottom-36))
         {
             m_edit.clear();m_focus=7;input.setTyping(true);m_status="Type a lowercase screen ID, then Enter.";m_left=left;return;
         }
-        if(!m_graphHideLeft&&click&&in(x,y,8,kBottom-151,kLeft-8,kBottom-119))
+        if(!m_graphHideLeft&&click&&in(x,y,2*kLeft/3.f,kBottom-66,kLeft,kBottom-36))
         {
             const std::string owner=m_document.graphs[m_graph].owner;
             const bool removed=owner.rfind("behaviour:",0)==0?m_document.removeBehaviour(owner.substr(10),m_status):m_document.removeScreen(owner,m_status);
             if(removed){m_first=0;selectGraph(0);m_status="Removed owner. Undo restores it.";}
             m_left=left;return;
         }
-        if(!m_graphHideLeft&&click&&in(x,y,8,kBottom-114,kLeft-8,kBottom-82))
+        if(!m_graphHideLeft&&click&&in(x,y,0,kBottom-34,kLeft/3.f,kBottom-4))
         {
             m_edit.clear();m_focus=4;input.setTyping(true);m_status="Type a new function name, then Enter.";m_left=left;return;
         }
-        if(!m_graphHideLeft&&click&&in(x,y,8,kBottom-77,kLeft-8,kBottom-45))
+        if(!m_graphHideLeft&&click&&in(x,y,kLeft/3.f,kBottom-34,2*kLeft/3.f,kBottom-4))
         {
             if(m_document.removeFunction(m_graph,m_status)){m_first=0;selectGraph(0);m_status="Removed function.";}
             m_left=left;return;
         }
-        if(!m_graphHideLeft&&click&&in(x,y,8,kBottom-40,kLeft-8,kBottom-8))
+        if(!m_graphHideLeft&&click&&in(x,y,2*kLeft/3.f,kBottom-34,kLeft,kBottom-4))
         {
             if(!preserveBeforeSwitch(s)){}
             else{m_actorTabId.clear();m_actorTabScreen.clear();m_contentFirst=0;m_contentDrag.clear();resetGraphTabs();m_document.create();m_filePath.clear();m_fileBaseline.clear();m_checkpointRevision=static_cast<size_t>(-1);m_graphBack.clear();m_first=0;selectGraph(0);m_status="New Blueprint.";}
@@ -5535,9 +5562,9 @@ namespace nx
             NX_INFO("Blueprint Studio: graph navigator %s",m_graphTree?"categorized":"flat");
             m_left=left;return;
         }
-        if (!m_graphHideLeft && left && !m_left && in(x,y,0,kTop,kLeft,kTop+kRows*31))
+        if (!m_graphHideLeft && left && !m_left && in(x,y,0,kNavTop,kLeft,kNavTop+kRows*31))
         {
-            const size_t row = static_cast<size_t>((y-kTop)/31);
+            const size_t row = static_cast<size_t>((y-kNavTop)/31);
             if(m_graphTree)
             {
                 const auto rows=navigationRows();
@@ -5757,7 +5784,7 @@ namespace nx
             m_x = x-kLeft-(x-kLeft-m_x)*m_zoom/previous;
             m_y = y-kTop-(y-kTop-m_y)*m_zoom/previous;
         }
-        else if (!m_graphHideLeft && in(x,y,0,kTop,kLeft,kTop+kRows*31) && wheel != 0)
+        else if (!m_graphHideLeft && in(x,y,0,kNavTop,kLeft,kNavTop+kRows*31) && wheel != 0)
         {
             if(m_graphTree)
             {
@@ -6010,11 +6037,16 @@ namespace nx
         c.noClip();
         if(!m_graphHideLeft)
         {
+        c.rect(0,kTop,kLeft,28,{0.13f,0.15f,0.18f,1});c.text(*m_font,"COMPONENTS",10,kTop+5,accent);c.roundRect(kLeft-76,kTop+2,72,24,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Assets",kLeft-40,kTop+5,text,Align::Center);
+        const auto components=componentNavigation();const auto componentFirst=std::min(m_componentNavFirst,components.size()>3?components.size()-3:0);
+        for(size_t i=0;i<3&&componentFirst+i<components.size();++i){const auto& item=components[componentFirst+i];const float yy=kTop+30.f+29.f*static_cast<float>(i);const float indent=10.f+12.f*static_cast<float>(std::min(item.depth,5u));c.rect(5,yy,kLeft-10,26,{0.20f,0.23f,0.27f,1});c.roundLine(indent,yy+7,10,10,2,1,accent);c.clip(indent+16,yy,kLeft-indent-21,26);c.text(*m_font,item.label.c_str(),indent+16,yy+5,text);c.noClip();}
+        if(components.empty())c.text(*m_font,"No associated actor components",10,kTop+42,muted);
+        c.rect(0,kNavTop-30,kLeft,28,{0.13f,0.15f,0.18f,1});c.text(*m_font,"MY BLUEPRINT",10,kNavTop-24,accent);
         const auto navigation=navigationRows();
         const size_t navFirst=m_graphTree?std::min(m_navigationFirst,navigation.size()>kRows?navigation.size()-kRows:0):m_first;
         for(size_t row=0;row<kRows&&navFirst+row<navigation.size();++row)
         {
-            const auto& item=navigation[navFirst+row];const auto i=item.graph;const float y=kTop+static_cast<float>(row)*31;
+            const auto& item=navigation[navFirst+row];const auto i=item.graph;const float y=kNavTop+static_cast<float>(row)*31;
             const float indent=10+12.f*item.depth;
             if(i==m_graph){c.rect(4,y+2,kLeft-8,28,{0.18f,0.30f,0.43f,1});c.rect(4,y+2,3,28,accent);}
             c.clip(5,y,kLeft-10,31);
@@ -6047,20 +6079,8 @@ namespace nx
             c.clip(24,y,kLeft-30,31);c.text(*m_font,shorten(std::string(r.global?"Global / ":"")+r.field.name+" : "+r.field.type,28).c_str(),24,y+6,text);c.noClip();
         }
         if(quickRows.empty())c.text(*m_font,"Create variables below.",12,kVariableTop+8,muted);
-        c.roundRect(8,kBottom-225,kLeft-16,32,5,{0.19f,0.33f,0.50f,1});
-        c.text(*m_font,"Variables",kLeft*0.5f,kBottom-219,text,Align::Center);
-        c.roundRect(8,kBottom-188,kLeft-16,32,5,{0.19f,0.33f,0.50f,1});
-        c.clip(8,kBottom-188,kLeft-16,32);
-        c.text(*m_font,m_focus==7?(m_edit.empty()?"Type screen ID...":m_edit.c_str()):"New screen",kLeft*0.5f,kBottom-182,text,Align::Center);c.noClip();
-        c.roundRect(8,kBottom-151,kLeft-16,32,5,{0.32f,0.19f,0.23f,1});
-        c.text(*m_font,m_document.graphs[m_graph].owner.rfind("behaviour:",0)==0?"Delete behaviour":"Delete screen",kLeft*0.5f,kBottom-145,text,Align::Center);
-        c.roundRect(8,kBottom-114,kLeft-16,32,5,{0.19f,0.33f,0.50f,1});
-        c.clip(8,kBottom-114,kLeft-16,32);
-        c.text(*m_font,m_focus==4?(m_edit.empty()?"Type name...":m_edit.c_str()):"New function",kLeft*0.5f,kBottom-108,text,Align::Center);c.noClip();
-        c.roundRect(8,kBottom-77,kLeft-16,32,5,{0.32f,0.19f,0.23f,1});
-        c.text(*m_font,"Delete function",kLeft*0.5f,kBottom-71,m_document.graphs[m_graph].kind=="function"?text:muted,Align::Center);
-        c.roundRect(8,kBottom-40,kLeft-16,32,5,{0.19f,0.33f,0.50f,1});
-        c.text(*m_font,"New Blueprint",kLeft*0.5f,kBottom-34,text,Align::Center);
+        const char* actions[]={"Variables","+ Screen","- Screen","+ Function","- Function","New BP"};
+        for(unsigned i=0;i<6;++i){const float cell=kLeft/3.f,xx=cell*static_cast<float>(i%3),yy=kBottom-(i<3?66.f:34.f);c.roundRect(xx+2,yy,cell-4,30,4,i==2||i==4?Color{0.32f,0.19f,0.23f,1}:Color{0.19f,0.33f,0.50f,1});c.clip(xx+3,yy,cell-6,30);c.text(*m_font,actions[i],xx+cell/2,yy+6,text,Align::Center);c.noClip();}
         }
         if(!m_graphHideRight)
         {

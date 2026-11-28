@@ -132,7 +132,10 @@ namespace nx
         std::vector<DetailRow> actorDetailRows() const;
         bool actorRing(unsigned axis,float angle,float& x,float& y,float& dx,float& dy) const;
         bool resizePanels(float x,float y,bool left,bool click,bool actor);
-        float kVariableTop=350,kVariableBottom=443,kPaletteExtra=0;
+        float kVariableTop=350,kVariableBottom=443,kPaletteExtra=0,kNavTop=220;
+        size_t m_componentNavFirst=0;
+        struct ComponentNavRow {std::string id,label;size_t index;unsigned depth;};
+        std::vector<ComponentNavRow> componentNavigation() const;
         size_t kRows=8,kVariableRows=3,kPaletteRows=10;
         void rebuildPins();
         void filterCatalogue();
