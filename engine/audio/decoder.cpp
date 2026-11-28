@@ -258,7 +258,7 @@ namespace nx
         if (sound.channels < 1 || sound.channels > 2 || sound.rate == 0)
             return nullptr;
         const size_t frameBytes = sound.channels * sizeof(i16);
-        const size_t limit = maxBytes / frameBytes;
+        const u64 limit = maxBytes / frameBytes;
         const u32 maxFrames = limit > 0xffffffffu ? 0xffffffffu : static_cast<u32>(limit);
         if (!maxFrames || sound.frames > maxFrames)
             return nullptr;
@@ -304,4 +304,5 @@ namespace nx
         if (!samples)
             frames = 0;
         return samples;
-    }}
+    }
+}
