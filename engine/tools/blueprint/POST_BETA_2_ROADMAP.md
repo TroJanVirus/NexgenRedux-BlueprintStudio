@@ -110,3 +110,7 @@ Actor Details now groups identity, transforms, rendering/animation, class/camera
 ### Actor viewport polish
 
 Explicit Translate/Rotate/Scale toolbar glyphs replace the mode-cycle button. Focus frames the selected component; clicking near a projected component origin also selects it and scrolls the hierarchy into view. Class preview asset resolution retains the originating screen when a class graph has no screen owner. Dragging an asset into a Behaviour graph is rejected rather than implicitly placing it in an unrelated screen. Verification pending.
+
+## Persistent layout and graph tabs
+
+Native editor density, panel widths, collapsed actor inspector sections and content drawer visibility persist in a versioned bounded editor-only layout file under own/ (not in exported game projects). Layout resets restore defaults. Up to 32 named graph tabs retain their independent pan and zoom; opening a graph from the hierarchy, function call or class navigation creates/reuses its tab. Tabs close without deleting the graph, scroll horizontally with the mouse wheel and are cleared when another project is loaded. A separate existing actor viewport return tab remains; multiple independent actor viewport sessions and floating OS windows are not yet supported. X11 test exercises tab selection and persisted layout after close. CI pending.

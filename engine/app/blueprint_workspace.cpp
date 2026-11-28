@@ -122,7 +122,7 @@ namespace nx
         m_left = m_pan = m_drag = false;
         m_shortcuts = 0;
         m_previousTyping=s.input->typing();m_focus=0;m_browsing=false;m_assetBrowser=false;m_actorEditor=false;m_actorTabId.clear();m_actorTabScreen.clear();m_contentDrawer=false;m_contentFirst=0;m_contentDrag.clear();m_actorDetailsScroll=0;m_splitter=0;s.input->setTyping(false);
-        resizeWorkspace(*s.canvas);
+        loadLayout(s);resizeWorkspace(*s.canvas);
         if(m_document.graphs.empty())
         {
             FileData recovery;
@@ -145,6 +145,7 @@ namespace nx
                 m_status=found?"Recovery damaged or unreadable. Original will be archived before autosave.":"New Blueprint. Search the node library to start.";
             }
         }
+        if(!m_document.graphs.empty()&&m_graphTabs.empty())selectGraph(std::min(m_graph,m_document.graphs.size()-1));
         filterCatalogue();
         NX_INFO("Blueprint Studio: workspace ready (%s)",m_status.c_str());
     }
@@ -155,7 +156,7 @@ namespace nx
         stopPreview(s);
         cancelActorDrag();m_actorOrbit=false;m_splitter=0;m_actorEditor=false;m_contentDrag.clear();
         releaseWidgetPreview();releasePlacementPreview();m_widgetDesigner=m_visualPlacement=false;
-        checkpoint(s,true);
+        checkpoint(s,true);saveLayout(s);
         cancelDrag();clearWire();m_quickDrag=m_quickMenu=m_pinMenu=m_rightDown=false;m_layoutMenu=m_layoutDragging=false;m_graphBack.clear();m_focus=0;m_browsing=false;m_assetBrowser=false;s.input->setTyping(m_previousTyping);
         s.assets->release(m_font);
         m_font = nullptr;
@@ -164,6 +165,45 @@ namespace nx
         s.input->consume();
     }
 
+    std::string BlueprintWorkspace::layoutBytes() const
+    {
+        return "{\"version\":1,\"left\":"+std::to_string(m_leftPanel)+",\"graphRight\":"+std::to_string(m_graphRightPanel)+
+            ",\"actorRight\":"+std::to_string(m_actorRightPanel)+",\"scale\":"+std::to_string(m_uiScale)+
+            ",\"collapsed\":"+std::to_string(m_actorCollapsed)+",\"content\":"+(m_contentDrawer?"true":"false")+"}\n";
+    }
+    void BlueprintWorkspace::loadLayout(Services& s)
+    {
+        m_leftPanel=248;m_graphRightPanel=268;m_actorRightPanel=310;m_uiScale=0;m_actorCollapsed=0;m_contentDrawer=false;
+        FileData file;JsonTree tree;
+        if(s.platform->readFile("own/blueprint-editor-layout.json",file,MemTag::General)&&file.size&&file.size<=4096&&
+            tree.parse(reinterpret_cast<const char*>(file.data),file.size))
+        {
+            const auto root=tree.root();
+            if(root["version"].isNumber()&&root["version"].number()==1)
+            {
+                const auto bounded=[&](const char* field,float fallback,float lo,float hi)
+                {
+                    const auto v=root[field];const float n=v.number(fallback);
+                    return v.isNumber()&&std::isfinite(n)&&n>=lo&&n<=hi?n:fallback;
+                };
+                m_leftPanel=bounded("left",248,220,400);m_graphRightPanel=bounded("graphRight",268,250,420);
+                m_actorRightPanel=bounded("actorRight",310,310,440);m_uiScale=static_cast<unsigned>(bounded("scale",0,0,3));
+                m_actorCollapsed=static_cast<unsigned>(bounded("collapsed",0,0,31));
+                m_contentDrawer=std::string(root["content"].text())=="true"||root["content"].number()==1;
+                NX_INFO("Blueprint Studio: restored editor layout");
+            }
+        }
+        m_layoutBaseline=layoutBytes();
+    }
+    void BlueprintWorkspace::saveLayout(Services& s)
+    {
+        if(m_splitter)return; // persist the final divider position, not every intermediate frame.
+        const auto bytes=layoutBytes();if(bytes==m_layoutBaseline)return;
+        const auto previous=m_status;
+        if(writeVerified(s,"own/blueprint-editor-layout.json",bytes))m_layoutBaseline=bytes;
+        else NX_ERROR("Blueprint Studio: editor layout could not be saved");
+        m_status=previous;
+    }
     void BlueprintWorkspace::resizeWorkspace(const Canvas& c)
     {
         const float w=c.pixelWidth(),h=c.pixelHeight();
@@ -210,18 +250,86 @@ namespace nx
     }
     bool BlueprintWorkspace::modalOpen() const
     {return m_assetBrowser||m_browsing||m_focus==5||m_focus==6||m_focus==9||m_focus==10||m_focus==11||m_focus==12||m_focus==13||m_focus==14||m_focus==15;}
+    void BlueprintWorkspace::resetGraphTabs()
+    {
+        m_graphTabs.clear();m_activeTab={};m_tabFirst=0;
+    }
+    size_t BlueprintWorkspace::graphTabIndex(const GraphTab& tab) const
+    {
+        const auto found=std::find_if(m_document.graphs.begin(),m_document.graphs.end(),[&](const BlueprintDocument::Graph& g){return g.owner==tab.owner&&g.name==tab.name;});
+        return static_cast<size_t>(found-m_document.graphs.begin());
+    }
+    void BlueprintWorkspace::pruneGraphTabs()
+    {
+        m_graphTabs.erase(std::remove_if(m_graphTabs.begin(),m_graphTabs.end(),[&](const GraphTab& tab){return graphTabIndex(tab)>=m_document.graphs.size();}),m_graphTabs.end());
+        if(m_tabFirst>=m_graphTabs.size())m_tabFirst=0;
+    }
     void BlueprintWorkspace::selectGraph(size_t index)
     {
         if (index >= m_document.graphs.size()) return;
+        pruneGraphTabs();
+        for(auto& tab:m_graphTabs)if(tab.owner==m_activeTab.first&&tab.name==m_activeTab.second)
+        {tab.x=m_x;tab.y=m_y;tab.zoom=m_zoom;tab.viewed=true;}
+        const auto& target=m_document.graphs[index];
+        m_activeTab={target.owner,target.name};
+        auto found=std::find_if(m_graphTabs.begin(),m_graphTabs.end(),[&](const GraphTab& tab){return tab.owner==target.owner&&tab.name==target.name;});
+        if(found==m_graphTabs.end())
+        {
+            if(m_graphTabs.size()>=32)m_graphTabs.erase(m_graphTabs.begin());
+            m_graphTabs.push_back({target.owner,target.name});found=m_graphTabs.end()-1;
+        }
+        const auto tabIndex=static_cast<size_t>(found-m_graphTabs.begin());
+        const size_t visible=static_cast<size_t>(std::max(1.f,(kRight-kLeft-8)/146.f));
+        if(tabIndex<m_tabFirst)m_tabFirst=tabIndex;
+        if(tabIndex>=m_tabFirst+visible)m_tabFirst=tabIndex-visible+1;
         cancelDrag();clearWire();m_diagnostic={};
         m_quickDrag=m_quickMenu=m_pinMenu=m_rightDown=false;m_quickVariableFirst=0;
         m_layoutMenu=m_layoutDragging=false;m_layoutComment=m_layoutLink=static_cast<size_t>(-1);m_selectedNodes.clear();
         m_graph = index; m_selection = static_cast<size_t>(-1);
         rebuildPins();fitGraph();filterCatalogue();
+        if(found->viewed){m_x=found->x;m_y=found->y;m_zoom=found->zoom;}
         if (index < m_first) m_first = index;
         if (index >= m_first + kRows) m_first = index - kRows + 1;
     }
 
+    bool BlueprintWorkspace::updateGraphTabs(Services& s,float x,float y,bool click)
+    {
+        const float top=kBottom-(m_contentDrawer?174.f:0.f)-30.f;
+        if(!in(x,y,kLeft,top,kRight,top+30))return false;
+        pruneGraphTabs();
+        const auto visible=static_cast<size_t>(std::max(1.f,(kRight-kLeft-8)/146.f));
+        if(s.input->wheel()<0&&m_tabFirst+visible<m_graphTabs.size())++m_tabFirst;
+        if(s.input->wheel()>0&&m_tabFirst)--m_tabFirst;
+        if(!click||x<kLeft+4)return true;
+        const auto slot=static_cast<size_t>((x-kLeft-4)/146.f),index=m_tabFirst+slot;
+        if(slot>=visible||index>=m_graphTabs.size())return true;
+        const auto tab=m_graphTabs[index];const auto graph=graphTabIndex(tab);
+        if(graph>=m_document.graphs.size())return true;
+        if(x>=kLeft+4+146.f*static_cast<float>(slot)+119&&m_graphTabs.size()>1)
+        {
+            const bool active=tab.owner==m_activeTab.first&&tab.name==m_activeTab.second;
+            m_graphTabs.erase(m_graphTabs.begin()+static_cast<std::ptrdiff_t>(index));
+            if(m_tabFirst>=m_graphTabs.size())m_tabFirst=0;
+            if(active){m_activeTab={};selectGraph(graphTabIndex(m_graphTabs[std::min(index,m_graphTabs.size()-1)]));}
+        }
+        else selectGraph(graph);
+        return true;
+    }
+    void BlueprintWorkspace::drawGraphTabs(Canvas& c)
+    {
+        const float top=kBottom-(m_contentDrawer?174.f:0.f)-30.f;
+        c.rect(kLeft,top,kRight-kLeft,30,{0.15f,0.15f,0.16f,1});
+        const auto visible=static_cast<size_t>(std::max(1.f,(kRight-kLeft-8)/146.f));
+        for(size_t i=0;i<visible&&m_tabFirst+i<m_graphTabs.size();++i)
+        {
+            const auto& tab=m_graphTabs[m_tabFirst+i];const float x=kLeft+4+146.f*static_cast<float>(i);
+            const bool selected=tab.owner==m_activeTab.first&&tab.name==m_activeTab.second;
+            c.rect(x,top+3,142,27,selected?Color{0.33f,0.34f,0.37f,1}:Color{0.22f,0.22f,0.24f,1});
+            if(selected)c.rect(x,top+3,142,2,accent);
+            c.clip(x+5,top+5,112,23);c.text(*m_font,(tab.owner.rfind("behaviour:",0)==0?tab.owner.substr(10)+"/"+tab.name:tab.owner+"/"+tab.name).c_str(),x+6,top+7,text);c.noClip();
+            if(m_graphTabs.size()>1){c.line(x+125,top+11,x+133,top+19,1,muted);c.line(x+133,top+11,x+125,top+19,1,muted);}
+        }
+    }
     void BlueprintWorkspace::openSelectedFunction()
     {
         const auto& g=m_document.graphs[m_graph];
@@ -461,7 +569,7 @@ namespace nx
             if(!s.screens->validateBlueprintSource(screen.source,m_status)){m_status="Converted source: "+m_status;return false;}
         if(!blueprintImportSourceAssets(*s.platform,file,candidate.assetRoot,m_status))
         {m_status="Companion assets: "+m_status;return false;}
-        m_document=std::move(candidate);m_filePath.clear();m_fileBaseline.clear();
+        resetGraphTabs();m_actorTabId.clear();m_actorTabScreen.clear();m_document=std::move(candidate);m_filePath.clear();m_fileBaseline.clear();
         m_checkpointRevision=static_cast<size_t>(-1);m_graphBack.clear();m_first=0;selectGraph(0);m_browsing=false;
         m_status="Imported "+file+(m_document.assetRoot.empty()?" as editable graphs.":" with companion assets.")+" Save as a new project.";
         NX_INFO("Blueprint Studio: %s",m_status.c_str());
@@ -528,7 +636,7 @@ namespace nx
         if(!candidate.serialize(bytes,m_status))return false;
         BlueprintDocument verified;
         if(!verified.load(bytes.data(),bytes.size(),m_status))return false;
-        verified.markRecovered();m_document=std::move(verified);m_filePath.clear();m_fileBaseline.clear();
+        verified.markRecovered();resetGraphTabs();m_actorTabId.clear();m_actorTabScreen.clear();m_document=std::move(verified);m_filePath.clear();m_fileBaseline.clear();
         m_checkpointRevision=static_cast<size_t>(-1);m_graphBack.clear();m_first=0;selectGraph(0);m_browsing=false;
         m_status="Imported "+std::to_string(owners.size())+" screens from "+folder+". Save as a new project.";
         NX_INFO("Blueprint Studio: %s",m_status.c_str());
@@ -553,7 +661,7 @@ namespace nx
         if(!s.platform->readFile(path.c_str(),data,MemTag::General))
         {m_status="Could not read Blueprint.";return false;}
         if(!m_document.load(reinterpret_cast<const char*>(data.data),data.size,m_status))return false;
-        m_filePath.clear();m_fileBaseline.clear();
+        resetGraphTabs();m_filePath.clear();m_fileBaseline.clear();
         std::string expected;
         if(!archive&&managed&&blueprintManagedName(m_document.name,expected)&&file==expected)
         {
@@ -2763,7 +2871,7 @@ namespace nx
         if(!active()||m_document.graphs.empty())return;
         const double now=s.platform->seconds();
         if(!force&&now<m_nextCheckpoint)return;
-        m_nextCheckpoint=now+2.0;
+        m_nextCheckpoint=now+2.0;saveLayout(s);
         const char* path="own/blueprint-recovery.bp.json";
         if(!m_document.dirty())
         {
@@ -3061,7 +3169,10 @@ namespace nx
         const bool click=left&&!m_left;
         const bool right=raw.mouseButtons[1];
         if(m_actorEditor){updateActorEditor(s,x,y,left,click,pressed);m_left=left;return;}
-        if(!modalOpen()&&!m_focus&&!m_layoutDragging&&!m_layoutMenu&&!m_pinMenu&&!m_pinDrag&&!m_drag&&!m_quickDrag&&!m_quickMenu&&updateContentDrawer(s,x,y,left,click)){m_left=left;return;}
+        if(!modalOpen()&&!m_focus&&!m_layoutDragging&&!m_layoutMenu&&!m_pinMenu&&!m_pinDrag&&!m_drag&&!m_quickDrag&&!m_quickMenu)
+        {
+            if(updateContentDrawer(s,x,y,left,click)||updateGraphTabs(s,x,y,click)){m_left=left;return;}
+        }
         if(modalOpen()){x-=modalX();y-=modalY();}
         else if(!m_focus&&!m_layoutDragging&&!m_layoutMenu&&!m_pinMenu&&!m_pinDrag&&!m_drag&&!m_quickDrag&&!m_quickMenu&&resizePanels(x,y,left,click,false)){m_left=left;return;}
         if(m_layoutDragging)
@@ -3130,7 +3241,7 @@ namespace nx
                     }
                 }
                 else if(in(x,y,300,395,550,425)){m_uiScale=(m_uiScale+1)%4;m_status="Changed desktop UI density (small windows fit automatically).";}
-                else if(in(x,y,300,425,550,455)){m_leftPanel=248;m_graphRightPanel=268;m_actorRightPanel=310;m_uiScale=0;resizeWorkspace(canvas);fitGraph();m_status="Reset editor panel sizes and density.";}
+                else if(in(x,y,300,425,550,455)){m_leftPanel=248;m_graphRightPanel=268;m_actorRightPanel=310;m_uiScale=0;m_actorCollapsed=0;m_actorDetailsScroll=0;m_contentDrawer=false;resizeWorkspace(canvas);fitGraph();m_status="Reset editor panel sizes and density.";}
                 m_layoutMenu=false;
             }
             m_left=left;return;
@@ -3573,7 +3684,7 @@ namespace nx
         if(click&&in(x,y,8,kBottom-40,kLeft-8,kBottom-8))
         {
             if(m_document.dirty())m_status="Save changes before creating a new Blueprint.";
-            else{m_actorTabId.clear();m_actorTabScreen.clear();m_contentFirst=0;m_contentDrag.clear();m_document.create();m_filePath.clear();m_fileBaseline.clear();m_checkpointRevision=static_cast<size_t>(-1);m_graphBack.clear();m_first=0;selectGraph(0);m_status="New Blueprint.";}
+            else{m_actorTabId.clear();m_actorTabScreen.clear();m_contentFirst=0;m_contentDrag.clear();resetGraphTabs();m_document.create();m_filePath.clear();m_fileBaseline.clear();m_checkpointRevision=static_cast<size_t>(-1);m_graphBack.clear();m_first=0;selectGraph(0);m_status="New Blueprint.";}
             m_left=left;return;
         }
         if(!m_drag&&in(x,y,kRight,kTop,kWidth,kBottom))
@@ -4012,7 +4123,7 @@ namespace nx
             const char* state=!m_document.dirty()?"Saved / clean":recoveryProtected()?"Recovery protected":"Recovery pending";
             c.text(*m_font,state,kWidth-12,kBottom+26,recoveryProtected()?muted:Color{1.f,0.72f,0.22f,1.f},Align::Right);
         }
-        drawContentDrawer(c);
+        drawContentDrawer(c);drawGraphTabs(c);
         if(m_layoutMenu)
         {
             c.roundRect(300,35,250,420,5,{0.16f,0.16f,0.17f,1});

@@ -46,6 +46,19 @@ namespace nx
         int m_splitter=0;
         unsigned m_uiScale=0; // automatic, 100%, 125%, 150%
         void openActorGraph(bool construction);
+        void loadLayout(Services& s);
+        void saveLayout(Services& s);
+        std::string layoutBytes() const;
+        std::string m_layoutBaseline;
+        struct GraphTab {std::string owner,name;float x=0,y=0,zoom=1;bool viewed=false;};
+        std::vector<GraphTab> m_graphTabs;
+        std::pair<std::string,std::string> m_activeTab;
+        size_t m_tabFirst=0;
+        void resetGraphTabs();
+        void pruneGraphTabs();
+        size_t graphTabIndex(const GraphTab& tab) const;
+        bool updateGraphTabs(Services& s,float x,float y,bool click);
+        void drawGraphTabs(Canvas& c);
         void openActorViewport(const std::string& id);
         bool updateContentDrawer(Services& s,float x,float y,bool left,bool click);
         void drawContentDrawer(Canvas& c);

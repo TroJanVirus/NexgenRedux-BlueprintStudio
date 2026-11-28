@@ -147,16 +147,24 @@ with log.open("wb") as output:
         shot("actor-returned-tab.png")
         click(81,54)
         click(930,133)
+        # Open two graph tabs and return to the original by its tab.
+        click(100,90)
+        click(100,122)
+        shot("graph-tabs.png")
+        click(285,660)
         click(1200,688)
         shot("graph-content-drawer.png")
         click(310,560)
         shot("actor-from-drawer.png")
+        drag(970,470,940,470)
         # A close request exercises normal release of the isolated world.
         msg=protocol.event.ClientMessage(window=win,client_type=conn.intern_atom("WM_PROTOCOLS"),
             data=(32,[conn.intern_atom("WM_DELETE_WINDOW"),X.CurrentTime,0,0,0]))
         win.send_event(msg,event_mask=0)
         conn.sync()
         assert process.wait(timeout=20)==0
+        layout=json.loads((root/"own"/"blueprint-editor-layout.json").read_text())
+        assert layout["version"]==1 and layout["actorRight"]==340 and layout["content"] is True, layout
         print("Compact desktop graph, centered modal, class preview and independent XYZ edits passed at 1080p and 720p.")
     finally:
         if process.poll() is None:
