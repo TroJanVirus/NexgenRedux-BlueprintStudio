@@ -84,6 +84,10 @@ namespace nx
         std::vector<AnimationKey> animationKeys[5];
         float animationDuration=0,animationTime=0,animationValues[5]={0,0,1,1,0};
         bool animationLoop=false;
+        int animationDirection=1; // -1 reverse, 0 stopped/paused, 1 forward
+        std::vector<std::string> navigation; // allocated only for explicit rules
+        bool setNavigation(const std::string& direction,const std::string& target);
+        bool controlAnimation(const std::string& mode,bool restart);
         UiLook look;
         bool lookReady = false;
         float amount = 0;            // of a switch or a slider, as it moves

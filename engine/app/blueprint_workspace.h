@@ -228,7 +228,7 @@ namespace nx
         bool m_widgetDesigner=false,m_widgetPalette=false,m_widgetFourThree=false,m_widgetEvents=false,m_widgetUnbind=false,m_widgetAnchors=false;
         bool m_targetResolutionMenu=false;
         unsigned m_widgetGuideMask=7; // editor-only overlays
-        bool m_widgetAdvanced=false;
+        bool m_widgetAdvanced=false,m_widgetNavigation=false;
         bool m_widgetTimeline=false,m_widgetTimelinePlay=false;
         unsigned m_widgetTimelineTrack=0;
         float m_widgetTimelineTime=0;

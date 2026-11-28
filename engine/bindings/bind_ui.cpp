@@ -372,6 +372,10 @@ namespace nx
             w->anchor=index;w->offsetX=index<0?0.f:x;w->offsetY=index<0?0.f:y;
             w->changed();return true;
         }
+        bool widgetNavigation(const std::string& direction,const std::string& destination,Widget* w){return w->setNavigation(direction,destination);}
+        bool widgetAnimation(const std::string& mode,bool restart,Widget* w){return w->controlAnimation(mode,restart);}
+        float getAnimationTime(const Widget* w){return w->animationTime;}
+        bool getAnimationPlaying(const Widget* w){return w->animationDuration>0&&w->animationDirection!=0;}
         Color getColor(const Widget* w) { return w->color; }
         void setColor(const Color& v, Widget* w) { w->color = v; }
         float getScroll(const Widget* w) { return w->scroll; }
@@ -577,6 +581,10 @@ namespace nx
         b.method("string get_anchor() const property", NX_OBJ_LAST(getAnchor), "The named Stack slot anchor, or an empty string for automatic layout.");
         b.method("Vec2 get_offset() const property", NX_OBJ_LAST(getOffset), "The Stack slot offset in authored design units.");
         b.method("bool setAnchor(const string &in anchor, float x, float y)", NX_OBJ_LAST(setAnchor), "Sets a Stack child anchor and XY offset; empty clears the anchor. Returns false for invalid slots or values.");
+        b.method("bool setNavigation(const string &in direction, const string &in destination)", NX_OBJ_LAST(widgetNavigation), "Sets up/down/left/right focus target ID, @stop, or blank for automatic navigation.");
+        b.method("bool controlAnimation(const string &in mode, bool restart)", NX_OBJ_LAST(widgetAnimation), "Controls authored animation: forward, reverse, pause or stop. Restart starts at the appropriate endpoint.");
+        b.method("float get_animationTime() const property", NX_OBJ_LAST(getAnimationTime), "Current authored animation time in seconds.");
+        b.method("bool get_animationPlaying() const property", NX_OBJ_LAST(getAnimationPlaying), "Whether the authored animation is playing forward or in reverse.");
         b.method("Color get_color() const property", NX_OBJ_LAST(getColor), "Multiplies its picture, or its text.");
         b.method("void set_color(const Color &in) property", NX_OBJ_LAST(setColor), "Changes it.");
         b.method("void set_picture(Texture@+) property", NX_OBJ_LAST(giveImage), "The picture of an image, or in a button.");

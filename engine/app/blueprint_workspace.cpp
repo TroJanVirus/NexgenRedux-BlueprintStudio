@@ -456,7 +456,7 @@ namespace nx
         selectGraph(static_cast<size_t>(found-m_document.graphs.begin()));
         m_assetBrowser=m_assetLibrary=true;m_visualInput=0;m_visualSelection=tab.asset;
         m_widgetDesigner=tab.widget;m_visualPlacement=!tab.widget;
-        m_widgetPalette=m_widgetEvents=m_widgetUnbind=m_widgetAnchors=m_widgetTimeline=m_widgetTimelinePlay=false;
+        m_widgetPalette=m_widgetEvents=m_widgetNavigation=m_widgetUnbind=m_widgetAnchors=m_widgetTimeline=m_widgetTimelinePlay=false;
         m_widgetTimelineTime=0;m_widgetSelection=tab.selection;m_widgetFirst=tab.widget?tab.first:0;
         m_widgetFourThree=tab.fourThree;
         m_placementSelectedOwner=tab.screen;m_placementSelectedId=tab.instance;
@@ -1772,6 +1772,7 @@ namespace nx
         struct DesignRow {std::string id,kind,label;unsigned depth;};
         constexpr const char* designPalette[]={"column","sizeBox","row","grid","stack","scroll","label","button","toggle","slider","progress","field","space","component"};
         constexpr const char* designEvents[]={"click","change","focus","done","draw","makeRow"};
+        constexpr const char* navigationDesignProps[]={"navUp","navDown","navLeft","navRight"};
         constexpr const char* designProps[]={"text","width","height","gap","padding","grow","align","justify","self","style","value","visible"};
         constexpr const char* advancedDesignProps[]={"minWidth","maxWidth","columns","columnWidth","rowHeight","low","high","step","enabled","checked","wrap","count","minHeight","maxHeight","gridSlot"};
         void designRows(JsonTree::Value value,std::vector<DesignRow>& rows,unsigned depth)
@@ -1881,7 +1882,7 @@ namespace nx
             {x-=layout.leftDx;y-=layout.leftDy;}
             else if(in(x,y,630+layout.rightDx,156+layout.rightDy,1000+layout.rightDx,189+layout.rightDy))
             {x-=layout.rightDx;y-=layout.rightDy;}
-            else if(in(x,y,630+layout.rightDx,420+layout.propsDy,1000+layout.rightDx,584+layout.propsDy))
+            else if(in(x,y,630+layout.rightDx,420+layout.propsDy,1000+layout.rightDx,620+layout.propsDy))
             {x-=layout.rightDx;y-=layout.propsDy;}
             else {x=-10000;y=-10000;}
         }
@@ -2007,7 +2008,7 @@ namespace nx
         {if(m_document.moveVisualWidget(m_visualSelection,m_widgetSelection,1,m_status))m_status="Moved widget down.";return;}
         if(in(x,y,500,524,610,545)){m_widgetTimeline=!m_widgetTimeline;m_widgetTimelinePlay=false;m_widgetTimelineTime=0;m_widgetAnchors=m_widgetEvents=false;return;}
         if(in(x,y,280,524,500,545)){m_widgetAnchors=!m_widgetAnchors;m_widgetEvents=m_widgetTimeline=m_widgetTimelinePlay=false;return;}
-        if(in(x,y,630,420,1000,438)){if(m_widgetTimeline||m_widgetAnchors){m_widgetTimeline=m_widgetTimelinePlay=m_widgetAnchors=false;return;}m_widgetEvents=x>=877;m_widgetAdvanced=x>=753&&x<877;m_widgetUnbind=false;return;}
+        if(in(x,y,630,420,1000,438)){if(m_widgetTimeline||m_widgetAnchors){m_widgetTimeline=m_widgetTimelinePlay=m_widgetAnchors=false;return;}m_widgetEvents=x>=877;m_widgetAdvanced=x>=753&&x<877;m_widgetUnbind=m_widgetNavigation=false;return;}
         if(m_widgetTimeline)
         {
             if(m_widgetSelection.empty())return;
@@ -2030,6 +2031,7 @@ namespace nx
             if(in(x,y,630,548,810,581))
             {m_widgetTimelinePlay=false;m_document.setWidgetKey(m_visualSelection,m_widgetSelection,timelineTracks[m_widgetTimelineTrack],"",m_widgetTimelineTime,m_status);return;}
             if(in(x,y,820,548,1000,581)){m_widgetTimelineTime=0;m_widgetTimelinePlay=false;return;}
+            if(in(x,y,630,584,1000,617)){const auto autoPlay=animation["autoPlay"];m_document.setWidgetKey(m_visualSelection,m_widgetSelection,"autoPlay",!autoPlay.exists()||autoPlay.flag()?"false":"true",0,m_status);return;}
             return;
         }
         if(m_widgetAnchors)
@@ -2056,6 +2058,16 @@ namespace nx
         }
         if(m_widgetEvents)
         {
+            if(in(x,y,630,558,1000,591)){m_widgetNavigation=!m_widgetNavigation;return;}
+            if(m_widgetNavigation)
+            {
+                if(m_widgetSelection.empty()||!in(x,y,630,439,1000,511))return;
+                const size_t at=static_cast<size_t>((y-439)/36)*2+static_cast<size_t>((x-630)/185);
+                if(at>=4)return;
+                m_visualProperty=navigationDesignProps[at];
+                m_visualText=designItem(tree.root(),m_widgetSelection)[m_visualProperty.c_str()].text();
+                m_visualInput=4;s.input->setTyping(true);m_status="Enter target widget ID, @stop, or blank for automatic.";return;
+            }
             if(in(x,y,630,520,1000,553)){m_widgetUnbind=!m_widgetUnbind;return;}
             if(m_widgetSelection.empty()||!in(x,y,630,439,1000,511))return;
             const size_t index=static_cast<size_t>((y-439)/36)*3+static_cast<size_t>((x-630)/123.34f);
@@ -2226,6 +2238,7 @@ namespace nx
             snprintf(label,sizeof(label),"%.2fs / %.2fs",m_widgetTimelineTime,duration);c.text(*m_font,label,815,493,text,Align::Center);
             button(630,512,115,a["loop"].flag()?"Loop on":"Loop off");button(752,512,118,m_widgetTimelinePlay?"Pause":"Play");button(877,512,123,"Set key");
             button(630,548,180,"Delete key");button(820,548,180,"Rewind");
+            button(630,584,370,!a["autoPlay"].exists()||a["autoPlay"].flag()?"Runtime autoplay: on":"Runtime autoplay: off");
             c.pop();resolutionMenu();return;
         }
         if(m_widgetAnchors)
@@ -2236,10 +2249,25 @@ namespace nx
         }
         else if(m_widgetEvents)
         {
-            for(size_t i=0;i<sizeof(designEvents)/sizeof(designEvents[0]);++i)
-                button(630+123.34f*static_cast<float>(i%3),439+36*static_cast<float>(i/3),119,designEvents[i]);
-            button(630,520,370,m_widgetUnbind?"Mode: unbind event":"Mode: open event graph");
-            c.text(*m_font,"Link page to screen before opening events.",630,558,muted);
+            if(m_widgetNavigation)
+            {
+                const auto selected=designItem(tree.root(),m_widgetSelection);
+                const char* labels[]={"Up","Down","Left","Right"};
+                for(size_t i=0;i<4;++i)
+                {
+                    const auto rule=selected[navigationDesignProps[i]];
+                    const auto label=std::string(labels[i])+": "+(rule.exists()?rule.text():"Auto");
+                    button(630+185.f*static_cast<float>(i%2),439+36*static_cast<float>(i/2),180,label.c_str());
+                }
+                c.text(*m_font,"Target ID / @stop / automatic",630,525,muted);
+            }
+            else
+            {
+                for(size_t i=0;i<sizeof(designEvents)/sizeof(designEvents[0]);++i)
+                    button(630+123.34f*static_cast<float>(i%3),439+36*static_cast<float>(i/3),119,designEvents[i]);
+                button(630,520,370,m_widgetUnbind?"Mode: unbind event":"Mode: open event graph");
+            }
+            button(630,558,370,m_widgetNavigation?"Back to widget events":"Controller navigation");
         }
         else for(size_t i=0;i<(m_widgetAdvanced?sizeof(advancedDesignProps)/sizeof(advancedDesignProps[0]):sizeof(designProps)/sizeof(designProps[0]));++i)
             button(630+123.34f*static_cast<float>(i%3),439+36*static_cast<float>(i/3),119,!m_widgetAdvanced&&i==0&&std::any_of(rows.begin(),rows.end(),[&](const DesignRow& row){return row.id==m_widgetSelection&&row.kind=="component";})?"Unlink":m_widgetAdvanced?advancedDesignProps[i]:designProps[i]);
@@ -2530,7 +2558,7 @@ namespace nx
         }
         if(selected->kind!="widget")return;
         if(in(x,y,630,510,1000,543)){m_visualInput=5;m_visualText.clear();for(const auto& dependency:selected->dependencies)if(const auto* a=m_document.visualAsset(dependency);a&&a->kind=="theme")m_visualText=dependency;input.setTyping(true);m_status="Enter theme asset ID or blank for native defaults.";return;}
-        if(in(x,y,280,548,610,581)){m_widgetDesigner=true;m_widgetPalette=false;m_widgetEvents=m_widgetUnbind=m_widgetDragging=m_widgetAnchors=m_widgetPreviewDrag=m_widgetTimeline=m_widgetTimelinePlay=false;m_widgetTimelineTime=0;m_widgetSelection.clear();m_widgetFirst=0;return;}
+        if(in(x,y,280,548,610,581)){m_widgetDesigner=true;m_widgetPalette=false;m_widgetEvents=m_widgetNavigation=m_widgetUnbind=m_widgetDragging=m_widgetAnchors=m_widgetPreviewDrag=m_widgetTimeline=m_widgetTimelinePlay=false;m_widgetTimelineTime=0;m_widgetSelection.clear();m_widgetFirst=0;return;}
         if(in(x,y,630,232,1000,266))
         {m_visualInput=2;input.setTyping(true);m_status="Enter the next widget label, then press Enter.";return;}
         const char* kind=nullptr;
@@ -3325,7 +3353,7 @@ namespace nx
                             if(widget)
                             {
                                 m_widgetDesigner=true;m_widgetPalette=false;
-                                m_widgetEvents=m_widgetUnbind=m_widgetDragging=m_widgetAnchors=m_widgetPreviewDrag=m_widgetTimeline=m_widgetTimelinePlay=false;
+                                m_widgetEvents=m_widgetNavigation=m_widgetUnbind=m_widgetDragging=m_widgetAnchors=m_widgetPreviewDrag=m_widgetTimeline=m_widgetTimelinePlay=false;
                                 m_widgetTimelineTime=0;m_widgetSelection.clear();m_widgetFirst=0;
                             }
                         }

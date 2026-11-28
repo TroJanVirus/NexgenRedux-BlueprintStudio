@@ -3742,3 +3742,30 @@ NX_TEST(nativeSizeBoxConstrainsChild)
     NX_EXPECT(fabsf(child->w-120)<0.01f&&fabsf(child->h-50)<0.01f);
     NX_EXPECT(box->add(WidgetKind::Label,"")==nullptr);
 }
+
+NX_TEST(nativeWidgetNavigationAndAnimationPlayback)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    BlueprintDocument doc;doc.create();std::string error,source;
+    const std::string page=R"NAV([{"button":"One","id":"one","navDown":"three","animation":{"duration":1,"autoPlay":false,"x":[[0,0],[1,100]]}},{"button":"Two","id":"two"},{"button":"Three","id":"three","navUp":"@stop"}])NAV";
+    NX_EXPECT(doc.replaceVisualAssets({{"widget-1","widget","Navigation test",page,{}}},error));
+    if(!doc.connectVisualWidget("Screen","widget-1",error)||!compileBlueprint(doc,source,error))
+    {NX_ERROR("Navigation: %s",error.c_str());NX_EXPECT(false);return;}
+    r.platform.files["showcase/main/screen.json"]="{\"title\":\"Navigation\"}";r.platform.files["showcase/main/main.as"]=source;
+    if(!r.screens.init(r.services,"showcase","main")){NX_EXPECT(false);return;}r.step(4);
+    NX_EXPECT(!r.screens.failed());if(!r.services.ui)return;
+    auto& ui=*r.services.ui;auto* one=ui.find("one");auto* two=ui.find("two");auto* three=ui.find("three");
+    NX_EXPECT(one&&two&&three);if(!one||!two||!three)return;
+    ui.focus(one);r.press(Action::Down);NX_EXPECT(ui.focused()==three);
+    r.press(Action::Up);NX_EXPECT(ui.focused()==three);
+    NX_EXPECT(three->setNavigation("up","one"));r.press(Action::Up);NX_EXPECT(ui.focused()==one);
+    three->enabled=false;r.press(Action::Down);NX_EXPECT(ui.focused()==two);
+    NX_EXPECT(one->animationTime==0&&one->animationDirection==0);
+    NX_EXPECT(one->controlAnimation("forward",true));r.step(15);const float mid=one->animationTime;
+    NX_EXPECT(mid>0&&mid<1&&one->animationValues[0]>0);
+    NX_EXPECT(one->controlAnimation("pause",false));r.step(10);NX_EXPECT(one->animationTime==mid);
+    NX_EXPECT(one->controlAnimation("reverse",false));r.step(120);NX_EXPECT(one->animationTime==0&&one->animationDirection==0);
+    NX_EXPECT(one->controlAnimation("reverse",true));r.step(4);NX_EXPECT(one->animationTime>0&&one->animationTime<1);
+    NX_EXPECT(one->controlAnimation("stop",false));r.step();NX_EXPECT(one->animationTime==0&&one->animationValues[0]==0);
+    NX_EXPECT(!one->controlAnimation("bad",false)&&!one->setNavigation("bad","two"));
+}

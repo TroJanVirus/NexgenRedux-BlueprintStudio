@@ -1,5 +1,6 @@
 #include "tools/blueprint/native_document.h"
 #include "ui/grid_slot.h"
+#include "ui/navigation_rule.h"
 #include "base/json_tree.h"
 #include "base/json_value.h"
 #include <algorithm>
@@ -913,6 +914,16 @@ namespace nx
                         if(qualified.size()>128||!names.insert(qualified).second){error="Duplicate or excessive expanded widget ID: "+qualified;return false;}
                         name->setText(qualified);
                     }
+                    if(!prefix.empty())for(const char* property:uiNavigationProperties)
+                    {
+                        auto* rule=node.find(property);
+                        if(rule&&rule->type()==JsonValue::Type::String&&!rule->text().empty()&&rule->text()!="@stop"&&rule->text()!="@auto")
+                        {
+                            const auto target=prefix+rule->text();
+                            if(!uiNavigationTarget(target)){error="Expanded navigation target exceeds 128 characters.";return false;}
+                            rule->setText(target);
+                        }
+                    }
                     if(std::string(kind)=="component")
                     {
                         const auto* ref=node.find("component");
@@ -950,10 +961,16 @@ namespace nx
             WidgetMatch match;findVisualWidget(root,widget,match);
             if(match.matches!=1){error="Select a widget with a unique ID.";return false;}
             auto& item=*match.item;
-            const std::string allowed="|text|style|width|height|minWidth|maxWidth|minHeight|maxHeight|gridSlot|gap|grow|padding|value|low|high|step|columnWidth|rowHeight|columns|count|align|justify|self|visible|enabled|checked|wrap|anchor|offset|";
+            const std::string allowed="|text|style|width|height|minWidth|maxWidth|minHeight|maxHeight|gridSlot|navUp|navDown|navLeft|navRight|gap|grow|padding|value|low|high|step|columnWidth|rowHeight|columns|count|align|justify|self|visible|enabled|checked|wrap|anchor|offset|";
             if(property.empty()||property.find('|')!=std::string::npos||allowed.find("|"+property+"|")==std::string::npos)
             {error="Unsupported widget property.";return false;}
-            if(property=="gridSlot")
+            if(uiNavigationIndex(property)>=0)
+            {
+                if(!uiNavigationTarget(value)){error="Navigation target must be a widget ID, @stop, or blank for automatic.";return false;}
+                if(value.empty()||value=="@auto")item.remove(property.c_str());
+                else if(!text(item,property.c_str(),value))return false;
+            }
+            else if(property=="gridSlot")
             {
                 const auto parent=[&](auto&& self,JsonValue& node)->bool
                 {
@@ -1101,10 +1118,10 @@ namespace nx
                     {error="Remove keys beyond the new duration first.";return false;}
                 if(!number(*a,"duration",n))return false;
             }
-            else if(track=="loop")
+            else if(track=="loop"||track=="autoPlay")
             {
                 if(value!="true"&&value!="false"){error="Use true or false.";return false;}
-                auto* v=a->put("loop");if(!v)return false;v->setFlag(value=="true");
+                auto* v=a->put(track);if(!v)return false;v->setFlag(value=="true");
             }
             else
             {

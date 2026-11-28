@@ -39,7 +39,7 @@ NX_TEST(nativeDeleteSelectedNodesIsAtomic)
 }
 NX_TEST(nativeCatalogueContainsReferenceAPI)
 {
-    NX_EXPECT(blueprintCatalogue().size()==1553);
+    NX_EXPECT(blueprintCatalogue().size()==1557);
     const auto* save=blueprintSpec("api:Save:Save::set:string,string");
     NX_EXPECT(save&&save->inputs.size()==3&&save->outputs.size()==1);
     if(save&&save->inputs.size()==3)NX_EXPECT(save->inputs[0].type=="exec"&&save->inputs[2].type=="string");
@@ -2375,6 +2375,20 @@ NX_TEST(nativeSizeBoxSingleChild)
     NX_EXPECT(copy.load(bytes.data(),bytes.size(),error)&&copy.visualAsset(page)->source==doc.visualAsset(page)->source);
 }
 
+NX_TEST(nativeWidgetNavigationAndAutoplayPersist)
+{
+    BlueprintDocument doc;doc.create();std::string page,error,bytes;
+    NX_EXPECT(doc.createVisualAsset("widget",page,error)&&doc.appendVisualWidget(page,"button","First",error));
+    NX_EXPECT(doc.appendVisualWidget(page,"button","Second",error));
+    NX_EXPECT(doc.setVisualWidgetProperty(page,"item-1","navDown","item-2",error));
+    NX_EXPECT(doc.setVisualWidgetProperty(page,"item-2","navUp","@stop",error));
+    NX_EXPECT(doc.setWidgetKey(page,"item-1","autoPlay","false",0,error));
+    NX_EXPECT(doc.setWidgetKey(page,"item-1","x","0",0,error)&&doc.setWidgetKey(page,"item-1","x","100",1,error));
+    NX_EXPECT(doc.serialize(bytes,error));BlueprintDocument copy;
+    NX_EXPECT(copy.load(bytes.data(),bytes.size(),error)&&copy.visualAsset(page)->source==doc.visualAsset(page)->source);
+    NX_EXPECT(copy.setVisualWidgetProperty(page,"item-2","navUp","",error));
+    NX_EXPECT(copy.undo()&&copy.visualAsset(page)->source==doc.visualAsset(page)->source);
+}
 NX_TEST(nativeStudioLaunchPathValidation)
 {
     NX_EXPECT(studioLaunchPath("/E/Games/Preview")=="E:\\Games\\Preview\\default.xbe");
@@ -2388,3 +2402,4 @@ NX_TEST(nativeStudioLaunchPathValidation)
     NX_EXPECT(studioLaunchIdentity(std::string(32,'a')));
     NX_EXPECT(!studioLaunchIdentity(std::string(32,'z')));
 }
+

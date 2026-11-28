@@ -1,4 +1,5 @@
 #include "ui/ui.h"
+#include "ui/navigation_rule.h"
 #include "base/log.h"
 
 #include <angelscript.h>
@@ -66,6 +67,37 @@ namespace nx
             }
         }
         destroy(this);
+    }
+
+    bool Widget::setNavigation(const std::string& direction,const std::string& target)
+    {
+        const int index=uiNavigationIndex(direction);
+        if(index<0||!ui||!uiNavigationTarget(target))return false;
+        if(target.empty()||target=="@auto")
+        {
+            if(navigation.size()==4)
+            {
+                navigation[index].clear();
+                if(navigation[0].empty()&&navigation[1].empty()&&navigation[2].empty()&&navigation[3].empty())navigation.clear();
+            }
+            return true;
+        }
+        if(navigation.empty())navigation.resize(4);
+        navigation[index]=target;return true;
+    }
+    bool Widget::controlAnimation(const std::string& mode,bool restart)
+    {
+        if(!ui||animationDuration<=0)return false;
+        if(mode=="forward"||mode=="reverse")
+        {
+            const int direction=mode=="forward"?1:-1;
+            if(restart||(direction>0&&animationTime>=animationDuration)||(direction<0&&animationTime<=0))
+                animationTime=direction>0?0:animationDuration;
+            animationDirection=direction;return true;
+        }
+        if(mode=="pause"){animationDirection=0;return true;}
+        if(mode=="stop"){animationDirection=0;animationTime=0;return true;}
+        return false;
     }
 
     bool Widget::focusable() const
@@ -684,6 +716,19 @@ namespace nx
         {
             focus(firstFocusable(top()), true);
             return;
+        }
+        if(f->navigation.size()==4)
+        {
+            const int index=way==Action::Up?0:way==Action::Down?1:way==Action::Left?2:3;
+            const auto& target=f->navigation[index];
+            if(target=="@stop")return;
+            if(!target.empty())
+            {
+                GrowArray<Widget*,MemTag::UI> candidates;collect(top(),candidates);
+                for(auto* candidate:candidates)if(candidate->id==target&&reachable(*candidate))
+                {focus(candidate,true);return;}
+                // Missing/disabled targets fall back to native spatial navigation.
+            }
         }
         if (f->kind == WidgetKind::Slider && (way == Action::Left || way == Action::Right))
         {

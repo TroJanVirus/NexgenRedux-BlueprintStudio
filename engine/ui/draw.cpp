@@ -35,8 +35,21 @@ namespace nx
         }
         if(w.animationDuration>0)
         {
-            const float t=timelineTime>=0?fminf(timelineTime,w.animationDuration):w.animationTime+fmaxf(dt,0);
-            w.animationTime=timelineTime<0&&w.animationLoop?fmodf(t,w.animationDuration):fminf(t,w.animationDuration);
+            if(timelineTime>=0)w.animationTime=fminf(timelineTime,w.animationDuration);
+            else if(w.animationDirection&&dt>0)
+            {
+                const float t=w.animationTime+dt*static_cast<float>(w.animationDirection);
+                if(w.animationLoop)
+                {
+                    float wrapped=fmodf(t,w.animationDuration);
+                    w.animationTime=wrapped<0?wrapped+w.animationDuration:wrapped;
+                }
+                else
+                {
+                    w.animationTime=fminf(fmaxf(t,0),w.animationDuration);
+                    if((w.animationDirection>0&&t>=w.animationDuration)||(w.animationDirection<0&&t<=0))w.animationDirection=0;
+                }
+            }
             for(unsigned i=0;i<5;++i)
             {
                 const auto& keys=w.animationKeys[i];if(keys.empty())continue;

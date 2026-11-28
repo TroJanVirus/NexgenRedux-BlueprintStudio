@@ -1296,6 +1296,10 @@ Is told which of a dialog's buttons was pressed, or -1.
 | `string get_anchor() const property` | The named Stack slot anchor, or an empty string for automatic layout. |
 | `Vec2 get_offset() const property` | The Stack slot offset in authored design units. |
 | `bool setAnchor(const string &in anchor, float x, float y)` | Sets a Stack child anchor and XY offset; empty clears the anchor. Returns false for invalid slots or values. |
+| `bool setNavigation(const string &in direction, const string &in destination)` | Sets up/down/left/right focus target ID, @stop, or blank for automatic navigation. |
+| `bool controlAnimation(const string &in mode, bool restart)` | Controls authored animation: forward, reverse, pause or stop. Restart starts at the appropriate endpoint. |
+| `float get_animationTime() const property` | Current authored animation time in seconds. |
+| `bool get_animationPlaying() const property` | Whether the authored animation is playing forward or in reverse. |
 | `Color get_color() const property` | Multiplies its picture, or its text. |
 | `void set_color(const Color &in) property` | Changes it. |
 | `void set_picture(Texture@+) property` | The picture of an image, or in a button. |

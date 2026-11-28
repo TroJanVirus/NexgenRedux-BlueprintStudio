@@ -1,6 +1,7 @@
 #include "ui/ui.h"
 #include "ui/design_geometry.h"
 #include "ui/slot_anchor.h"
+#include "ui/navigation_rule.h"
 #include "base/log.h"
 
 #include <angelscript.h>
@@ -399,12 +400,17 @@ namespace nx
                 {fail(file,p.line(),"requires a stack parent and two finite offsets","offset");return nullptr;}
                 w->offsetX=p[0u].number();w->offsetY=p[1u].number();
             }
+            else if(uiNavigationIndex(key)>=0)
+            {
+                if(!p.isString()||!w->setNavigation(key,p.text()))
+                {fail(file,p.line(),"invalid directional focus target",key);return nullptr;}
+            }
             else if(strcmp(key,"animation")==0)
             {
-                const auto d=p["duration"],loop=p["loop"];
-                if(!p.isObject()||!d.isNumber()||!(d.exact()>=0.01&&d.exact()<=60)||(loop.exists()&&loop.type()!=JsonTree::Type::Bool))
+                const auto d=p["duration"],loop=p["loop"],autoPlay=p["autoPlay"];
+                if(!p.isObject()||!d.isNumber()||!(d.exact()>=0.01&&d.exact()<=60)||(loop.exists()&&loop.type()!=JsonTree::Type::Bool)||(autoPlay.exists()&&autoPlay.type()!=JsonTree::Type::Bool))
                 {fail(file,p.line(),"invalid animation duration or loop","animation");return nullptr;}
-                w->animationDuration=d.number();w->animationLoop=loop.flag();
+                w->animationDuration=d.number();w->animationLoop=loop.flag();w->animationDirection=!autoPlay.exists()||autoPlay.flag()?1:0;
                 const char* tracks[]={"x","y","scale","opacity","rotation"};
                 const double low[]={-10000,-10000,0.05,0,-3600},high[]={10000,10000,4,1,3600};
                 for(unsigned i=0;i<5;++i)
