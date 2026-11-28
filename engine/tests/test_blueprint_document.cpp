@@ -244,6 +244,16 @@ NX_TEST(nativeNodeAnnotationsAndDisconnectRoundTrip)
     NX_EXPECT(copy.nodeDisplayName(1,copy.graphs[1].nodes[1]).empty()&&copy.undo()&&copy.nodeDisplayName(1,copy.graphs[1].nodes[1])==alias);
 }
 
+NX_TEST(nativeMoveConnectionIsTransactional)
+{
+    BlueprintDocument doc;doc.create();std::string error;
+    NX_EXPECT(doc.addNode(0,"api:Save:Save::set:string,string",0,0,error)&&doc.addNode(0,"api:Save:Save::set:string,string",0,0,error));
+    NX_EXPECT(doc.connect(0,0,"then",1,"in",error));
+    NX_EXPECT(!doc.moveConnection(0,0,2,"invalid",false,error)&&doc.graphs[0].links[0].to==1);
+    NX_EXPECT(doc.moveConnection(0,0,2,"in",false,error)&&doc.graphs[0].links[0].to==2);
+    NX_EXPECT(doc.undo()&&doc.graphs[0].links[0].to==1);
+}
+
 NX_TEST(nativeResizableCommentAndRGBRoundTrip)
 {
     BlueprintDocument doc;doc.create();std::string error,bytes;

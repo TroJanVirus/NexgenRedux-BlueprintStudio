@@ -2870,6 +2870,16 @@ namespace nx
             if(!other.displayName.empty()&&nodeNameIdentity(*this,i,other)==identity)return other.displayName;
         return {};
     }
+    bool BlueprintDocument::moveConnection(size_t graph,size_t link,size_t node,const std::string& pin,bool output,std::string& error)
+    {
+        if(graph>=graphs.size()||link>=graphs[graph].links.size()||node>=graphs[graph].nodes.size()){error="Invalid connection.";return false;}
+        const auto old=graphs[graph].links[link];
+        if((output&&old.from==node&&old.output==pin)||(!output&&old.to==node&&old.input==pin)){error.clear();return true;}
+        BlueprintDocument staged;staged.name=name;staged.assetRoot=assetRoot;staged.graphs=graphs;staged.manifests=manifests;staged.m_visualAssets=m_visualAssets;staged.m_nextId=m_nextId;
+        auto& links=staged.graphs[graph].links;links.erase(links.begin()+static_cast<std::ptrdiff_t>(link));
+        if(!staged.connectCompatible(graph,output?node:old.from,output?pin:old.output,output?old.to:node,output?old.input:pin,error))return false;
+        record(graph);graphs[graph]=std::move(staged.graphs[graph]);m_nextId=staged.m_nextId;return true;
+    }
     bool BlueprintDocument::disconnectNode(size_t graph,size_t node)
     {
         if(graph>=graphs.size()||node>=graphs[graph].nodes.size())return false;

@@ -150,6 +150,7 @@ namespace nx
         bool setInputValue(size_t graph,size_t node,const std::string& pin,const std::string& value,std::string& error);
         bool editNodeValues(size_t graph,size_t node,const std::vector<InputValue>& values,const std::string* literalValue,std::string& error,const std::string* displayName=nullptr,const std::string* comment=nullptr,const unsigned* colour=nullptr);
         bool disconnectNode(size_t graph,size_t node);
+        bool moveConnection(size_t graph,size_t link,size_t node,const std::string& pin,bool output,std::string& error);
         std::string nodeDisplayName(size_t graph,const Node& node) const;
         bool clearInputValue(size_t graph,size_t node,const std::string& pin);
         // Constant four-point curves can be edited as a single undoable transaction.
