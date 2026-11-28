@@ -274,6 +274,8 @@ namespace nx
         bool writeVerified(Services& services,const std::string& path,const std::string& bytes);
         bool compileAndExport(Services& services);
         bool validateProject(Services& services,const std::vector<BlueprintScreenOutput>& screens);
+        bool auditTargetAssets(Services& services,std::string& summary);
+        std::string m_targetAudit;
         void focusDiagnostic(BlueprintLocation location);
         void focusPreviewError(const std::string& error);
         bool startTrace(Services& services);

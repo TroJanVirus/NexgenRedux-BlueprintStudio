@@ -1682,7 +1682,11 @@ namespace nx
             c.rect(planCenterX+offset,planTop,i?1.f:2.f,planBottom-planTop,i?Color{0.16f,0.21f,0.28f,1}:Color{0.37f,0.49f,0.60f,1});
             c.rect(planLeft,planCenterY+offset,planRight-planLeft,i?1.f:2.f,i?Color{0.16f,0.21f,0.28f,1}:Color{0.37f,0.49f,0.60f,1});
         }
-        for(const auto& marker:actorMarkers(m_document,assetScreen()))
+        const auto authoredMarkers=actorMarkers(m_document,assetScreen());
+        const auto& target=m_document.target();
+        const auto sceneBudget=std::to_string(authoredMarkers.size())+" authored placements | "+(target.xbox()?std::to_string(target.ram)+" MiB unified RAM":"Target selected")+" | actual runtime fit unknown";
+        c.rect(planLeft,planTop,planRight-planLeft,20,{0.11f,0.15f,0.20f,0.92f});c.text(*m_font,sceneBudget.c_str(),planLeft+6,planTop+1,muted);
+        for(const auto& marker:authoredMarkers)
         {
             if(m_placementDragging&&marker.graph==m_placementGraph&&marker.node==m_placementNode)continue;
             float x=0,y=0;if(!placementProject(marker.x,marker.y,marker.z,x,y)||!in(x,y,planLeft,planTop,planRight,planBottom))continue;
@@ -3303,10 +3307,12 @@ namespace nx
             if(preview!=m_contentPreviews.end()&&preview->world)preview->world->space().draw(c,x+5,y+5,130,62);
             else if(preview!=m_contentPreviews.end()&&preview->ui)
             {
-                constexpr float scale=62.f/720.f;
-                const float width=1280.f*scale,px=x+70-width*0.5f,py=y+5;
-                c.push();c.clip(px,py,width,62);c.translate(px,py);c.scale(scale,scale);
-                preview->ui->drawDesign(c,0,0,1280,720);
+                const auto& target=m_document.target();
+                const float w=static_cast<float>(target.width()),h=static_cast<float>(target.height()),aspect=target.pixelAspect();
+                const float scale=std::min(130.f/(w*aspect),62.f/h);
+                const float width=w*aspect*scale,height=h*scale,px=x+70-width*0.5f,py=y+5+(62-height)*0.5f;
+                c.push();c.clip(px,py,width,height);c.translate(px,py);c.scale(scale*aspect,scale);
+                preview->ui->drawDesign(c,0,0,w,h);
                 c.pop();
             }
             else if(asset.kind=="actor")
@@ -3922,6 +3928,76 @@ namespace nx
         return true;
     }
 
+    // Explicit integrity pass: source media readability and direct known local
+    // asset references, not a residency estimate or a promise of Xbox fit.
+    bool BlueprintWorkspace::auditTargetAssets(Services& s,std::string& summary)
+    {
+        auto& platform=*s.platform;
+        std::uint64_t bytes=0;size_t count=0,missing=0,dynamic=0;
+        std::string firstMissing,error;
+        const auto& root=m_document.assetRoot;
+        const auto readAssets=[&](const std::string& base,const std::vector<std::string>& files)->bool
+        {
+            for(const auto& file:files)
+            {
+                FileData data;
+                if(!platform.readFile((base+file).c_str(),data,MemTag::General))
+                {summary="Unreadable project asset: "+file;return false;}
+                bytes+=data.size;++count;
+            }
+            return true;
+        };
+        for(const auto& screen:m_document.screens())
+        {
+            std::vector<std::string> files;
+            if(!blueprintListAssets(platform,root,screen,files,error)){summary=error;return false;}
+            const auto base="own/"+root+"/"+screen+"/asset/";
+            if(!readAssets(base,files))return false;
+        }
+        if(!root.empty())
+        {
+            std::vector<std::string> shared;
+            if(!blueprintListSharedAssets(platform,root,shared,error)){summary=error;return false;}
+            if(!readAssets("own/"+root+"/_global/",shared))return false;
+        }
+        for(const auto& graph:m_document.graphs)
+        {
+            // Behaviour graphs can run in multiple screens. Their scope and
+            // dynamically computed paths need runtime dependency analysis.
+            if(graph.owner.rfind("behaviour:",0)==0)continue;
+            for(size_t n=0;n<graph.nodes.size();++n)
+            {
+                const auto& node=graph.nodes[n];
+                const auto& kind=node.kind;
+                const bool known=kind=="api:Assets:Assets::texture:string"||kind=="api:Assets:Assets::model:string"||
+                    kind=="api:Assets:Assets::sound:string"||kind=="api:Assets:Assets::video:string"||
+                    kind=="api:Assets:Assets::font:string,uint"||kind=="api:Assets:Assets::imageFont:string,string,uint,uint"||
+                    kind=="api:Assets:Assets::effect:string"||kind=="api:Ui:Ui::load:string,Widget@"||
+                    kind=="api:Space:Space::load:string,Vec3,bool";
+                if(!known)continue;
+                std::string name;
+                const auto wire=std::find_if(graph.links.begin(),graph.links.end(),[&](const BlueprintDocument::Link& link){return link.to==n&&link.input=="name";});
+                if(wire!=graph.links.end())
+                {
+                    if(wire->from>=graph.nodes.size()||graph.nodes[wire->from].kind!="literal:string"){++dynamic;continue;}
+                    name=graph.nodes[wire->from].ref;
+                }
+                else for(const auto& value:node.values)if(value.pin=="name")name=value.value;
+                // Local assets can be resolved exactly. Global assets may be
+                // provided by the installed Redux media or cooked alternatives.
+                if(name.rfind("asset:",0)!=0){++dynamic;continue;}
+                const auto relative=name.substr(6);
+                if(relative.empty()||relative.find("..")!=std::string::npos||relative.find_first_of("\\\\:")!=std::string::npos){++dynamic;continue;}
+                if(root.empty()||!platform.fileTime(("own/"+root+"/"+graph.owner+"/asset/"+relative).c_str()))
+                {if(firstMissing.empty())firstMissing=graph.owner+": "+name;++missing;}
+            }
+        }
+        char media[128];std::snprintf(media,sizeof(media),"%zu source files / %.2f MiB on disk (not resident RAM)",count,static_cast<double>(bytes)/1048576.0);
+        summary=media;
+        if(missing)summary+=" | "+std::to_string(missing)+" unresolved local references; first: "+firstMissing;
+        if(dynamic)summary+=" | "+std::to_string(dynamic)+" dynamic/global references unverified";
+        return true;
+    }
     bool BlueprintWorkspace::compileAndExport(Services& s)
     {
         std::vector<BlueprintScreenOutput> screens;BlueprintLocation location;m_diagnostic={};
@@ -4796,7 +4872,13 @@ namespace nx
         std::vector<BlueprintScreenOutput> outputs;BlueprintLocation location;m_diagnostic={};
         if(!compileBlueprintProject(m_document,outputs,m_status,&location)){focusDiagnostic(location);m_focus=0;return;}
         if(!validateProject(s,outputs)){m_focus=0;return;}
-        if(validate){m_status="Script integrity passed ("+std::to_string(outputs.size())+" scenes). Target runtime fit UNVERIFIED; "+m_document.target().warning();return;}
+        if(validate)
+        {
+            m_targetAudit.clear();
+            if(!auditTargetAssets(s,m_targetAudit)){m_status="Integrity check failed: "+m_targetAudit;return;}
+            m_status="Script integrity passed ("+std::to_string(outputs.size())+" scenes). "+m_targetAudit+" | Xbox/runtime fit UNVERIFIED.";
+            return;
+        }
         std::string file;
         for(unsigned i=1;i<=10000;++i){const auto candidate="blueprint-package-"+std::to_string(i)+".bp.zip";if(!s.platform->fileTime(("own/"+candidate).c_str())){file=candidate;break;}}
         if(file.empty())m_status="No free project package name.";
@@ -4808,7 +4890,7 @@ namespace nx
         c.text(*m_font,m_document.name.c_str(),120,111,text);
         c.text(*m_font,("Scenes: "+std::to_string(m_document.screens().size())+" | Graphs: "+std::to_string(m_document.graphs.size())+" | Linked assets: "+std::to_string(m_document.visualAssets().size())).c_str(),120,140,muted);
         const auto row=[&](float y,const char* title,const char* detail){c.roundRect(140,y,1000,55,5,{0.20f,0.32f,0.45f,1});c.text(*m_font,title,154,y+6,text);c.text(*m_font,detail,154,y+28,muted);};
-        row(195,"Validate project","Compile every scene and verify generated AngelScript.");
+        row(195,"Check runtime integrity","Compile every scene; check source media readability and direct local references.");
         row(275,"Compile & export native project","Export native screen manifests, generated scripts and project media into a new folder.");
         row(355,"Validate & package editable project","Export a portable Blueprint ZIP containing the document and media.");
         const auto& target=m_document.target();
@@ -6681,7 +6763,7 @@ namespace nx
         }
         c.rect(0,kBottom,kWidth,kHeight-kBottom,{0.16f,0.16f,0.17f,1});
         c.clip(12,kBottom+2,kWidth*0.55f,24);c.text(*m_font,shorten(m_status,110).c_str(),12,kBottom+6,text);c.noClip();
-        c.clip(kWidth*0.56f,kBottom+2,kWidth*0.43f,24);c.text(*m_font,m_document.target().label().c_str(),kWidth-12,kBottom+6,muted,Align::Right);c.noClip();
+        c.clip(kWidth*0.56f,kBottom+2,kWidth*0.43f,24);c.text(*m_font,m_document.target().label().c_str(),kWidth-12,kBottom+6,m_document.target().highResolutionWarning()||m_document.target().ram==256?Color{1.f,0.72f,0.22f,1.f}:muted,Align::Right);c.noClip();
         if(!m_recoveryWarning.empty())
             c.text(*m_font,shorten(m_recoveryWarning,105).c_str(),12,kBottom+26,{1.f,0.72f,0.22f,1.f});
         else
