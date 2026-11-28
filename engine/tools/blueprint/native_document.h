@@ -44,7 +44,7 @@ namespace nx
     struct BlueprintDocument
     {
         struct InputValue { std::string pin,value; };
-        struct Node { std::string id, kind, ref; float x=0,y=0; std::vector<InputValue> values{}; bool watch=false; };
+        struct Node { std::string id, kind, ref; float x=0,y=0; std::vector<InputValue> values{}; bool watch=false; std::string displayName{},comment{}; unsigned colour=0; };
         struct Point { float x=0,y=0; };
         struct Link { size_t from=0,to=0; std::string output,input; std::vector<Point> route{}; };
         struct Comment { std::string title; std::vector<std::string> members; };
@@ -144,7 +144,9 @@ namespace nx
         bool setLiteral(size_t graph,size_t node,const std::string& value,std::string& error);
         bool toggleWatch(size_t graph,size_t node);
         bool setInputValue(size_t graph,size_t node,const std::string& pin,const std::string& value,std::string& error);
-        bool editNodeValues(size_t graph,size_t node,const std::vector<InputValue>& values,const std::string* literalValue,std::string& error);
+        bool editNodeValues(size_t graph,size_t node,const std::vector<InputValue>& values,const std::string* literalValue,std::string& error,const std::string* displayName=nullptr,const std::string* comment=nullptr,const unsigned* colour=nullptr);
+        bool disconnectNode(size_t graph,size_t node);
+        std::string nodeDisplayName(size_t graph,const Node& node) const;
         bool clearInputValue(size_t graph,size_t node,const std::string& pin);
         // Constant four-point curves can be edited as a single undoable transaction.
         bool cubicPoints(size_t graph,size_t node,std::vector<std::string>& points,std::string& error)const;

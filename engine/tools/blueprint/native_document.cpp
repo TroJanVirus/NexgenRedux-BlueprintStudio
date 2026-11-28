@@ -2275,6 +2275,9 @@ namespace nx
                 Node node{n["id"].text(),kind,ref,x,y};
                 if(n["watch"].exists()&&n["watch"].type()!=JsonTree::Type::Bool){error="Invalid node watch flag.";return false;}
                 node.watch=n["watch"].flag();
+                for(const char* key:{"displayName","comment"})if(n[key].exists()&&(!n[key].isString()||n[key].text().size()>(std::string(key)=="displayName"?96u:256u)||n[key].text().find('\0')!=std::string::npos)){error="Invalid node annotation.";return false;}
+                node.displayName=n["displayName"].text();node.comment=n["comment"].text();
+                if(n["colour"].exists()){const float colour=n["colour"].number();if(!n["colour"].isNumber()||colour<0||colour>7||std::floor(colour)!=colour){error="Invalid node colour.";return false;}node.colour=static_cast<unsigned>(colour);}
                 BlueprintNodeSpec resolved;
                 const auto values=n["values"];
                 if(kind=="actor:spawn-asset"&&values["id"].isString())node.values.push_back({"id",values["id"].text()});
@@ -2472,6 +2475,9 @@ namespace nx
                 auto* j=ns->add();if(!j||!text(*j,"id",n.id)||!text(*j,"kind",n.kind)||!number(*j,"x",n.x)||!number(*j,"y",n.y))return fail();
                 if((n.kind.rfind("literal:",0)==0||variableKind(n.kind)||globalKind(n.kind)||n.kind.rfind("capture:",0)==0||blueprintNamedCall(n.kind)||blueprintBehaviourReference(n.kind)||typeNode(n.kind)||typedVariable(n.kind))&&!text(*j,"value",n.ref))return fail();
                 if(n.watch){auto* watch=j->put("watch");if(!watch)return fail();watch->setFlag(true);}
+                if(!n.displayName.empty()&&!text(*j,"displayName",n.displayName))return fail();
+                if(!n.comment.empty()&&!text(*j,"comment",n.comment))return fail();
+                if(n.colour&&!number(*j,"colour",static_cast<float>(n.colour)))return fail();
                 if(!n.values.empty())
                 {
                     auto* values=j->put("values");if(!values)return fail();
@@ -2671,7 +2677,7 @@ namespace nx
             }
             if(!valid){error="No nonrecursive function target. Create another function first.";return false;}
         }
-        record(graph);g.nodes.push_back({id,kind,value,x,y});error.clear();return true;
+        Node added{id,kind,value,x,y};added.displayName=nodeDisplayName(graph,added);record(graph);g.nodes.push_back(std::move(added));error.clear();return true;
     }
     bool BlueprintDocument::addConnectedNode(size_t graph,size_t from,const std::string& output,const std::string& kind,float x,float y,std::string& error)
     {return placeContextNode(graph,from,output,true,kind,"","",x,y,error);}
@@ -2756,7 +2762,7 @@ namespace nx
         const auto kind=(customTypeName(type)||classTypeName(type)||type=="Thread@"||type=="Channel@"||type=="Samples@"||type=="AudioStream@"||type=="Voice"||type=="Sound@"||type=="Curve@"||type=="Batch@"||type=="Packed@"||type=="Zip@"||type=="Font@"||type=="Texture@")?std::string(global?"typed:global:":"typed:field:")+(setter?"set":"get"):std::string(global?"global:":"var:")+(setter?"set:":"get:")+type;
         if(type.empty()||!blueprintSpec(kind)||!context(g.name,kind,g.owner)){error="Variable is not available in this graph.";return false;}
         std::string id;do{id="n"+std::to_string(++m_nextId);}while(std::any_of(g.nodes.begin(),g.nodes.end(),[&](const Node& n){return n.id==id;}));
-        record(graph);g.nodes.push_back({id,kind,variableName,x,y});error.clear();return true;
+        Node added{id,kind,variableName,x,y};added.displayName=nodeDisplayName(graph,added);record(graph);g.nodes.push_back(std::move(added));error.clear();return true;
     }
     bool BlueprintDocument::deleteNode(size_t graph,size_t node,std::string& error)
     {
@@ -2800,14 +2806,56 @@ namespace nx
         auto& n=graphs[graph].nodes[node];if(n.ref==value){error.clear();return true;}
         record(graph);n.ref=value;error.clear();return true;
     }
-    bool BlueprintDocument::editNodeValues(size_t graph,size_t node,const std::vector<InputValue>& values,const std::string* literalValue,std::string& error)
+    namespace
+    {
+        std::string nodeNameIdentity(const BlueprintDocument& doc,size_t graph,const BlueprintDocument::Node& n)
+        {
+            const auto& g=doc.graphs[graph];
+            if(n.kind=="entry")return "entry/"+g.owner+"/"+g.name;
+            if(n.kind=="call:function"||n.kind=="call:library"||n.kind=="call:parent"||n.kind=="call:event"||n.kind=="async:start")
+            {
+                const auto* target=n.kind=="call:library"?doc.libraryFunction(n.ref):n.kind=="call:parent"?doc.function(doc.parentBehaviour(g.owner),g.name):doc.function(g.owner,n.ref);
+                if(target)return "function/"+target->owner+"/"+target->name;
+            }
+            if(n.kind.rfind("global:",0)==0||n.kind.rfind("typed:global:",0)==0)return "global/"+doc.moduleForOwner(g.owner)+"/"+n.kind+"/"+n.ref;
+            if(n.kind.rfind("var:",0)==0||n.kind.rfind("typed:",0)==0||n.kind.rfind("capture:",0)==0||n.kind.rfind("local:",0)==0)return "scope/"+g.owner+"/"+(n.kind.rfind("capture:",0)==0||n.kind.rfind("local:",0)==0?g.name:"")+"/"+n.kind+"/"+n.ref;
+            return n.kind+"/"+n.ref;
+        }
+    }
+    std::string BlueprintDocument::nodeDisplayName(size_t graph,const Node& node) const
+    {
+        if(graph>=graphs.size())return node.displayName;
+        if(!node.displayName.empty())return node.displayName;
+        const auto identity=nodeNameIdentity(*this,graph,node);
+        for(size_t i=0;i<graphs.size();++i)for(const auto& other:graphs[i].nodes)
+            if(!other.displayName.empty()&&nodeNameIdentity(*this,i,other)==identity)return other.displayName;
+        return {};
+    }
+    bool BlueprintDocument::disconnectNode(size_t graph,size_t node)
+    {
+        if(graph>=graphs.size()||node>=graphs[graph].nodes.size())return false;
+        auto& links=graphs[graph].links;const auto match=[&](const Link& l){return l.from==node||l.to==node;};
+        if(std::none_of(links.begin(),links.end(),match))return false;
+        record(graph);links.erase(std::remove_if(links.begin(),links.end(),match),links.end());return true;
+    }
+    bool BlueprintDocument::editNodeValues(size_t graph,size_t node,const std::vector<InputValue>& values,const std::string* literalValue,std::string& error,const std::string* displayName,const std::string* comment,const unsigned* colour)
     {
         if(graph>=graphs.size()||node>=graphs[graph].nodes.size()){error="Unknown node.";return false;}
-        if(values.empty()&&!literalValue){error.clear();return true;}
+        if(values.empty()&&!literalValue&&!displayName&&!comment&&!colour){error.clear();return true;}
+        if((displayName&&(displayName->size()>96||displayName->find_first_of("\r\n\t")!=std::string::npos||displayName->find('\0')!=std::string::npos))||(comment&&(comment->size()>256||comment->find('\0')!=std::string::npos))||(colour&&*colour>7)){error="Invalid node name, comment or colour.";return false;}
         BlueprintDocument staged;staged.name=name;staged.assetRoot=assetRoot;staged.graphs=graphs;staged.manifests=manifests;staged.m_visualAssets=m_visualAssets;staged.m_visualSerial=m_visualSerial;staged.m_nextId=m_nextId;
         if(literalValue&&!staged.setLiteral(graph,node,*literalValue,error))return false;
         for(const auto& value:values)if(!staged.setInputValue(graph,node,value.pin,value.value,error)){error=value.pin+": "+error;return false;}
-        record(graph);graphs[graph]=std::move(staged.graphs[graph]);error.clear();return true;
+        if(displayName)
+        {
+            const auto identity=nodeNameIdentity(staged,graph,staged.graphs[graph].nodes[node]);
+            for(size_t i=0;i<staged.graphs.size();++i)for(auto& other:staged.graphs[i].nodes)
+                if(nodeNameIdentity(staged,i,other)==identity)other.displayName=*displayName;
+        }
+        auto& edited=staged.graphs[graph].nodes[node];if(comment)edited.comment=*comment;if(colour)edited.colour=*colour;
+        if(displayName){recordGraphList();graphs=std::move(staged.graphs);}
+        else {record(graph);graphs[graph]=std::move(staged.graphs[graph]);}
+        error.clear();return true;
     }
     bool BlueprintDocument::setInputValue(size_t graph,size_t node,const std::string& pin,const std::string& value,std::string& error)
     {

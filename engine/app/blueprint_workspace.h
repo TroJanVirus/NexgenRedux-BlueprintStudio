@@ -342,6 +342,10 @@ namespace nx
         std::vector<std::string> m_inspectorDraft;
         std::vector<bool> m_inspectorChanged;
         bool m_inspectorReplace=false,m_inspectorLiteral=false;
+        unsigned m_inspectorColour=0;
+        bool m_inspectorColourChanged=false,m_nodeContext=false;
+        float m_nodeContextX=0,m_nodeContextY=0;
+        bool removeSelectedNode(Input& input);
         double m_nodeClickTime=-1;
         size_t m_nodeClickGraph=static_cast<size_t>(-1),m_nodeClickIndex=static_cast<size_t>(-1);
         float m_nodeClickX=0,m_nodeClickY=0;

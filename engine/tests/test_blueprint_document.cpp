@@ -227,6 +227,23 @@ NX_TEST(nativeNodeEditorAppliesAllValuesAsOneTransaction)
     NX_EXPECT(doc.editNodeValues(0,2,{},&valid,error)&&doc.graphs[0].nodes[2].ref=="2.5");
 }
 
+NX_TEST(nativeNodeAnnotationsAndDisconnectRoundTrip)
+{
+    BlueprintDocument doc;doc.create();std::string error,saved;
+    NX_EXPECT(doc.addNode(0,"api:Save:Save::set:string,string",0,0,error)&&doc.addNode(1,"api:Save:Save::set:string,string",0,0,error));
+    NX_EXPECT(doc.connect(0,0,"then",1,"in",error));
+    const std::string alias="Save checkpoint",comment="Writes checkpoint data";const unsigned colour=3;
+    NX_EXPECT(doc.editNodeValues(0,1,{},nullptr,error,&alias,&comment,&colour));
+    NX_EXPECT(doc.graphs[0].nodes[1].displayName==alias&&doc.graphs[1].nodes[1].displayName==alias);
+    NX_EXPECT(doc.graphs[0].nodes[1].comment==comment&&doc.graphs[1].nodes[1].comment.empty());
+    NX_EXPECT(doc.addNode(2,"api:Save:Save::set:string,string",0,0,error)&&doc.graphs[2].nodes[1].displayName==alias);
+    NX_EXPECT(doc.serialize(saved,error));BlueprintDocument copy;NX_EXPECT(copy.load(saved.data(),saved.size(),error));
+    NX_EXPECT(copy.graphs[0].nodes[1].colour==colour&&copy.graphs[0].nodes[1].comment==comment&&copy.graphs[1].nodes[1].displayName==alias);
+    NX_EXPECT(copy.disconnectNode(0,1)&&copy.graphs[0].links.empty()&&copy.undo()&&copy.graphs[0].links.size()==1);
+    const std::string reset;NX_EXPECT(copy.editNodeValues(0,1,{},nullptr,error,&reset));
+    NX_EXPECT(copy.nodeDisplayName(1,copy.graphs[1].nodes[1]).empty()&&copy.undo()&&copy.nodeDisplayName(1,copy.graphs[1].nodes[1])==alias);
+}
+
 NX_TEST(nativeCompilerDiagnosticsAndSourceMapLocateExactGraphNodes)
 {
     BlueprintDocument doc;doc.create();std::string error,source="unchanged";
