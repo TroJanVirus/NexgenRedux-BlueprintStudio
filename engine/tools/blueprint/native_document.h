@@ -144,6 +144,7 @@ namespace nx
         bool setLiteral(size_t graph,size_t node,const std::string& value,std::string& error);
         bool toggleWatch(size_t graph,size_t node);
         bool setInputValue(size_t graph,size_t node,const std::string& pin,const std::string& value,std::string& error);
+        bool editNodeValues(size_t graph,size_t node,const std::vector<InputValue>& values,const std::string* literalValue,std::string& error);
         bool clearInputValue(size_t graph,size_t node,const std::string& pin);
         // Constant four-point curves can be edited as a single undoable transaction.
         bool cubicPoints(size_t graph,size_t node,std::vector<std::string>& points,std::string& error)const;

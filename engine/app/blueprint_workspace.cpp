@@ -1893,7 +1893,7 @@ namespace nx
                     m_widgetBaseY=item->anchor>=0?item->offsetY:item->y-parent.pad(1);
                     m_widgetDragX=pointerX;m_widgetDragY=pointerY;m_widgetPreviewDx=m_widgetPreviewDy=0;
                     m_widgetDragRevision=m_document.revision();m_widgetPreviewDrag=true;
-                    m_status="Drag to position; release to apply. Escape cancels.";
+                    m_status="Drag to position; release to apply. Escape = Cancel.";
                 }
                 else m_status="Selected widget. Use a Stack container for free positioning.";
             }
@@ -2357,7 +2357,7 @@ namespace nx
                     else m_visualText=v.isNumber()?std::to_string(v.exact()):v.text();
                     if(m_visualProperty=="behaviour"&&m_visualText.rfind("BP_Behaviour_",0)==0)m_visualText.erase(0,13);
                 }
-                m_visualInput=3;input.setTyping(true);m_status="Edit property; Enter applies, Escape cancels.";return;
+                m_visualInput=3;input.setTyping(true);m_status="Edit property; Enter = Apply, Escape = Cancel.";return;
             }
             const char* shape=nullptr;
             if(in(x,y,630,277,810,310))shape="box";
@@ -2458,7 +2458,7 @@ namespace nx
             m_visualText=v.isNumber()?std::to_string(v.exact()):v.text();
             if(m_visualProperty=="behaviour"&&m_visualText.rfind("BP_Behaviour_",0)==0)m_visualText.erase(0,13);
         }
-        m_actorReplace=true;m_visualInput=3;s.input->setTyping(true);m_status="Edit property; Enter applies, Escape cancels.";return true;
+        m_actorReplace=true;m_visualInput=3;s.input->setTyping(true);m_status="Edit property; Enter = Apply, Escape = Cancel.";return true;
     }
     unsigned BlueprintWorkspace::actorPreviewEntity() const
     {
@@ -2953,7 +2953,7 @@ namespace nx
             const auto label=m_visualProperty+(m_actorAxis>=0?std::string(" / ")+"XYZ"[m_actorAxis]:"");
             c.roundRect(x,y,560,160,5,{0.18f,0.18f,0.19f,1});c.text(*m_font,label.c_str(),x+16,y+16,accent);
             c.rect(x+16,y+50,528,38,{0.28f,0.28f,0.30f,1});c.clip(x+20,y+50,520,38);c.text(*m_font,m_visualText.c_str(),x+24,y+60,text);c.noClip();
-            c.text(*m_font,"Enter applies / Escape cancels",x+16,y+112,muted);
+            c.text(*m_font,"Enter = Apply / Escape = Cancel",x+16,y+112,muted);
         }
     }
     BlueprintWorkspace::ContentBounds BlueprintWorkspace::contentBounds() const
@@ -3435,7 +3435,7 @@ namespace nx
                 }
                 c.rect(500+320.f*channels[i]-2,y,4,20,{1,1,1,1});
             }
-            c.text(*m_font,"Click channels or type hex; Enter applies.",440,445,muted);
+            c.text(*m_font,"Click channels or type hex; Enter = Apply.",440,445,muted);
         }
         else if(m_visualInput==7&&themeMediaProperty(m_visualProperty))
         {
@@ -3448,14 +3448,14 @@ namespace nx
                 c.clip(446,y,388,28);c.text(*m_font,m_themeMediaFiles[m_themeMediaFirst+i].c_str(),446,y+4,text);c.noClip();
             }
             if(m_themeMediaFiles.empty())c.text(*m_font,"No matching imported media on this screen.",440,365,muted);
-            c.text(*m_font,"Select or type path; Enter applies.",440,505,muted);
+            c.text(*m_font,"Select or type path; Enter = Apply.",440,505,muted);
         }
         else if(m_visualInput)
         {
             c.roundRect(420,286,440,130,6,{0.08f,0.12f,0.18f,1});
             c.text(*m_font,m_visualInput==1?"RENAME ASSET":m_visualInput==5?"THEME ASSET ID":m_visualInput==6?"STYLE NAME":m_visualInput>=3?m_visualProperty.c_str():"NEXT WIDGET TEXT",440,300,accent);
             c.clip(440,330,400,34);c.text(*m_font,m_visualText.c_str(),440,336,text);c.noClip();
-            c.text(*m_font,"Enter applies; Escape cancels.",440,379,muted);
+            c.text(*m_font,"Enter = Apply; Escape = Cancel.",440,379,muted);
         }
     }
     void BlueprintWorkspace::launchSceneEditor(Services& s)
@@ -4344,6 +4344,25 @@ namespace nx
         }
         return details;
     }
+    void BlueprintWorkspace::beginNodeEditor(size_t node,Input& input)
+    {
+        if(m_graph>=m_document.graphs.size()||node>=m_document.graphs[m_graph].nodes.size())return;
+        m_selection=node;m_selectedNodes={node};clearWire();cancelDrag();m_nodeClickTime=-1;
+        m_inspectorRows=inputDetails(node);const auto& n=m_document.graphs[m_graph].nodes[node];
+        m_inspectorLiteral=n.kind.rfind("literal:",0)==0;
+        if(m_inspectorLiteral)m_inspectorRows.insert(m_inspectorRows.begin(),InputDetail{"Value",n.kind.substr(8),n.ref,"Custom",true});
+        m_inspectorDraft.clear();for(const auto& row:m_inspectorRows)m_inspectorDraft.push_back(row.origin=="Required"||row.value=="Event delta time"||row.value=="Native default"?"":row.value);
+        m_inspectorChanged.assign(m_inspectorRows.size(),false);m_inspectorFirst=0;m_inspectorRow=static_cast<size_t>(-1);
+        m_focus=15;input.setTyping(true);m_status="Edit values, then Apply. Connected inputs are read-only.";
+    }
+    bool BlueprintWorkspace::applyNodeEditor(Input& input)
+    {
+        std::vector<BlueprintDocument::InputValue> values;const std::string* literalValue=nullptr;
+        for(size_t i=0;i<m_inspectorRows.size();++i)if(m_inspectorChanged[i])
+        {if(i==0&&m_inspectorLiteral)literalValue=&m_inspectorDraft[i];else values.push_back({m_inspectorRows[i].name,m_inspectorDraft[i]});}
+        if(!m_document.editNodeValues(m_graph,m_selection,values,literalValue,m_status))return false;
+        m_focus=0;input.setTyping(false);clearWire();rebuildPins();filterCatalogue();m_diagnostic={};m_status="Node edits applied.";return true;
+    }
     bool BlueprintWorkspace::beginInputEdit(size_t node,const std::string& pin,Input& input)
     {
         const auto details=inputDetails(node);
@@ -4821,11 +4840,11 @@ namespace nx
         }
         if(m_browsing)
         {
-            std::string file;
-            if(s.platform->takeDropped(file))
+            std::string droppedProject;
+            if(s.platform->takeDropped(droppedProject))
             {
-                if(blueprintFileName(file)||blueprintPackageName(file))openFile(s,file,false);
-                else if(standaloneSourceName(file))importSource(s,file);
+                if(blueprintFileName(droppedProject)||blueprintPackageName(droppedProject))openFile(s,droppedProject,false);
+                else if(standaloneSourceName(droppedProject))importSource(s,droppedProject);
                 else m_status="Drop a Blueprint project, portable ZIP or AngelScript source.";
                 if(!m_browsing){m_projectCreate=0;input.setTyping(false);}
                 m_left=left;return;
@@ -4879,7 +4898,7 @@ namespace nx
             }
             m_left=left;return;
         }
-        if(click&&((m_focus==10&&!in(x,y,150,100,1130,625))||(m_focus==17&&!in(x,y,210,100,1070,620))||(m_focus==15&&!in(x,y,160,68,1140,652))||(m_focus==6&&!in(x,y,340,226,940,m_inputChoices.empty()?450:628))||(m_focus==5&&!in(x,y,340,240,940,445))||(m_focus==9&&!in(x,y,200,226,1080,466))||(m_focus>=11&&m_focus<=14&&!in(x,y,260,230,1020,450))))
+        if(click&&((m_focus==10&&!in(x,y,150,100,1130,625))||(m_focus==17&&!in(x,y,210,100,1070,620))||(m_focus==15&&!in(x,y,160,68,1140,652))||(m_focus==6&&!in(x,y,340,226,940,m_inputChoices.empty()?450.f:628.f))||(m_focus==5&&!in(x,y,340,240,940,445))||(m_focus==9&&!in(x,y,200,226,1080,466))||(m_focus>=11&&m_focus<=14&&!in(x,y,260,230,1020,450))))
         {m_focus=0;input.setTyping(false);m_left=left;return;}
         if(m_focus==10)
         {
@@ -4960,7 +4979,7 @@ namespace nx
         if(m_focus==17)
         {
             if(click&&in(x,y,940,555,1050,595)){m_focus=0;m_curveDrag=-1;m_status="Curve edit cancelled.";}
-            else if(click&&in(x,y,810,555,930,595))
+            else if(input.pressed(Action::Accept)||(click&&in(x,y,810,555,930,595)))
             {
                 std::vector<std::string> points;
                 for(size_t i=0;i<4;++i){char pair[96];snprintf(pair,sizeof(pair),"%.9g,%.9g",m_curveX[i],m_curveY[i]);points.emplace_back(pair);}
@@ -5015,24 +5034,46 @@ namespace nx
         }
         if(m_focus==15)
         {
-            const auto details=inputDetails(m_selection);m_inspectorFirst=std::min(m_inspectorFirst,details.size()>10?details.size()-10:0);
-            if(input.wheel()<0&&m_inspectorFirst+10<details.size())++m_inspectorFirst;
+            const auto count=m_inspectorRows.size();m_inspectorFirst=std::min(m_inspectorFirst,count>9?count-9:0);
+            if(input.wheel()<0&&m_inspectorFirst+9<count)++m_inspectorFirst;
             if(input.wheel()>0&&m_inspectorFirst)--m_inspectorFirst;
-            if(click&&in(x,y,1020,82,1120,114)){m_focus=0;input.setTyping(false);}
-            else if(click&&in(x,y,180,156,1100,596))
+            if(click&&in(x,y,990,603,1120,640)){m_focus=0;input.setTyping(false);m_left=left;return;}
+            if(click&&in(x,y,850,603,980,640)){applyNodeEditor(input);m_left=left;return;}
+            if(click&&in(x,y,180,156,1100,552))
             {
                 const auto row=m_inspectorFirst+static_cast<size_t>((y-156)/44);
-                if(row<details.size()&&!beginInputEdit(m_selection,details[row].name,input))m_status="This input is connected or requires a wire.";
+                if(row<count&&m_inspectorRows[row].editable){m_inspectorRow=row;m_inspectorReplace=true;}
+            }
+            for(u32 i=0;i<input.typedCount();++i)
+            {
+                const auto ch=input.typed(i);
+                if(ch==13){applyNodeEditor(input);break;}
+                if(ch==9&&count)
+                {
+                    for(size_t n=0;n<count;++n){m_inspectorRow=m_inspectorRow<count?(m_inspectorRow+1)%count:0;if(m_inspectorRows[m_inspectorRow].editable){m_inspectorReplace=true;if(m_inspectorRow<m_inspectorFirst||m_inspectorRow>=m_inspectorFirst+9)m_inspectorFirst=std::min(m_inspectorRow,count>9?count-9:0);break;}}
+                    continue;
+                }
+                if(m_inspectorRow>=count||!m_inspectorRows[m_inspectorRow].editable)continue;
+                auto& value=m_inspectorDraft[m_inspectorRow];
+                if(ch==8||ch>=32)
+                {
+                    if(m_inspectorReplace){value.clear();m_inspectorReplace=false;}
+                    if(ch==8&&!value.empty()){size_t end=value.size()-1;while(end&&(static_cast<unsigned char>(value[end])&0xc0)==0x80)--end;value.resize(end);}
+                    else if(ch>=32)appendCharacter(value,ch,4096);
+                    m_inspectorChanged[m_inspectorRow]=true;
+                }
             }
             m_left=left;return;
         }
+        const bool inputApply=m_focus==6&&click&&in(x,y,650,391,780,430);
+        if(m_focus==6&&click&&in(x,y,790,391,920,430)){m_focus=0;input.setTyping(false);m_left=left;return;}
         if(m_focus==6&&!m_inputComponents.empty())
         {
             if(click&&in(x,y,360,285,920,341))
             {m_inputComponent=std::min(m_inputComponents.size()-1,static_cast<size_t>((x-360)/(560.f/static_cast<float>(m_inputComponents.size()))));m_inputReplace=true;}
-            for(u32 i=0;i<input.typedCount();++i)
+            for(u32 i=0;i<input.typedCount()+(inputApply?1u:0u);++i)
             {
-                const auto ch=input.typed(i);auto& part=m_inputComponents[m_inputComponent];
+                const auto ch=i<input.typedCount()?input.typed(i):13u;auto& part=m_inputComponents[m_inputComponent];
                 if(ch==9){m_inputComponent=(m_inputComponent+1)%m_inputComponents.size();m_inputReplace=true;}
                 else if(ch==8){if(m_inputReplace){part.clear();m_inputReplace=false;}else if(!part.empty())part.pop_back();}
                 else if(ch==13)
@@ -5056,18 +5097,22 @@ namespace nx
                 if(click&&y>=472)
                 {
                     const auto index=m_inputChoiceFirst+static_cast<size_t>((y-472)/28);
-                    if(index<m_inputChoices.size()){m_edit=m_inputChoices[index];m_status="Selected value. Enter confirms.";}
+                    if(index<m_inputChoices.size()){m_edit=m_inputChoices[index];m_status="Selected value. Enter = Apply.";}
                 }
             }
         }
         if(m_focus)
         {
             const int focus=m_focus;
+            const bool form=focus==5||focus==9||(focus>=11&&focus<=14);
+            const float footerY=focus==9?420.f:focus==5?400.f:400.f;
+            const bool applyClick=inputApply||(form&&click&&in(x,y,720,footerY,840,footerY+36));
+            if(form&&click&&in(x,y,850,footerY,focus==5?920.f:980.f,footerY+36)){m_focus=0;input.setTyping(false);m_left=left;return;}
             auto& value=focus==1?m_query:m_edit;
             bool changed=false;
-            for(u32 i=0;i<input.typedCount();++i)
+            for(u32 i=0;i<input.typedCount()+(applyClick?1u:0u);++i)
             {
-                const u32 ch=input.typed(i);
+                const u32 ch=i<input.typedCount()?input.typed(i):13u;
                 if(ch==8&&!value.empty())
                 {
                     size_t end=value.size()-1;while(end&&(static_cast<unsigned char>(value[end])&0xc0)==0x80)--end;
@@ -5163,8 +5208,7 @@ namespace nx
                 m_left=left;return;
             }
             if(click&&in(x,y,566,5,734,33)){m_edit.clear();m_focus=8;input.setTyping(true);m_status="Type a behaviour name, then Enter.";m_left=left;return;}
-            if(click&&in(x,y,740,5,850,33)){browseFiles(s);m_left=left;return;}
-            if(click&&in(x,y,856,5,966,33)){browseFiles(s);m_left=left;return;}
+            if(click&&in(x,y,740,5,966,33)){browseFiles(s);m_left=left;return;}
             if(click&&in(x,y,972,5,1082,33)){browseAssets(s);m_left=left;return;}
             if(click&&in(x,y,1088,5,1174,33))
             {
@@ -5299,8 +5343,8 @@ namespace nx
                 {beginCurveEditor(input);}
                 else if(in(x,y,kRight+8,kTop+456+kPaletteExtra,kWidth-8,kTop+486+kPaletteExtra)&&(n.kind.rfind("literal:",0)==0||n.kind.rfind("var:",0)==0||n.kind.rfind("global:",0)==0||n.kind.rfind("capture:",0)==0||blueprintNamedCall(n.kind)||blueprintBehaviourReference(n.kind)||n.kind.rfind("data:",0)==0||n.kind.rfind("typed:",0)==0))
                 {m_edit=n.ref;m_focus=n.kind.rfind("literal:",0)==0?2:3;input.setTyping(true);}
-                else if(in(x,y,kRight+8,kTop+520+kPaletteExtra,kWidth-8,kTop+552+kPaletteExtra)&&!inputDetails(m_selection).empty())
-                {m_inspectorFirst=0;m_focus=15;input.setTyping(false);m_status="Inspect all input values, including defaults and wires.";}
+                else if(in(x,y,kRight+8,kTop+520+kPaletteExtra,kWidth-8,kTop+552+kPaletteExtra))
+                {beginNodeEditor(m_selection,input);}
                 else if(in(x,y,kRight+8,kBottom-40,kWidth-8,kBottom-8)&&m_document.deleteNode(m_graph,m_selection,m_status)){m_diagnostic={};clearWire();m_selection=static_cast<size_t>(-1);rebuildPins();m_selectedNodes.clear();m_status="Deleted node.";}
             }
             m_left=left;return;
@@ -5410,22 +5454,22 @@ namespace nx
                     if(!in(x,y,nx,ny,nx+row.width*m_zoom,ny+row.height*m_zoom))continue;
                     if(n.kind.rfind("literal:",0)==0&&row.inputs.empty()&&!row.outputs.empty())
                     {
-                        const float right=(canvas.measure(*m_font,row.outputs.front().c_str()).x+25)*m_zoom,py=ny+pinY(0)*m_zoom;
-                        if(in(x,y,nx+13*m_zoom,py-9*m_zoom,nx+(row.width-13)*m_zoom-right,py+9*m_zoom))
+                        const float outputSpace=(canvas.measure(*m_font,row.outputs.front().c_str()).x+25)*m_zoom,py=ny+pinY(0)*m_zoom;
+                        if(in(x,y,nx+13*m_zoom,py-9*m_zoom,nx+(row.width-13)*m_zoom-outputSpace,py+9*m_zoom))
                         {m_selection=index;m_selectedNodes={index};m_edit=n.ref;m_editPin="literal";m_inputReplace=true;m_focus=19;input.setTyping(true);m_left=left;return;}
                     }
                     const auto details=inputDetails(index);
                     for(size_t p=0;p<row.inputs.size();++p)
                     {
-                        const float right=p<row.outputs.size()?(canvas.measure(*m_font,row.outputs[p].c_str()).x+25)*m_zoom:0;
+                        const float outputSpace=p<row.outputs.size()?(canvas.measure(*m_font,row.outputs[p].c_str()).x+25)*m_zoom:0;
                         const float py=ny+pinY(p)*m_zoom;
-                        if(!in(x,y,nx+row.fieldX[p]*m_zoom,py-9*m_zoom,nx+(row.width-13)*m_zoom-right,py+9*m_zoom))continue;
+                        if(!in(x,y,nx+row.fieldX[p]*m_zoom,py-9*m_zoom,nx+(row.width-13)*m_zoom-outputSpace,py+9*m_zoom))continue;
                         const auto field=std::find_if(details.begin(),details.end(),[&](const InputDetail& d){return d.name==row.inputs[p]&&d.editable;});
                         if(field==details.end())continue;
                         if(beginInputEdit(index,field->name,input))
                         {
                             m_selectedNodes={index};m_edit=(field->origin=="Required"||field->value=="Event delta time"||field->value=="Native default")?"":field->value;
-                            m_focus=16;m_inputReplace=true;m_status="Enter applies; Escape cancels.";
+                            m_focus=16;m_inputReplace=true;m_status="Enter = Apply; Escape = Cancel.";
                             m_left=left;return;
                         }
                     }
@@ -5444,12 +5488,17 @@ namespace nx
                     if(found==m_selectedNodes.end())m_selectedNodes.push_back(i-1);else m_selectedNodes.erase(found);
                     m_selection=m_selectedNodes.empty()?static_cast<size_t>(-1):m_selectedNodes.back();m_left=left;return;
                 }
+                const double now=s.platform->seconds();
+                if(!held(Key::Shift)&&m_nodeClickTime>=0&&now-m_nodeClickTime<0.35&&m_nodeClickGraph==m_graph&&m_nodeClickIndex==i-1&&std::hypot(x-m_nodeClickX,y-m_nodeClickY)<9)
+                {beginNodeEditor(i-1,input);m_left=left;return;}
+                m_nodeClickTime=now;m_nodeClickGraph=m_graph;m_nodeClickIndex=i-1;m_nodeClickX=x;m_nodeClickY=y;
                 if(found==m_selectedNodes.end())m_selectedNodes={i-1};
                 m_selection=i-1;m_drag=true;m_dragMoved=false;m_dragX=n.x;m_dragY=n.y;
                 m_pressX=x;m_pressY=y;m_grabX=n.x;m_grabY=n.y;break;
             }
             if(!hitNode)
             {
+                m_nodeClickTime=-1;
                 const double now=s.platform->seconds();
                 const bool doubleClick=m_wireClickTime>=0&&now-m_wireClickTime<0.35&&std::hypot(x-m_wireClickX,y-m_wireClickY)<9;
                 m_wireClickTime=now;m_wireClickX=x;m_wireClickY=y;
@@ -5475,6 +5524,7 @@ namespace nx
                 if(std::abs(x-m_pressX)>3||std::abs(y-m_pressY)>3)m_dragMoved=true;
                 if(m_dragMoved)
                 {
+                    m_nodeClickTime=-1;
                     m_dragX=std::clamp(m_grabX+(x-m_pressX)/m_zoom,-1000000.0f,1000000.0f);
                     m_dragY=std::clamp(m_grabY+(y-m_pressY)/m_zoom,-1000000.0f,1000000.0f);
                     if(held(Key::Shift)){m_dragX=std::round(m_dragX/16.f)*16.f;m_dragY=std::round(m_dragY/16.f)*16.f;}
@@ -5861,13 +5911,13 @@ namespace nx
                 c.roundRect(kRight+8,kTop+456+kPaletteExtra,kWidth-kRight-16,30,4,(m_focus==2||m_focus==3)?Color{0.24f,0.35f,0.48f,1}:Color{0.16f,0.21f,0.28f,1});
                 c.clip(kRight+12,kTop+456+kPaletteExtra,kWidth-kRight-24,30);
                 c.text(*m_font,((m_focus==2||m_focus==3)?m_edit:n.ref).c_str(),kRight+14,kTop+461+kPaletteExtra,text);c.noClip();
-                c.text(*m_font,"Click to edit, Enter confirms",kRight+12,kTop+490+kPaletteExtra,muted);
+                c.text(*m_font,"Click to edit, Enter = Apply",kRight+12,kTop+490+kPaletteExtra,muted);
             }
             if(blueprintPhysicsJoint(n.kind))
             {c.roundRect(kRight+8,kTop+456+kPaletteExtra,kWidth-kRight-16,30,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Configure joint",(kWidth+kRight)*0.5f,kTop+461+kPaletteExtra,text,Align::Center);}
             if(n.kind=="curve:cubic")
             {c.roundRect(kRight+8,kTop+456+kPaletteExtra,kWidth-kRight-16,30,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Edit curve", (kWidth+kRight)*0.5f,kTop+461+kPaletteExtra,text,Align::Center);}
-            if(!inputDetails(m_selection).empty())
+            if(m_selection<m_document.graphs[m_graph].nodes.size())
             {c.roundRect(kRight+8,kTop+520+kPaletteExtra,kWidth-kRight-16,32,5,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Edit node", (kWidth+kRight)*0.5f,kTop+526+kPaletteExtra,text,Align::Center);}
             c.roundRect(kRight+8,kBottom-40,kWidth-kRight-16,32,5,{0.38f,0.19f,0.23f,1});
             c.text(*m_font,"Delete selected", (kWidth+kRight)*0.5f,kBottom-34,text,Align::Center);
@@ -5958,10 +6008,10 @@ namespace nx
                 c.rect(0,0,1280,94,{0.13f,0.16f,0.21f,1});
                 c.text(*m_font,"NEXGEN  /  BLUEPRINT STUDIO",28,22,accent);
                 c.text(*m_font,"PROJECT LIBRARY",28,51,text);
-                const auto button=[&](float x,float y,float width,const char* label,bool selected=false)
+                const auto projectButton=[&](float x,float y,float width,const char* label,bool selected=false)
                 {c.roundRect(x,y,width,34,4,selected?Color{0.19f,0.36f,0.56f,1}:Color{0.19f,0.23f,0.30f,1});c.text(*m_font,label,x+width/2,y+7,text,Align::Center);};
                 c.text(*m_font,"CREATE PROJECT",28,120,accent);c.text(*m_font,"MY PROJECTS / IMPORT",280,122,accent);
-                button(550,116,100,"Save");button(660,116,190,"Save copy");button(860,116,140,"Editor");button(1010,116,225,"Return to Redux");
+                projectButton(550,116,100,"Save");projectButton(660,116,190,"Save copy");projectButton(860,116,140,"Editor");projectButton(1010,116,225,"Return to Redux");
                 c.roundRect(28,166,222,80,5,m_projectCreate==1?Color{0.19f,0.36f,0.56f,1}:Color{0.16f,0.20f,0.27f,1});
                 c.text(*m_font,"BLANK",42,179,text);c.text(*m_font,"Empty event graphs",42,210,muted);
                 c.roundRect(28,256,222,118,5,m_projectCreate==2?Color{0.19f,0.36f,0.56f,1}:Color{0.16f,0.20f,0.27f,1});
@@ -5973,7 +6023,7 @@ namespace nx
                     c.text(*m_font,"PROJECT NAME",28,386,accent);
                     c.roundRect(28,410,222,38,4,{0.19f,0.25f,0.34f,1});
                     c.clip(38,410,202,38);c.text(*m_font,m_projectName.empty()?"Enter name...":m_projectName.c_str(),38,419,text);c.noClip();
-                    button(28,458,222,"Create & open",true);
+                    projectButton(28,458,222,"Create & open",true);
                 }
                 c.text(*m_font,"More templates planned:",28,530,muted);
                 c.text(*m_font,"Third person / Flight",28,552,muted);c.text(*m_font,"Rolling ball",28,574,muted);
@@ -6013,7 +6063,7 @@ namespace nx
                 c.pop();
                 c.clip(235,558,560,38);c.text(*m_font,m_status.c_str(),235,565,muted);c.noClip();
                 c.roundRect(810,555,120,40,4,{0.19f,0.4f,0.3f,1});c.text(*m_font,"Apply",870,565,text,Align::Center);
-                c.roundRect(940,555,110,40,4,{0.22f,0.31f,0.43f,1});c.text(*m_font,"Cancel",995,565,text,Align::Center);
+                c.roundRect(940,555,110,40,4,{0.22f,0.31f,0.43f,1});c.text(*m_font,"Cancel",995,565,text,Align::Center);c.text(*m_font,"Enter = Apply | Escape = Cancel",235,598,muted);
             }
             else if(m_focus==10)
             {
@@ -6058,38 +6108,40 @@ namespace nx
                     {const float yy=302+28*static_cast<float>(i%8),xx=650+150*static_cast<float>(i/8);c.rect(xx,yy,150,28,{0.24f,0.35f,0.48f,1});c.clip(xx+2,yy,146,28);c.text(*m_font,shorten(types[m_variableTypeFirst+i],19).c_str(),xx+5,yy+3,text);c.noClip();}
                 }
                 c.clip(170,576,940,25);c.text(*m_font,m_status.c_str(),170,576,text);c.noClip();
-                c.text(*m_font,"Enter applies | Escape closes",640,601,muted,Align::Center);
+                c.text(*m_font,"Enter = Apply | Escape closes",640,601,muted,Align::Center);
             }
             else if(m_focus==15)
             {
                 c.roundRect(160,68,980,584,8,{0.16f,0.16f,0.17f,1});
                 const auto& selected=m_document.graphs[m_graph].nodes[m_selection];
-                c.push();c.clip(180,82,820,34);c.text(*m_font,("INPUTS / "+title(selected)).c_str(),180,88,accent);c.pop();
-                c.roundRect(1020,82,100,32,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Close",1070,88,text,Align::Center);
-                c.text(*m_font,"Input / type",190,130,muted);c.text(*m_font,"Effective value or source",430,130,muted);c.text(*m_font,"State",920,130,muted);
-                const auto details=inputDetails(m_selection);
-                for(size_t i=m_inspectorFirst;i<std::min(m_inspectorFirst+10,details.size());++i)
+                c.push();c.clip(180,82,920,34);c.text(*m_font,("EDIT NODE / "+title(selected)).c_str(),180,88,accent);c.pop();
+                c.text(*m_font,"Input / type",190,130,muted);c.text(*m_font,"Value",430,130,muted);c.text(*m_font,"State",920,130,muted);
+                for(size_t i=m_inspectorFirst;i<std::min(m_inspectorFirst+9,m_inspectorRows.size());++i)
                 {
-                    const auto& d=details[i];const float yy=156+44*static_cast<float>(i-m_inspectorFirst);
-                    c.rect(180,yy,920,40,d.editable?Color{0.19f,0.28f,0.40f,1}:Color{0.15f,0.20f,0.27f,1});
-                    c.push();c.clip(190,yy,225,40);c.text(*m_font,d.name.c_str(),190,yy+2,text);c.text(*m_font,d.type.c_str(),190,yy+20,muted);c.pop();
-                    c.push();c.clip(430,yy,474,40);c.text(*m_font,d.value.c_str(),430,yy+11,text);c.pop();
-                    c.text(*m_font,d.origin.c_str(),920,yy+3,muted);if(d.editable)c.text(*m_font,"Click to edit",920,yy+20,accent);
+                    const auto& row=m_inspectorRows[i];const float yy=156+44*static_cast<float>(i-m_inspectorFirst);
+                    c.rect(180,yy,920,40,{0.15f,0.20f,0.27f,1});
+                    c.push();c.clip(190,yy,225,40);c.text(*m_font,row.name.c_str(),190,yy+2,text);c.text(*m_font,row.type.c_str(),190,yy+20,muted);c.pop();
+                    if(row.editable)c.roundRect(425,yy+4,480,32,4,i==m_inspectorRow?Color{0.26f,0.42f,0.59f,1}:Color{0.22f,0.28f,0.35f,1});
+                    c.push();c.clip(430,yy,474,40);c.text(*m_font,(row.editable?m_inspectorDraft[i]:row.value).c_str(),435,yy+11,text);c.pop();
+                    c.text(*m_font,m_inspectorChanged[i]?"Modified":row.origin.c_str(),920,yy+10,muted);
                 }
-                c.paragraph(*m_font,m_status.c_str(),180,607,920,muted);
-                c.text(*m_font,"Scroll for more | Escape closes",640,632,text,Align::Center);
+                if(m_inspectorRows.empty())c.text(*m_font,"This node has no editable literal inputs.",190,175,muted);
+                c.clip(180,556,920,40);c.paragraph(*m_font,m_status.c_str(),180,558,920,muted);c.noClip();
+                c.text(*m_font,"Enter = Apply | Escape = Cancel",180,615,muted);
+                c.roundRect(850,603,130,37,4,{0.19f,0.4f,0.3f,1});c.text(*m_font,"Apply",915,611,text,Align::Center);
+                c.roundRect(990,603,130,37,4,{0.22f,0.31f,0.43f,1});c.text(*m_font,"Cancel",1055,611,text,Align::Center);
             }
             else if(m_focus>=12&&m_focus<=14)
             {
                 c.roundRect(260,230,760,220,8,{0.16f,0.16f,0.17f,1});c.text(*m_font,m_focus==12?"COLLAPSE TO FUNCTION":m_focus==13?"RENAME FUNCTION":"DUPLICATE FUNCTION",280,250,accent);
                 c.rect(280,290,720,36,{0.24f,0.35f,0.48f,1});c.clip(286,290,708,36);c.text(*m_font,m_edit.c_str(),290,297,text);c.noClip();
-                c.paragraph(*m_font,m_status.c_str(),280,340,720,muted);c.text(*m_font,"Enter confirms | Escape cancels",640,415,text,Align::Center);
+                c.paragraph(*m_font,m_status.c_str(),280,340,720,muted);c.text(*m_font,"Enter = Apply | Escape = Cancel",280,409,muted);c.roundRect(720,400,120,36,4,{0.19f,0.4f,0.3f,1});c.text(*m_font,"Apply",780,407,text,Align::Center);c.roundRect(850,400,130,36,4,{0.22f,0.31f,0.43f,1});c.text(*m_font,"Cancel",915,407,text,Align::Center);
             }
             else if(m_focus==11)
             {
                 c.roundRect(260,230,760,220,8,{0.16f,0.16f,0.17f,1});c.text(*m_font,"COMMENT TITLE",280,250,accent);
                 c.rect(280,290,720,36,{0.24f,0.35f,0.48f,1});c.clip(286,290,708,36);c.text(*m_font,m_edit.c_str(),290,297,text);c.noClip();
-                c.paragraph(*m_font,m_status.c_str(),280,340,720,muted);c.text(*m_font,"Enter confirms | Escape cancels",640,415,text,Align::Center);
+                c.paragraph(*m_font,m_status.c_str(),280,340,720,muted);c.text(*m_font,"Enter = Apply | Escape = Cancel",280,409,muted);c.roundRect(720,400,120,36,4,{0.19f,0.4f,0.3f,1});c.text(*m_font,"Apply",780,407,text,Align::Center);c.roundRect(850,400,130,36,4,{0.22f,0.31f,0.43f,1});c.text(*m_font,"Cancel",915,407,text,Align::Center);
             }
             else if(m_focus==9)
             {
@@ -6099,7 +6151,7 @@ namespace nx
                 c.clip(224,285,832,36);c.text(*m_font,m_edit.c_str(),230,293,text);c.noClip();
                 c.paragraph(*m_font,"Format: float(amount:float, count:int) | void() for no return. Up to 8 parameters.",220,330,840,muted);
                 c.paragraph(*m_font,m_status.c_str(),220,375,840,muted);
-                c.text(*m_font,"Enter confirms | Escape cancels",640,438,text,Align::Center);
+                c.text(*m_font,"Enter = Apply | Escape = Cancel",220,429,muted);c.roundRect(720,420,120,36,4,{0.19f,0.4f,0.3f,1});c.text(*m_font,"Apply",780,427,text,Align::Center);c.roundRect(850,420,130,36,4,{0.22f,0.31f,0.43f,1});c.text(*m_font,"Cancel",915,427,text,Align::Center);
             }
             else if(m_focus==6)
             {
@@ -6123,7 +6175,9 @@ namespace nx
                 }
                 c.paragraph(*m_font,m_status.c_str(),360,345,560,muted);
                 c.roundRect(360,391,180,39,4,{0.22f,0.31f,0.43f,1});c.text(*m_font,"Reset value",450,400,text,Align::Center);
-                c.text(*m_font,"Enter confirms | Escape cancels",730,400,text,Align::Center);
+                c.roundRect(650,391,130,39,4,{0.19f,0.4f,0.3f,1});c.text(*m_font,"Apply",715,400,text,Align::Center);
+                c.roundRect(790,391,130,39,4,{0.22f,0.31f,0.43f,1});c.text(*m_font,"Cancel",855,400,text,Align::Center);
+                c.text(*m_font,"Enter = Apply | Escape = Cancel",360,431,muted);
                 if(!m_inputChoices.empty())
                 {
                     c.roundRect(340,450,600,178,8,{0.16f,0.16f,0.17f,1});c.text(*m_font,blueprintEnumChoices(m_editType).empty()?"Known named entities (scroll to choose)":"Enum values (scroll to choose)",360,451,accent);
@@ -6141,7 +6195,7 @@ namespace nx
                 c.roundRect(360,300,560,36,4,{0.24f,0.35f,0.48f,1});
                 c.clip(364,300,552,36);c.text(*m_font,m_edit.empty()?"Type a new name...":m_edit.c_str(),370,308,text);c.noClip();
                 c.paragraph(*m_font,m_status.c_str(),360,351,560,muted);
-                c.text(*m_font,"Enter saves | Escape cancels",640,412,text,Align::Center);
+                c.text(*m_font,"Enter = Apply | Escape = Cancel",360,409,muted);c.roundRect(720,400,120,36,4,{0.19f,0.4f,0.3f,1});c.text(*m_font,"Apply",780,407,text,Align::Center);c.roundRect(850,400,70,36,4,{0.22f,0.31f,0.43f,1});c.text(*m_font,"Cancel",885,407,text,Align::Center);
             }
             c.pop();
             if(visualTabOpen())drawGraphTabs(c);

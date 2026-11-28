@@ -393,7 +393,7 @@ namespace nx
         const auto element=type.substr(6,type.size()-7);
         return element=="int"||element=="uint"||element=="float"||element=="bool"||element=="string"||element=="Vec2"||element=="Color"?element:"";
     }
-    bool blueprintVariableType(const std::string& type){return blueprintLiteralType(type)||!blueprintArrayElement(type).empty()||type=="Playlist@"||type=="WebSocket@"||type=="Widget@"||type=="Thread@"||type=="Channel@"||type=="Samples@"||type=="AudioStream@"||type=="Voice"||type=="Sound@"||type=="Curve@"||type=="Batch@"||type=="Packed@"||type=="Zip@"||type=="Font@"||type=="Texture@"||type=="BP_MapInt"||type=="BP_MapString"||type=="BP_SetInt"||type=="BP_SetString"||customTypeName(type)||classTypeName(type);}
+    bool blueprintVariableType(const std::string& type){return type=="Entity@"||blueprintLiteralType(type)||!blueprintArrayElement(type).empty()||type=="Playlist@"||type=="WebSocket@"||type=="Widget@"||type=="Thread@"||type=="Channel@"||type=="Samples@"||type=="AudioStream@"||type=="Voice"||type=="Sound@"||type=="Curve@"||type=="Batch@"||type=="Packed@"||type=="Zip@"||type=="Font@"||type=="Texture@"||type=="BP_MapInt"||type=="BP_MapString"||type=="BP_SetInt"||type=="BP_SetString"||customTypeName(type)||classTypeName(type);}
     bool blueprintLosslessConversion(const std::string& from,const std::string& to)
     {return arrayBorrow(from,to)||(to=="double"&&(from=="int"||from=="uint"||from=="float"))||(to=="int64"&&(from=="int"||from=="uint"))||(to=="uint64"&&from=="uint");}
     bool blueprintInvokesFunction(const std::string& kind)
@@ -2799,6 +2799,15 @@ namespace nx
         {error="Invalid value for this literal type.";return false;}
         auto& n=graphs[graph].nodes[node];if(n.ref==value){error.clear();return true;}
         record(graph);n.ref=value;error.clear();return true;
+    }
+    bool BlueprintDocument::editNodeValues(size_t graph,size_t node,const std::vector<InputValue>& values,const std::string* literalValue,std::string& error)
+    {
+        if(graph>=graphs.size()||node>=graphs[graph].nodes.size()){error="Unknown node.";return false;}
+        if(values.empty()&&!literalValue){error.clear();return true;}
+        BlueprintDocument staged;staged.name=name;staged.assetRoot=assetRoot;staged.graphs=graphs;staged.manifests=manifests;staged.m_visualAssets=m_visualAssets;staged.m_visualSerial=m_visualSerial;staged.m_nextId=m_nextId;
+        if(literalValue&&!staged.setLiteral(graph,node,*literalValue,error))return false;
+        for(const auto& value:values)if(!staged.setInputValue(graph,node,value.pin,value.value,error)){error=value.pin+": "+error;return false;}
+        record(graph);graphs[graph]=std::move(staged.graphs[graph]);error.clear();return true;
     }
     bool BlueprintDocument::setInputValue(size_t graph,size_t node,const std::string& pin,const std::string& value,std::string& error)
     {

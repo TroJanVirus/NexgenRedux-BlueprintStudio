@@ -389,7 +389,7 @@ namespace nx
         if(id!="first-person"){error="Unknown project template.";return false;}
         candidate.name="First Person";
         bool ok=true;
-        const auto field=[&](const char* command){ok=ok&&candidate.editVariableDeclaration("Screen",command,error);};
+        const auto field=[&](const char* command){if(ok&&!candidate.editVariableDeclaration("Screen",command,error)){ok=false;error=std::string(command)+": "+error;}};
         field("field hero:Entity@");field("field yaw:float=0");field("field pitch:float=0");
         field("field walkSpeed:float=4.6");field("field jumpSpeed:float=6.4");field("field eyeHeight:float=1.55");
         field("field mouseSensitivity:float=0.2");field("field gamepadYawSpeed:float=130");field("field gamepadPitchSpeed:float=100");

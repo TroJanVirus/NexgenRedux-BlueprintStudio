@@ -634,7 +634,7 @@ NX_TEST(nativeBlueprintWorkspaceAuthorsSavesAndRunsThroughMouseAndKeyboard)
     click(468,138);click(630,353);
     click(630,375);type("workspace_key");
     click(630,397);type("first");
-    click(850,18);click(755,133);type("Workspace Test");
+    click(840,18);click(755,133);type("Workspace Test");
     const std::string path="own/blueprint-project-Workspace Test.bp.json";
     auto found=r.platform.files.find(path);
     NX_EXPECT(found!=r.platform.files.end());
@@ -1949,7 +1949,7 @@ NX_TEST(nativeWorkspacePreservesExternallyReplacedRecoveryAcrossEditAndSave)
     NX_EXPECT(current.load(bytes.data(),bytes.size(),error)&&current.graphs[0].nodes.size()==3);
     external.name="Another Draft";NX_EXPECT(external.serialize(other,error));
     r.platform.files[path]=other;
-    click(850,18);click(755,133);type("Conflict Save");
+    click(840,18);click(755,133);type("Conflict Save");
     NX_EXPECT(r.platform.files.count("own/blueprint-project-Conflict Save.bp.json"));
     NX_EXPECT(r.platform.files[path]==other);
     studio.close(r.services);
@@ -2036,7 +2036,7 @@ NX_TEST(nativeWorkspaceBrowserRecoversArchivesAndImportsSource)
     const auto restoredBytes=r.platform.files[recovery];
     NX_EXPECT(restored.load(restoredBytes.data(),restoredBytes.size(),error)&&compileBlueprint(restored,code,error));
     NX_EXPECT(code.find("Save::set(\"archive\", \"ok\")")!=std::string::npos);
-    click(850,18);click(755,133);type("Restored Archive");
+    click(840,18);click(755,133);type("Restored Archive");
     NX_EXPECT(r.platform.files.count("own/blueprint-project-Restored Archive.bp.json"));
     NX_EXPECT(r.platform.files[archive]==bytes&&r.platform.files[corrupt]=="broken");
     // Documents sort first, then recovery archives, then standalone source.

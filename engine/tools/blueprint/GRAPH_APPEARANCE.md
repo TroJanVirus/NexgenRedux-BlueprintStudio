@@ -14,3 +14,5 @@ Native desktop authoring tests use the actual measured node/pin positions and al
 
 
 Graph interaction: drag empty canvas to marquee-select nodes, Ctrl-click to toggle individual nodes, drag any selected node to move the selection as one undoable edit, hold Shift to snap the dragged anchor to a 16-unit grid, and press Q to align selected nodes horizontally. Unconnected typed inputs and literal values are editable directly on visible nodes at readable zoom; Enter confirms and Escape cancels. Edit node opens the detailed input inspector. Project browsing does not require saving; switching projects saves named work or preserves a verified recovery archive for unnamed/conflicted work.
+
+Double-click a node body or title to open Edit Node; single-click its visible value to edit inline. The detailed editor stages changes until Apply, validates all values together, and commits them in one undo step. Cancel, Escape and outside click discard the draft. Standard confirmation dialogs expose Apply and Cancel buttons with matching keyboard hints.

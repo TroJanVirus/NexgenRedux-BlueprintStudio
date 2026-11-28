@@ -337,7 +337,16 @@ namespace nx
         struct InputDetail { std::string name,type,value,origin; bool editable=false; };
         std::vector<InputDetail> inputDetails(size_t node) const;
         bool jointPoint(const InputDetail& detail,float& x,float& y) const;
-        size_t m_inspectorFirst=0;
+        size_t m_inspectorFirst=0,m_inspectorRow=static_cast<size_t>(-1);
+        std::vector<InputDetail> m_inspectorRows;
+        std::vector<std::string> m_inspectorDraft;
+        std::vector<bool> m_inspectorChanged;
+        bool m_inspectorReplace=false,m_inspectorLiteral=false;
+        double m_nodeClickTime=-1;
+        size_t m_nodeClickGraph=static_cast<size_t>(-1),m_nodeClickIndex=static_cast<size_t>(-1);
+        float m_nodeClickX=0,m_nodeClickY=0;
+        void beginNodeEditor(size_t node,Input& input);
+        bool applyNodeEditor(Input& input);
         bool beginInputEdit(size_t node,const std::string& pin,Input& input);
         std::vector<std::string> namedSceneTargets() const;
         struct VariableRow { BlueprintDocument::Field field; bool global=false,explicitField=true,inherited=false,inheritedExposure=false; };
