@@ -52,6 +52,13 @@ namespace nx
         std::string m_layoutBaseline;
         struct GraphTab {std::string owner,name;float x=0,y=0,zoom=1;bool viewed=false;};
         std::vector<GraphTab> m_graphTabs;
+        struct ActorTab {std::string id,screen;std::pair<std::string,std::string> returnGraph;size_t component=0,first=0;float yaw=0.65f,pitch=0.576375f,distance=8,focus[3]={},detailsScroll=0;unsigned mode=0;};
+        std::vector<ActorTab> m_actorTabs;
+        void saveActorTab();
+        void leaveActorViewport(bool library);
+        float tabRight() const;
+        float tabTop() const;
+        void revealTab(size_t index);
         std::pair<std::string,std::string> m_activeTab;
         size_t m_tabFirst=0;
         void resetGraphTabs();
@@ -110,7 +117,6 @@ namespace nx
         bool actorHandle(unsigned axis,float& x,float& y,float& dx,float& dy) const;
         void cancelActorDrag();
         std::string m_actorTabId,m_actorTabScreen;
-        size_t m_actorTabGraph=0;
         size_t m_visualFirst=0,m_visualComponent=0,m_visualComponentFirst=0;
         std::string m_visualSelection,m_visualText,m_visualProperty;
         std::string m_themeStyle="button";

@@ -114,3 +114,7 @@ Explicit Translate/Rotate/Scale toolbar glyphs replace the mode-cycle button. Fo
 ## Persistent layout and graph tabs
 
 Native editor density, panel widths, collapsed actor inspector sections and content drawer visibility persist in a versioned bounded editor-only layout file under own/ (not in exported game projects). Layout resets restore defaults. Up to 32 named graph tabs retain their independent pan and zoom; opening a graph from the hierarchy, function call or class navigation creates/reuses its tab. Tabs close without deleting the graph, scroll horizontally with the mouse wheel and are cleared when another project is loaded. A separate existing actor viewport return tab remains; multiple independent actor viewport sessions and floating OS windows are not yet supported. X11 test exercises tab selection and persisted layout after close. CI pending.
+
+### Unified graph and actor viewport tabs
+
+The native tab strip now also appears in actor viewports, with up to 16 independent actor sessions retaining selected component, hierarchy scroll, camera orbit, focus, zoom, inspector scroll and transform mode. Switching tabs releases the previous isolated preview and recreates only the selected class world. Graph keys and asset IDs are resolved rather than retaining stale graph indices. The existing toolbar viewport shortcut stays compatible. Layout drawer visibility is read as a JSON boolean; the compact regression restarts Studio to verify preference loading. Tabs are session-local, not a multi-project editor or floating window system. CI pending.

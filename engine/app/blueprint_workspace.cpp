@@ -154,7 +154,7 @@ namespace nx
     {
         if (!active()) return;
         stopPreview(s);
-        cancelActorDrag();m_actorOrbit=false;m_splitter=0;m_actorEditor=false;m_contentDrag.clear();
+        saveActorTab();cancelActorDrag();m_actorOrbit=false;m_splitter=0;m_actorEditor=false;m_contentDrag.clear();
         releaseWidgetPreview();releasePlacementPreview();m_widgetDesigner=m_visualPlacement=false;
         checkpoint(s,true);saveLayout(s);
         cancelDrag();clearWire();m_quickDrag=m_quickMenu=m_pinMenu=m_rightDown=false;m_layoutMenu=m_layoutDragging=false;m_graphBack.clear();m_focus=0;m_browsing=false;m_assetBrowser=false;s.input->setTyping(m_previousTyping);
@@ -189,7 +189,7 @@ namespace nx
                 m_leftPanel=bounded("left",248,220,400);m_graphRightPanel=bounded("graphRight",268,250,420);
                 m_actorRightPanel=bounded("actorRight",310,310,440);m_uiScale=static_cast<unsigned>(bounded("scale",0,0,3));
                 m_actorCollapsed=static_cast<unsigned>(bounded("collapsed",0,0,31));
-                m_contentDrawer=std::string(root["content"].text())=="true"||root["content"].number()==1;
+                m_contentDrawer=root["content"].flag();
                 NX_INFO("Blueprint Studio: restored editor layout");
             }
         }
@@ -252,7 +252,7 @@ namespace nx
     {return m_assetBrowser||m_browsing||m_focus==5||m_focus==6||m_focus==9||m_focus==10||m_focus==11||m_focus==12||m_focus==13||m_focus==14||m_focus==15;}
     void BlueprintWorkspace::resetGraphTabs()
     {
-        m_graphTabs.clear();m_activeTab={};m_tabFirst=0;
+        m_graphTabs.clear();m_actorTabs.clear();m_activeTab={};m_tabFirst=0;
     }
     size_t BlueprintWorkspace::graphTabIndex(const GraphTab& tab) const
     {
@@ -262,7 +262,9 @@ namespace nx
     void BlueprintWorkspace::pruneGraphTabs()
     {
         m_graphTabs.erase(std::remove_if(m_graphTabs.begin(),m_graphTabs.end(),[&](const GraphTab& tab){return graphTabIndex(tab)>=m_document.graphs.size();}),m_graphTabs.end());
-        if(m_tabFirst>=m_graphTabs.size())m_tabFirst=0;
+        m_actorTabs.erase(std::remove_if(m_actorTabs.begin(),m_actorTabs.end(),[&](const ActorTab& tab){const auto* asset=m_document.visualAsset(tab.id);return !asset||asset->kind!="actor";}),m_actorTabs.end());
+        if(!m_actorTabId.empty()&&!m_document.visualAsset(m_actorTabId))m_actorTabId.clear();
+        if(m_tabFirst>=m_graphTabs.size()+m_actorTabs.size())m_tabFirst=0;
     }
     void BlueprintWorkspace::selectGraph(size_t index)
     {
@@ -278,10 +280,7 @@ namespace nx
             if(m_graphTabs.size()>=32)m_graphTabs.erase(m_graphTabs.begin());
             m_graphTabs.push_back({target.owner,target.name});found=m_graphTabs.end()-1;
         }
-        const auto tabIndex=static_cast<size_t>(found-m_graphTabs.begin());
-        const size_t visible=static_cast<size_t>(std::max(1.f,(kRight-kLeft-8)/146.f));
-        if(tabIndex<m_tabFirst)m_tabFirst=tabIndex;
-        if(tabIndex>=m_tabFirst+visible)m_tabFirst=tabIndex-visible+1;
+        revealTab(static_cast<size_t>(found-m_graphTabs.begin()));
         cancelDrag();clearWire();m_diagnostic={};
         m_quickDrag=m_quickMenu=m_pinMenu=m_rightDown=false;m_quickVariableFirst=0;
         m_layoutMenu=m_layoutDragging=false;m_layoutComment=m_layoutLink=static_cast<size_t>(-1);m_selectedNodes.clear();
@@ -292,42 +291,83 @@ namespace nx
         if (index >= m_first + kRows) m_first = index - kRows + 1;
     }
 
+    float BlueprintWorkspace::tabRight() const
+    {return m_actorEditor?kWidth-m_actorRightPanel:kRight;}
+    float BlueprintWorkspace::tabTop() const
+    {return kBottom-(!m_actorEditor&&m_contentDrawer?174.f:0.f)-30.f;}
+    void BlueprintWorkspace::revealTab(size_t index)
+    {
+        const size_t visible=static_cast<size_t>(std::max(1.f,(tabRight()-kLeft-8)/146.f));
+        if(index<m_tabFirst)m_tabFirst=index;
+        if(index>=m_tabFirst+visible)m_tabFirst=index-visible+1;
+    }
     bool BlueprintWorkspace::updateGraphTabs(Services& s,float x,float y,bool click)
     {
-        const float top=kBottom-(m_contentDrawer?174.f:0.f)-30.f;
-        if(!in(x,y,kLeft,top,kRight,top+30))return false;
+        const float top=tabTop(),right=tabRight();
+        if(!in(x,y,kLeft,top,right,top+30))return false;
         pruneGraphTabs();
-        const auto visible=static_cast<size_t>(std::max(1.f,(kRight-kLeft-8)/146.f));
-        if(s.input->wheel()<0&&m_tabFirst+visible<m_graphTabs.size())++m_tabFirst;
+        const auto visible=static_cast<size_t>(std::max(1.f,(right-kLeft-8)/146.f)),count=m_graphTabs.size()+m_actorTabs.size();
+        if(s.input->wheel()<0&&m_tabFirst+visible<count)++m_tabFirst;
         if(s.input->wheel()>0&&m_tabFirst)--m_tabFirst;
         if(!click||x<kLeft+4)return true;
         const auto slot=static_cast<size_t>((x-kLeft-4)/146.f),index=m_tabFirst+slot;
-        if(slot>=visible||index>=m_graphTabs.size())return true;
+        if(slot>=visible||index>=count)return true;
+        const bool close=x>=kLeft+4+146.f*static_cast<float>(slot)+119&&count>1;
+        if(index>=m_graphTabs.size())
+        {
+            const auto actorIndex=index-m_graphTabs.size();const auto id=m_actorTabs[actorIndex].id;
+            if(close)
+            {
+                if(m_actorEditor&&id==m_actorTabId)leaveActorViewport(false);
+                m_actorTabs.erase(std::remove_if(m_actorTabs.begin(),m_actorTabs.end(),[&](const ActorTab& tab){return tab.id==id;}),m_actorTabs.end());
+                if(m_actorTabId==id)m_actorTabId=m_actorTabs.empty()?std::string():m_actorTabs.back().id;
+                if(m_tabFirst>=m_graphTabs.size()+m_actorTabs.size())m_tabFirst=0;
+            }
+            else if(!m_actorEditor||m_actorTabId!=id)openActorViewport(id);
+            return true;
+        }
         const auto tab=m_graphTabs[index];const auto graph=graphTabIndex(tab);
         if(graph>=m_document.graphs.size())return true;
-        if(x>=kLeft+4+146.f*static_cast<float>(slot)+119&&m_graphTabs.size()>1)
+        if(close&&m_graphTabs.size()>1)
         {
             const bool active=tab.owner==m_activeTab.first&&tab.name==m_activeTab.second;
             m_graphTabs.erase(m_graphTabs.begin()+static_cast<std::ptrdiff_t>(index));
-            if(m_tabFirst>=m_graphTabs.size())m_tabFirst=0;
-            if(active){m_activeTab={};selectGraph(graphTabIndex(m_graphTabs[std::min(index,m_graphTabs.size()-1)]));}
+            if(m_tabFirst>=m_graphTabs.size()+m_actorTabs.size())m_tabFirst=0;
+            if(active)
+            {
+                if(m_actorEditor)leaveActorViewport(false);
+                m_activeTab={};selectGraph(graphTabIndex(m_graphTabs[std::min(index,m_graphTabs.size()-1)]));
+            }
         }
-        else selectGraph(graph);
+        else if(!close)
+        {
+            if(m_actorEditor)leaveActorViewport(false);
+            selectGraph(graph);
+        }
         return true;
     }
     void BlueprintWorkspace::drawGraphTabs(Canvas& c)
     {
-        const float top=kBottom-(m_contentDrawer?174.f:0.f)-30.f;
-        c.rect(kLeft,top,kRight-kLeft,30,{0.15f,0.15f,0.16f,1});
-        const auto visible=static_cast<size_t>(std::max(1.f,(kRight-kLeft-8)/146.f));
-        for(size_t i=0;i<visible&&m_tabFirst+i<m_graphTabs.size();++i)
+        const float top=tabTop(),right=tabRight();
+        c.rect(kLeft,top,right-kLeft,30,{0.15f,0.15f,0.16f,1});
+        const auto visible=static_cast<size_t>(std::max(1.f,(right-kLeft-8)/146.f)),count=m_graphTabs.size()+m_actorTabs.size();
+        for(size_t i=0;i<visible&&m_tabFirst+i<count;++i)
         {
-            const auto& tab=m_graphTabs[m_tabFirst+i];const float x=kLeft+4+146.f*static_cast<float>(i);
-            const bool selected=tab.owner==m_activeTab.first&&tab.name==m_activeTab.second;
+            const auto index=m_tabFirst+i;const float x=kLeft+4+146.f*static_cast<float>(i);std::string label;bool selected=false;
+            if(index<m_graphTabs.size())
+            {
+                const auto& tab=m_graphTabs[index];selected=!m_actorEditor&&tab.owner==m_activeTab.first&&tab.name==m_activeTab.second;
+                label=(tab.owner.rfind("behaviour:",0)==0?tab.owner.substr(10):tab.owner)+"/"+tab.name;
+            }
+            else
+            {
+                const auto& tab=m_actorTabs[index-m_graphTabs.size()];const auto* asset=m_document.visualAsset(tab.id);
+                selected=m_actorEditor&&m_actorTabId==tab.id;label=asset?"3D / "+asset->title:"Closed actor";
+            }
             c.rect(x,top+3,142,27,selected?Color{0.33f,0.34f,0.37f,1}:Color{0.22f,0.22f,0.24f,1});
             if(selected)c.rect(x,top+3,142,2,accent);
-            c.clip(x+5,top+5,112,23);c.text(*m_font,(tab.owner.rfind("behaviour:",0)==0?tab.owner.substr(10)+"/"+tab.name:tab.owner+"/"+tab.name).c_str(),x+6,top+7,text);c.noClip();
-            if(m_graphTabs.size()>1){c.line(x+125,top+11,x+133,top+19,1,muted);c.line(x+133,top+11,x+125,top+19,1,muted);}
+            c.clip(x+5,top+5,112,23);c.text(*m_font,label.c_str(),x+6,top+7,text);c.noClip();
+            if(count>1&&(index>=m_graphTabs.size()||m_graphTabs.size()>1)){c.line(x+125,top+11,x+133,top+19,1,muted);c.line(x+133,top+11,x+125,top+19,1,muted);}
         }
     }
     void BlueprintWorkspace::openSelectedFunction()
@@ -1804,27 +1844,51 @@ namespace nx
     {
         if(m_actorDragAxis>=0){m_actorDragAxis=-1;releasePlacementPreview();}
     }
+    void BlueprintWorkspace::saveActorTab()
+    {
+        if(!m_actorEditor)return;
+        for(auto& tab:m_actorTabs)if(tab.id==m_actorTabId)
+        {
+            tab.component=m_visualComponent;tab.first=m_visualComponentFirst;tab.yaw=m_placementYaw;
+            tab.pitch=m_actorPitch;tab.distance=m_placementDistance;tab.detailsScroll=m_actorDetailsScroll;tab.mode=m_actorMode;
+            for(unsigned i=0;i<3;++i)tab.focus[i]=m_actorFocus[i];
+            break;
+        }
+    }
+    void BlueprintWorkspace::leaveActorViewport(bool library)
+    {
+        saveActorTab();cancelActorDrag();m_actorOrbit=false;m_actorEditor=false;m_assetBrowser=library;releasePlacementPreview();
+        for(const auto& tab:m_actorTabs)if(tab.id==m_actorTabId)
+        {
+            const auto found=std::find_if(m_document.graphs.begin(),m_document.graphs.end(),[&](const BlueprintDocument::Graph& g){return g.owner==tab.returnGraph.first&&g.name==tab.returnGraph.second;});
+            if(found!=m_document.graphs.end())selectGraph(static_cast<size_t>(found-m_document.graphs.begin()));
+            return;
+        }
+    }
     void BlueprintWorkspace::openActorViewport(const std::string& id)
     {
         const auto* asset=m_document.visualAsset(id);
         if(!asset||asset->kind!="actor")return;
         const auto selected=id; // id can alias m_visualSelection.
-        m_actorEditor=true;m_assetBrowser=true;m_assetLibrary=true;m_visualSelection=selected;
-        m_actorTabId=selected;
-        const auto screen=assetScreen();
-        if(!screen.empty())m_actorTabScreen=screen;
-        else
+        saveActorTab();cancelActorDrag();m_actorOrbit=false;pruneGraphTabs();
+        auto found=std::find_if(m_actorTabs.begin(),m_actorTabs.end(),[&](const ActorTab& tab){return tab.id==selected;});
+        if(found==m_actorTabs.end())
         {
+            if(m_actorTabs.size()>=16)m_actorTabs.erase(m_actorTabs.begin());
+            ActorTab tab;tab.id=selected;tab.returnGraph=m_activeTab;tab.screen=assetScreen();
+            if(tab.screen.empty())tab.screen=m_document.moduleForOwner(m_document.actorBehaviour(selected));
             const auto screens=m_document.screens();
-            if(std::find(screens.begin(),screens.end(),m_actorTabScreen)==screens.end())
-                m_actorTabScreen=screens.empty()?std::string():screens.front();
+            if(std::find(screens.begin(),screens.end(),tab.screen)==screens.end())
+                tab.screen=std::find(screens.begin(),screens.end(),m_actorTabScreen)!=screens.end()?m_actorTabScreen:(screens.empty()?std::string():screens.front());
+            m_actorTabs.push_back(std::move(tab));found=m_actorTabs.end()-1;
         }
-        m_actorTabGraph=m_graph;
+        m_actorEditor=true;m_assetBrowser=true;m_assetLibrary=true;m_visualSelection=selected;
+        m_actorTabId=selected;m_actorTabScreen=found->screen;
         m_visualInspector=m_visualPhysics=m_visualPlacement=m_widgetDesigner=false;
-        m_visualComponent=m_visualComponentFirst=0;m_visualInput=0;m_actorDetailsScroll=0;
-        m_placementYaw=0.65f;m_actorPitch=0.576375f;m_placementDistance=8.f;
-        m_actorFocus[0]=m_actorFocus[1]=m_actorFocus[2]=0;
-        clearWire();cancelDrag();releasePlacementPreview();
+        m_visualComponent=found->component;m_visualComponentFirst=found->first;m_visualInput=0;m_actorDetailsScroll=found->detailsScroll;
+        m_placementYaw=found->yaw;m_actorPitch=found->pitch;m_placementDistance=found->distance;m_actorMode=found->mode;
+        for(unsigned i=0;i<3;++i)m_actorFocus[i]=found->focus[i];
+        clearWire();cancelDrag();releasePlacementPreview();revealTab(m_graphTabs.size()+static_cast<size_t>(found-m_actorTabs.begin()));
         m_status="Actor class viewport: select a component to edit its properties.";
     }
     std::vector<BlueprintWorkspace::DetailRow> BlueprintWorkspace::actorDetailRows() const
@@ -1860,7 +1924,7 @@ namespace nx
         const std::string graphName=construction?"Construction":"start";
         if(construction&&!m_document.function(owner,graphName)&&!m_document.addFunction(graphName,m_status,owner))return;
         for(size_t i=0;i<m_document.graphs.size();++i)if(m_document.graphs[i].owner==owner&&m_document.graphs[i].name==graphName)
-        {m_actorEditor=false;m_assetBrowser=false;releasePlacementPreview();selectGraph(i);m_status=construction?"Construction runs at actor spawn, before Start.":"Actor event graph. Return to viewport with the Actor viewport tab.";return;}
+        {saveActorTab();m_actorEditor=false;m_assetBrowser=false;releasePlacementPreview();selectGraph(i);m_status=construction?"Construction runs at actor spawn, before Start.":"Actor event graph. Return to viewport with the Actor viewport tab.";return;}
         m_status="Class graph not found.";
     }
     void BlueprintWorkspace::updateActorEditor(Services& s,float x,float y,bool left,bool click,unsigned pressed)
@@ -1938,7 +2002,7 @@ namespace nx
         if(m_visualComponent>=count)m_visualComponent=0;
         const auto rows=static_cast<size_t>(std::max(1.f,(kBottom-188)/30.f));
         if(m_visualComponentFirst>=count)m_visualComponentFirst=0;
-        if(resizePanels(x,y,left,click,true))return;
+        if(resizePanels(x,y,left,click,true)||updateGraphTabs(s,x,y,click))return;
         if(in(x,y,0,120,kLeft,kBottom-64))
         {
             if(input.wheel()<0&&m_visualComponentFirst+rows<count)++m_visualComponentFirst;
@@ -2024,7 +2088,7 @@ namespace nx
                 }
             }
         }
-        if(in(x,y,12,39,150,69)){m_actorEditor=false;releasePlacementPreview();if(m_actorTabGraph<m_document.graphs.size())selectGraph(m_actorTabGraph);return;}
+        if(in(x,y,12,39,150,69)){leaveActorViewport(true);return;}
         if(in(x,y,158,39,308,69)){openActorGraph(false);return;}
         if(in(x,y,900,39,1058,69)){openActorGraph(true);return;}
         if(in(x,y,1066,39,1208,69)){m_uiScale=(m_uiScale+1)%4;return;}
@@ -2223,6 +2287,7 @@ namespace nx
         c.rect(kLeft-2,kTop,4,kBottom-kTop,{0.32f,0.32f,0.34f,1});c.rect(right-2,kTop,4,kBottom-kTop,{0.32f,0.32f,0.34f,1});
         c.rect(0,kBottom,kWidth,kHeight-kBottom,{0.16f,0.16f,0.17f,1});
         c.clip(10,kBottom+4,kWidth-20,34);c.text(*m_font,(m_placementOmitted?"Preview unavailable for this definition; "+m_status:m_status).c_str(),12,kBottom+10,text);c.noClip();
+        drawGraphTabs(c);
         if(m_visualInput)
         {
             c.rect(0,0,kWidth,kHeight,{0,0,0,0.65f});const float x=(kWidth-560)*0.5f,y=(kHeight-160)*0.5f;
@@ -3132,7 +3197,7 @@ namespace nx
         if (input.pressed(Action::Menu))
         {
             if(!m_contentDrag.empty()){m_contentDrag.clear();m_status="Content drag cancelled.";return;}
-            if(m_actorEditor){if(m_visualInput){m_visualInput=0;m_visualText.clear();input.setTyping(false);}else if(m_actorDragAxis>=0){cancelActorDrag();m_status="Component drag cancelled.";}else{m_actorEditor=false;releasePlacementPreview();if(m_actorTabGraph<m_document.graphs.size())selectGraph(m_actorTabGraph);}return;}
+            if(m_actorEditor){if(m_visualInput){m_visualInput=0;m_visualText.clear();input.setTyping(false);}else if(m_actorDragAxis>=0){cancelActorDrag();m_status="Component drag cancelled.";}else{leaveActorViewport(true);}return;}
             if(m_assetBrowser){if(m_visualInput){m_visualInput=0;m_visualText.clear();input.setTyping(false);m_status="Input cancelled.";return;}if(m_placementDragging){cancelVisualPlacement();m_status="Placement cancelled.";return;}if(m_visualPlacement){m_visualPlacement=false;return;}if(m_widgetDesigner){if(m_widgetPreviewDrag){m_widgetPreviewDrag=false;m_status="Widget drag cancelled.";return;}if(m_widgetDragging){m_widgetDragging=false;m_widgetDragId.clear();return;}m_widgetDesigner=false;releaseWidgetPreview();return;}m_assetBrowser=false;m_status="Asset browser closed.";return;}
             if(m_browsing){m_browsing=false;m_status="Open cancelled.";return;}
             if(m_focus){m_focus=0;input.setTyping(false);m_status="Input cancelled.";return;}
@@ -3582,7 +3647,7 @@ namespace nx
         if(!m_drag)
         {
             if(click&&in(x,y,18,39,245,69)&&!m_actorTabId.empty()&&m_document.visualAsset(m_actorTabId))
-            {m_actorEditor=true;m_assetBrowser=true;m_assetLibrary=true;m_visualSelection=m_actorTabId;m_visualInput=0;releasePlacementPreview();m_left=left;return;}
+            {openActorViewport(m_actorTabId);m_left=left;return;}
             if(click&&in(x,y,300,5,404,33)){m_layoutMenu=true;clearWire();m_left=left;return;}
             if(click&&in(x,y,1134,39,1266,69)){returnToRedux(s);m_left=left;return;}
             if(click&&in(x,y,410,5,560,33)&&m_graph<m_document.graphs.size()&&m_document.graphs[m_graph].kind=="function")

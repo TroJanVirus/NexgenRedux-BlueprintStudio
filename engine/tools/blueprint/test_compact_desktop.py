@@ -157,6 +157,7 @@ with log.open("wb") as output:
         click(310,560)
         shot("actor-from-drawer.png")
         drag(970,470,940,470)
+        shot("actor-tabs.png")
         # A close request exercises normal release of the isolated world.
         msg=protocol.event.ClientMessage(window=win,client_type=conn.intern_atom("WM_PROTOCOLS"),
             data=(32,[conn.intern_atom("WM_DELETE_WINDOW"),X.CurrentTime,0,0,0]))
@@ -165,6 +166,18 @@ with log.open("wb") as output:
         assert process.wait(timeout=20)==0
         layout=json.loads((root/"own"/"blueprint-editor-layout.json").read_text())
         assert layout["version"]==1 and layout["actorRight"]==340 and layout["content"] is True, layout
+        # Restart the application, rather than only checking the written file.
+        with (root/"layout-restart.log").open("wb") as restarted_log:
+            restarted=subprocess.Popen([str(binary),"--blueprint-studio","--silent","--size","1280","720","--saves",str(root)],stdout=restarted_log,stderr=subprocess.STDOUT)
+            try:
+                until=time.monotonic()+30
+                while time.monotonic()<until and restarted.poll() is None:
+                    if "restored editor layout" in (root/"layout-restart.log").read_text(errors="replace"):break
+                    time.sleep(0.15)
+                else:raise RuntimeError("Editor did not restore layout on restart")
+            finally:
+                if restarted.poll() is None:restarted.terminate()
+                restarted.wait(timeout=15)
         print("Compact desktop graph, centered modal, class preview and independent XYZ edits passed at 1080p and 720p.")
     finally:
         if process.poll() is None:
