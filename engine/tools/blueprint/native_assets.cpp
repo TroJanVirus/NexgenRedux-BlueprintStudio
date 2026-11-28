@@ -541,7 +541,7 @@ namespace nx
         };
         const auto build=add(0,"call:function",320,60,"BuildArena"),player=add(0,"call:function",650,60,"SpawnCharacter");
         chain(0,0,build);chain(0,build,player);
-        note(0,"INITIALIZE | Build a lightweight test arena, then create and store the player character. Runs once when this screen opens.");
+
         const auto inputLook=add(1,"call:function",340,60,"UpdateLook"),move=add(1,"call:function",680,60,"UpdateMovement"),
             view=add(1,"call:function",1020,60,"UpdateCamera"),dt=add(1,"event:delta",24,250);
         chain(1,0,inputLook);chain(1,inputLook,move);chain(1,move,view);
@@ -560,14 +560,10 @@ namespace nx
         }
         const auto ground=add(arena,"api:Space:Space::ground:float",340,60);
         value(arena,ground,"height","0");chain(arena,0,ground);
-        const auto floor=add(arena,"spawn:plane",680,60);chain(arena,ground,floor);
-        value(arena,floor,"name","Arena floor");value(arena,floor,"size","80,1,80");
-        value(arena,floor,"color","0.32,0.37,0.43,1");
-        const auto sky=add(arena,"api:Space:Space::sky:Color,Color",1080,60);chain(arena,floor,sky);
+        const auto sky=add(arena,"api:Space:Space::sky:Color,Color",680,60);chain(arena,ground,sky);
         value(arena,sky,"top","0.22,0.42,0.75,1");value(arena,sky,"horizon","0.72,0.83,0.93,1");
         const auto sun=add(arena,"api:Space:Space::sun:Vec3,Color",1480,60);chain(arena,sky,sun);
         value(arena,sun,"direction","0.5,0.75,0.35");value(arena,sun,"color","1,0.93,0.8,1");
-        size_t last=sun;
         struct Marker{const char* name;const char* place;const char* size;const char* color;};
         constexpr Marker markers[]={
             {"Orange marker","0,1,-7","2,2,2","0.92,0.35,0.12,1"},
@@ -577,15 +573,27 @@ namespace nx
             {"South wall","0,1,20","40,2,1","0.46,0.49,0.55,1"},
             {"West wall","-20,1,0","1,2,40","0.46,0.49,0.55,1"},
             {"East wall","20,1,0","1,2,40","0.46,0.49,0.55,1"}};
-        for(unsigned i=0;i<7;++i)
+        if(ok)
         {
-            const auto& marker=markers[i];
-            const auto box=add(arena,"call:function",340+static_cast<float>(i%3)*490,310+static_cast<float>(i/3)*250,"AddObstacle");
-            chain(arena,last,box);last=box;
-            value(arena,box,"arg_name",marker.name);value(arena,box,"arg_place",marker.place);
-            value(arena,box,"arg_size",marker.size);value(arena,box,"arg_color",marker.color);
+            std::vector<BlueprintDocument::VisualAsset> assets;
+            assets.push_back({"actor-1","actor","Arena floor","{\"entities\":[{\"name\":\"Arena floor\",\"shape\":\"plane\",\"size\":[80,1,80],\"color\":[0.32,0.37,0.43,1]}]}",{}});
+            for(unsigned i=0;i<7;++i)
+            {
+                const auto& marker=markers[i];
+                const auto json=std::string("{\"entities\":[{\"name\":\"")+marker.name+"\",\"shape\":\"box\",\"size\":["+marker.size+"],\"color\":["+marker.color+"],\"cube\":[1,1,1],\"wall\":true}]}";
+                assets.push_back({"actor-"+std::to_string(i+2),"actor",marker.name,json,{}});
+            }
+            ok=candidate.replaceVisualAssets(assets,error);
         }
-        note(arena,"ARENA | Native ground supplies collision. Floor, sky and sunlight establish the scene; seven calls to AddObstacle build solid markers and perimeter walls. Change each instance's position, size and colour.");
+        size_t tail=player;
+        for(unsigned i=0;i<8;++i)
+        {
+            const auto actor=add(0,"actor:spawn-asset",1000+static_cast<float>(i%3)*420,60+static_cast<float>(i/3)*260);
+            chain(0,tail,actor);tail=actor;
+            value(0,actor,"id",("actor-"+std::to_string(i+1)).c_str());value(0,actor,"place",i?markers[i-1].place:"0,0,0");
+        }
+        note(0,"INITIALIZE | Build environment and spawn the player, then instantiate linked floor, markers and walls. Their class assets and constant positions are editable in Scene.");
+        note(arena,"ARENA | Configure native ground collision, sky and sunlight. Static geometry is placed from reusable actor assets in On Enter.");
         const auto box=add(obstacle,"spawn:box",380,60),collider=add(obstacle,"api:Entity:cube:Entity@,Vec3,uint,uint",820,60);
         chain(obstacle,0,box);chain(obstacle,box,collider);
         for(const char* pin:{"name","place","size","color"})

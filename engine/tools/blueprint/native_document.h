@@ -105,6 +105,8 @@ namespace nx
         bool setVisualWidgetProperty(const std::string& id,const std::string& widget,const std::string& property,const std::string& value,std::string& error);
         bool setWidgetKey(const std::string& id,const std::string& widget,const std::string& track,const std::string& value,float time,std::string& error);
         bool positionVisualWidget(const std::string& id,const std::string& widget,const std::string& anchor,float x,float y,std::string& error);
+        bool wrapVisualWidget(const std::string& id,const std::string& widget,const std::string& container,std::string& error);
+        bool replaceVisualWidgetContainer(const std::string& id,const std::string& widget,const std::string& container,std::string& error);
         bool reparentVisualWidget(const std::string& id,const std::string& widget,const std::string& parent,std::string& error);
         bool moveVisualWidget(const std::string& id,const std::string& widget,int direction,std::string& error);
         // Native callbacks are ordinary typed screen function graphs.

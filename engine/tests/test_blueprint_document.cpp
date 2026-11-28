@@ -1533,6 +1533,16 @@ NX_TEST(nativeActorInspectorEditsSharedComponentProperties)
     NX_EXPECT(copy.undo()&&copy.undo()&&!copy.removeBehaviour("Movement",error));
 }
 
+NX_TEST(nativeWidgetWrapAndReplacePreservesChildIdentity)
+{
+    BlueprintDocument doc;doc.create();std::string id,error,before,after;
+    NX_EXPECT(doc.createVisualAsset("widget",id,error)&&doc.appendVisualWidget(id,"label","HUD",error));
+    NX_EXPECT(doc.serialize(before,error)&&doc.wrapVisualWidget(id,"item-1","stack",error));
+    NX_EXPECT(doc.replaceVisualWidgetContainer(id,"item-2","column",error));
+    JsonTree tree;const auto* page=doc.visualAsset(id);NX_EXPECT(page&&tree.parse(page->source.data(),page->source.size()));
+    NX_EXPECT(std::string(tree.root()[0u]["column"][0u]["id"].text())=="item-1");
+    NX_EXPECT(doc.undo()&&doc.undo()&&doc.serialize(after,error)&&before==after);
+}
 NX_TEST(nativeScenePrimitivePlacementIsAtomicAndCompiles)
 {
     BlueprintDocument doc;doc.create();std::string id,error,source,bytes;

@@ -808,8 +808,9 @@ namespace nx
     bool BlueprintDocument::appendVisualWidget(const std::string& id,const std::string& kind,const std::string& label,std::string& error,const std::string& parent)
     {
         const bool container=kind=="column"||kind=="row"||kind=="grid"||kind=="stack"||kind=="scroll";
-        if(!container&&kind!="component"&&kind!="label"&&kind!="button"&&kind!="progress"&&kind!="toggle"&&kind!="slider"&&kind!="field"&&kind!="space")
+        if(!container&&kind!="component"&&kind!="label"&&kind!="button"&&kind!="progress"&&kind!="toggle"&&kind!="slider"&&kind!="field"&&kind!="space"&&kind!="paragraph"&&kind!="image"&&kind!="line")
         {error="Unsupported palette widget.";return false;}
+        if(kind=="image"&&(label.empty()||(label.rfind("asset:",0)!=0&&label.rfind("global:",0)!=0))){error="Choose an image path beginning asset: or global:.";return false;}
         if(kind=="component"&&(!visualAsset(label)||visualAsset(label)->kind!="widget"||label==id))
         {error="Choose a different reusable widget asset ID.";return false;}
         if(label.size()>128||std::any_of(label.begin(),label.end(),[](unsigned char ch){return ch<32||ch==127;}))
@@ -846,13 +847,13 @@ namespace nx
             {
                 if(!number(item,kind.c_str(),0.75)||!number(item,"low",0)||!number(item,"high",1))return false;
             }
-            else if(kind=="space"){if(!number(item,"space",24))return false;}
+            else if(kind=="space"||kind=="line"){if(!number(item,kind.c_str(),kind=="space"?24:1))return false;}
             else if(kind=="component")
             {
                 if(!text(item,"component",label))return false;
                 if(std::find(a.dependencies.begin(),a.dependencies.end(),label)==a.dependencies.end())a.dependencies.push_back(label);
             }
-            else if(!text(item,kind.c_str(),label.empty()?(kind=="label"?"Text":kind=="button"?"Button":kind=="field"?"":"Toggle"):label))return false;
+            else if(!text(item,kind.c_str(),label.empty()?((kind=="label"||kind=="paragraph")?"Text":kind=="button"?"Button":kind=="field"?"":"Toggle"):label))return false;
             auto* added=list->add();if(!added||!added->setCopy(item)){error="Widget hierarchy is too deep.";return false;}
             a.source=root.write(true);
             if(kind=="component")
@@ -1105,6 +1106,49 @@ namespace nx
         const auto* before=visualAsset(id);const auto* after=staged.visualAsset(id);
         if(before&&after&&before->source==after->source){error.clear();return true;}
         return replaceVisualAssets(staged.m_visualAssets,error);
+    }
+    bool BlueprintDocument::wrapVisualWidget(const std::string& id,const std::string& widget,const std::string& container,std::string& error)
+    {
+        if(container!="column"&&container!="row"&&container!="grid"&&container!="stack"&&container!="scroll"){error="Choose column, row, grid, stack or scroll.";return false;}
+        auto assets=m_visualAssets;
+        for(auto& page:assets)if(page.id==id&&page.kind=="widget")
+        {
+            JsonValue root;if(!root.parse(page.source.data(),page.source.size(),error))return false;
+            WidgetMatch match;findVisualWidget(root,widget,match);
+            if(match.matches!=1||!match.siblings){error="Select a unique widget to wrap.";return false;}
+            std::string next;
+            for(unsigned n=1;n<=4096;++n){next="item-"+std::to_string(n);WidgetMatch other;findVisualWidget(root,next,other);if(!other.matches)break;if(n==4096){error="No free widget ID.";return false;}}
+            JsonValue wrapper,child;if(!child.setCopy(*match.item)||!text(wrapper,"id",next))return false;
+            // Preserve slot placement in the existing parent; the child keeps its identity, style and event bindings.
+            for(const char* key:{"anchor","offset","grow","self"})if(const auto* slot=child.find(key))
+            {auto* field=wrapper.put(key);if(!field||!field->setCopy(*slot))return false;child.remove(key);}
+            auto* list=wrapper.put(container);if(!list)return false;list->setArray();
+            if(container=="grid"&&!number(wrapper,"columns",2))return false;
+            auto* inserted=list->add();if(!inserted||!inserted->setCopy(child)||!match.item->setCopy(wrapper)){error="Widget nesting limit exceeded.";return false;}
+            page.source=root.write(true);return replaceVisualAssets(assets,error);
+        }
+        error="Widget page not found.";return false;
+    }
+    bool BlueprintDocument::replaceVisualWidgetContainer(const std::string& id,const std::string& widget,const std::string& container,std::string& error)
+    {
+        if(container!="column"&&container!="row"&&container!="grid"&&container!="stack"&&container!="scroll"){error="Choose column, row, grid, stack or scroll.";return false;}
+        auto assets=m_visualAssets;
+        for(auto& page:assets)if(page.id==id&&page.kind=="widget")
+        {
+            JsonValue root;if(!root.parse(page.source.data(),page.source.size(),error))return false;
+            WidgetMatch match;findVisualWidget(root,widget,match);
+            if(match.matches!=1){error="Select a unique container.";return false;}
+            const char* old=widgetKind(*match.item);auto* children=widgetChildren(*match.item);
+            if(!old||!children||std::string(old)=="button"){error="Only layout containers can be replaced.";return false;}
+            if(container==old){error.clear();return true;}
+            if(container!="stack")for(u32 i=0;i<children->count();++i)if(children->at(i)->find("anchor")){error="Clear child anchors before replacing a Stack.";return false;}
+            JsonValue copy;if(!copy.setCopy(*children))return false;
+            const std::string key=old;match.item->remove(key.c_str());match.item->remove("columns");
+            auto* out=match.item->put(container);if(!out||!out->setCopy(copy))return false;
+            if(container=="grid"&&!number(*match.item,"columns",2))return false;
+            page.source=root.write(true);return replaceVisualAssets(assets,error);
+        }
+        error="Widget page not found.";return false;
     }
     bool BlueprintDocument::reparentVisualWidget(const std::string& id,const std::string& widget,const std::string& parent,std::string& error)
     {

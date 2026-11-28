@@ -437,7 +437,7 @@ namespace nx
     {
         rememberVisualTab();
         m_widgetDesigner=m_visualPlacement=m_assetBrowser=false;m_visualWorkspace=false;
-        m_widgetDragging=m_widgetPreviewDrag=m_widgetTimelinePlay=false;
+        m_widgetDragging=m_widgetPreviewDrag=m_widgetTimelinePlay=false;m_widgetPaletteDrag.clear();
         m_widgetDragId.clear();cancelVisualPlacement();releaseWidgetPreview();releasePlacementPreview();
         m_activeVisualTab={};
     }
@@ -453,7 +453,7 @@ namespace nx
         if(found==m_document.graphs.end())return;
         selectGraph(static_cast<size_t>(found-m_document.graphs.begin()));
         m_assetBrowser=m_assetLibrary=true;m_visualInput=0;m_visualSelection=tab.asset;
-        m_widgetDesigner=tab.widget;m_visualPlacement=!tab.widget;m_visualWorkspace=tab.workspace;
+        m_widgetDesigner=tab.widget;m_visualPlacement=!tab.widget;m_visualWorkspace=tab.workspace;m_widgetPaletteFirst=0;m_widgetPaletteDrag.clear();
         m_widgetPalette=m_widgetEvents=m_widgetUnbind=m_widgetAnchors=m_widgetTimeline=m_widgetTimelinePlay=false;
         m_widgetTimelineTime=0;m_widgetSelection=tab.selection;m_widgetFirst=tab.widget?tab.first:0;
         m_widgetFourThree=tab.fourThree;
@@ -512,7 +512,7 @@ namespace nx
     }
     bool BlueprintWorkspace::updateWorkspaceModes(Services& s,float x,float y,bool click)
     {
-        if(!click||!in(x,y,252,39,498,69)||m_focus||m_visualInput||m_actorEditor||m_browsing||m_layoutMenu||m_pinMenu||m_pinContext||m_nodeContext||m_placementDragging||m_widgetDragging||m_widgetPreviewDrag||(m_assetBrowser&&!visualTabOpen()))return false;
+        if(!click||!in(x,y,252,39,498,69)||m_focus||m_visualInput||m_actorEditor||m_browsing||m_layoutMenu||m_pinMenu||m_pinContext||m_nodeContext||m_placementDragging||m_widgetDragging||!m_widgetPaletteDrag.empty()||m_widgetPreviewDrag||(m_assetBrowser&&!visualTabOpen()))return false;
         if(x<334){if(visualTabOpen())leaveVisualTab();}
         else if(x<416)openSceneWorkspace(s);
         else openWidgetWorkspace(s);
@@ -1937,7 +1937,7 @@ namespace nx
             return {};
         }
         struct DesignRow {std::string id,kind,label;unsigned depth;};
-        constexpr const char* designPalette[]={"column","row","grid","stack","scroll","label","button","toggle","slider","progress","field","space","component"};
+        constexpr const char* designPalette[]={"column","row","grid","stack","scroll","label","button","toggle","slider","progress","field","space","component","paragraph","image","line"};
         constexpr const char* designEvents[]={"click","change","focus","done","draw","makeRow"};
         constexpr const char* designProps[]={"text","width","height","gap","padding","grow","align","justify","self","style","value","visible"};
         void designRows(JsonTree::Value value,std::vector<DesignRow>& rows,unsigned depth)
@@ -2026,6 +2026,31 @@ namespace nx
         }
         std::vector<DesignRow> rows;designRows(tree.root(),rows,0);
         const size_t count=m_widgetPalette?sizeof(designPalette)/sizeof(designPalette[0]):rows.size()+1;
+        if(m_visualWorkspace)
+        {
+            const float px=pointerX-layout.leftDx,py=pointerY-layout.leftDy;
+            const size_t paletteCount=sizeof(designPalette)/sizeof(designPalette[0]);
+            if(m_widgetFirst>=rows.size()+1)m_widgetFirst=0;
+            if(m_widgetPaletteDrag.size())
+            {
+                if(left)return;
+                const auto kind=m_widgetPaletteDrag;m_widgetPaletteDrag.clear();
+                std::string parent=m_widgetSelection;
+                if(in(px,py,428,202,610,522)){const auto at=m_widgetFirst+static_cast<size_t>((py-202)/40);if(at<=rows.size())parent=at?rows[at-1].id:"";}
+                const bool validDrop=in(px,py,280,202,610,522)||in(pointerX,pointerY,layout.previewX,layout.previewY,layout.previewX+layout.previewWidth,layout.previewY+layout.previewHeight);
+                if(!validDrop)return;
+                if(kind=="image"||kind=="component"){m_widgetPaletteParent=parent;m_visualText.clear();m_visualProperty=kind=="image"?"IMAGE ASSET PATH":"REUSABLE WIDGET ID";m_visualInput=kind=="image"?12:8;s.input->setTyping(true);return;}
+                if(m_document.appendVisualWidget(m_visualSelection,kind,"",m_status,parent)){m_status="Added widget to hierarchy.";m_widgetFirst=0;}return;
+            }
+            if(in(px,py,280,202,424,522)&&!m_widgetDragging)
+            {
+                if(s.input->wheel()<0&&m_widgetPaletteFirst+8<paletteCount)++m_widgetPaletteFirst;
+                if(s.input->wheel()>0&&m_widgetPaletteFirst)--m_widgetPaletteFirst;
+                if(click){const auto at=m_widgetPaletteFirst+static_cast<size_t>((py-202)/40);if(at<paletteCount){m_widgetPaletteDrag=designPalette[at];m_status="Drag to hierarchy or preview; release to add.";}return;}
+                return;
+            }
+            if(click&&in(px,py,280,156,500,189)){m_visualProperty=px<390?"WRAP WITH CONTAINER":"REPLACE CONTAINER";m_visualText="column";m_visualInput=px<390?13:14;s.input->setTyping(true);m_status="Choose column, row, grid, stack or scroll.";return;}
+        }
         if(m_widgetFirst>=count)m_widgetFirst=0;
         if(in(x,y,280,202,610,522))
         {
@@ -2118,7 +2143,7 @@ namespace nx
         }
         if(in(x,y,510,156,610,189)){m_widgetPreviewState=m_widgetPreviewState>=5?-1:m_widgetPreviewState+1;return;}
         if(in(x,y,280,156,500,189)){m_widgetPalette=!m_widgetPalette;m_widgetFirst=0;return;}
-        if(in(x,y,630,156,810,189)){m_widgetDesigner=false;releaseWidgetPreview();return;}
+        if(in(x,y,630,156,810,189)){if(m_visualWorkspace){rememberVisualTab();m_visualWorkspace=false;}m_widgetDesigner=false;releaseWidgetPreview();return;}
         if(in(x,y,820,156,1000,189)){m_widgetFourThree=!m_widgetFourThree;return;}
         if(in(x,y,280,202,610,522))
         {
@@ -2247,19 +2272,26 @@ namespace nx
             c.rect(630+layout.rightDx-6,156+layout.rightDy-6,382,kBottom-112,{0.17f,0.17f,0.18f,1});
         }
         c.push();c.translate(layout.leftDx,layout.leftDy);
-        button(280,156,220,m_widgetPalette?"Back to hierarchy":"Add widget");
+        if(m_visualWorkspace){button(280,156,106,"Wrap with");button(390,156,110,"Replace");}else button(280,156,220,m_widgetPalette?"Back to hierarchy":"Add widget");
         button(510,156,100,m_widgetPreviewState<0?"Live style":themeStates[m_widgetPreviewState]);
         const auto* page=m_document.visualAsset(m_visualSelection);
         JsonTree tree;std::vector<DesignRow> rows;
         if(page&&tree.parse(page->source.data(),page->source.size()))designRows(tree.root(),rows,0);
         const size_t count=m_widgetPalette?sizeof(designPalette)/sizeof(designPalette[0]):rows.size()+1;
+        if(m_visualWorkspace)
+        {
+            c.text(*m_font,"PALETTE",284,190,accent);c.text(*m_font,"HIERARCHY",432,190,accent);
+            const size_t total=sizeof(designPalette)/sizeof(designPalette[0]);
+            for(size_t n=0;n<8&&m_widgetPaletteFirst+n<total;++n){const float yy=202+40.f*static_cast<float>(n);c.rect(280,yy,144,36,{0.22f,0.25f,0.29f,1});c.text(*m_font,designPalette[m_widgetPaletteFirst+n],288,yy+8,text);}
+        }
         for(size_t i=0;i<8&&i+m_widgetFirst<count;++i)
         {
             const size_t at=i+m_widgetFirst;const float y=202+40*static_cast<float>(i);
             const auto id=m_widgetPalette||!at?"":rows[at-1].id;
             const auto label=m_widgetPalette?std::string(designPalette[at]):!at?"PAGE ROOT":std::string(rows[at-1].depth*2,' ')+rows[at-1].kind+" / "+id+" "+rows[at-1].label;
-            c.rect(280,y,330,36,!m_widgetPalette&&id==m_widgetSelection?Color{0.19f,0.33f,0.50f,1}:Color{0.22f,0.22f,0.24f,1});
-            c.clip(286,y,318,36);c.text(*m_font,label.c_str(),290,y+9,text);c.noClip();
+            const float xx=m_visualWorkspace?428.f:280.f,ww=m_visualWorkspace?182.f:330.f;
+            c.rect(xx,y,ww,36,!m_widgetPalette&&id==m_widgetSelection?Color{0.19f,0.33f,0.50f,1}:Color{0.22f,0.22f,0.24f,1});
+            c.clip(xx+6,y,ww-12,36);c.text(*m_font,label.c_str(),xx+10,y+9,text);c.noClip();
         }
         if(m_widgetAnchors){button(280,548,106,"Fill X");button(390,548,106,"Fill Y");button(500,548,110,"Fill both");}
         else {button(280,548,160,"Move up");button(450,548,160,"Move down");}
@@ -2389,9 +2421,12 @@ namespace nx
                     if(m_visualInput==10&&!m_document.editVisualActorPlacement(m_placementSelectedOwner,m_placementSelectedId,m_visualProperty,m_visualText,m_status))break;
                     if(m_visualInput==11){m_outlinerQuery=m_visualText;m_placementFirst=0;}
                     if(m_visualInput==9&&!m_document.setWidgetKey(m_visualSelection,m_widgetSelection,m_visualProperty,m_visualText,m_widgetTimelineTime,m_status))break;
+                    if(m_visualInput==12){if(!m_document.appendVisualWidget(m_visualSelection,"image",m_visualText,m_status,m_widgetPaletteParent))break;}
+                    if(m_visualInput==13&&!m_document.wrapVisualWidget(m_visualSelection,m_widgetSelection,m_visualText,m_status))break;
+                    if(m_visualInput==14&&!m_document.replaceVisualWidgetContainer(m_visualSelection,m_widgetSelection,m_visualText,m_status))break;
                     if(m_visualInput==8)
                     {
-                        if(!m_document.appendVisualWidget(m_visualSelection,"component",m_visualText,m_status,m_widgetSelection))break;
+                        if(!m_document.appendVisualWidget(m_visualSelection,"component",m_visualText,m_status,m_visualWorkspace?m_widgetPaletteParent:m_widgetSelection))break;
                         m_widgetPalette=false;m_widgetFirst=0;
                     }
                     m_visualInput=0;input.setTyping(false);m_status="Text applied.";break;
@@ -2409,7 +2444,7 @@ namespace nx
         {
             const auto layout=widgetLayout();
             const float hx=x-layout.headerDx,hy=y-layout.headerDy;
-            if(m_widgetDragging||!(click&&(in(hx,hy,860,116,1000,150)||in(hx,hy,704,116,850,150))))
+            if(m_widgetDragging||!m_widgetPaletteDrag.empty()||!(click&&(in(hx,hy,860,116,1000,150)||in(hx,hy,704,116,850,150))))
             {updateWidgetDesigner(s,x,y,left,click);return;}
             x=hx;y=hy;
         }
@@ -2448,8 +2483,8 @@ namespace nx
             }
         }
         if(!click)return;
-        if(in(x,y,860,116,1000,150)){m_assetBrowser=false;m_widgetDesigner=false;releaseWidgetPreview();m_visualPlacement=false;cancelVisualPlacement();return;}
-        if(in(x,y,704,116,850,150)){m_assetLibrary=false;m_widgetDesigner=false;releaseWidgetPreview();m_visualPlacement=false;cancelVisualPlacement();return;}
+        if(in(x,y,860,116,1000,150)){m_visualWorkspace=false;m_assetBrowser=false;m_widgetDesigner=false;releaseWidgetPreview();m_visualPlacement=false;cancelVisualPlacement();return;}
+        if(in(x,y,704,116,850,150)){m_visualWorkspace=false;m_assetLibrary=false;m_widgetDesigner=false;releaseWidgetPreview();m_visualPlacement=false;cancelVisualPlacement();return;}
         if(in(x,y,280,156,439,189)||in(x,y,449,156,610,189)||in(x,y,566,116,695,150))
         {
             std::string id;
@@ -5202,7 +5237,7 @@ namespace nx
             if(m_contentPanelDrag||m_contentResize){m_contentPanelDrag=m_contentResize=false;m_status="Content panel move ended.";return;}
             if(!m_contentDrag.empty()){m_contentDrag.clear();m_status="Content drag cancelled.";return;}
             if(m_actorEditor){if(m_visualInput){m_rgbOpen=false;m_visualInput=0;m_visualText.clear();input.setTyping(false);}else if(m_actorDragAxis>=0){cancelActorDrag();m_status="Component drag cancelled.";}else{leaveActorViewport(true);}return;}
-            if(m_assetBrowser){if(m_visualInput){m_rgbOpen=false;m_visualInput=0;m_visualText.clear();input.setTyping(false);m_status="Input cancelled.";return;}if(m_placementDragging){cancelVisualPlacement();m_status="Placement cancelled.";return;}if(m_visualPlacement){if(m_visualWorkspace)leaveVisualTab();else m_visualPlacement=false;return;}if(m_widgetDesigner){if(m_widgetPreviewDrag){m_widgetPreviewDrag=false;m_status="Widget drag cancelled.";return;}if(m_widgetDragging){m_widgetDragging=false;m_widgetDragId.clear();return;}if(m_visualWorkspace)leaveVisualTab();else{m_widgetDesigner=false;releaseWidgetPreview();}return;}m_assetBrowser=false;m_status="Asset browser closed.";return;}
+            if(m_assetBrowser){if(m_visualInput){m_rgbOpen=false;m_visualInput=0;m_visualText.clear();input.setTyping(false);m_status="Input cancelled.";return;}if(m_placementDragging){cancelVisualPlacement();m_status="Placement cancelled.";return;}if(m_visualPlacement){if(m_visualWorkspace)leaveVisualTab();else m_visualPlacement=false;return;}if(m_widgetDesigner){if(!m_widgetPaletteDrag.empty()){m_widgetPaletteDrag.clear();return;}if(m_widgetPreviewDrag){m_widgetPreviewDrag=false;m_status="Widget drag cancelled.";return;}if(m_widgetDragging){m_widgetDragging=false;m_widgetDragId.clear();return;}if(m_visualWorkspace)leaveVisualTab();else{m_widgetDesigner=false;releaseWidgetPreview();}return;}m_assetBrowser=false;m_status="Asset browser closed.";return;}
             if(m_browsing){if(m_projectCreate){m_projectCreate=0;m_projectName.clear();input.setTyping(false);}else{m_browsing=false;m_status="Project browser closed.";}return;}
             if(m_rgbOpen){m_rgbOpen=false;return;}
             if(m_moveWire!=static_cast<size_t>(-1)){m_moveWire=static_cast<size_t>(-1);m_status="Connection move cancelled.";return;}
@@ -5247,9 +5282,9 @@ namespace nx
         if(!left)m_paletteDragging=false;
         const bool right=raw.mouseButtons[1];
         if(updateWorkspaceModes(s,x,y,click)){m_left=left;return;}
-        if(m_visualWorkspace&&visualTabOpen()&&!m_visualInput&&!m_placementDragging&&!m_widgetDragging&&!m_widgetPreviewDrag&&click&&in(x,y,504,39,858,69))
+        if(m_visualWorkspace&&visualTabOpen()&&!m_visualInput&&!m_placementDragging&&!m_widgetDragging&&m_widgetPaletteDrag.empty()&&!m_widgetPreviewDrag&&click&&in(x,y,504,39,858,69))
         {if(x<604)playWorkspace(s);else if(x<742)compileAndExport(s);else saveCurrent(s);m_left=left;return;}
-        if(m_visualWorkspace&&m_widgetDesigner&&!m_visualInput&&click&&in(x,y,8,39,246,69))
+        if(m_visualWorkspace&&m_widgetDesigner&&!m_visualInput&&m_widgetPaletteDrag.empty()&&click&&in(x,y,8,39,246,69))
         {if(x<126){if(m_document.connectVisualWidget(assetScreen(),m_visualSelection,m_status)){rebuildPins();m_status="UI linked to screen; Play to test.";}}else openWidgetWorkspace(s,true);m_left=left;return;}
         const auto placeInlineCaret=[&](const std::string& value,float position)
         {

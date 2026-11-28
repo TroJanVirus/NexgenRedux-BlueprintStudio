@@ -234,6 +234,8 @@ namespace nx
         std::vector<std::pair<unsigned,std::string>> m_placementRoots;
         float m_placementGrabWorldX=0,m_placementGrabWorldZ=0;
         void cancelVisualPlacement(){m_placementGrabWorldX=m_placementGrabWorldZ=0;m_gizmoAxis=-1;m_placementDragging=false;m_placementAsset.clear();m_placementPrimitive.clear();m_placementGraph=m_placementNode=static_cast<size_t>(-1);}
+        size_t m_widgetPaletteFirst=0;
+        std::string m_widgetPaletteDrag,m_widgetPaletteParent;
         bool m_widgetDesigner=false,m_widgetPalette=false,m_widgetFourThree=false,m_widgetEvents=false,m_widgetUnbind=false,m_widgetAnchors=false;
         bool m_widgetTimeline=false,m_widgetTimelinePlay=false;
         unsigned m_widgetTimelineTrack=0;
