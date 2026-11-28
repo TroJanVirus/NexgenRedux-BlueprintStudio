@@ -126,7 +126,7 @@ jobs:
           - True detachable operating-system windows and universal panel docking are not implemented.
           - Native scene context is a render-only preview of supported saved scene entities; edit native scenes using the original scene editor. Terrain and arbitrary scene entity editing are not fully integrated.
           - Unreal Engine visual and Blueprint feature parity is not complete. Inline editing does not cover every pin layout.
-          - Desktop UI tests do not certify every hardware configuration; the Cook binaries and console builds should be tested on the intended systems.
+          - Desktop UI tests do not certify every hardware configuration; the Cook binaries and console builds should be tested on the intended systems. This prerelease does not replace the separate rolling Redux latest release.
           EOF
           fi
           printf '\nBuilt from commit %s.\n' "$GITHUB_SHA" >> notes.md
