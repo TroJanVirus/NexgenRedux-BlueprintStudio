@@ -15,6 +15,10 @@ namespace nx
         bool active()const{return m_network;}
         bool ready()const{return m_ready;}
         bool paused()const{return m_paused;}
+        bool sourceIdentity()const{return m_sourceIdentity;}
+        const std::string& fingerprint()const{return m_fingerprint;}
+        const std::vector<std::string>& variables()const{return m_variables;}
+        bool sendBreakpoints(const std::string& commands){if(!m_ready||!m_sourceIdentity||m_out.size()+commands.size()>8192)return false;m_out+=commands;return true;}
         const std::string& status()const{return m_status;}
         const std::vector<std::string>& rows()const{return m_rows;}
         const std::string& log()const{return m_log;}
@@ -22,8 +26,8 @@ namespace nx
         unsigned line()const{return m_line;}
         void disconnect()
         {
-            m_socket.close();if(m_network)netStop();m_network=m_ready=m_paused=m_hello=false;
-            m_in.clear();m_out.clear();m_rows.clear();m_log.clear();m_file.clear();m_line=0;
+            m_socket.close();if(m_network)netStop();m_network=m_ready=m_paused=m_hello=m_sourceIdentity=false;
+            m_in.clear();m_out.clear();m_rows.clear();m_log.clear();m_file.clear();m_fingerprint.clear();m_variables.clear();m_line=0;
             m_status="Disconnected";
         }
         bool connect(const std::string& address,double now)
@@ -89,23 +93,31 @@ namespace nx
             if(event=="hello"&&id==1&&!m_ready)
             {
                 if(root["version"].exact()!=1){fail("Unsupported debugger protocol.");return;}
-                m_ready=true;m_poll=now;m_status="Connected; waiting for device telemetry.";
+                m_sourceIdentity=root["sourceIdentity"].flag();m_ready=true;m_poll=now;m_status="Connected; waiting for device telemetry.";
                 queue("{\"cmd\":\"ready\",\"id\":2}");
             }
             else if(event=="stopped"&&m_ready)
             {
-                m_paused=true;m_status=std::string("Stopped: ")+root["reason"].text();m_file.clear();m_line=0;
+                m_paused=true;m_status=std::string("Stopped: ")+root["reason"].text();m_file.clear();m_fingerprint.clear();m_variables.clear();m_line=0;
                 queue("{\"cmd\":\"stack\",\"id\":3}");
+                queue("{\"cmd\":\"variables\",\"id\":5,\"frame\":0,\"scope\":\"locals\"}");
             }
             else if(event=="continued")
-            {m_paused=false;m_status="Running";m_file.clear();m_line=0;}
+            {m_paused=false;m_status="Running";m_file.clear();m_fingerprint.clear();m_variables.clear();m_line=0;}
             else if(event=="output")
             {m_log=std::string(root["text"].text()).substr(0,240);}
             else if(id==3&&m_paused)
             {
                 const auto top=root["frames"][0u];
                 m_file=std::string(top["file"].text()).substr(0,256);
+                m_fingerprint=std::string(top["fingerprint"].text()).substr(0,32);
                 const auto at=top["line"].exact();if(at>0&&at<1000000)m_line=static_cast<unsigned>(at);
+            }
+            else if(id==5&&m_paused)
+            {
+                m_variables.clear();
+                for(auto item=root["variables"].first();item.exists()&&m_variables.size()<12;item=item.next())
+                    m_variables.push_back(std::string(item["name"].text()).substr(0,64)+" : "+std::string(item["type"].text()).substr(0,64)+" = "+std::string(item["value"].text()).substr(0,96));
             }
             else if(id==4&&root["telemetry"].isObject())
             {
@@ -132,10 +144,10 @@ namespace nx
             }
         }
         TcpSocket m_socket;
-        bool m_network=false,m_ready=false,m_paused=false,m_hello=false;
+        bool m_network=false,m_ready=false,m_paused=false,m_hello=false,m_sourceIdentity=false;
         double m_deadline=0,m_poll=0;
-        std::string m_in,m_out,m_status="Disconnected",m_log,m_file;
+        std::string m_in,m_out,m_status="Disconnected",m_log,m_file,m_fingerprint;
         unsigned m_line=0;
-        std::vector<std::string> m_rows;
+        std::vector<std::string> m_rows,m_variables;
     };
 }

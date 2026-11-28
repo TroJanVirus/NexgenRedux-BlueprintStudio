@@ -90,6 +90,7 @@ namespace nx
         void setSource(const char* section, const char* path);
         // The file, or the section's own name.
         const char* sourceOf(const char* section) const;
+        const char* compiledFingerprint(const char* module,const char* section) const;
 
         // Statements a single call may run before it is treated as stuck.
         void setStatementLimit(u32 statements) { m_statementLimit = statements; }
@@ -127,6 +128,8 @@ namespace nx
         ScriptWatcher* m_watcher = nullptr;
         u32 m_runs = 0;
         std::vector<std::pair<std::string, std::string>> m_sources;
+        struct CompiledSource {std::string module,section,fingerprint;};
+        std::vector<CompiledSource> m_compiledSources;
     };
 
     // Vec2 and Vec3, with every operator. Called by ScriptHost::init.

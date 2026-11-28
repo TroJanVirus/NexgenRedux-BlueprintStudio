@@ -47,6 +47,8 @@ jobs:
             -Iengine engine/tests/main.cpp engine/tests/test_blueprint_document.cpp \
             engine/tools/blueprint/native_document.cpp engine/tools/blueprint/native_compile.cpp engine/tools/blueprint/native_import.cpp engine/base/json_tree.cpp engine/base/json_value.cpp \
             engine/base/memory.cpp engine/base/log.cpp -o /tmp/nx-blueprint-document-tests
+      - name: Test Xbox deployment path validation
+        run: python3 engine/tools/blueprint/test_deploy_xbox.py
       - name: Run regression tests
         env:
           ASAN_OPTIONS: detect_leaks=1:halt_on_error=1

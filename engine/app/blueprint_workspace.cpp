@@ -7,6 +7,7 @@
 #include "tools/blueprint/native_import.h"
 #include "script/script_host.h"
 #include "script/debugger.h"
+#include "script/source_fingerprint.h"
 #include "screens/screens.h"
 #include "bindings/bindings.h"
 #include "assets/assets.h"
@@ -4078,6 +4079,7 @@ namespace nx
         for(const auto& screen:screens)
             if(!writeVerified(s,"own/"+root+"/"+screen.id+"/screen.json",screen.manifest))
             {m_status="Incomplete project export. Do not install own/"+root;return false;}
+        m_deviceExport="own/"+root;
         m_status="Exported own/"+root+" | Install into a separate project folder.";
         NX_INFO("Blueprint Studio: %s",m_status.c_str());return true;
     }
@@ -4959,6 +4961,47 @@ namespace nx
         c.roundRect(1000,600,150,38,4,{0.20f,0.32f,0.45f,1});c.text(*m_font,"Back",1075,609,text,Align::Center);
         c.clip(120,535,1030,58);c.paragraph(*m_font,m_status.c_str(),120,540,1020,text);c.noClip();
     }
+    void BlueprintWorkspace::syncDeviceBreakpoints()
+    {
+        if(!m_device.ready()||!m_device.sourceIdentity()){m_deviceFeedback="Attach to a matching source-identity runtime first.";return;}
+        std::vector<BlueprintScreenOutput> screens;std::string error;
+        if(!compileBlueprintProject(m_document,screens,error)){m_deviceFeedback=error;return;}
+        std::string commands="{\"cmd\":\"clearBreakpoints\"}\n";size_t total=0;
+        for(const auto& screen:screens)
+        {
+            JsonValue message;message.put("cmd")->setText("breakpoints");message.put("file")->setText("showcase/"+screen.id+"/main.as");
+            message.put("fingerprint")->setText(scriptFingerprint(screen.source.data(),screen.source.size()));
+            auto* lines=message.put("lines");lines->setArray();
+            std::vector<size_t> nodes;
+            for(const auto& span:screen.map)
+            {
+                const auto g=span.location.graph,n=span.location.node;
+                if(g>=m_document.graphs.size()||n>=m_document.graphs[g].nodes.size()||!m_document.graphs[g].nodes[n].watch)continue;
+                if(std::find(nodes.begin(),nodes.end(),span.firstLine)!=nodes.end())continue;
+                nodes.push_back(span.firstLine);lines->add()->setNumber(static_cast<double>(span.firstLine));++total;
+            }
+            if(!nodes.empty())commands+=message.write(true)+"\n";
+        }
+        m_deviceFeedback=m_device.sendBreakpoints(commands)?"Sent "+std::to_string(total)+" guarded breakpoint lines; matching source only.":"Breakpoint request too large or unavailable.";
+    }
+    void BlueprintWorkspace::locateDeviceNode()
+    {
+        if(!m_device.paused()||m_device.fingerprint().empty()){m_deviceFeedback="Pause a matching runtime and wait for its stack.";return;}
+        std::vector<BlueprintScreenOutput> screens;std::string error;
+        if(!compileBlueprintProject(m_document,screens,error)){m_deviceFeedback=error;return;}
+        for(const auto& screen:screens)
+        {
+            if(m_device.file()!="showcase/"+screen.id+"/main.as")continue;
+            if(m_device.fingerprint()!=scriptFingerprint(screen.source.data(),screen.source.size()))
+            {m_deviceFeedback="Source mismatch: re-export/deploy the current project.";return;}
+            const auto location=blueprintSourceLocation(screen.map,m_device.line());
+            if(location.graph>=m_document.graphs.size()||location.node>=m_document.graphs[location.graph].nodes.size())break;
+            m_focus=0;focusDiagnostic(location);m_diagnostic={};
+            m_status="Remote paused node (source matched): "+m_device.file()+":"+std::to_string(m_device.line());
+            return;
+        }
+        m_deviceFeedback="No mapped Blueprint node at the remote script location.";
+    }
     void BlueprintWorkspace::updateDeviceManager(Services& s,float x,float y,bool click)
     {
         auto& input=*s.input;
@@ -4980,6 +5023,16 @@ namespace nx
             if(action<5)m_device.control(action);
             return;
         }
+        if(in(x,y,140,600,340,638)){syncDeviceBreakpoints();return;}
+        if(in(x,y,350,600,550,638)){m_deviceAddressEditing=false;input.setTyping(false);locateDeviceNode();return;}
+        if(in(x,y,560,600,760,638)){m_deviceVariables=!m_deviceVariables;return;}
+        if(in(x,y,770,600,990,638))
+        {
+            if(!m_document.target().xbox()){m_deviceFeedback="Choose the original Xbox project target first.";return;}
+            if(compileAndExport(s))m_deviceFeedback="Exported "+m_deviceExport+"; use deploy_xbox.py to cook/install.";
+            else m_deviceFeedback=m_status;
+            return;
+        }
         if(in(x,y,1000,600,1150,638)){m_deviceAddressEditing=false;input.setTyping(false);m_focus=24;}
     }
     void BlueprintWorkspace::drawDeviceManager(Canvas& c)
@@ -4996,13 +5049,17 @@ namespace nx
         c.text(*m_font,("Project target: "+m_document.target().label()).c_str(),140,233,muted);
         constexpr const char* actions[]={"Pause","Continue","Step over","Step into","Step out"};
         for(unsigned i=0;i<5;++i)button(140+200.f*i,258,190,actions[i],m_device.ready()&&(i==0?!m_device.paused():m_device.paused()));
-        const auto& rows=m_device.rows();
-        if(rows.empty())c.text(*m_font,"No measured telemetry. Older runtimes may not support counters.",140,318,muted);
+        const auto& rows=m_deviceVariables?m_device.variables():m_device.rows();
+        if(rows.empty())c.text(*m_font,m_deviceVariables?"Pause the remote script to inspect its locals.":"No measured telemetry. Older runtimes may not support counters.",140,318,muted);
         for(size_t i=0;i<rows.size()&&i<14;++i)
         {const float x=140+500.f*(i/7),y=318+27.f*(i%7);c.clip(x,y,490,26);c.text(*m_font,rows[i].c_str(),x,y,text);c.noClip();}
         c.clip(140,520,1000,24);c.text(*m_font,m_device.file().empty()?"Script location: none":(m_device.file()+":"+std::to_string(m_device.line())).c_str(),140,520,accent);c.noClip();
         c.clip(140,550,1000,24);c.text(*m_font,("Last log: "+m_device.log()).c_str(),140,550,muted);c.noClip();
-        c.text(*m_font,"Tracked allocations are not total physical memory use. No inferred CPU percentage.",140,580,muted);
+        c.clip(140,576,1000,24);c.text(*m_font,m_deviceFeedback.empty()?"Tracked allocations are not total physical memory use.":m_deviceFeedback.c_str(),140,578,muted);c.noClip();
+        button(140,600,200,"Sync watches",m_device.ready()&&m_device.sourceIdentity());
+        button(350,600,200,"Locate node",m_device.paused()&&!m_device.fingerprint().empty());
+        button(560,600,200,m_deviceVariables?"Show telemetry":"Show locals",true);
+        button(770,600,220,"Export Xbox project",m_document.target().xbox());
         button(1000,600,150,"Back",true);
     }
     void BlueprintWorkspace::drawSceneBrowser(Canvas& c)

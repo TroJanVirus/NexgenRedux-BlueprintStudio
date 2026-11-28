@@ -238,7 +238,12 @@ namespace nx
         const JsonValue* idValue = ask.find("id");
         const int id = idValue ? static_cast<int>(idValue->number()) : 0;
         const std::string name = cmd ? cmd->text() : std::string();
-        if (name == "breakpoints")
+        if (name == "clearBreakpoints")
+        {
+            m_breakpoints.clear();m_files.clear();
+            JsonValue reply;putNumber(reply,"id",id);send(reply.write(true));
+        }
+        else if (name == "breakpoints")
         {
             const JsonValue* file = ask.find("file");
             const JsonValue* lines = ask.find("lines");
@@ -257,6 +262,11 @@ namespace nx
                 these = &m_breakpoints.back();
             }
             these->lines.clear();
+            const auto* fingerprint=ask.find("fingerprint");
+            these->fingerprint=fingerprint?fingerprint->text():"";
+            // Legacy debugger clients omit this field. A guarded request
+            // must have a nonempty fingerprint to avoid unverified stops.
+            if(fingerprint&&these->fingerprint.empty())these->fingerprint="invalid";
             for (u32 i = 0; lines && i < lines->count(); i++)
             {
                 these->lines.push_back(static_cast<int>(lines->at(i)->number()));
@@ -278,6 +288,7 @@ namespace nx
             JsonValue reply;
             putText(reply, "event", "hello");
             putNumber(reply, "version", 1);
+            reply.put("sourceIdentity")->setFlag(true);
             putText(reply, "angelscript", ScriptHost::version());
             putNumber(reply, "id", id);
             send(reply.write(true));
@@ -523,6 +534,12 @@ namespace nx
                 {
                     if (at == here.line)
                     {
+                        const auto& expected=m_breakpoints[file].fingerprint;
+                        if(!expected.empty())
+                        {
+                            const auto* function=context->GetFunction(0);
+                            if(!function||expected!=m_host->compiledFingerprint(function->GetModuleName(),here.section))continue;
+                        }
                         stopHere(context, "breakpoint", nullptr);
                         return;
                     }
@@ -631,6 +648,7 @@ namespace nx
             putNumber(*frame, "frame", i);
             putText(*frame, "name", function->GetDeclaration(true, true, false));
             putText(*frame, "file", m_host->sourceOf(section));
+            putText(*frame,"fingerprint",m_host->compiledFingerprint(function->GetModuleName(),section));
             putNumber(*frame, "line", line);
             putNumber(*frame, "column", column);
         }

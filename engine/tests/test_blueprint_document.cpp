@@ -1,4 +1,5 @@
 #include "test.h"
+#include "script/source_fingerprint.h"
 #include "base/json_tree.h"
 #include "tools/blueprint/native_document.h"
 #include "tools/blueprint/native_compile.h"
@@ -2333,4 +2334,12 @@ NX_TEST(nativeAdvancedWidgetSlotPropertiesAndDesignMetadata)
     NX_EXPECT(item["padding"].count()==4&&item["padding"][3u].number()==4&&item["grow"].number()==3);
     NX_EXPECT(source.find("designResolution")!=std::string::npos);
     NX_EXPECT(source.find("Ui::draw(canvas)")!=std::string::npos);
+}
+
+NX_TEST(nativeDebugSourceFingerprint)
+{
+    NX_EXPECT(scriptFingerprint("",0)=="cbf29ce484222325");
+    NX_EXPECT(scriptFingerprint("a",1)=="af63dc4c8601ec8c");
+    NX_EXPECT(scriptFingerprint("a\n",2)!=scriptFingerprint("a\r\n",3));
+    NX_EXPECT(scriptFingerprint("abc",3)==scriptFingerprint("abcd",3));
 }

@@ -385,6 +385,10 @@ namespace nx
         BlueprintDevice m_device;
         std::string m_deviceAddress;
         bool m_deviceAddressEditing=false;
+        std::string m_deviceFeedback,m_deviceExport;
+        bool m_deviceVariables=false;
+        void syncDeviceBreakpoints();
+        void locateDeviceNode();
         bool beginSequenceAsset(const std::string& id,Input& input);
         size_t m_sequenceKey=0;
         float m_sequenceTime=0;

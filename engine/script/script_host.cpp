@@ -1,4 +1,6 @@
 #include "script/script_host.h"
+#include "script/source_fingerprint.h"
+#include <algorithm>
 #include "base/log.h"
 #include "base/memory.h"
 #include "script/bind.h"
@@ -115,6 +117,7 @@ namespace nx
 
     void ScriptHost::shutdown()
     {
+        m_compiledSources.clear();
         if (m_context)
         {
             m_context->Release();
@@ -164,6 +167,7 @@ namespace nx
     bool ScriptHost::compile(const char* module, const char* file, const char* code, size_t length)
     {
         m_error[0]=0;
+        std::erase_if(m_compiledSources,[&](const CompiledSource& s){return s.module==module;});
         asIScriptModule* m = m_engine->GetModule(module, asGM_ALWAYS_CREATE);
         bool added = m != nullptr;
         for (const auto& section : m_sections)
@@ -177,6 +181,7 @@ namespace nx
             discard(module);
             return false;
         }
+        m_compiledSources.push_back({module,file,scriptFingerprint(code,length)});
         m_statements = 0;
         if (m_watcher)
         {
@@ -304,6 +309,7 @@ namespace nx
 
     void ScriptHost::discard(const char* module)
     {
+        std::erase_if(m_compiledSources,[&](const CompiledSource& s){return s.module==module;});
         m_context->Unprepare();
         m_engine->DiscardModule(module);
     }
@@ -348,6 +354,13 @@ namespace nx
             }
         }
         m_sources.emplace_back(section, path);
+    }
+
+    const char* ScriptHost::compiledFingerprint(const char* module,const char* section) const
+    {
+        if(module&&section)for(const auto& source:m_compiledSources)
+            if(source.module==module&&source.section==section)return source.fingerprint.c_str();
+        return "";
     }
 
     const char* ScriptHost::sourceOf(const char* section) const

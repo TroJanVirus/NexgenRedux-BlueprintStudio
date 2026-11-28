@@ -75,6 +75,7 @@ namespace nx
         {
             std::string file;
             std::vector<int> lines;
+            std::string fingerprint;
         };
 
         struct Ref
