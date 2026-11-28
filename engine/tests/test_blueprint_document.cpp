@@ -756,6 +756,7 @@ NX_TEST(nativeImportedLayoutAndScopedBlocksAreDeterministic)
 NX_TEST(nativeLargeProjectRoundTripHistoryAndMalformedInputStress)
 {
     BlueprintDocument doc;doc.create();std::string error,saved,again,source,after;
+    NX_INFO("Large project stress: authoring 2048 data nodes");
     // Over 2,000 editable nodes distributed over the native event graphs.
     for(size_t graph=0;graph<4;++graph)
     {
@@ -764,6 +765,7 @@ NX_TEST(nativeLargeProjectRoundTripHistoryAndMalformedInputStress)
                 static_cast<float>(i/16)*120.f,error)){NX_EXPECT(false);return;}
         NX_EXPECT(doc.setLiteral(graph,512,"42",error));
     }
+    NX_INFO("Large project stress: authoring execution chain");
     // Include real connected execution in the workload, not only disconnected data.
     for(size_t i=0;i<32;++i)
     {
@@ -773,7 +775,9 @@ NX_TEST(nativeLargeProjectRoundTripHistoryAndMalformedInputStress)
             !doc.setInputValue(0,n,"value","ok",error)||
             !doc.connect(0,i?n-1:0,"then",n,"in",error)){NX_EXPECT(false);return;}
     }
+    NX_INFO("Large project stress: serializing and compiling");
     NX_EXPECT(doc.serialize(saved,error)&&compileBlueprint(doc,source,error));
+    NX_INFO("Large project stress: loading and recompiling");
     BlueprintDocument loaded;
     NX_EXPECT(loaded.load(saved.data(),saved.size(),error)&&loaded.serialize(again,error)&&again==saved);
     NX_EXPECT(compileBlueprint(loaded,after,error)&&after==source);

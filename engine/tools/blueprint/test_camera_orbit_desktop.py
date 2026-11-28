@@ -112,6 +112,14 @@ def wire(x1, y1, x2, y2):
     xdo("mouseup", 1)
     time.sleep(0.28)
 
+def select_graph(graph):
+    # Flat navigation begins below the Components section at logical y=230.
+    click(100, 245 + 31 * graph)
+    def active():
+        lines = [line.split("BP_GEOMETRY ", 1)[1] for line in log.read_text(errors="replace").splitlines() if "BP_GEOMETRY " in line]
+        return bool(lines) and int(lines[-1].split()[0]) == graph
+    wait_for(active, f"active graph {graph}", process, timeout=8)
+
 def pin(graph, node, row, output=False):
     lines = [line.split("BP_GEOMETRY ", 1)[1] for line in log.read_text(errors="replace").splitlines() if "BP_GEOMETRY " in line]
     for line in reversed(lines):
@@ -196,7 +204,7 @@ def author_scene(process):
     assert_authored(process, 0, 3, 2)
     capture("01-on-enter")
     operations["graph_switch"] += 1
-    click(100, 300)
+    select_graph(1)
     if timed:
         right_add(500, 100, "camera:orbit-timed")
         operations["value"] += 1
@@ -217,7 +225,7 @@ def author_scene(process):
         click(1070, 98)
         assert recovery.read_bytes() == before
         operations["graph_switch"] += 1
-        click(100, 330)
+        select_graph(2)
         right_add(500, 100, "render:space")
         connect(2,0,0,1,0)
         assert_authored(process, 2, 2, 1)
@@ -242,7 +250,7 @@ def author_scene(process):
         assert_authored(process, 1, 5, 6)
         capture("02-update")
         operations["graph_switch"] += 1
-        click(100, 330)
+        select_graph(2)
         right_add(272, 250, "event:canvas")
         right_add(500, 100, "api:Space:Space::draw:Canvas@")
         connect(2,0,0,2,0)
@@ -314,9 +322,9 @@ with log.open("wb") as out:
             author_scene(process)
         else:
             capture("01-on-enter")
-            click(100, 300)
+            select_graph(1)
             capture("02-update")
-            click(100, 330)
+            select_graph(2)
             capture("03-draw")
         if record:
             recorder_log = (root / "recording.log").open("wb")

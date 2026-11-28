@@ -319,8 +319,12 @@ namespace nx
                 if(kind=="sequence"&&(returns(to,"first",depth+1)||returns(to,"second",depth+1)))return true;
                 return returns(to,"then",depth+1);
             }
-            bool flow(size_t node,const std::string& pin,unsigned indent,unsigned depth)
+            bool flow(size_t node,std::string pin,unsigned indent,unsigned depth)
             {
+                // Linear execution chains must not accumulate native stack frames.
+                // Keep the existing depth budget and recurse only into nested scopes.
+                for(;;)
+                {
                 const auto found=std::find_if(graph.links.begin(),graph.links.end(),[&](const Link& l){return l.from==node&&l.output==pin;});
                 if(found==graph.links.end())return true;
                 const auto to=found->to;
@@ -342,7 +346,7 @@ namespace nx
                             for(size_t ni=0;ni<g.nodes.size();++ni)if(deferredTime(g.nodes[ni].kind))
                                 source+=pad+deferredKey(gi,ni)+"_active = false;\n";
                         }
-                    mark(start,to);return flow(to,"then",indent,depth+1);
+                    mark(start,to);node=to;pin="then";++depth;continue;
                 }
                 if(deferredTime(n.kind))
                 {
@@ -361,7 +365,8 @@ namespace nx
                     source+=p+key+"_loop = "+loop+";\n"+p+key+"_active = true;\n";
                     if(n.kind=="time:delay")source+=pad+"}\n";
                     mark(start,to);
-                    return n.kind=="time:timer"?flow(to,"then",indent,depth+1):true;
+                    if(n.kind!="time:timer")return true;
+                    node=to;pin="then";++depth;continue;
                 }
                 if(n.kind=="camera:sequence")
                 {
@@ -394,7 +399,7 @@ namespace nx
                     for(const auto& key:keys)if(!key.event.empty())source+=pad+"    if ("+state+"_previous < "+num(key.time)+" && "+elapsed+" >= "+num(key.time)+") bp_fn_"+key.event+"();\n";
                     source+=pad+"    "+state+"_previous = "+elapsed+";\n";
                     source+=pad+"    "+finished+" = "+elapsed+" >= "+num(last.time)+";\n"+pad+"    "+state+"_running = !"+finished+";\n"+pad+"    "+state+"_time = min("+num(last.time)+", "+elapsed+" + max(float(0), "+dt+"));\n"+pad+"}\n";
-                    available[to]=true;mark(start,to);return flow(to,"then",indent,depth+1);
+                    available[to]=true;mark(start,to);node=to;pin="then";++depth;continue;
                 }
                 if(n.kind=="time:timeline"||n.kind=="camera:orbit-timed")
                 {
@@ -421,7 +426,7 @@ namespace nx
                         source+=pad+"    float "+distance+" = max(float(0.001), abs("+radius+"));\n";
                         source+=pad+"    Space::camera("+center+" + Vec3(sin("+phase+") * "+distance+", "+height+", cos("+phase+") * "+distance+"), "+center+", "+angle+");\n"+pad+"}\n";
                     }
-                    available[to]=true;mark(start,to);return flow(to,"then",indent,depth+1);
+                    available[to]=true;mark(start,to);node=to;pin="then";++depth;continue;
                 }
                 if(n.kind=="ui:load-asset")
                 {
@@ -440,7 +445,7 @@ namespace nx
                     if(!literalValue(to,"string",page,json))return false;
                     source+=pad+"Ui::loadPage("+json+");\n";
                     if(source.size()>1024*1024)return fail(to,"Generated source exceeds the size limit.");
-                    mark(start,to);return flow(to,"then",indent,depth+1);
+                    mark(start,to);node=to;pin="then";++depth;continue;
                 }
                 if(n.kind=="actor:spawn-asset")
                 {
@@ -472,17 +477,17 @@ namespace nx
                         if(construction)source+=pad+"        "+instance+".bp_fn_Construction();\n";
                         source+=pad+"    }\n"+pad+"}\n";
                     }
-                    available[to]=true;mark(start,to);return flow(to,"then",indent,depth+1);
+                    available[to]=true;mark(start,to);node=to;pin="then";++depth;continue;
                 }
                 if(n.kind=="render:space")
-                {source+=pad+"Space::draw(canvas);\n";mark(start,to);return flow(to,"then",indent,depth+1);}
+                {source+=pad+"Space::draw(canvas);\n";mark(start,to);node=to;pin="then";++depth;continue;}
                 if(n.kind=="spawn:box"||n.kind=="spawn:plane")
                 {
                     std::string place,size,color,entityName;
                     if(!value(to,"place",place,0)||!value(to,"size",size,0)||!value(to,"color",color,0)||!value(to,"name",entityName,0))return false;
                     const auto result="bp_value_"+std::to_string(to);
                     source+=pad+"Entity@ "+result+" = Space::spawn("+place+");\n"+pad+result+".name = "+entityName+";\n"+pad+result+".size = "+size+";\n"+pad+result+".shape("+(n.kind=="spawn:box"?"SolidBox":"SolidPlane")+", "+color+");\n";
-                    available[to]=true;mark(start,to);return flow(to,"then",indent,depth+1);
+                    available[to]=true;mark(start,to);node=to;pin="then";++depth;continue;
                 }
                 if(n.kind=="branch")
                 {
@@ -502,7 +507,7 @@ namespace nx
                             return fail(to,"Branch continuation is unreachable: both paths return.");
                         return true;
                     }
-                    return flow(to,"then",indent,depth+1);
+                    node=to;pin="then";++depth;continue;
                 }
                 if(n.kind.rfind("local:set:",0)==0)
                 {
@@ -513,13 +518,13 @@ namespace nx
                     std::string v;if(!value(to,"value",v,0))return false;
                     const auto& declaration=graph.nodes[local->from];
                     source+=pad+(n.kind.ends_with("@")?"@":"")+"bp_local_"+declaration.ref+"_"+std::to_string(local->from)+" = "+v+";\n";
-                    mark(start,to);return flow(to,"then",indent,depth+1);
+                    mark(start,to);node=to;pin="then";++depth;continue;
                 }
                 if(n.kind.rfind("capture:",0)==0)
                 {
                     std::string v;if(!value(to,"value",v,0))return false;
                     source+=pad+n.kind.substr(8)+" bp_local_"+n.ref+"_"+std::to_string(to)+" = "+v+";\n";
-                    available[to]=true;mark(start,to);return flow(to,"then",indent,depth+1);
+                    available[to]=true;mark(start,to);node=to;pin="then";++depth;continue;
                 }
                 if(n.kind.rfind("array:",0)==0)
                 {
@@ -531,31 +536,31 @@ namespace nx
                     else if(n.kind.rfind("array:resize:",0)==0){if(!value(to,"size",v,0))return false;statement=member+".resize("+v+")";}
                     else if(n.kind.rfind("array:clear:",0)==0)statement=member+".resize(0)";
                     else return fail(to,"Unsupported array action.");
-                    source+=pad+statement+";\n";mark(start,to);return flow(to,"then",indent,depth+1);
+                    source+=pad+statement+";\n";mark(start,to);node=to;pin="then";++depth;continue;
                 }
                 if(n.kind.rfind("typed:",0)==0&&n.kind.ends_with(":set"))
                 {
                     BlueprintNodeSpec resolved;if(!document.nodeSpec(graph,n,resolved))return fail(to,"Invalid typed field.");
                     std::string v;if(!value(to,"value",v,0))return false;
                     source+=pad+(resolved.inputs.back().type.ends_with("@")?"@":"")+std::string(n.kind.rfind("typed:global:",0)==0?"bp_global_":"bp_var_")+n.ref+" = "+v+";\n";
-                    mark(start,to);return flow(to,"then",indent,depth+1);
+                    mark(start,to);node=to;pin="then";++depth;continue;
                 }
                 if(n.kind.rfind("global:set:",0)==0)
                 {
                     std::string v;if(!value(to,"value",v,0))return false;
-                    source+=pad+(n.kind.ends_with("@")?"@":"")+"bp_global_"+n.ref+" = "+v+";\n";mark(start,to);return flow(to,"then",indent,depth+1);
+                    source+=pad+(n.kind.ends_with("@")?"@":"")+"bp_global_"+n.ref+" = "+v+";\n";mark(start,to);node=to;pin="then";++depth;continue;
                 }
                 if(n.kind.rfind("var:set:",0)==0)
                 {
                     std::string v;if(!value(to,"value",v,0))return false;
                     source+=pad+(n.kind.ends_with("@")?"@":"")+"bp_var_"+n.ref+" = "+v+";\n";mark(start,to);
-                    return flow(to,"then",indent,depth+1);
+                    node=to;pin="then";++depth;continue;
                 }
                 if(n.kind=="attach:direct")
                 {
                     std::string entity;if(!value(to,"target",entity,0))return false;
                     source+=pad+"("+entity+").add(BP_Behaviour_"+n.ref+"());\n";
-                    mark(start,to);return flow(to,"then",indent,depth+1);
+                    mark(start,to);node=to;pin="then";++depth;continue;
                 }
                 if(n.kind=="level:attach"||n.kind=="attach:behaviour")
                 {
@@ -571,7 +576,7 @@ namespace nx
                     source+=pad+"Entity@ bp_attach_"+suffix+" = "+entity+";\n";
                     source+=pad+"bool bp_value_"+suffix+" = bp_attach_"+suffix+" !is null && bp_attach_"+suffix+".alive;\n";
                     source+=pad+"if (bp_value_"+suffix+") bp_attach_"+suffix+".add(BP_Behaviour_"+n.ref+"());\n";
-                    available[to]=true;mark(start,to);return flow(to,"then",indent,depth+1);
+                    available[to]=true;mark(start,to);node=to;pin="then";++depth;continue;
                 }
                 if(n.kind=="actor:cast-class")
                 {
@@ -587,21 +592,21 @@ namespace nx
                     available=outer;source+=pad+"}\n"+pad+"else\n"+pad+"{\n"+pad+"    @"+v+" = null;\n";
                     if(!flow(to,"failure",indent+1,depth+1))return false;
                     available=outer;available[to]=true;source+=pad+"}\n";
-                    return flow(to,"then",indent,depth+1);
+                    node=to;pin="then";++depth;continue;
                 }
                 if(n.kind=="async:wait"||n.kind=="async:next")
                 {
                     if(graph.dataRole!="coroutine")return fail(to,"Wait nodes require a coroutine.");
                     if(n.kind=="async:next")source+=pad+"nextUpdate();\n";
                     else {std::string seconds;if(!value(to,"seconds",seconds,0))return false;source+=pad+"wait(max(float(0), "+seconds+"));\n";}
-                    mark(start,to);return flow(to,"then",indent,depth+1);
+                    mark(start,to);node=to;pin="then";++depth;continue;
                 }
                 if(n.kind=="async:start")
                 {
                     const auto* target=document.function(graph.owner,n.ref);
                     if(!target||target->dataRole!="coroutine")return fail(to,"Select a coroutine graph.");
                     source+=pad+"::start(Coroutine(this.bp_fn_"+n.ref+"));\n";
-                    mark(start,to);return flow(to,"then",indent,depth+1);
+                    mark(start,to);node=to;pin="then";++depth;continue;
                 }
                 if(n.kind=="dispatch:bind-listener"||n.kind=="dispatch:unbind-listener")
                 {
@@ -611,13 +616,13 @@ namespace nx
                     if(it==n.values.end()||std::none_of(listeners.begin(),listeners.end(),[&](const Graph* g){return g->name==it->value;}))
                         return fail(to,"Select a local void handler with the same parameter types as the dispatcher.");
                     source+=pad+"bp_listener_"+std::to_string(n.ref.size())+"_"+n.ref+"_"+it->value+(n.kind=="dispatch:bind-listener"?" = true;\n":" = false;\n");
-                    mark(start,to);return flow(to,"then",indent,depth+1);
+                    mark(start,to);node=to;pin="then";++depth;continue;
                 }
                 if(n.kind=="dispatch:bind"||n.kind=="dispatch:unbind")
                 {
                     if(graph.inlineMacro)return fail(to,"Dispatcher binding requires a callable graph.");
                     source+=pad+"bp_bound_"+n.ref+(n.kind=="dispatch:bind"?" = true;\n":" = false;\n");
-                    mark(start,to);return flow(to,"then",indent,depth+1);
+                    mark(start,to);node=to;pin="then";++depth;continue;
                 }
                 if(blueprintInvokesFunction(n.kind)||n.kind=="call:parent")
                 {
@@ -644,7 +649,7 @@ namespace nx
                         if(!inner.flow(static_cast<size_t>(entry-target->nodes.begin()),"then",indent+1,depth+1))return false;
                         budget=inner.budget;source+=pad+"}\n";
                         if(source.size()>1024*1024)return fail(to,"Inline macro generated source exceeds limit.");
-                        return flow(to,"then",indent,depth+1);
+                        node=to;pin="then";++depth;continue;
                     }
                     std::string args;
                     for(const auto& p:target->parameters)
@@ -665,7 +670,7 @@ namespace nx
                     {
                         source+=pad+target->returnType+" bp_value_"+std::to_string(to)+" = "+call+";\n";available[to]=true;
                     }
-                    mark(start,to);return flow(to,"then",indent,depth+1);
+                    mark(start,to);node=to;pin="then";++depth;continue;
                 }
                 if(n.kind=="return:function")
                 {
@@ -705,7 +710,7 @@ namespace nx
                         available=outer;source+=pad+"}\n";
                     }
                     source+=pad+"else\n"+pad+"{\n";if(!flow(to,"default",indent+1,depth+1))return false;
-                    available=outer;source+=pad+"}\n";return flow(to,"then",indent,depth+1);
+                    available=outer;source+=pad+"}\n";node=to;pin="then";++depth;continue;
                 }
                 if(n.kind=="flow:flip-flop"||n.kind=="flow:multi-gate"||n.kind=="flow:switch-int")
                 {
@@ -743,7 +748,7 @@ namespace nx
                         if(!flow(to,"default",indent+1,depth+1))return false;
                         available=outer;source+=pad+"}\n";
                     }
-                    return flow(to,"then",indent,depth+1);
+                    node=to;pin="then";++depth;continue;
                 }
                 if(n.kind.rfind("flow:foreach:",0)==0)
                 {
@@ -759,7 +764,7 @@ namespace nx
                     mark(start,to);available[to]=true;
                     if(!flow(to,"body",indent+3,depth+1))return false;
                     available=outer;source+=pad+"        }\n"+pad+"    }\n"+pad+"}\n";
-                    return flow(to,"then",indent,depth+1);
+                    node=to;pin="then";++depth;continue;
                 }
                 if(n.kind=="flow:do-once"||n.kind=="flow:do-n"||n.kind=="flow:gate")
                 {
@@ -784,7 +789,7 @@ namespace nx
                     mark(start,to);
                     if(!flow(to,"body",indent+1,depth+1))return false;
                     available=outer;source+=pad+"}\n";
-                    return flow(to,"then",indent,depth+1);
+                    node=to;pin="then";++depth;continue;
                 }
                 if(n.kind=="sequence")
                 {
@@ -799,12 +804,13 @@ namespace nx
                                 return fail(to,"Sequence continuation is unreachable after return.");
                             continue;
                         }
-                        if(std::string(output)=="then")return flow(to,output,indent,depth+1);
+                        if(std::string(output)=="then")break;
                         source+=pad+"{\n";
                         if(!flow(to,output,indent+1,depth+1))return false;
                         source+=pad+"}\n";available=outer;terminated=returns(to,output,0);
                     }
-                    return true;
+                    if(terminated)return true;
+                    node=to;pin="then";++depth;continue;
                 }
                 if(n.kind=="repeat")
                 {
@@ -817,7 +823,7 @@ namespace nx
                     mark(start,to);available[to]=true;
                     if(!flow(to,"body",indent+2,depth+1))return false;
                     available=outer;source+=pad+"    }\n"+pad+"}\n";
-                    return flow(to,"then",indent,depth+1);
+                    node=to;pin="then";++depth;continue;
                 }
                 if(!spec||spec->call.empty()||spec->pure||spec->result.empty())
                     return fail(to,"This execution node is not supported by the native compiler yet.");
@@ -834,7 +840,8 @@ namespace nx
                 if(spec->hasOut)available[to]=true;
                 mark(start,to);
                 if(source.size()>1024*1024)return fail(to,"Generated source exceeds the size limit.");
-                return flow(to,"then",indent,depth+1);
+                node=to;pin="then";++depth;continue;
+                }
             }
         };
     }
