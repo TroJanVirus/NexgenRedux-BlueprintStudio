@@ -3079,3 +3079,58 @@ NX_TEST(nativeAudioSynthesisAndManipulationThroughExportedGraph)
     NX_EXPECT(strcmp(r.save.get("bp_audio_stream",""),"yes")==0);
     NX_EXPECT(r.audio.voicesInUse()==1);
 }
+
+NX_TEST(nativeUpstreamCurvesBatchesAndArchivesThroughGraphs)
+{
+    Rig r; NX_EXPECT(r.ok); if(!r.ok)return;
+    BlueprintDocument doc; doc.create(); std::string error,source,bytes;
+    bool ok=doc.editVariableDeclaration("Screen","field curve:Curve@",error)&&
+        doc.editVariableDeclaration("Screen","field batch:Batch@",error)&&
+        doc.editVariableDeclaration("Screen","field archive:Zip@",error)&&
+        doc.editVariableDeclaration("Screen","field packed:Packed@",error);
+    auto add=[&](size_t g,const char* kind){const auto n=doc.graphs[g].nodes.size();ok=ok&&doc.addNode(g,kind,0,0,error);return n;};
+    auto var=[&](size_t g,const char* name,bool setter){const auto n=doc.graphs[g].nodes.size();ok=ok&&doc.addVariableNode(g,name,false,setter,0,0,error);return n;};
+    auto wire=[&](size_t g,size_t a,const char* out,size_t b,const char* in){ok=ok&&doc.connectCompatible(g,a,out,b,in,error);};
+    auto input=[&](size_t g,size_t n,const char* pin,const char* value){ok=ok&&doc.setInputValue(g,n,pin,value,error);};
+    const auto curve=add(0,"api:Curve:Curve:"),keepCurve=var(0,"curve",true);
+    wire(0,0,"then",curve,"in");wire(0,curve,"then",keepCurve,"in");wire(0,curve,"result",keepCurve,"value");
+    size_t tail=keepCurve;
+    for(const char* point:{"0,0","100,0","100,100"})
+    {
+        const auto n=add(0,"api:Curve:add:Curve@,Vec2");
+        wire(0,tail,"then",n,"in");wire(0,curve,"result",n,"target");input(0,n,"point",point);tail=n;
+    }
+    const auto at=add(0,"api:Curve:at:Curve@,float");wire(0,tail,"then",at,"in");wire(0,curve,"result",at,"target");input(0,at,"t","0.5");
+    const auto length=add(0,"api:Vec2:length:Vec2");wire(0,at,"result",length,"target");
+    const auto gt=add(0,"greater:float");wire(0,length,"result",gt,"a");input(0,gt,"b","70");
+    const auto branch=add(0,"branch");wire(0,at,"then",branch,"in");wire(0,gt,"result",branch,"condition");
+    const auto saveCurve=add(0,"api:Save:Save::set:string,string");wire(0,branch,"true",saveCurve,"in");input(0,saveCurve,"key","bp_curve");input(0,saveCurve,"value","yes");
+    const auto batch=add(0,"api:Batch:Batch:"),keepBatch=var(0,"batch",true);
+    wire(0,branch,"then",batch,"in");wire(0,batch,"then",keepBatch,"in");wire(0,batch,"result",keepBatch,"value");
+    const auto sprite=add(0,"api:Batch:add:Batch@,float,float,float,float,Color,float");
+    wire(0,keepBatch,"then",sprite,"in");wire(0,batch,"result",sprite,"target");input(0,sprite,"x","100");input(0,sprite,"y","100");input(0,sprite,"w","32");input(0,sprite,"h","32");
+    const auto packed=add(0,"api:Packed:Packed:"),keepPacked=var(0,"packed",true);
+    wire(0,sprite,"then",packed,"in");wire(0,packed,"then",keepPacked,"in");wire(0,packed,"result",keepPacked,"value");
+    const auto write=add(0,"api:Packed:writeText:Packed@,string");wire(0,keepPacked,"then",write,"in");wire(0,packed,"result",write,"target");input(0,write,"text","Redux");
+    const auto packedBytes=add(0,"api:Packed:get_bytes:Packed@");wire(0,packed,"result",packedBytes,"target");
+    const auto zip=add(0,"api:Zip:Zip:"),keepZip=var(0,"archive",true);
+    wire(0,write,"then",zip,"in");wire(0,zip,"then",keepZip,"in");wire(0,zip,"result",keepZip,"value");
+    const auto put=add(0,"api:Zip:add:Zip@,string,string,int");wire(0,keepZip,"then",put,"in");wire(0,zip,"result",put,"target");wire(0,packedBytes,"result",put,"bytes");input(0,put,"name","packed.bin");
+    const auto archiveBytes=add(0,"api:Zip:get_bytes:Zip@");wire(0,zip,"result",archiveBytes,"target");
+    const auto reopen=add(0,"api:Zip:Zip:string");wire(0,put,"then",reopen,"in");wire(0,archiveBytes,"result",reopen,"file");
+    const auto read=add(0,"api:Zip:read:Zip@,string");wire(0,reopen,"then",read,"in");wire(0,reopen,"result",read,"target");input(0,read,"name","packed.bin");
+    const auto unpack=add(0,"api:Packed:Packed:string");wire(0,read,"then",unpack,"in");wire(0,read,"result",unpack,"bytes");
+    const auto readText=add(0,"api:Packed:readText:Packed@");wire(0,unpack,"then",readText,"in");wire(0,unpack,"result",readText,"target");
+    const auto save=add(0,"api:Save:Save::set:string,string");wire(0,readText,"then",save,"in");wire(0,readText,"result",save,"value");input(0,save,"key","bp_archive");
+    const auto canvas=add(2,"event:canvas"),getBatch=var(2,"batch",false);
+    const auto draw=add(2,"api:Canvas:batch:Canvas@,Batch@,float,float,Color");wire(2,0,"then",draw,"in");wire(2,canvas,"value",draw,"target");wire(2,getBatch,"value",draw,"batch");
+    BlueprintDocument reopened;
+    if(!ok||!doc.serialize(bytes,error)||!reopened.load(bytes.data(),bytes.size(),error)||!compileBlueprint(reopened,source,error))
+    {NX_ERROR("Upstream graph: %s",error.c_str());NX_EXPECT(false);return;}
+    r.platform.files["project/main/screen.json"]="{\"title\":\"Curves and archives\"}";
+    r.platform.files["project/main/main.as"]=source;
+    if(!r.screens.init(r.services,"project","main")){NX_EXPECT(false);return;}
+    r.step(3);NX_EXPECT(!r.screens.failed());
+    NX_EXPECT(strcmp(r.save.get("bp_curve",""),"yes")==0);
+    NX_EXPECT(strcmp(r.save.get("bp_archive",""),"Redux")==0);
+}
