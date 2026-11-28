@@ -4685,7 +4685,7 @@ namespace nx
             {
                 const auto to=graph.links[i].to;const auto pin=m_wirePins[i].input;
                 if(to<wiredInputs.size()&&pin<wiredInputs[to].size())wiredInputs[to][pin]=true;
-                const auto from=graph.links[wire].from,output=m_wirePins[wire].output;
+                const auto from=graph.links[i].from;const auto output=m_wirePins[i].output;
                 if(from<wiredOutputs.size()&&output<wiredOutputs[from].size())wiredOutputs[from][output]=true;
             }
             for(size_t i=0;i<graph.nodes.size();++i)
