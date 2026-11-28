@@ -256,7 +256,7 @@ namespace nx
     {return m_assetBrowser||m_browsing||m_focus==5||m_focus==6||m_focus==9||m_focus==10||m_focus==11||m_focus==12||m_focus==13||m_focus==14||m_focus==15;}
     void BlueprintWorkspace::resetGraphTabs()
     {
-        releaseContentPreviews();m_graphTabs.clear();m_actorTabs.clear();m_activeTab={};m_tabFirst=0;
+        releaseContentPreviews();m_graphTabs.clear();m_actorTabs.clear();m_visualTabs.clear();m_activeVisualTab={};m_activeTab={};m_tabFirst=0;
     }
     size_t BlueprintWorkspace::graphTabIndex(const GraphTab& tab) const
     {
@@ -268,7 +268,14 @@ namespace nx
         m_graphTabs.erase(std::remove_if(m_graphTabs.begin(),m_graphTabs.end(),[&](const GraphTab& tab){return graphTabIndex(tab)>=m_document.graphs.size();}),m_graphTabs.end());
         m_actorTabs.erase(std::remove_if(m_actorTabs.begin(),m_actorTabs.end(),[&](const ActorTab& tab){const auto* asset=m_document.visualAsset(tab.id);return !asset||asset->kind!="actor";}),m_actorTabs.end());
         if(!m_actorTabId.empty()&&!m_document.visualAsset(m_actorTabId))m_actorTabId.clear();
-        if(m_tabFirst>=m_graphTabs.size()+m_actorTabs.size())m_tabFirst=0;
+        const auto screens=m_document.screens();
+        m_visualTabs.erase(std::remove_if(m_visualTabs.begin(),m_visualTabs.end(),[&](const VisualTab& tab)
+        {
+            if(std::find(screens.begin(),screens.end(),tab.screen)==screens.end())return true;
+            if(!tab.widget)return false;
+            const auto* asset=m_document.visualAsset(tab.id);return !asset||asset->kind!="widget";
+        }),m_visualTabs.end());
+        if(m_tabFirst>=m_graphTabs.size()+m_actorTabs.size()+m_visualTabs.size())m_tabFirst=0;
     }
     void BlueprintWorkspace::selectGraph(size_t index)
     {
@@ -295,10 +302,70 @@ namespace nx
         if (index >= m_first + kRows) m_first = index - kRows + 1;
     }
 
+    bool BlueprintWorkspace::visualTabOpen() const
+    {return !m_actorEditor&&m_assetBrowser&&m_assetLibrary&&(m_widgetDesigner||m_visualPlacement);}
+    void BlueprintWorkspace::rememberVisualTab()
+    {
+        if(!visualTabOpen()){m_activeVisualTab={};return;}
+        const auto screen=assetScreen();
+        if(screen.empty())return;
+        const bool widget=m_widgetDesigner;
+        const auto id=widget?m_visualSelection:screen;
+        const auto key=std::make_pair(widget,id);
+        pruneGraphTabs();
+        auto found=std::find_if(m_visualTabs.begin(),m_visualTabs.end(),[&](const VisualTab& tab){return tab.widget==widget&&tab.id==id&&tab.screen==screen;});
+        if(found==m_visualTabs.end())
+        {
+            if(m_visualTabs.size()>=16)m_visualTabs.erase(m_visualTabs.begin());
+            VisualTab tab;tab.widget=widget;tab.id=id;tab.screen=screen;
+            m_visualTabs.push_back(std::move(tab));found=m_visualTabs.end()-1;
+        }
+        found->graph=m_activeTab;found->asset=m_visualSelection;
+        found->selection=m_widgetSelection;found->instance=m_placementSelectedId;
+        found->first=widget?m_widgetFirst:m_placementFirst;
+        found->fourThree=m_widgetFourThree;found->threeD=m_placement3D;found->outliner=m_placementOutliner;
+        found->yaw=m_placementYaw;found->distance=m_placementDistance;found->height=m_placementHeight;found->mode=m_gizmoMode;
+        if(m_activeVisualTab!=key)
+        {
+            m_activeVisualTab=key;
+            revealTab(m_graphTabs.size()+m_actorTabs.size()+static_cast<size_t>(found-m_visualTabs.begin()));
+        }
+    }
+    void BlueprintWorkspace::leaveVisualTab()
+    {
+        rememberVisualTab();
+        m_widgetDesigner=m_visualPlacement=m_assetBrowser=false;
+        m_widgetDragging=m_widgetPreviewDrag=m_widgetTimelinePlay=false;
+        m_widgetDragId.clear();cancelVisualPlacement();releaseWidgetPreview();releasePlacementPreview();
+        m_activeVisualTab={};
+    }
+    void BlueprintWorkspace::openVisualTab(const VisualTab& original)
+    {
+        const VisualTab tab=original;
+        if(m_actorEditor)leaveActorViewport(false);
+        if(visualTabOpen())leaveVisualTab();
+        auto found=std::find_if(m_document.graphs.begin(),m_document.graphs.end(),[&](const BlueprintDocument::Graph& graph)
+        {return graph.owner==tab.graph.first&&graph.name==tab.graph.second;});
+        if(found==m_document.graphs.end()||found->owner!=tab.screen)
+            found=std::find_if(m_document.graphs.begin(),m_document.graphs.end(),[&](const BlueprintDocument::Graph& graph){return graph.owner==tab.screen;});
+        if(found==m_document.graphs.end())return;
+        selectGraph(static_cast<size_t>(found-m_document.graphs.begin()));
+        m_assetBrowser=m_assetLibrary=true;m_visualInput=0;m_visualSelection=tab.asset;
+        m_widgetDesigner=tab.widget;m_visualPlacement=!tab.widget;
+        m_widgetPalette=m_widgetEvents=m_widgetUnbind=m_widgetAnchors=m_widgetTimeline=m_widgetTimelinePlay=false;
+        m_widgetTimelineTime=0;m_widgetSelection=tab.selection;m_widgetFirst=tab.widget?tab.first:0;
+        m_widgetFourThree=tab.fourThree;
+        m_placementSelectedOwner=tab.screen;m_placementSelectedId=tab.instance;
+        m_placementFirst=tab.widget?0:tab.first;m_placement3D=tab.threeD;m_placementOutliner=tab.outliner;
+        m_placementYaw=tab.yaw;m_placementDistance=tab.distance;m_placementHeight=tab.height;m_gizmoMode=tab.mode;
+        rememberVisualTab();
+        m_status=tab.widget?"Widget designer tab restored.":"Scene placement tab restored.";
+    }
+
     float BlueprintWorkspace::tabRight() const
     {return m_actorEditor?kWidth-m_actorRightPanel:kRight;}
     float BlueprintWorkspace::tabTop() const
-    {return kBottom-(!m_actorEditor&&m_contentDrawer&&!m_contentFloating?174.f:0.f)-30.f;}
+    {return kBottom-(!m_actorEditor&&!visualTabOpen()&&m_contentDrawer&&!m_contentFloating?174.f:0.f)-30.f;}
     void BlueprintWorkspace::revealTab(size_t index)
     {
         const size_t visible=static_cast<size_t>(std::max(1.f,(tabRight()-kLeft-8)/146.f));
@@ -310,13 +377,26 @@ namespace nx
         const float top=tabTop(),right=tabRight();
         if(!in(x,y,kLeft,top,right,top+30))return false;
         pruneGraphTabs();
-        const auto visible=static_cast<size_t>(std::max(1.f,(right-kLeft-8)/146.f)),count=m_graphTabs.size()+m_actorTabs.size();
+        const auto visible=static_cast<size_t>(std::max(1.f,(right-kLeft-8)/146.f)),count=m_graphTabs.size()+m_actorTabs.size()+m_visualTabs.size();
         if(s.input->wheel()<0&&m_tabFirst+visible<count)++m_tabFirst;
         if(s.input->wheel()>0&&m_tabFirst)--m_tabFirst;
         if(!click||x<kLeft+4)return true;
         const auto slot=static_cast<size_t>((x-kLeft-4)/146.f),index=m_tabFirst+slot;
         if(slot>=visible||index>=count)return true;
         const bool close=x>=kLeft+4+146.f*static_cast<float>(slot)+119&&count>1;
+        if(index>=m_graphTabs.size()+m_actorTabs.size())
+        {
+            const auto tab=m_visualTabs[index-m_graphTabs.size()-m_actorTabs.size()];
+            if(close)
+            {
+                if(visualTabOpen()&&m_activeVisualTab==std::make_pair(tab.widget,tab.id)&&assetScreen()==tab.screen)leaveVisualTab();
+                m_visualTabs.erase(std::remove_if(m_visualTabs.begin(),m_visualTabs.end(),[&](const VisualTab& item)
+                {return item.widget==tab.widget&&item.id==tab.id&&item.screen==tab.screen;}),m_visualTabs.end());
+                if(m_tabFirst>=m_graphTabs.size()+m_actorTabs.size()+m_visualTabs.size())m_tabFirst=0;
+            }
+            else openVisualTab(tab);
+            return true;
+        }
         if(index>=m_graphTabs.size())
         {
             const auto actorIndex=index-m_graphTabs.size();const auto id=m_actorTabs[actorIndex].id;
@@ -325,18 +405,18 @@ namespace nx
                 if(m_actorEditor&&id==m_actorTabId)leaveActorViewport(false);
                 m_actorTabs.erase(std::remove_if(m_actorTabs.begin(),m_actorTabs.end(),[&](const ActorTab& tab){return tab.id==id;}),m_actorTabs.end());
                 if(m_actorTabId==id)m_actorTabId=m_actorTabs.empty()?std::string():m_actorTabs.back().id;
-                if(m_tabFirst>=m_graphTabs.size()+m_actorTabs.size())m_tabFirst=0;
+                if(m_tabFirst>=m_graphTabs.size()+m_actorTabs.size()+m_visualTabs.size())m_tabFirst=0;
             }
-            else if(!m_actorEditor||m_actorTabId!=id)openActorViewport(id);
+            else if(!m_actorEditor||m_actorTabId!=id){if(visualTabOpen())leaveVisualTab();openActorViewport(id);}
             return true;
         }
         const auto tab=m_graphTabs[index];const auto graph=graphTabIndex(tab);
         if(graph>=m_document.graphs.size())return true;
         if(close&&m_graphTabs.size()>1)
         {
-            const bool active=tab.owner==m_activeTab.first&&tab.name==m_activeTab.second;
+            const bool active=!visualTabOpen()&&tab.owner==m_activeTab.first&&tab.name==m_activeTab.second;
             m_graphTabs.erase(m_graphTabs.begin()+static_cast<std::ptrdiff_t>(index));
-            if(m_tabFirst>=m_graphTabs.size()+m_actorTabs.size())m_tabFirst=0;
+            if(m_tabFirst>=m_graphTabs.size()+m_actorTabs.size()+m_visualTabs.size())m_tabFirst=0;
             if(active)
             {
                 if(m_actorEditor)leaveActorViewport(false);
@@ -346,6 +426,7 @@ namespace nx
         else if(!close)
         {
             if(m_actorEditor)leaveActorViewport(false);
+            if(visualTabOpen())leaveVisualTab();
             selectGraph(graph);
         }
         return true;
@@ -354,19 +435,26 @@ namespace nx
     {
         const float top=tabTop(),right=tabRight();
         c.rect(kLeft,top,right-kLeft,30,{0.15f,0.15f,0.16f,1});
-        const auto visible=static_cast<size_t>(std::max(1.f,(right-kLeft-8)/146.f)),count=m_graphTabs.size()+m_actorTabs.size();
+        const auto visible=static_cast<size_t>(std::max(1.f,(right-kLeft-8)/146.f)),count=m_graphTabs.size()+m_actorTabs.size()+m_visualTabs.size();
         for(size_t i=0;i<visible&&m_tabFirst+i<count;++i)
         {
             const auto index=m_tabFirst+i;const float x=kLeft+4+146.f*static_cast<float>(i);std::string label;bool selected=false;
             if(index<m_graphTabs.size())
             {
-                const auto& tab=m_graphTabs[index];selected=!m_actorEditor&&tab.owner==m_activeTab.first&&tab.name==m_activeTab.second;
+                const auto& tab=m_graphTabs[index];selected=!m_actorEditor&&!visualTabOpen()&&tab.owner==m_activeTab.first&&tab.name==m_activeTab.second;
                 label=(tab.owner.rfind("behaviour:",0)==0?tab.owner.substr(10):tab.owner)+"/"+tab.name;
             }
-            else
+            else if(index<m_graphTabs.size()+m_actorTabs.size())
             {
                 const auto& tab=m_actorTabs[index-m_graphTabs.size()];const auto* asset=m_document.visualAsset(tab.id);
                 selected=m_actorEditor&&m_actorTabId==tab.id;label=asset?"3D / "+asset->title:"Closed actor";
+            }
+            else
+            {
+                const auto& tab=m_visualTabs[index-m_graphTabs.size()-m_actorTabs.size()];
+                const auto* asset=tab.widget?m_document.visualAsset(tab.id):nullptr;
+                selected=visualTabOpen()&&m_activeVisualTab==std::make_pair(tab.widget,tab.id)&&assetScreen()==tab.screen;
+                label=tab.widget?(asset?"UI / "+asset->title:"Closed widget"):"Scene / "+tab.screen;
             }
             c.rect(x,top+3,142,27,selected?Color{0.33f,0.34f,0.37f,1}:Color{0.22f,0.22f,0.24f,1});
             if(selected)c.rect(x,top+3,142,2,accent);
@@ -3355,7 +3443,7 @@ namespace nx
     {
         auto& input = *s.input;
         resizeWorkspace(*s.canvas);
-        refreshWidgetPreview(s);refreshPlacementPreview(s);refreshContentPreviews(s);
+        rememberVisualTab();refreshWidgetPreview(s);refreshPlacementPreview(s);refreshContentPreviews(s);
         if (input.pressed(Action::Menu))
         {
             if(m_contentPanelDrag){m_contentPanelDrag=false;m_status="Content panel move ended.";return;}
@@ -3397,6 +3485,7 @@ namespace nx
         const bool click=left&&!m_left;
         const bool right=raw.mouseButtons[1];
         if(m_actorEditor){updateActorEditor(s,x,y,left,click,pressed);m_left=left;return;}
+        if(visualTabOpen()&&!m_visualInput&&!m_placementDragging&&!m_widgetDragging&&!m_widgetPreviewDrag&&updateGraphTabs(s,x,y,click)){m_left=left;return;}
         if(!modalOpen()&&!m_focus&&!m_layoutDragging&&!m_layoutMenu&&!m_pinMenu&&!m_pinDrag&&!m_drag&&!m_quickDrag&&!m_quickMenu)
         {
             if(updateContentDrawer(s,x,y,left,click)||updateGraphTabs(s,x,y,click)){m_left=left;return;}
@@ -4558,6 +4647,7 @@ namespace nx
                 c.text(*m_font,"Enter saves | Escape cancels",640,412,text,Align::Center);
             }
             c.pop();
+            if(visualTabOpen())drawGraphTabs(c);
         }
     }
 }

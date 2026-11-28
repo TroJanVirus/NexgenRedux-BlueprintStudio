@@ -437,6 +437,11 @@ with menu_log.open("wb") as out:
         assert len(placements) == 2
         assert [float(v) for v in placements[-1]["values"]["place"].split(",")] == [5, 0, 3]
         assert any(n["kind"] == "api:Ui:Ui::draw:Canvas@" for n in linked_graphs[2]["nodes"])
+        # The content drawer must create a real native UI thumbnail from this saved widget.
+        click(1200, 688, window)
+        wait_for(lambda: "native widget thumbnail ready: " + widget["id"] in menu_log.read_text(errors="replace"),
+                 "native widget thumbnail", process)
+        click(1200, 688, window)
         before_preview = menu_log.read_text(errors="replace").count("preview started: Screen")
         click(553, 53, window)
         wait_for(lambda: menu_log.read_text(errors="replace").count("preview started: Screen") > before_preview, "play linked widget page", process)

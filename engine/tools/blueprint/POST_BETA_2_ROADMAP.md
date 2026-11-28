@@ -132,3 +132,8 @@ Visible widget assets now use the same native Ui designer renderer, resolved nes
 ## Triangle-based actor viewport selection (verification pending)
 
 After gizmo hit testing, the class viewport casts the native camera ray against actual mesh triangles, using the current native mesh detail, model part ranges, current skeletal pose, and world transforms. Procedural shape construction is shared with SolidMeshes rather than approximating a different bounding shape. Closest positive surface wins; only non-mesh component helpers retain origin selection. This is geometric rather than pixel-perfect picking (transparent texture cutouts and shader displacement are not evaluated). Scene placement viewport picking is unchanged. Desktop compilation and occlusion/selection tests are pending.
+
+
+## Unified graph, actor, widget and scene-placement tabs (verification pending)
+
+Opening a widget designer or linked screen placement view creates a bounded, session-local visual tab, keyed by stable asset/screen identifiers. Switch using the same native tab strip as graph and actor tabs. The widget hierarchy selection and aspect mode, and the scene selection, camera, placement mode and outliner position are restored; graph keys are resolved on return. Native preview objects are released when switching. The legacy centered editor layouts remain for compatibility; the separate original Redux scene editor still launches as a separate screen. This is not yet a general window docking framework.

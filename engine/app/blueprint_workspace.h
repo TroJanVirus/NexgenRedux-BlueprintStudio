@@ -54,6 +54,22 @@ namespace nx
         std::vector<GraphTab> m_graphTabs;
         struct ActorTab {std::string id,screen;std::pair<std::string,std::string> returnGraph;size_t component=0,first=0;float yaw=0.65f,pitch=0.576375f,distance=8,focus[3]={},detailsScroll=0;unsigned mode=0;};
         std::vector<ActorTab> m_actorTabs;
+        struct VisualTab
+        {
+            bool widget=false;
+            std::string id,screen,asset,selection,instance;
+            std::pair<std::string,std::string> graph;
+            size_t first=0;
+            bool fourThree=false,threeD=false,outliner=false;
+            float yaw=0.65f,distance=25,height=0;
+            unsigned mode=0;
+        };
+        std::vector<VisualTab> m_visualTabs;
+        std::pair<bool,std::string> m_activeVisualTab;
+        bool visualTabOpen() const;
+        void rememberVisualTab();
+        void leaveVisualTab();
+        void openVisualTab(const VisualTab& tab);
         void saveActorTab();
         void leaveActorViewport(bool library);
         float tabRight() const;
