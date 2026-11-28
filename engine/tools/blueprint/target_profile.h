@@ -1,6 +1,6 @@
 #pragma once
 #include <cstddef>
-#include <cstdint>
+#include "base/types.h"
 #include <string>
 
 namespace nx
@@ -26,7 +26,7 @@ namespace nx
         {constexpr const char* names[]={"640 x 480","720 x 480 anamorphic","1280 x 720","1920 x 1080"};return names[resolution<resolutionCount?resolution:0];}
         // Illustrative allocation: two 32-bit colour surfaces and one
         // 32-bit depth surface; excludes pitch, tiling, MSAA and all other allocations.
-        std::uint64_t surfaceBytes()const{return std::uint64_t(width())*height()*12u;}
+        u64 surfaceBytes()const{return u64(width())*height()*12u;}
         bool highResolutionWarning()const{return xbox()&&resolution==3;}
         std::string label()const
         {return std::string(platformName())+(xbox()?" / "+std::to_string(ram)+" MiB":"")+" / "+resolutionName();}

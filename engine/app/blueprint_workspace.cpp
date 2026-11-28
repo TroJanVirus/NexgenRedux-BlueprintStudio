@@ -3933,7 +3933,7 @@ namespace nx
     bool BlueprintWorkspace::auditTargetAssets(Services& s,std::string& summary)
     {
         auto& platform=*s.platform;
-        std::uint64_t bytes=0;size_t count=0,missing=0,dynamic=0;
+        u64 bytes=0;size_t count=0,missing=0,dynamic=0;
         std::string firstMissing,error;
         const auto& root=m_document.assetRoot;
         const auto readAssets=[&](const std::string& base,const std::vector<std::string>& files)->bool

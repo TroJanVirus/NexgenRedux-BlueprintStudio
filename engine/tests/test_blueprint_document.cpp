@@ -13,6 +13,7 @@ NX_TEST(nativePromoteInputPinToVariable)
     NX_EXPECT(doc.addNode(0,"api:Save:Save::set:string,string",300,100,error));
     NX_EXPECT(doc.connect(0,0,"then",1,"in",error));
     NX_EXPECT(doc.setInputValue(0,1,"key","example",error));
+    NX_EXPECT(doc.setInputValue(0,1,"value","stored value",error));
     NX_EXPECT(doc.promotePin(0,1,"key",false,"saveKey",error));
     NX_EXPECT(doc.graphs[0].nodes.size()==3&&doc.graphs[0].links.size()==2);
     NX_EXPECT(compileBlueprint(doc,source,error)&&source.find("saveKey")!=std::string::npos);
