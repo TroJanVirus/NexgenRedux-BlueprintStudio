@@ -2072,17 +2072,29 @@ namespace nx
             }
             if(m_placementWorld&&m_placementReady)
             {
-                size_t component=0,nearest=count;float distance=18.f;auto& space=m_placementWorld->space();
-                m_placementWorld->eachEntity([&](u32 id,const World::Entity&)
+                size_t component=0,nearest=count,marker=count;
+                float distance=100000.f,markerDistance=18.f;auto& space=m_placementWorld->space();
+                const auto from=space.cameraPlace(),ray=space.rayThrough({x,y});
+                m_placementWorld->eachEntity([&](u32 id,const World::Entity& entity)
                 {
-                    Vec2 projected;
-                    if(space.toScreen(space.worldPlace(id),projected))
+                    if(entity.shown&&!entity.dying)
                     {
-                        const float d=std::hypot(projected.x-x,projected.y-y);
-                        if(d<distance){distance=d;nearest=component;}
+                        if(space.pickSurface(id,from,ray,distance))nearest=component;
+                        const auto* appearance=space.getAppearance(id);
+                        // Only non-mesh helpers use origin proximity; never select a missed mesh.
+                        if(!appearance||(!appearance->model&&!appearance->custom&&appearance->solid==Solid::None))
+                        {
+                            Vec2 projected;
+                            if(space.toScreen(space.worldPlace(id),projected))
+                            {
+                                const float delta=std::hypot(projected.x-x,projected.y-y);
+                                if(delta<markerDistance){markerDistance=delta;marker=component;}
+                            }
+                        }
                     }
                     ++component;
                 });
+                if(nearest==count)nearest=marker;
                 if(nearest<count)
                 {
                     m_visualComponent=nearest;

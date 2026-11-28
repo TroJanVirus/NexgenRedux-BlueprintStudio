@@ -552,6 +552,9 @@ namespace nx
         bool toScreen(const Vec3& place, Vec2& out) const;
         // From the camera through a place on the screen.
         Vec3 rayThrough(const Vec2& screen) const;
+        // Editor selection: nearest actual rendered triangle, independent of physics.
+        // Returns false for non-mesh appearances. Distance is in world units.
+        bool pickSurface(u32 id,const Vec3& from,const Vec3& direction,float& distance);
         Vec3 cameraPlace() const { return m_from; }
         // Select one unambiguous camera under this specific live actor, not by global name.
         bool activateActorCamera(u32 actor,const char* componentName);

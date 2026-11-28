@@ -127,3 +127,8 @@ The content drawer can float within the Redux editor window, move by its title b
 ## Native widget thumbnails and direct asset editing (verification pending)
 
 Visible widget assets now use the same native Ui designer renderer, resolved nested widget page and theme as the full designer, scaled to a clipped 16:9 tile. Actor and widget previews share the existing four-item budget and document-revision cache. Failed or unsupported previews fall back to asset icons; all preview UI objects and worlds are released on cache invalidation or panel closure. Clicking a widget tile opens its designer directly. This is not yet a unified widget/scene tab strip or detached desktop window. Native desktop verification is required.
+
+
+## Triangle-based actor viewport selection (verification pending)
+
+After gizmo hit testing, the class viewport casts the native camera ray against actual mesh triangles, using the current native mesh detail, model part ranges, current skeletal pose, and world transforms. Procedural shape construction is shared with SolidMeshes rather than approximating a different bounding shape. Closest positive surface wins; only non-mesh component helpers retain origin selection. This is geometric rather than pixel-perfect picking (transparent texture cutouts and shader displacement are not evaluated). Scene placement viewport picking is unchanged. Desktop compilation and occlusion/selection tests are pending.

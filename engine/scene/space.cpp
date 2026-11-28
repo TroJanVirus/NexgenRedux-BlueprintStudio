@@ -31,6 +31,23 @@ namespace nx
         }
     }
 
+    namespace
+    {
+        void buildSolid(MeshData& d, Solid solid, u32 around)
+        {
+        switch (solid)
+        {
+        case Solid::Box: d.box({}, { 0.5f, 0.5f, 0.5f }, kWhite); break;
+        case Solid::Sphere: d.sphere({}, 0.5f, around, kWhite); break;
+        case Solid::Cylinder: d.cylinder({ 0, -0.5f, 0 }, 1, 0.5f, 0.5f, around, kWhite); break;
+        case Solid::Cone: d.cylinder({ 0, -0.5f, 0 }, 1, 0.5f, 0, around, kWhite); break;
+        case Solid::Torus: d.torus(0.35f, 0.15f, around, kWhite); break;
+        case Solid::Capsule: d.capsule(0.5f, 0.5f, around, kWhite); break;
+        default: d.plane(0.5f, 0.5f, 1, kWhite); break;
+        }
+        }
+    }
+
     // --- Meshes that everyone uses ---
 
     bool SolidMeshes::make()
@@ -48,16 +65,7 @@ namespace nx
             for (u32 s = 1; s < static_cast<u32>(Solid::Count); s++)
             {
                 MeshData d;
-                switch (static_cast<Solid>(s))
-                {
-                case Solid::Box: d.box({}, { 0.5f, 0.5f, 0.5f }, kWhite); break;
-                case Solid::Sphere: d.sphere({}, 0.5f, around, kWhite); break;
-                case Solid::Cylinder: d.cylinder({ 0, -0.5f, 0 }, 1, 0.5f, 0.5f, around, kWhite); break;
-                case Solid::Cone: d.cylinder({ 0, -0.5f, 0 }, 1, 0.5f, 0, around, kWhite); break;
-                case Solid::Torus: d.torus(0.35f, 0.15f, around, kWhite); break;
-                case Solid::Capsule: d.capsule(0.5f, 0.5f, around, kWhite); break;
-                default: d.plane(0.5f, 0.5f, 1, kWhite); break;
-                }
+                buildSolid(d,static_cast<Solid>(s),around);
                 m_meshes[s][detail] = device.createMesh(d.vertices.begin(), d.vertices.count(), d.indices.begin(), d.indices.count(), false);
                 ok = ok && m_meshes[s][detail];
             }
@@ -1357,6 +1365,68 @@ namespace nx
         const float x = m_lastSize.x > 0 ? (screen.x - m_lastAt.x) / m_lastSize.x * 2 - 1 : 0;
         const float y = m_lastSize.y > 0 ? 1 - (screen.y - m_lastAt.y) / m_lastSize.y * 2 : 0;
         return (m_lastView.forward + m_lastView.right * x + m_lastView.up * y).normalized();
+    }
+
+    bool Space::pickSurface(u32 id,const Vec3& from,const Vec3& direction,float& distance)
+    {
+        auto* a=getAppearance(id);
+        const auto* spatial=getSpatial(id);
+        if(!a||!spatial||a->sprite||a->glowBall||a->color.a<=0)return false;
+        const auto& world=spatial->world;
+        const auto intersect=[&](const MeshData& mesh,const gpu::MeshVertex* vertices,u32 vertexCount,u32 first,u32 count,bool twoSided)
+        {
+            bool hit=false;
+            if(first>mesh.indices.count()||count>mesh.indices.count()-first||!vertices)return false;
+            for(u32 i=first;i+2<first+count;i+=3)
+            {
+                const auto ia=mesh.indices[i],ib=mesh.indices[i+1],ic=mesh.indices[i+2];
+                if(ia>=vertexCount||ib>=vertexCount||ic>=vertexCount)continue;
+                const auto point=[&](u32 j){const auto& v=vertices[j];return world.transformPoint({v.x,v.y,v.z});};
+                const Vec3 p=point(ia),edge1=point(ib)-p,edge2=point(ic)-p;
+                const Vec3 cross=direction.cross(edge2);
+                const float det=edge1.dot(cross);
+                // Selection is geometric; double-sided tests also allow mirrored transforms.
+                (void)twoSided;
+                if(fabsf(det)<1e-8f)continue;
+                const float inv=1.f/det;
+                const Vec3 delta=from-p;
+                const float u=delta.dot(cross)*inv;if(u<0||u>1)continue;
+                const Vec3 q=delta.cross(edge1);
+                const float v=direction.dot(q)*inv;if(v<0||u+v>1)continue;
+                const float t=edge2.dot(q)*inv;
+                if(t>0&&t<distance){distance=t;hit=true;}
+            }
+            return hit;
+        };
+        if(a->model)
+        {
+            const auto* model=a->model->model;if(!model)return false;
+            const auto& mesh=model->mesh;
+            const auto* vertices=mesh.vertices.begin();
+            u32 count=mesh.vertices.count();
+            gpu::MeshVertex* moved=nullptr;
+            if(model->weights.count())
+            {
+                count=model->weights.count();
+                moved=static_cast<gpu::MeshVertex*>(memAlloc(count*sizeof(gpu::MeshVertex),MemTag::Frame));
+                if(!moved)return false;
+                Mat4 bones[kModelBones];poseOf(*a,bones);model->bend(bones,moved);vertices=moved;
+            }
+            bool hit=false;const u32 detail=std::min(2u,static_cast<u32>(a->detail));
+            for(const auto& part:model->parts)
+                if(part.color.a>0&&intersect(mesh,vertices,count,part.first[detail],part.count[detail],part.twoSided))hit=true;
+            if(moved)memFree(moved);
+            return hit;
+        }
+        if(a->custom)
+        {
+            const auto& mesh=a->custom->data;
+            return intersect(mesh,mesh.vertices.begin(),mesh.vertices.count(),0,mesh.indices.count(),a->twoSided);
+        }
+        if(a->solid==Solid::None||a->solid>=Solid::Count)return false;
+        static const u32 rounds[3]={28,14,8};
+        MeshData mesh;buildSolid(mesh,a->solid,rounds[std::min(2u,static_cast<u32>(a->detail))]);
+        return intersect(mesh,mesh.vertices.begin(),mesh.vertices.count(),0,mesh.indices.count(),a->twoSided);
     }
 
     void Space::boundsOf(const Appearance& a, const Mat4& world, Vec3& middle, float& radius) const
