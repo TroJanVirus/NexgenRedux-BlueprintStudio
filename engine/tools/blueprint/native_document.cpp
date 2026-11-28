@@ -65,6 +65,8 @@ namespace nx
             {"camera:sequence","Camera Sequence (Sequencer)","Space / Camera","in:exec|play:bool|stop:bool|dt:float|anchor:string|asset:string|keys:string","then:exec|active:bool|finished:bool|elapsed:float|found:bool","","","","","void","","","play:false|stop:false|dt:dt|anchor:\"\"|asset:\"\"|keys:\"0,0,2,8,0,1,0,60,0;3,5,3,5,0,1,0,50,0;6,0,2,4,0,1,0,60,0\""},
             {"camera:activate-actor","Activate actor camera","Space / Camera","in:exec|actor:Entity@|component:string","then:exec|result:bool","Space::activateActorCamera","","","","bool","","in:actor|in:component","component:\"\""},
             {"actor:component","Get actor component","Space / Blueprint Classes","actor:Entity@|component:string","result:Entity@","Space::actorComponent","","","pure","Entity@","","in:actor|in:component"},
+            {"actor:same","Equal (Entity)","Actors / References","a:Entity@|b:Entity@","result:bool","","","","pure","bool"},
+            {"player:launch-motion","Add launch velocity","Actors / Character","motion:Vec3|velocity:Vec3","result:Vec3","bp_player_launch_motion","","","pure","Vec3","","in:motion|in:velocity"},
             {"actor:valid","Is valid entity","Space / Blueprint Classes","entity:Entity@","result:bool","Space::validEntity","","","pure","bool","","in:entity"},
             {"render:space","Render 3D scene","Space / Rendering","in:exec","then:exec"},
             {"ui:load-asset","Load linked widget page","Ui / Designer","in:exec|id:string","then:exec"},
@@ -1577,6 +1579,43 @@ namespace nx
             }
         error="Declare a typed Behaviour field first.";return false;
     }
+    bool BlueprintDocument::ensureActorComponentBehaviour(const std::string& id,size_t component,std::string& owner,std::string& error)
+    {
+        if(component==0)return ensureActorBehaviour(id,owner,error);
+        std::string source;std::vector<std::string> keys;JsonTree tree;
+        if(!resolveVisualActor(id,source,keys,error)||component>=keys.size()||!tree.parse(source.data(),source.size()))return false;
+        const std::string existing=tree.root()["entities"][static_cast<u32>(component)]["behaviour"].text();
+        if(existing.rfind("BP_Behaviour_",0)==0)
+        {const auto name=existing.substr(13);const auto names=behaviours();if(std::find(names.begin(),names.end(),name)!=names.end()){owner="behaviour:"+name;error.clear();return true;}}
+        BlueprintDocument staged;staged.name=name;staged.assetRoot=assetRoot;staged.graphs=graphs;staged.manifests=manifests;staged.m_visualAssets=m_visualAssets;staged.m_visualSerial=m_visualSerial;staged.m_nextId=m_nextId;
+        std::string key=keys[component];for(char& ch:key)if(!((ch>='a'&&ch<='z')||(ch>='A'&&ch<='Z')||(ch>='0'&&ch<='9')))ch='_';
+        const auto local="Component_"+key;
+        if(!staged.addBehaviour(local,error)||!staged.setVisualActorProperty(id,component,"behaviour",local,error))return false;
+        std::string checked;if(!staged.serialize(checked,error))return false;
+        recordGraphList();graphs.swap(staged.graphs);m_visualAssets.swap(staged.m_visualAssets);m_nextId=staged.m_nextId;owner="behaviour:"+local;error.clear();return true;
+    }
+    bool BlueprintDocument::createLaunchpadActor(std::string& id,std::string& error)
+    {
+        BlueprintDocument staged;staged.name=name;staged.assetRoot=assetRoot;staged.graphs=graphs;staged.manifests=manifests;staged.m_visualAssets=m_visualAssets;staged.m_visualSerial=m_visualSerial;staged.m_nextId=m_nextId;
+        std::string next;if(!staged.createVisualAsset("actor",next,error)||!staged.renameVisualAsset(next,"Launch Pad",error))return false;
+        auto assets=staged.m_visualAssets;
+        for(auto& a:assets)if(a.id==next)a.source=R"({"entities":[{"name":"LaunchPad","shape":"box","size":[2,0.2,2],"color":[0.15,0.6,0.9,1]},{"name":"Trigger","place":[0,5,0],"size":[0.5,5,0.5],"cube":[2,2,2],"group":2,"hits":1,"wall":false}],"parents":[-1,0]})";
+        if(!staged.replaceVisualAssets(assets,error))return false;
+        std::string owner;if(!staged.ensureActorComponentBehaviour(next,1,owner,error))return false;
+        size_t hit=staged.graphs.size();for(size_t i=0;i<staged.graphs.size();++i)if(staged.graphs[i].owner==owner&&staged.graphs[i].name=="onHit"){hit=i;break;}
+        if(hit>=staged.graphs.size()){error="Missing native overlap event.";return false;}
+        bool ok=true;
+        const auto add=[&](const char* kind,float x,float y){const auto n=staged.graphs[hit].nodes.size();if(ok)ok=staged.addNode(hit,kind,x,y,error);return n;};
+        const auto wire=[&](size_t a,const char* out,size_t b,const char* in){if(ok)ok=staged.connect(hit,a,out,b,in,error);};
+        const auto val=[&](size_t n,const char* pin,const char* v){if(ok)ok=staged.setInputValue(hit,n,pin,v,error);};
+        const auto find=add("api:Scene:Scene::find:string",320,60),other=add("event:other",30,250),same=add("actor:same",700,250),branch=add("branch",720,60);
+        const auto motion=add("api:Entity:get_motion:Entity@",1040,250),launch=add("player:launch-motion",1420,250),set=add("api:Entity:set_motion:Entity@,Vec3",1440,60);
+        val(find,"name","Player");wire(0,"then",find,"in");wire(find,"then",branch,"in");wire(other,"value",same,"a");wire(find,"result",same,"b");wire(same,"result",branch,"condition");
+        wire(branch,"true",set,"in");wire(other,"value",motion,"target");wire(other,"value",set,"target");wire(motion,"result",launch,"motion");val(launch,"velocity","0,9,0");wire(launch,"result",set,"value");
+        if(!ok||!staged.addComment(hit,{0,find,other,same,branch,motion,launch,set},"LAUNCH PAD | Native onHit fires for group 1. Compare the touching entity with the template Player, then add 9 m/s of upward velocity while preserving its horizontal motion.",error))return false;
+        std::string checked;if(!staged.serialize(checked,error))return false;
+        recordGraphList();graphs.swap(staged.graphs);m_visualAssets.swap(staged.m_visualAssets);m_visualSerial=staged.m_visualSerial;m_nextId=staged.m_nextId;id=next;error.clear();return true;
+    }
     bool BlueprintDocument::ensureActorBehaviour(const std::string& id,std::string& owner,std::string& error)
     {
         BlueprintDocument staged;staged.name=name;staged.assetRoot=assetRoot;staged.graphs=graphs;staged.manifests=manifests;
@@ -1847,7 +1886,7 @@ namespace nx
                     p->setNumber(index);keys.push_back(id+":"+std::to_string(i+1));
                 }
             }
-            const std::string allowed="|name|place|angles|size|shape|model|animate|camera|mass|friction|bounce|gravity|drag|cube|sphere|capsule|exact|colliderAt|wall|behaviour|";
+            const std::string allowed="|name|place|angles|size|shape|model|animate|camera|mass|friction|bounce|gravity|drag|cube|sphere|capsule|exact|colliderAt|wall|group|hits|behaviour|";
             const auto apply=[&](JsonValue* entity,const JsonValue* fields)->bool
             {
                 if(!entity||!fields||fields->type()!=JsonValue::Type::Object){error="Invalid component overrides.";return false;}
@@ -1931,7 +1970,7 @@ namespace nx
     bool BlueprintDocument::appendVisualActorComponent(const std::string& id,size_t parent,const std::string& shape,const std::string& place,std::string& error)
     {
         std::vector<std::string> xyz;
-        if((shape!="box"&&shape!="sphere"&&shape!="capsule"&&shape!="plane"&&shape!="camera")||
+        if((shape!="box"&&shape!="sphere"&&shape!="capsule"&&shape!="plane"&&shape!="camera"&&shape!="trigger")||
             !blueprintInputComponents("Vec3",place,xyz))
         {error="Choose a shape and valid local XYZ.";return false;}
         std::string source;std::vector<std::string> keys;if(!resolveVisualActor(id,source,keys,error))return false;
@@ -1948,8 +1987,9 @@ namespace nx
             if(depth>8){error="Actor hierarchy nesting limit reached.";return false;}
             auto* child=entities->add();auto* p=parents->add();
             if(!child||!p||!text(*child,"name",std::string(shape=="camera"?"Camera":"Component")+std::to_string(entities->count()-1))||
-                (shape=="camera"?!number(*child,"camera",60):!text(*child,"shape",shape)))
+                (shape=="camera"?!number(*child,"camera",60):shape=="trigger"?false:!text(*child,"shape",shape)))
             {error="Cannot allocate component.";return false;}
+            if(shape=="trigger"){auto* cube=child->put("cube");if(!cube)return false;cube->setArray();for(unsigned axis=0;axis<3;++axis){auto* v=cube->add();if(!v)return false;v->setNumber(1);}if(!number(*child,"group",2)||!number(*child,"hits",1))return false;auto* wall=child->put("wall");if(!wall)return false;wall->setFlag(false);}
             p->setNumber(static_cast<double>(parent));
             auto* position=child->put("place");if(!position)return false;position->setArray();
             for(const auto& value:xyz){auto* axis=position->add();if(!axis)return false;axis->setNumber(std::strtod(value.c_str(),nullptr));}
@@ -2080,6 +2120,12 @@ namespace nx
                     {error="Invalid animation name.";return false;}
                     if(!text(*item,"animate",value))return false;
                 }
+            }
+            else if(property=="colliderAt"){if(!actorTransform(*item,"colliderAt",value,error))return false;}
+            else if(property=="wall"){if(value!="true"&&value!="false"){error="Use true for solid or false for overlap only.";return false;}auto* field=item->put("wall");if(!field)return false;field->setFlag(value=="true");}
+            else if(property=="group"||property=="hits")
+            {
+                if(value.empty())item->remove(property.c_str());else{if(!literal("literal:uint",value)||std::strtoul(value.c_str(),nullptr,10)>15){error="Enter a collision group 0 through 15.";return false;}if(!number(*item,property.c_str(),std::strtoul(value.c_str(),nullptr,10)))return false;}
             }
             else if(property=="simpleCollision")
             {

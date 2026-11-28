@@ -1847,6 +1847,7 @@ namespace nx
             if(in(gx,gy,8,120,220,256)){const char* shapes[]={"box","sphere","capsule","plane"};const auto n=static_cast<size_t>((gy-120)/34);if(n<4)beginDrag("",shapes[n]);return;}
             if(in(gx,gy,8,270,220,302)){std::string id;if(m_document.createVisualAsset("actor",id,m_status)){rememberVisualTab();leaveVisualTab();openActorViewport(id);}return;}
             if(in(gx,gy,8,308,220,340)){openWidgetWorkspace(s,true);return;}
+            if(in(gx,gy,8,346,220,378)){std::string id;if(m_document.createLaunchpadActor(id,m_status)){m_sceneContentFirst=m_document.visualAssets().size()-1;m_status="Launch Pad added to Content. Drag into a player template; edit its Trigger event graph.";}return;}
             if(in(gx,gy,228,76,layout.right+ox,108))
             {
                 const auto index=static_cast<unsigned>((gx-228)/95);
@@ -1881,8 +1882,8 @@ namespace nx
         c.rect(0,76,224,kBottom-76,{0.17f,0.17f,0.19f,1});c.text(*m_font,"PLACE ACTORS",12,88,accent);
         const char* labels[]={"Cube (solid)","Sphere","Capsule","Plane"};
         for(unsigned n=0;n<4;++n)button(8,120+34.f*n,212,labels[n]);
-        button(8,270,212,"New actor class");button(8,308,212,"New UI widget");
-        c.paragraph(*m_font,"Drag a primitive or reusable actor to the viewport. Select an instance to edit its class or spawn graph.",12,356,200,muted);
+        button(8,270,212,"New actor class");button(8,308,212,"New UI widget");button(8,346,212,"+ Launch pad example");
+        c.paragraph(*m_font,"Drag a primitive or reusable actor to the viewport. Select an instance to edit its class or spawn graph.",12,388,200,muted);
         c.rect(right,76,300,kBottom-76,{0.17f,0.17f,0.19f,1});c.text(*m_font,"WORLD OUTLINER",right+8,84,accent);button(right+6,108,288,m_outlinerQuery.empty()?"Search actors...":m_outlinerQuery);
         auto markers=actorMarkers(m_document,assetScreen());std::erase_if(markers,[&](const ActorMarker& m){return !outlinerMatch(m.label,m.id,m.asset,m_outlinerQuery);});
         const auto count=static_cast<size_t>(std::max(1.f,(kBottom-288-144)/28));
@@ -2590,7 +2591,7 @@ namespace nx
                 const auto item=tree.root()["entities"][static_cast<u32>(m_visualComponent)];
                 if(!item.exists()){m_status="Select a component.";return;}
                 const auto v=item[prop];m_visualProperty=prop;
-                if(m_visualProperty=="place"||m_visualProperty=="angles"||m_visualProperty=="size")
+                if(m_visualProperty=="place"||m_visualProperty=="angles"||m_visualProperty=="size"||m_visualProperty=="colliderAt")
                 {
                     const float fallback=m_visualProperty=="size"?1.f:0.f;
                     m_visualText="";
@@ -2615,7 +2616,7 @@ namespace nx
                             break;
                         }
                     }
-                    else m_visualText=v.isNumber()?std::to_string(v.exact()):v.text();
+                    else m_visualText=v.isNumber()?std::to_string(v.exact()):v.type()==JsonTree::Type::Bool?(v.flag()?"true":"false"):v.text();
                     if(m_visualProperty=="behaviour"&&m_visualText.rfind("BP_Behaviour_",0)==0)m_visualText.erase(0,13);
                 }
                 m_visualInput=3;input.setTyping(true);m_status="Edit property; Enter = Apply, Escape = Cancel.";return;
@@ -2681,8 +2682,8 @@ namespace nx
     }
     namespace
     {
-        constexpr const char* actorProperties[]={"name","place","angles","size","model","behaviour","camera","collision","mass","friction","bounce","gravity","animate"};
-        constexpr const char* actorPropertyLabels[]={"Name","Location","Rotation","Scale","Model","Behaviour","Camera FOV","Collision","Mass","Friction","Bounce","Gravity","Animation"};
+        constexpr const char* actorProperties[]={"name","place","angles","size","model","behaviour","camera","collision","mass","friction","bounce","gravity","animate","colliderAt","wall","group","hits"};
+        constexpr const char* actorPropertyLabels[]={"Name","Location","Rotation","Scale","Model","Behaviour","Camera FOV","Collision","Mass","Friction","Bounce","Gravity","Animation","Collider offset XYZ","Solid wall","Collision group","Overlap group"};
         std::string actorVector(JsonTree::Value v,const std::string& property)
         {
             std::string result;const float fallback=property=="size"?1.f:0.f;
@@ -2795,7 +2796,7 @@ namespace nx
     std::vector<BlueprintWorkspace::DetailRow> BlueprintWorkspace::actorDetailRows() const
     {
         // Negative property IDs denote category headings.
-        static constexpr int members[][6]={{0,-1,-1,-1,-1,-1},{1,2,3,-1,-1,-1},{4,12,-1,-1,-1,-1},{5,6,-1,-1,-1,-1},{7,8,9,10,11,-1}};
+        static constexpr int members[][10]={{0,-1,-1,-1,-1,-1,-1,-1,-1,-1},{1,2,3,-1,-1,-1,-1,-1,-1,-1},{4,12,-1,-1,-1,-1,-1,-1,-1,-1},{5,6,-1,-1,-1,-1,-1,-1,-1,-1},{7,13,14,15,16,8,9,10,11,-1}};
         std::vector<DetailRow> result;float y=112-m_actorDetailsScroll;
         for(unsigned group=0;group<5;++group)
         {
@@ -2821,7 +2822,7 @@ namespace nx
     void BlueprintWorkspace::openActorGraph(bool construction)
     {
         std::string owner;
-        if(!m_document.ensureActorBehaviour(m_visualSelection,owner,m_status))return;
+        if(!(construction?m_document.ensureActorBehaviour(m_visualSelection,owner,m_status):m_document.ensureActorComponentBehaviour(m_visualSelection,m_visualComponent,owner,m_status)))return;
         const std::string graphName=construction?"Construction":"start";
         if(construction&&!m_document.function(owner,graphName)&&!m_document.addFunction(graphName,m_status,owner))return;
         for(size_t i=0;i<m_document.graphs.size();++i)if(m_document.graphs[i].owner==owner&&m_document.graphs[i].name==graphName)
@@ -2905,7 +2906,7 @@ namespace nx
         if(!m_document.visualActorSource(m_visualSelection,resolved,why)||!tree.parse(resolved.data(),resolved.size()))return;
         const auto entries=tree.root()["entities"];const size_t count=entries.count();
         if(m_visualComponent>=count)m_visualComponent=0;
-        const auto rows=static_cast<size_t>(std::max(1.f,(kBottom-188)/30.f));
+        const auto rows=static_cast<size_t>(std::max(1.f,(kBottom-218)/30.f));
         if(m_visualComponentFirst>=count)m_visualComponentFirst=0;
         if(resizePanels(x,y,left,click,true)||updateGraphTabs(s,x,y,click))return;
         if(in(x,y,0,120,kLeft,kBottom-64))
@@ -3030,6 +3031,8 @@ namespace nx
         }
         if(in(x,y,618,39,738,69)){m_actorMode=std::min(2u,static_cast<unsigned>((x-618)/40));m_status=m_actorMode==0?"Translate component":m_actorMode==1?"Rotate component":"Scale component";return;}
         if(in(x,y,746,39,892,69)){m_actorCollision=!m_actorCollision;return;}
+        if(in(x,y,8,kBottom-90,kLeft-8,kBottom-62))
+        {if(m_document.appendVisualActorComponent(m_visualSelection,m_visualComponent,"trigger","0,1,0",m_status)){m_visualComponent=count;m_visualComponentFirst=count>=rows?count-rows+1:0;m_status="Added box overlap trigger. Select Event Graph to author its callbacks.";}return;}
         if(in(x,y,8,kBottom-60,kLeft-8,kBottom-32)||in(x,y,8,kBottom-30,kLeft-8,kBottom-2))
         {
             const bool camera=y>=kBottom-30;
@@ -3128,7 +3131,7 @@ namespace nx
         if(m_document.visualActorSource(m_visualSelection,resolved,why)&&tree.parse(resolved.data(),resolved.size()))
         {
             const auto entries=tree.root()["entities"],parents=tree.root()["parents"];
-            const auto rows=static_cast<size_t>(std::max(1.f,(kBottom-188)/30.f));
+            const auto rows=static_cast<size_t>(std::max(1.f,(kBottom-218)/30.f));
             for(size_t i=0;i<rows&&m_visualComponentFirst+i<entries.count();++i)
             {
                 const auto index=static_cast<u32>(m_visualComponentFirst+i);const auto item=entries[index];
@@ -3169,7 +3172,8 @@ namespace nx
                 }
                 else
                 {
-                    std::string value=v.isNumber()?std::to_string(v.exact()):v.text();
+                    std::string value=v.isNumber()?std::to_string(v.exact()):v.type()==JsonTree::Type::Bool?(v.flag()?"true":"false"):v.text();
+                    if(i==13)value=actorVector(v,"place");
                     if(i==7)value=item["cube"].exists()?"Box":item["sphere"].exists()?"Sphere":item["capsule"].exists()?"Capsule":"None";
                     c.clip(right+12,y+16,m_actorRightPanel-24,18);c.text(*m_font,value.empty()?"Default":value.c_str(),right+12,y+16,text);c.noClip();
                 }
@@ -3177,7 +3181,7 @@ namespace nx
             button(right+8,kBottom-82,m_actorRightPanel-16,"Cycle component shape");
             if(!selected->dependencies.empty())button(right+8,kBottom-40,m_actorRightPanel-16,"Reset inherited overrides");
         }
-        button(8,kBottom-60,kLeft-16,"+ Add box child");button(8,kBottom-30,kLeft-16,"+ Add camera child");
+        button(8,kBottom-90,kLeft-16,"+ Add box trigger");button(8,kBottom-60,kLeft-16,"+ Add box child");button(8,kBottom-30,kLeft-16,"+ Add camera child");
         const float top=kTop+44;
         if(m_placementWorld)
         {

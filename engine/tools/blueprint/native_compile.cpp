@@ -242,6 +242,7 @@ namespace nx
                     if(!available[node])return fail(node,"Spawn result used before execution or outside its branch.");
                     result="bp_value_"+std::to_string(node);return true;
                 }
+                if(n.kind=="actor:same"&&pin=="result"){std::string a,b;if(!value(node,"a",a,depth)||!value(node,"b",b,depth))return false;result="("+a+" is "+b+")";return true;}
                 if(!spec->operation.empty()&&pin=="result")
                 {
                     std::string a,b;
@@ -1237,6 +1238,7 @@ Vec3 bp_player_motion(Vec3 motion, Vec2 move, float yaw, float dt, bool grounded
     if (grounded && jump) motion.y = max(0.0f, jumpSpeed);
     return motion;
 }
+Vec3 bp_player_launch_motion(Vec3 motion, Vec3 velocity) { return motion + velocity; }
 Vec3 bp_player_eye(Vec3 feet, float height) { return feet + Vec3(0, height, 0); }
 Vec3 bp_player_target(Vec3 eye, float yaw, float pitch)
 {

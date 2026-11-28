@@ -196,6 +196,8 @@ namespace nx
         std::vector<std::string> behaviours() const;
         bool addBehaviour(const std::string& name,std::string& error);
         std::string parentBehaviour(const std::string& owner)const;
+        bool ensureActorComponentBehaviour(const std::string& id,size_t component,std::string& owner,std::string& error);
+        bool createLaunchpadActor(std::string& id,std::string& error);
         bool ensureActorBehaviour(const std::string& id,std::string& owner,std::string& error);
         bool setActorFieldExposed(const std::string& owner,const std::string& field,bool enabled,std::string& error);
         std::string actorBehaviour(const std::string& id)const;

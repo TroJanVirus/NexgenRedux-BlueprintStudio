@@ -1050,6 +1050,23 @@ NX_TEST(nativeFirstPersonTemplateCompilesAndRuns)
     NX_EXPECT(blueprintImportPackage(r.platform,"first-person.bp.zip",restored,error));
     NX_EXPECT(compileBlueprint(restored,source,error));
 }
+NX_TEST(nativeLaunchpadTutorialActorTriggersPlayer)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    BlueprintDocument doc;std::string error,id,source;
+    const bool built=blueprintProjectTemplate("first-person",doc,error)&&doc.createLaunchpadActor(id,error)&&doc.placeVisualActor("Screen",id,"0,0.2,-2",error)&&compileBlueprint(doc,source,error);
+    NX_EXPECT(built);if(!built){NX_ERROR("Launchpad tutorial: %s",error.c_str());return;}
+    r.platform.files["project/main/screen.json"]="{\"title\":\"Launchpad\"}";
+    r.platform.files["project/main/main.as"]=source;
+    if(!r.screens.init(r.services,"project","main")){NX_EXPECT(false);return;}r.step(100);
+    NX_EXPECT(!r.screens.failed()&&r.services.world);if(!r.services.world)return;
+    auto& world=*r.services.world;const auto hero=world.findNamed("Player"),trigger=world.findNamed("Trigger");NX_EXPECT(hero&&trigger);if(!hero||!trigger)return;
+    const auto* collider=world.space().getCollider(trigger);NX_EXPECT(collider&&!collider->wall&&collider->hits==(1u<<1));
+    float maxHeight=0;r.platform.state.keys[static_cast<size_t>(Key::W)]=true;
+    for(unsigned n=0;n<100;++n){r.step(1);const auto* spatial=world.space().getSpatial(hero);if(spatial)maxHeight=std::max(maxHeight,spatial->place.y);}
+    r.platform.state.keys[static_cast<size_t>(Key::W)]=false;
+    NX_EXPECT(!r.screens.failed()&&maxHeight>1.f);
+}
 NX_TEST(nativeAdditionalProjectTemplatesCompileAndRun)
 {
     for(const std::string id:{"third-person","cinematic","flight","rolling-ball"})
