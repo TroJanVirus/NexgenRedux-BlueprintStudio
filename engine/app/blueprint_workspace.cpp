@@ -5300,8 +5300,8 @@ namespace nx
                 c.text(*m_font,"Drag endpoints or handles. The path uses Redux's native Curve.",235,141,muted);
                 c.rect(240,165,800,370,{0.10f,0.12f,0.15f,1});
                 c.push();c.clip(240,165,800,370);
-                for(int i=0;i<=20;++i)c.line(240+40*i,165,240+40*i,535,1,{0.18f,0.21f,0.25f,1});
-                for(int i=0;i<=9;++i)c.line(240,170+40*i,1040,170+40*i,1,{0.18f,0.21f,0.25f,1});
+                for(int i=0;i<=20;++i)c.line(240.f+40.f*static_cast<float>(i),165,240.f+40.f*static_cast<float>(i),535,1,{0.18f,0.21f,0.25f,1});
+                for(int i=0;i<=9;++i)c.line(240,170.f+40.f*static_cast<float>(i),1040,170.f+40.f*static_cast<float>(i),1,{0.18f,0.21f,0.25f,1});
                 Curve preview;Vec2 controlPoints[4];
                 for(int i=0;i<4;++i){controlPoints[i]={640+(m_curveX[i]-m_curveCenterX)*m_curveScale,350+(m_curveY[i]-m_curveCenterY)*m_curveScale};preview.add(controlPoints[i]);}
                 for(int i=1;i<4;++i)c.line(controlPoints[i-1].x,controlPoints[i-1].y,controlPoints[i].x,controlPoints[i].y,1.5f,muted);

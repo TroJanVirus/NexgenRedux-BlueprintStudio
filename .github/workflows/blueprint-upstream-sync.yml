@@ -1,4 +1,4 @@
-name: Verify Windows title bar and generated native enum integration
+name: Verify Studio chrome, enum imports and Windows curve rendering
 on:
   workflow_dispatch:
   push:
