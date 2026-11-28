@@ -339,6 +339,14 @@ namespace nx
         bool m_curveChanged=false;
         bool beginCurveEditor(Input& input);
         std::vector<BlueprintCameraKey> m_sequenceKeys;
+        std::string m_sequenceAsset,m_sceneBrowserOwner,m_sceneBrowserAsset;
+        size_t m_sceneFirst=0,m_sceneAssetFirst=0;
+        bool m_sceneNaming=false;
+        std::string m_sceneNameDraft;
+        void openSceneBrowser(Input& input);
+        void updateSceneBrowser(Services& s,float x,float y,bool click);
+        void drawSceneBrowser(Canvas& c);
+        bool beginSequenceAsset(const std::string& id,Input& input);
         size_t m_sequenceKey=0;
         float m_sequenceTime=0;
         double m_sequenceLast=0;

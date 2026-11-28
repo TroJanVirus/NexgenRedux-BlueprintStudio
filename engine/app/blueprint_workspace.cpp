@@ -282,7 +282,7 @@ namespace nx
         return true;
     }
     bool BlueprintWorkspace::modalOpen() const
-    {return m_assetBrowser||m_browsing||m_focus==5||m_focus==6||m_focus==9||m_focus==10||m_focus==11||m_focus==12||m_focus==13||m_focus==14||m_focus==15||m_focus==17||m_focus==18||m_focus==20||m_focus==21;}
+    {return m_assetBrowser||m_browsing||m_focus==5||m_focus==6||m_focus==9||m_focus==10||m_focus==11||m_focus==12||m_focus==13||m_focus==14||m_focus==15||m_focus==17||m_focus==18||m_focus==20||m_focus==21||m_focus==22;}
     void BlueprintWorkspace::resetGraphTabs()
     {
         releaseContentPreviews();m_graphTabs.clear();m_actorTabs.clear();m_visualTabs.clear();m_activeVisualTab={};m_activeTab={};m_tabFirst=0;
@@ -2284,6 +2284,7 @@ namespace nx
             {m_visualSelection.clear();m_visualText.clear();m_status="Removed definition. Ctrl+Z restores it.";}
             return;
         }
+        if(selected->kind=="sequence"){if(in(x,y,630,232,1000,266)){const auto id=selected->id;m_assetBrowser=false;beginSequenceAsset(id,input);}return;}
         if(selected->kind=="theme")
         {
             if(in(x,y,630,232,810,266))
@@ -3331,7 +3332,7 @@ namespace nx
         {
             const auto& a=assets[m_visualFirst+i];const float y=198+36*static_cast<float>(i);
             c.rect(280,y,330,33,a.id==m_visualSelection?Color{0.19f,0.33f,0.50f,1}:Color{0.22f,0.22f,0.24f,1});
-            c.clip(287,y,316,33);c.text(*m_font,((a.kind=="actor"?"ACTOR  ":a.kind=="theme"?"THEME  ":"UI  ")+a.title).c_str(),290,y+8,text);c.noClip();
+            c.clip(287,y,316,33);c.text(*m_font,((a.kind=="actor"?"ACTOR  ":a.kind=="theme"?"THEME  ":a.kind=="sequence"?"SEQUENCE  ":"UI  ")+a.title).c_str(),290,y+8,text);c.noClip();
         }
         if(assets.empty())c.text(*m_font,"Create a reusable asset.",290,210,muted);
         }
@@ -3345,7 +3346,8 @@ namespace nx
             button(630,156,175,"Rename");button(815,156,185,"Remove");
             c.clip(630,195,selected->kind=="actor"?180.f:370.f,32);c.text(*m_font,(selected->id+" / "+selected->title).c_str(),630,201,accent);c.noClip();
             if(selected->kind=="actor")button(815,193,185,"Create child class");
-            if(selected->kind=="theme")
+            if(selected->kind=="sequence"){button(630,232,370,"Open Sequencer");c.text(*m_font,"Place this asset from Scenes.",630,280,muted);}
+            else if(selected->kind=="theme")
             {
                 button(630,232,180,m_themeStyle.c_str());button(820,232,180,themeStates[m_themeState]);
                 const size_t count=m_themeMedia?sizeof(themeMediaProps)/sizeof(themeMediaProps[0]):m_themeState?themeLookCount:sizeof(themeProps)/sizeof(themeProps[0]);
@@ -4536,10 +4538,67 @@ namespace nx
         }
         if(n.kind=="camera:orbit-timed"&&m_editPin=="name")m_inputChoices=namedSceneTargets();
     }
+    void BlueprintWorkspace::openSceneBrowser(Input& input)
+    {
+        m_sceneBrowserOwner=m_document.moduleForOwner(m_document.graphs[m_graph].owner);
+        if(m_sceneBrowserOwner.empty())m_sceneBrowserOwner=m_document.screens().front();
+        m_sceneBrowserAsset.clear();m_sceneFirst=m_sceneAssetFirst=0;m_sceneNaming=false;m_focus=22;input.setTyping(false);
+        m_status="Select a scene or shared camera sequence.";
+    }
+    bool BlueprintWorkspace::beginSequenceAsset(const std::string& id,Input& input)
+    {
+        if(!m_document.cameraSequenceKeys(id,m_sequenceKeys,m_status))return false;
+        m_sequenceAsset=id;m_sequenceKey=0;m_sequenceTime=0;m_sequenceLast=0;m_sequencePlaying=m_sequenceScrub=false;m_sequenceField=-1;m_focus=21;input.setTyping(true);clearWire();m_status="Editing reusable cinematic; all linked nodes use these keys.";return true;
+    }
+    void BlueprintWorkspace::updateSceneBrowser(Services& s,float x,float y,bool click)
+    {
+        auto& input=*s.input;const auto scenes=m_document.screens();std::vector<const BlueprintDocument::VisualAsset*> assets;
+        for(const auto& asset:m_document.visualAssets())if(asset.kind=="sequence")assets.push_back(&asset);
+        if(click&&(!in(x,y,100,64,1180,658)||in(x,y,1030,610,1160,646))){m_focus=0;input.setTyping(false);return;}
+        if(m_sceneNaming)
+        {
+            bool apply=click&&in(x,y,830,556,980,590);
+            if(click&&in(x,y,990,556,1140,590)){m_sceneNaming=false;input.setTyping(false);return;}
+            for(u32 i=0;i<input.typedCount();++i){const auto ch=input.typed(i);if(ch==13){apply=true;break;}if(ch==8&&!m_sceneNameDraft.empty())m_sceneNameDraft.pop_back();else if(ch>=32)appendCharacter(m_sceneNameDraft,ch,128);}
+            if(apply){if(m_document.renameVisualAsset(m_sceneBrowserAsset,m_sceneNameDraft,m_status)){m_sceneNaming=false;input.setTyping(false);}}return;
+        }
+        m_sceneFirst=std::min(m_sceneFirst,scenes.size()>8?scenes.size()-8:0);m_sceneAssetFirst=std::min(m_sceneAssetFirst,assets.size()>8?assets.size()-8:0);
+        if(in(x,y,120,160,450,520)){if(input.wheel()<0&&m_sceneFirst+8<scenes.size())++m_sceneFirst;if(input.wheel()>0&&m_sceneFirst)--m_sceneFirst;}
+        if(in(x,y,470,160,1150,520)){if(input.wheel()<0&&m_sceneAssetFirst+8<assets.size())++m_sceneAssetFirst;if(input.wheel()>0&&m_sceneAssetFirst)--m_sceneAssetFirst;}
+        if(!click)return;
+        if(in(x,y,120,160,450,512)){const auto at=m_sceneFirst+static_cast<size_t>((y-160)/44);if(at<scenes.size())m_sceneBrowserOwner=scenes[at];return;}
+        if(in(x,y,470,160,1150,512)){const auto at=m_sceneAssetFirst+static_cast<size_t>((y-160)/44);if(at<assets.size())m_sceneBrowserAsset=assets[at]->id;return;}
+        if(in(x,y,120,540,280,574)){for(size_t i=0;i<m_document.graphs.size();++i)if(m_document.graphs[i].owner==m_sceneBrowserOwner&&m_document.graphs[i].name=="update"){selectGraph(i);m_focus=0;input.setTyping(false);return;}}
+        if(in(x,y,290,540,450,574)){m_focus=7;m_edit.clear();input.setTyping(true);m_status="New scene: enter a lowercase ID.";return;}
+        if(in(x,y,470,540,630,574)){std::string id;if(m_document.createVisualAsset("sequence",id,m_status)){m_sceneBrowserAsset=id;beginSequenceAsset(id,input);}return;}
+        if(in(x,y,640,540,800,574)&&!m_sceneBrowserAsset.empty()){beginSequenceAsset(m_sceneBrowserAsset,input);return;}
+        if(in(x,y,810,540,970,574)&&!m_sceneBrowserAsset.empty()){size_t g=0,n=0;if(m_document.placeCameraSequence(m_sceneBrowserOwner,m_sceneBrowserAsset,g,n,m_status)){selectGraph(g);m_selection=n;m_selectedNodes={n};m_focus=0;input.setTyping(false);m_status="Placed cinematic. Connect execution and Play trigger."; }return;}
+        if(in(x,y,980,540,1150,574)&&!m_sceneBrowserAsset.empty()){if(const auto* asset=m_document.visualAsset(m_sceneBrowserAsset)){m_sceneNameDraft=asset->title;m_sceneNaming=true;input.setTyping(true);}return;}
+        if(in(x,y,470,582,630,616)&&!m_sceneBrowserAsset.empty()){if(m_document.removeVisualAsset(m_sceneBrowserAsset,m_status))m_sceneBrowserAsset.clear();}
+    }
+    void BlueprintWorkspace::drawSceneBrowser(Canvas& c)
+    {
+        c.roundRect(100,64,1080,594,8,{0.15f,0.17f,0.20f,1});c.text(*m_font,"SCENES & CINEMATICS",120,78,accent);
+        c.text(*m_font,"Scenes are native Redux screens. Cinematics are reusable project assets.",120,108,muted);
+        c.text(*m_font,"SCENES",120,137,accent);c.text(*m_font,"CAMERA SEQUENCES / shared assets",470,137,accent);
+        const auto button=[&](float x,float y,float w,const char* label){c.roundRect(x,y,w,34,4,{0.20f,0.32f,0.45f,1});c.text(*m_font,label,x+w/2,y+7,text,Align::Center);};
+        const auto scenes=m_document.screens();for(size_t i=0;i<8&&m_sceneFirst+i<scenes.size();++i){const auto& scene=scenes[m_sceneFirst+i];const float yy=160.f+44.f*static_cast<float>(i);c.rect(120,yy,330,40,scene==m_sceneBrowserOwner?Color{0.20f,0.34f,0.47f,1}:Color{0.20f,0.23f,0.27f,1});c.clip(128,yy,314,40);c.text(*m_font,scene.c_str(),132,yy+10,text);c.noClip();}
+        size_t index=0;for(const auto& asset:m_document.visualAssets())if(asset.kind=="sequence")
+        {
+            const auto i=index++;if(i<m_sceneAssetFirst||i>=m_sceneAssetFirst+8)continue;const float yy=160.f+44.f*static_cast<float>(i-m_sceneAssetFirst);
+            unsigned used=0;for(const auto& g:m_document.graphs)if(g.owner==m_sceneBrowserOwner)for(const auto& n:g.nodes)if(n.kind=="camera:sequence")for(const auto& v:n.values)if(v.pin=="asset"&&v.value==asset.id)++used;
+            c.rect(470,yy,680,40,asset.id==m_sceneBrowserAsset?Color{0.20f,0.34f,0.47f,1}:Color{0.20f,0.23f,0.27f,1});c.clip(478,yy,500,40);c.text(*m_font,asset.title.c_str(),482,yy+4,text);c.text(*m_font,asset.id.c_str(),482,yy+21,muted);c.noClip();c.text(*m_font,("In scene: "+std::to_string(used)).c_str(),1000,yy+10,muted);
+        }
+        if(!index)c.text(*m_font,"Create your first reusable cinematic.",482,175,muted);
+        button(120,540,160,"Open Blueprint");button(290,540,160,"+ Scene");button(470,540,160,"+ Sequence");button(640,540,160,"Edit Sequence");button(810,540,160,"Place in Scene");button(980,540,170,"Rename");button(470,582,160,"Delete Asset");button(1030,610,130,"Close");
+        c.clip(120,620,880,26);c.text(*m_font,m_status.c_str(),120,626,muted);c.noClip();
+        if(m_sceneNaming){c.rect(100,64,1080,594,{0,0,0,0.65f});c.roundRect(280,440,880,170,6,{0.16f,0.20f,0.25f,1});c.text(*m_font,"Rename cinematic",300,454,accent);c.roundRect(300,490,840,38,4,{0.24f,0.35f,0.48f,1});c.text(*m_font,m_sceneNameDraft.c_str(),310,498,text);c.text(*m_font,"Enter = Apply | Escape = Cancel",300,568,muted);button(830,556,150,"Apply");button(990,556,150,"Cancel");}
+    }
     bool BlueprintWorkspace::beginSequenceEditor(Input& input)
     {
         if(m_selection>=m_document.graphs[m_graph].nodes.size())return false;
         const auto& node=m_document.graphs[m_graph].nodes[m_selection];if(node.kind!="camera:sequence")return false;
+        m_sequenceAsset.clear();for(const auto& v:node.values)if(v.pin=="asset"&&!v.value.empty())return beginSequenceAsset(v.value,input);
         std::string raw="0,0,2,8,0,1,0,60,0;3,5,3,5,0,1,0,50,0;6,0,2,4,0,1,0,60,0";
         for(const auto& v:node.values)if(v.pin=="keys")raw=v.value;
         if(!blueprintCameraKeys(raw,m_sequenceKeys,m_status))return false;
@@ -4568,8 +4627,9 @@ namespace nx
             if(ch==8){if(m_sequenceReplace)m_sequenceText.clear();else if(!m_sequenceText.empty())m_sequenceText.pop_back();m_sequenceReplace=false;}
             else if(ch<128&&std::string("0123456789.eE+-").find(static_cast<char>(ch))!=std::string::npos){if(m_sequenceReplace){m_sequenceText.clear();m_sequenceReplace=false;}appendCharacter(m_sequenceText,ch,48);}
         }
-        if(apply){if(finishSequenceField()&&m_document.setInputValue(m_graph,m_selection,"keys",blueprintCameraKeyText(m_sequenceKeys),m_status)){m_focus=0;input.setTyping(false);rebuildPins();m_status="Camera sequence applied."; }return;}
+        if(apply){if(finishSequenceField()&&(m_sequenceAsset.empty()?m_document.setInputValue(m_graph,m_selection,"keys",blueprintCameraKeyText(m_sequenceKeys),m_status):m_document.setCameraSequenceKeys(m_sequenceAsset,m_sequenceKeys,m_status))){m_focus=0;input.setTyping(false);rebuildPins();m_status="Camera sequence applied."; }return;}
         if(click&&!finishSequenceField())return;
+        if(click&&in(x,y,800,540,1150,574)&&m_sequenceAsset.empty()){std::string id;if(m_document.promoteCameraSequence(m_graph,m_selection,"Camera Sequence",m_sequenceKeys,id,m_status)){m_sequenceAsset=id;rebuildPins();m_status="Saved as reusable sequence asset."; }return;}
         if(click&&in(x,y,120,115,230,148)){if(m_sequenceTime>=m_sequenceKeys.back().time)m_sequenceTime=0;m_sequencePlaying=!m_sequencePlaying;return;}
         if(click&&in(x,y,240,115,350,148)){m_sequencePlaying=false;m_sequenceTime=0;return;}
         if(click&&in(x,y,360,115,500,148))
@@ -4599,7 +4659,7 @@ namespace nx
     }
     void BlueprintWorkspace::drawSequenceEditor(Canvas& c)
     {
-        c.roundRect(100,64,1080,594,8,{0.15f,0.17f,0.20f,1});c.text(*m_font,("SEQUENCER / "+m_document.graphs[m_graph].owner).c_str(),120,78,accent);
+        c.roundRect(100,64,1080,594,8,{0.15f,0.17f,0.20f,1});c.text(*m_font,("SEQUENCER / "+(m_sequenceAsset.empty()?m_document.graphs[m_graph].owner:m_sequenceAsset)).c_str(),120,78,accent);
         const auto button=[&](float x,float y,float w,const char* label){c.roundRect(x,y,w,33,4,{0.20f,0.32f,0.45f,1});c.text(*m_font,label,x+w/2,y+7,text,Align::Center);};
         button(120,115,110,m_sequencePlaying?"Pause":"Play");button(240,115,110,"Rewind");button(360,115,140,"+ Camera key");button(510,115,140,"Delete key");button(660,115,160,m_sequenceKeys[m_sequenceKey].cut?"Cut":"Interpolate");
         const float duration=m_sequenceKeys.back().time;
@@ -4620,6 +4680,7 @@ namespace nx
         for(size_t i=1;i<m_sequenceKeys.size();++i){const auto& a=m_sequenceKeys[i-1];const auto& b=m_sequenceKeys[i];if(!b.cut)c.line(px(a.from[0]),pz(a.from[2]),px(b.from[0]),pz(b.from[2]),2,accent);}
         const auto sample=blueprintCameraSample(m_sequenceKeys,m_sequenceTime);c.line(px(sample.from[0]),pz(sample.from[2]),px(sample.to[0]),pz(sample.to[2]),2,{1,0.75f,0.25f,1});c.circle(px(sample.from[0]),pz(sample.from[2]),5,accent);c.circle(px(sample.to[0]),pz(sample.to[2]),4,{1,0.75f,0.25f,1});
         c.text(*m_font,"Camera  /  Target",800,470,text);c.text(*m_font,"Play in Redux to view the scene.",800,500,muted);
+        if(m_sequenceAsset.empty())button(800,540,350,"Save as reusable sequence");
         c.clip(120,582,1040,25);c.text(*m_font,m_status.c_str(),120,586,muted);c.noClip();
         c.text(*m_font,"Enter = Apply (field first) | Escape = Cancel",120,620,muted);button(910,610,120,"Apply");button(1040,610,120,"Cancel");
     }
@@ -4763,6 +4824,7 @@ namespace nx
             if(m_browsing){if(m_projectCreate){m_projectCreate=0;m_projectName.clear();input.setTyping(false);}else{m_browsing=false;m_status="Project browser closed.";}return;}
             if(m_rgbOpen){m_rgbOpen=false;return;}
             if(m_moveWire!=static_cast<size_t>(-1)){m_moveWire=static_cast<size_t>(-1);m_status="Connection move cancelled.";return;}
+            if(m_focus==22&&m_sceneNaming){m_sceneNaming=false;input.setTyping(false);return;}
             if(m_focus){m_focus=0;input.setTyping(false);m_status="Input cancelled.";return;}
             if(m_marquee){m_marquee=false;m_selectedNodes.clear();m_selection=static_cast<size_t>(-1);m_left=input.raw().mouseButtons[0];return;}
             if(m_minimapDragging){m_minimapDragging=false;return;}
@@ -4841,6 +4903,7 @@ namespace nx
             if(updateContentDrawer(s,x,y,left,click)||updateGraphTabs(s,x,y,click)||updateGraphMap(x,y,left,click)){m_left=left;return;}
         }
         if(modalOpen()){x-=modalX();y-=modalY();}
+        if(m_focus==22){updateSceneBrowser(s,x,y,click);m_left=left;return;}
         if(m_focus==21){updateSequenceEditor(s,x,y,left,click);m_left=left;return;}
         if(m_focus==20){const auto results=findResults();if(click&&!in(x,y,220,100,1060,620)){m_focus=0;input.setTyping(false);m_left=left;return;}if(input.wheel()<0&&m_findFirst+10<results.size())++m_findFirst;if(input.wheel()>0&&m_findFirst)--m_findFirst;if(click&&in(x,y,240,190,1040,570)){const auto at=m_findFirst+static_cast<size_t>((y-190)/38);if(at<results.size()){openFindResult(results[at],input);m_left=left;return;}}for(u32 i=0;i<input.typedCount();++i){const auto ch=input.typed(i);if(ch==13){if(!results.empty())openFindResult(results[std::min(m_findFirst,results.size()-1)],input);break;}if(ch==8&&!m_findText.empty())m_findText.pop_back();else if(ch>=32)appendCharacter(m_findText,ch,128);m_findFirst=0;}m_left=left;return;}
         else if(!m_focus&&!m_layoutDragging&&!m_layoutMenu&&!m_pinMenu&&!m_pinDrag&&!m_drag&&!m_quickDrag&&!m_quickMenu&&resizePanels(x,y,left,click,false)){m_left=left;return;}
@@ -5540,13 +5603,14 @@ namespace nx
             if(((pressed&4u)||(click&&in(x,y,954,39,1038,69)))&&m_document.redo()){selectGraph(std::min(m_graph,m_document.graphs.size()-1));m_status="Redid graph change.";}
             if(click&&in(x,y,1044,39,1128,69))fitGraph();
         }
+        if(!m_graphHideLeft&&click&&in(x,y,kLeft-82,kNavTop-29,kLeft-4,kNavTop-2)){openSceneBrowser(input);m_left=left;return;}
         if(!m_graphHideLeft&&in(x,y,0,kTop,kLeft,kNavTop-30))
         {
             const auto components=componentNavigation();const size_t count=3;
             m_componentNavFirst=std::min(m_componentNavFirst,components.size()>count?components.size()-count:0);
             if(input.wheel()<0&&m_componentNavFirst+count<components.size())++m_componentNavFirst;
             if(input.wheel()>0&&m_componentNavFirst)--m_componentNavFirst;
-            if(click&&in(x,y,kLeft-76,kTop+2,kLeft-4,kTop+26)){m_assetBrowser=true;m_assetLibrary=true;m_left=left;return;}
+            if(click&&in(x,y,kLeft-76,kTop+2,kLeft-4,kTop+26)){browseAssets(s);m_assetLibrary=true;m_left=left;return;}
             if(click&&y>=kTop+30){const auto index=m_componentNavFirst+static_cast<size_t>((y-kTop-30)/29);if(index<components.size()&&index<m_componentNavFirst+count){const auto item=components[index];openActorViewport(item.id);if(item.index!=static_cast<size_t>(-1)){m_visualComponent=item.index;m_visualComponentFirst=item.index>2?item.index-2:0;}}m_left=left;return;}
         }
         if(!m_graphHideLeft&&click&&in(x,y,0,kBottom-66,kLeft/3.f,kBottom-36))
@@ -6131,7 +6195,7 @@ namespace nx
         const auto components=componentNavigation();const auto componentFirst=std::min(m_componentNavFirst,components.size()>3?components.size()-3:0);
         for(size_t i=0;i<3&&componentFirst+i<components.size();++i){const auto& item=components[componentFirst+i];const float yy=kTop+30.f+29.f*static_cast<float>(i);const float indent=10.f+12.f*static_cast<float>(std::min(item.depth,5u));c.rect(5,yy,kLeft-10,26,{0.20f,0.23f,0.27f,1});c.roundLine(indent,yy+7,10,10,2,1,accent);c.clip(indent+16,yy,kLeft-indent-21,26);c.text(*m_font,item.label.c_str(),indent+16,yy+5,text);c.noClip();}
         if(components.empty())c.text(*m_font,"No associated actor components",10,kTop+42,muted);
-        c.rect(0,kNavTop-30,kLeft,28,{0.13f,0.15f,0.18f,1});c.text(*m_font,"MY BLUEPRINT",10,kNavTop-24,accent);
+        c.rect(0,kNavTop-30,kLeft,28,{0.13f,0.15f,0.18f,1});c.text(*m_font,"MY BLUEPRINT",10,kNavTop-24,accent);c.roundRect(kLeft-82,kNavTop-28,78,24,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Scenes",kLeft-43,kNavTop-24,text,Align::Center);
         const auto navigation=navigationRows();
         const size_t navFirst=m_graphTree?std::min(m_navigationFirst,navigation.size()>kRows?navigation.size()-kRows:0):m_first;
         for(size_t row=0;row<kRows&&navFirst+row<navigation.size();++row)
@@ -6337,6 +6401,7 @@ namespace nx
                 c.text(*m_font,("Active: "+m_document.name+(m_document.dirty()?"  /  Unsaved changes":"")).c_str(),28,638,accent);
                 c.clip(28,665,1220,40);c.text(*m_font,m_status.c_str(),28,673,text);c.noClip();
             }
+            else if(m_focus==22)drawSceneBrowser(c);
             else if(m_focus==21)drawSequenceEditor(c);
             else if(m_focus==20){c.roundRect(220,100,840,520,8,{0.16f,0.18f,0.22f,1});c.text(*m_font,"FIND IN BLUEPRINT",240,115,accent);c.roundRect(240,145,800,36,4,{0.24f,0.35f,0.48f,1});c.text(*m_font,m_findText.empty()?"Search nodes, functions, comments and values...":m_findText.c_str(),250,152,text);const auto results=findResults();for(size_t i=0;i<10&&m_findFirst+i<results.size();++i){const float yy=190.f+38.f*static_cast<float>(i);c.rect(240,yy,800,34,{0.22f,0.25f,0.3f,1});c.clip(250,yy,780,34);c.text(*m_font,results[m_findFirst+i].label.c_str(),250,yy+7,text);c.noClip();}c.text(*m_font,(std::to_string(results.size())+" results | Enter = Open | Escape = Close").c_str(),240,585,muted);}
             else if(m_focus==18)drawJointEditor(c);
