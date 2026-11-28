@@ -2,7 +2,7 @@ name: Verify upstream integration
 on:
   workflow_dispatch:
   push:
-    branches: ["blueprint/integration-17ee0d3"]
+    branches: ["blueprint/integration-d77c22e"]
     paths: [".github/workflows/blueprint-upstream-sync.yml"]
 permissions:
   contents: read
@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   refresh:
-    if: github.repository == 'TroJanVirus/NexgenRedux-BlueprintStudio' && github.ref == 'refs/heads/blueprint/integration-17ee0d3'
+    if: github.repository == 'TroJanVirus/NexgenRedux-BlueprintStudio' && github.ref == 'refs/heads/blueprint/integration-d77c22e'
     runs-on: ubuntu-latest
     timeout-minutes: 12
     permissions:
@@ -51,7 +51,7 @@ jobs:
           node - <<'JS'
           const assert = require('node:assert/strict');
           const nodes = require('./engine/tools/blueprint/catalog.js').nodes;
-          for (const id of ['api:Thread:Thread:string','api:Channel:Channel:string','api:Channel:pop:Channel@:string out','api:Window:Window::resize:uint,uint','api:System:System::get_processors:','api:Samples:Samples:uint,uint,uint','api:AudioStream:AudioStream:uint,uint,float']) assert(nodes.some(n => n.id === id), id);
+          for (const id of ['api:Curve:Curve:','api:Curve:at:Curve@,float','api:Curve:triangulate:array<Vec2>@','api:Batch:Batch:','api:Packed:Packed:','api:Zip:Zip:','api:Vec2:rotated:Vec2,float','api:Data:Data::crc32:string','api:Thread:Thread:string','api:Channel:Channel:string','api:Channel:pop:Channel@:string out','api:Window:Window::resize:uint,uint','api:System:System::get_processors:','api:Samples:Samples:uint,uint,uint','api:AudioStream:AudioStream:uint,uint,float']) assert(nodes.some(n => n.id === id), id);
           for (const call of ['wait','demand','Worker::sleep']) assert(!nodes.some(n => ['Thread','Channel'].includes(n.category) && n.call === call), call);
           JS
           git diff --check
@@ -60,7 +60,7 @@ jobs:
           git diff --quiet
           if ! git diff --cached --quiet; then
             git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m "Regenerate Blueprint catalogues and fixtures after upstream integration"
-            git push origin HEAD:refs/heads/blueprint/integration-17ee0d3
+            git push origin HEAD:refs/heads/blueprint/integration-d77c22e
           fi
           echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
   verify:

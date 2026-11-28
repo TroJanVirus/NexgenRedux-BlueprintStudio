@@ -67,7 +67,7 @@ namespace nx
                     for(unsigned char c:value)if(c<32&&c!='\n'&&c!='\r'&&c!='\t')return fail(node,"Unsupported control character in string.");
                     result=quote(value);
                 }
-                else if(type=="bool"||type=="Bus")result=value;
+                else if(type=="bool"||type=="Bus"||type=="Align")result=value;
                 else if(type=="int"||type=="uint")
                 {
                     const bool negative=!value.empty()&&value.front()=='-';

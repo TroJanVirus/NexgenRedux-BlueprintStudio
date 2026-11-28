@@ -225,7 +225,7 @@ namespace nx
         bool typeNode(const std::string& kind){return kind.rfind("data:",0)==0;}
         bool listenerNode(const std::string& kind){return kind=="dispatch:bind-listener"||kind=="dispatch:unbind-listener";}
         bool signatureType(const std::string& type)
-        {return blueprintLiteralType(type)||type=="Vec2"||type=="Vec3"||type=="Color"||type=="Entity@"||type=="Playlist@"||type=="WebSocket@"||type=="Widget@"||type=="Thread@"||type=="Channel@"||type=="Samples@"||type=="AudioStream@"||type=="Voice"||type=="Sound@"||type=="Canvas@"||customTypeName(type)||classTypeName(type);}
+        {return blueprintLiteralType(type)||type=="Vec2"||type=="Vec3"||type=="Color"||type=="Entity@"||type=="Playlist@"||type=="WebSocket@"||type=="Widget@"||type=="Thread@"||type=="Channel@"||type=="Samples@"||type=="AudioStream@"||type=="Voice"||type=="Sound@"||type=="Curve@"||type=="Batch@"||type=="Packed@"||type=="Zip@"||type=="Font@"||type=="Texture@"||type=="Canvas@"||customTypeName(type)||classTypeName(type);}
         bool validSignature(const std::vector<BlueprintPin>& parameters,const std::string& result)
         {
             if(parameters.size()>8||(result!="void"&&!signatureType(result)))return false;
@@ -252,6 +252,7 @@ namespace nx
         bool inputLiteral(const std::string& type,const std::string& value)
         {
             if(type=="Bus")return value=="BusEffects"||value=="BusMusic"||value=="BusInterface";
+            if(type=="Align")return value=="AlignLeft"||value=="AlignCenter"||value=="AlignRight"||value=="AlignJustify";
             if(blueprintLiteralType(type))return literal("literal:"+type,value);
             std::vector<std::string> components;return blueprintInputComponents(type,value,components);
         }
@@ -295,7 +296,7 @@ namespace nx
         if(type=="Color")return {"R","G","B","A"};
         return {};
     }
-    bool blueprintInputLiteralType(const std::string& type){return type=="Bus"||blueprintLiteralType(type)||!blueprintInputComponentLabels(type).empty();}
+    bool blueprintInputLiteralType(const std::string& type){return type=="Bus"||type=="Align"||blueprintLiteralType(type)||!blueprintInputComponentLabels(type).empty();}
     bool blueprintInputComponents(const std::string& type,const std::string& value,std::vector<std::string>& components)
     {
         const auto labels=blueprintInputComponentLabels(type);
@@ -322,7 +323,7 @@ namespace nx
         const auto element=type.substr(6,type.size()-7);
         return element=="int"||element=="uint"||element=="float"||element=="bool"||element=="string"||element=="Vec2"||element=="Color"?element:"";
     }
-    bool blueprintVariableType(const std::string& type){return blueprintLiteralType(type)||!blueprintArrayElement(type).empty()||type=="Playlist@"||type=="WebSocket@"||type=="Widget@"||type=="Thread@"||type=="Channel@"||type=="Samples@"||type=="AudioStream@"||type=="Voice"||type=="Sound@"||type=="BP_MapInt"||type=="BP_MapString"||type=="BP_SetInt"||type=="BP_SetString"||customTypeName(type)||classTypeName(type);}
+    bool blueprintVariableType(const std::string& type){return blueprintLiteralType(type)||!blueprintArrayElement(type).empty()||type=="Playlist@"||type=="WebSocket@"||type=="Widget@"||type=="Thread@"||type=="Channel@"||type=="Samples@"||type=="AudioStream@"||type=="Voice"||type=="Sound@"||type=="Curve@"||type=="Batch@"||type=="Packed@"||type=="Zip@"||type=="Font@"||type=="Texture@"||type=="BP_MapInt"||type=="BP_MapString"||type=="BP_SetInt"||type=="BP_SetString"||customTypeName(type)||classTypeName(type);}
     bool blueprintLosslessConversion(const std::string& from,const std::string& to)
     {return arrayBorrow(from,to)||(to=="double"&&(from=="int"||from=="uint"||from=="float"));}
     bool blueprintInvokesFunction(const std::string& kind)
@@ -2572,7 +2573,7 @@ namespace nx
             std::vector<BlueprintPin> vars;
             if(typedGlobal(kind)){for(const auto& f:moduleGlobals(g.owner))vars.push_back({f.name,f.type});}
             else if(!variables(vars,error,g.owner))return false;
-            const auto it=std::find_if(vars.begin(),vars.end(),[&](const BlueprintPin& p){return (functionTarget.empty()||p.name==functionTarget)&&(customTypeName(p.type)||classTypeName(p.type)||p.type=="Thread@"||p.type=="Channel@"||p.type=="Samples@"||p.type=="AudioStream@"||p.type=="Voice"||p.type=="Sound@");});
+            const auto it=std::find_if(vars.begin(),vars.end(),[&](const BlueprintPin& p){return (functionTarget.empty()||p.name==functionTarget)&&(customTypeName(p.type)||classTypeName(p.type)||p.type=="Thread@"||p.type=="Channel@"||p.type=="Samples@"||p.type=="AudioStream@"||p.type=="Voice"||p.type=="Sound@"||p.type=="Curve@"||p.type=="Batch@"||p.type=="Packed@"||p.type=="Zip@"||p.type=="Font@"||p.type=="Texture@");});
             if(it==vars.end()){error="Declare a custom typed variable first.";return false;}value=it->name;
         }
         if(typeNode(kind))
@@ -2680,7 +2681,7 @@ namespace nx
             for(const auto& f:vars)if(f.name==variableName){type=f.type;break;}
         }
         if(setter&&!blueprintArrayElement(type).empty()){error="Use array element operations rather than whole-array assignment.";return false;}
-        const auto kind=(customTypeName(type)||classTypeName(type)||type=="Thread@"||type=="Channel@"||type=="Samples@"||type=="AudioStream@"||type=="Voice"||type=="Sound@")?std::string(global?"typed:global:":"typed:field:")+(setter?"set":"get"):std::string(global?"global:":"var:")+(setter?"set:":"get:")+type;
+        const auto kind=(customTypeName(type)||classTypeName(type)||type=="Thread@"||type=="Channel@"||type=="Samples@"||type=="AudioStream@"||type=="Voice"||type=="Sound@"||type=="Curve@"||type=="Batch@"||type=="Packed@"||type=="Zip@"||type=="Font@"||type=="Texture@")?std::string(global?"typed:global:":"typed:field:")+(setter?"set":"get"):std::string(global?"global:":"var:")+(setter?"set:":"get:")+type;
         if(type.empty()||!blueprintSpec(kind)||!context(g.name,kind,g.owner)){error="Variable is not available in this graph.";return false;}
         std::string id;do{id="n"+std::to_string(++m_nextId);}while(std::any_of(g.nodes.begin(),g.nodes.end(),[&](const Node& n){return n.id==id;}));
         record(graph);g.nodes.push_back({id,kind,variableName,x,y});error.clear();return true;
@@ -3139,7 +3140,7 @@ namespace nx
             std::vector<BlueprintPin> vars;std::string why;
             if(typedGlobal(node.kind)){for(const auto& f:moduleGlobals(graph.owner))vars.push_back({f.name,f.type});}
             else if(!variables(vars,why,graph.owner))return false;
-            const auto p=std::find_if(vars.begin(),vars.end(),[&](const BlueprintPin& v){return v.name==node.ref&&(customTypeName(v.type)||classTypeName(v.type)||v.type=="Thread@"||v.type=="Channel@"||v.type=="Samples@"||v.type=="AudioStream@"||v.type=="Voice"||v.type=="Sound@");});
+            const auto p=std::find_if(vars.begin(),vars.end(),[&](const BlueprintPin& v){return v.name==node.ref&&(customTypeName(v.type)||classTypeName(v.type)||v.type=="Thread@"||v.type=="Channel@"||v.type=="Samples@"||v.type=="AudioStream@"||v.type=="Voice"||v.type=="Sound@"||v.type=="Curve@"||v.type=="Batch@"||v.type=="Packed@"||v.type=="Zip@"||v.type=="Font@"||v.type=="Texture@");});
             if(p==vars.end())return false;
             if(node.kind.ends_with(":set"))spec.inputs.push_back({"value",p->type});
             else {spec.outputs={{"value",p->type}};spec.pure=true;spec.result=p->type;}
