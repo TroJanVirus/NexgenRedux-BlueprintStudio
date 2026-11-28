@@ -5,7 +5,7 @@ from unittest.mock import patch, MagicMock
 import io
 import json
 import shutil
-from deploy_xbox import fatx_component, remote_folder, tree_entries, overlay, prepare, run_request, upload_new
+from deploy_xbox import fatx_component, remote_folder, tree_entries, overlay, prepare, run_request, upload_new, plan_update, upload_update, IDENTITY_FILES
 
 class DeploymentTests(unittest.TestCase):
     def test_path_constraints(self):
@@ -100,6 +100,43 @@ class DeploymentTests(unittest.TestCase):
                     upload_new(title,"192.168.1.50",21,"xbox","test","/E/Games/Test")
             connection.mkd.assert_not_called()
             connection.storbinary.assert_not_called()
+
+    def test_incremental_plan_and_verified_transfer(self):
+        with tempfile.TemporaryDirectory() as temp:
+            previous, fresh = Path(temp)/"old", Path(temp)/"new"
+            for root, code in ((previous,"old"), (fresh,"new")):
+                (root/"media/showcase/Screen").mkdir(parents=True)
+                (root/"default.xbe").write_bytes(b"same-runtime")
+                (root/"media/showcase/Screen/main.as").write_text(code)
+                for name in IDENTITY_FILES:
+                    (root/name).write_text(("a" if root == previous else "b")*32)
+            self.assertEqual([c[0] for c in plan_update(previous,fresh)],
+                             ["media/showcase/Screen/main.as"])
+            destination = "/E/Games/Test"
+            files = {destination+"/"+p.relative_to(previous).as_posix():p.read_bytes()
+                     for p in previous.rglob("*") if p.is_file()}
+            connection=MagicMock()
+            connection.__enter__.return_value=connection
+            connection.retrbinary.side_effect=lambda command, callback: callback(files[command[5:]])
+            connection.storbinary.side_effect=lambda command, stream: files.__setitem__(command[5:],stream.read())
+            def rename(source,target):
+                assert target not in files
+                files[target]=files.pop(source)
+            connection.rename.side_effect=rename
+            connection.delete.side_effect=lambda path: files.pop(path)
+            with patch("deploy_xbox.ftplib.FTP", return_value=connection):
+                self.assertEqual(upload_update(previous,fresh,"192.168.1.50",21,"xbox","test",destination),1)
+            self.assertEqual(files[destination+"/media/showcase/Screen/main.as"],b"new")
+            self.assertEqual(connection.storbinary.call_count,1)
+            self.assertFalse(any(".bak" in p or ".tmp" in p for p in files))
+            self.assertEqual((fresh/IDENTITY_FILES[0]).read_text(),"a"*32)
+            (fresh/"default.xbe").write_bytes(b"changed")
+            with self.assertRaisesRegex(ValueError,"Runtime"):
+                plan_update(previous,fresh)
+            (fresh/"default.xbe").write_bytes(b"same-runtime")
+            (fresh/"media/showcase/Screen/new.as").write_text("added")
+            with self.assertRaisesRegex(ValueError,"added/removed"):
+                plan_update(previous,fresh)
 
 if __name__ == "__main__":
     unittest.main()

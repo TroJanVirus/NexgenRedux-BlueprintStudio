@@ -11,6 +11,8 @@ import shutil
 import subprocess
 import tempfile
 import sys
+import hashlib
+import secrets
 
 INVALID_FATX = set('"+,/:;<=>?[]\\|*')
 
@@ -112,6 +114,8 @@ def prepare(export, runtime, output, cooker, start, development):
         if development:
             (media / "debug").mkdir()
             (media / "dev").mkdir()
+            (media / "studio-install.id").write_text(secrets.token_hex(16), encoding="ascii")
+            (media / "studio-launch.key").write_text(secrets.token_hex(16), encoding="ascii")
         tree_entries(title)
         # The staging folder is on the same filesystem. Never overwrite an
         # existing requested output or reuse an incomplete previous build.
@@ -171,6 +175,102 @@ def upload_new(title, host, port, user, password, destination):
             raise
 
 
+IDENTITY_FILES = ("media/studio-install.id", "media/studio-launch.key")
+
+
+def digest_file(path):
+    h = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(65536), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
+def remote_digest(ftp, path):
+    h = hashlib.sha256()
+    ftp.retrbinary("RETR " + path, h.update)
+    return h.hexdigest()
+
+
+def plan_update(previous, fresh):
+    """Only replace existing project media. A changed executable or layout needs a new install."""
+    previous, fresh = Path(previous), Path(fresh)
+    if not previous.is_dir() or not fresh.is_dir():
+        raise ValueError("Both prepared titles must exist.")
+    old = {r.as_posix(): (p, p.is_dir()) for p, r in tree_entries(previous)}
+    new = {r.as_posix(): (p, p.is_dir()) for p, r in tree_entries(fresh)}
+    if old.keys() != new.keys() or any(old[k][1] != new[k][1] for k in old):
+        raise ValueError("Files or folders were added/removed. Install a new title instead.")
+    changes = []
+    for name in sorted(old):
+        if old[name][1] or name in IDENTITY_FILES:
+            continue
+        before, after = digest_file(old[name][0]), digest_file(new[name][0])
+        if before == after:
+            continue
+        if not name.startswith(("media/showcase/", "media/global/")):
+            raise ValueError("Runtime or startup configuration changed. Install a new title.")
+        changes.append((name, old[name][0], new[name][0], before, after))
+    for name in IDENTITY_FILES:
+        for root in (previous, fresh):
+            if not re.fullmatch(r"[0-9a-f]{32}", (root / name).read_text(encoding="ascii")):
+                raise ValueError("Missing development title identity; install a new title.")
+    return changes
+
+
+def upload_update(previous, fresh, host, port, user, password, destination):
+    """Dashboard-only update: stage and verify, then swap existing files.
+    On interruption, leave recovery copies rather than guessing remote state.
+    """
+    destination = remote_folder(destination)
+    changes = plan_update(previous, fresh)
+    token = secrets.token_hex(12)
+    staged = []
+    with ftplib.FTP() as ftp:
+        ftp.connect(host, port, timeout=15)
+        ftp.login(user, password)
+        ftp.set_pasv(True)
+        for name in IDENTITY_FILES:
+            if remote_digest(ftp, destination + "/" + name) != digest_file(previous / name):
+                raise ValueError("Remote title identity differs from the last successful install.")
+        # Verify all old files to be replaced before making any remote change.
+        for name, _, _, before, _ in changes:
+            if remote_digest(ftp, destination + "/" + name) != before:
+                raise ValueError("Remote file was changed outside Studio: " + name)
+        try:
+            for index, (name, _, local, _, after) in enumerate(changes):
+                target = destination + "/" + name
+                parent = target.rsplit("/", 1)[0]
+                temporary = parent + "/bp-" + token + "-" + str(index) + ".tmp"
+                backup = parent + "/bp-" + token + "-" + str(index) + ".bak"
+                if max(len(target), len(temporary), len(backup)) > 240:
+                    raise ValueError("Remote update path is too long: " + name)
+                # Random per-operation names are not reused, and both transfers
+                # and swaps occur only after the user has exited the title.
+                with local.open("rb") as stream:
+                    ftp.storbinary("STOR " + temporary, stream)
+                if remote_digest(ftp, temporary) != after:
+                    raise RuntimeError("Staged file verification failed: " + name)
+                staged.append((target, temporary, backup, after))
+            for target, temporary, backup, after in staged:
+                ftp.rename(target, backup)
+                ftp.rename(temporary, target)
+                if remote_digest(ftp, target) != after:
+                    raise RuntimeError("Installed file verification failed: " + target)
+            # Keep backups until every changed file is verified. Do not
+            # blindly overwrite or remove anything after an ambiguous failure.
+            for _, _, backup, _ in staged:
+                ftp.delete(backup)
+        except Exception as error:
+            raise RuntimeError("Update incomplete; do not launch. Recovery files may remain "
+                               "(bp-" + token + "-*.bak/.tmp). Install a fresh title or recover manually. "
+                               + str(error)) from error
+    # Retain the original identity in the newly cooked local baseline.
+    for name in IDENTITY_FILES:
+        shutil.copyfile(previous / name, fresh / name)
+    return len(changes)
+
+
 def run_request(request_file):
     """Studio sends public settings via JSON, FTP password only via stdin."""
     path = Path(request_file)
@@ -193,6 +293,11 @@ def run_request(request_file):
                 Path(options["cook"]), options["start"], True)
         if host:
             try:
+                if options.get("previous"):
+                    count = upload_update(Path(options["previous"]), Path(options["output"]),
+                                          host, 21, options["user"], password, destination)
+                    report(True, f"Updated {count} existing files; launch the title from the dashboard.")
+                    return 0
                 upload_new(Path(options["output"]), host, 21, options["user"], password, destination)
             except Exception as error:
                 raise RuntimeError("FTP did not complete; do not launch the remote title. " + str(error)) from error

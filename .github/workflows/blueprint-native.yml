@@ -111,7 +111,7 @@ jobs:
           build/showcase/nexgen --screen hub --null --frames 120 --saves "$RUNNER_TEMP/bp-hub"
           xvfb-run -a -s "-screen 0 1280x720x24 -noreset" build/showcase/nexgen --screen channels --hidden --silent --frames 120 --saves "$RUNNER_TEMP/bp-channels"
       - name: Run native document and engine tests
-        run: ctest --test-dir build --output-on-failure --timeout 300 -R '^(blueprint_runtime|blueprint_native_document|blueprint_platform_files|blueprint_debugger|blueprint_remote_trace)
+        run: ctest --test-dir build --output-on-failure --timeout 300 -R '^(blueprint_runtime|blueprint_native_document|blueprint_platform_files|blueprint_debugger|blueprint_remote_trace)$'
       - name: Start editor with null GPU
         if: ${{ !cancelled() }}
         run: build/showcase/nexgen --blueprint-studio --null --frames 180 --saves "$RUNNER_TEMP/bp-null-saves"
