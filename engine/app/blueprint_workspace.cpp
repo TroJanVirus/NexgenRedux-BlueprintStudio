@@ -1,4 +1,5 @@
 #include <cstdlib>
+#include <angelscript.h>
 #include "app/blueprint_workspace.h"
 #include "tools/blueprint/native_compile.h"
 #include "tools/blueprint/native_assets.h"
@@ -908,6 +909,84 @@ namespace nx
         if(m_placementWorld){destroy(m_placementWorld);m_placementWorld=nullptr;}
         m_placementReady=false;m_placementRevision=static_cast<size_t>(-1);m_placementScreen.clear();m_actorPreviewId.clear();m_actorPreviewRoot=0;
     }
+    void BlueprintWorkspace::runConstructionPreview(Services& s,const std::string& owner,const std::string& id,const std::string& actorJson,const std::string& folder)
+    {
+        m_actorConstructionApplied=false;m_actorConstructionStatus.clear();
+        const auto classOwner=m_document.actorBehaviour(id);
+        const auto* graph=m_document.function(classOwner,"Construction");
+        if(!graph){m_actorConstructionStatus="No Construction graph.";return;}
+        if(graph->returnType!="void"||!graph->parameters.empty()||graph->inlineMacro)
+        {m_actorConstructionStatus="Construction must be a parameterless void function.";return;}
+        // Fail closed. Only the native, synchronous geometry/value subset is
+        // editor-executable. Runtime-only calls, arbitrary APIs, external
+        // services, callbacks, globals and other graph calls are excluded.
+        const auto permitted=[](const BlueprintDocument::Node& node)
+        {
+            const auto& k=node.kind;
+            for(const char* exact:{"entry","event:entity","actor:component","actor:valid","null:entity",
+                "branch","sequence","repeat","make:Vec2","make:Vec3","make:Color",
+                "api:Entity:get_place:Entity@","api:Entity:get_angles:Entity@","api:Entity:get_size:Entity@",
+                "api:Entity:get_name:Entity@","api:Entity:set_place:Entity@,Vec3",
+                "api:Entity:set_angles:Entity@,Vec3","api:Entity:set_size:Entity@,Vec3",
+                "api:Entity:set_color:Entity@,Color","api:Entity:set_name:Entity@,string",
+                "api:Entity:shape:Entity@,Solid,Color"})
+                if(k==exact)return true;
+            if(k.rfind("literal:",0)==0||k.rfind("var:get:",0)==0||k.rfind("var:set:",0)==0||
+               k.rfind("capture:",0)==0)return true;
+            const auto* spec=blueprintSpec(k);
+            return spec&&!spec->operation.empty();
+        };
+        for(const auto& node:graph->nodes)if(!permitted(node))
+        {m_actorConstructionStatus="Runtime-only node: "+node.kind;return;}
+        std::string source,why;
+        if(!compileBlueprintOwner(m_document,owner,source,why))
+        {m_actorConstructionStatus="Construction preview compile: "+why;return;}
+        JsonTree tree;if(!tree.parse(actorJson.data(),actorJson.size()))return;
+        World* candidate=create<World>(MemTag::Scene,*s.assets,*s.host,"blueprint-construct",4096,0);
+        if(!candidate){m_actorConstructionStatus="Construction preview allocation failed.";return;}
+        candidate->space().init(s.solids);
+        const u32 root=candidate->space().makeActor(tree.root(),folder.c_str(),{0,0,0});
+        if(!root){destroy(candidate);m_actorConstructionStatus="Construction actor creation failed.";return;}
+        // This object is deliberately never installed as a world Behaviour:
+        // no start/update/onGone callbacks execute, including on destruction.
+        // Its entity property points only to the isolated candidate world.
+        constexpr const char* module="blueprint-construct";
+        auto* oldWorld=s.world;s.world=candidate;
+        const bool compiled=s.host->compile(module,"construction.as",source.data(),source.size());
+        bool ok=false;
+        if(compiled)
+        {
+            const std::string name="BP_Behaviour_"+classOwner.substr(10);
+            auto* type=s.host->findType(module,name.c_str());
+            auto* object=type?s.host->create(type):nullptr;
+            if(object)
+            {
+                for(asUINT i=0;i<type->GetPropertyCount();++i)
+                {
+                    const char* property=nullptr;type->GetProperty(i,&property);
+                    if(!property||std::strcmp(property,"entity")!=0)continue;
+                    auto** target=static_cast<EntityRef**>(object->GetAddressOfProperty(i));
+                    if(*target)(*target)->release();
+                    *target=candidate->ref(root);
+                    auto* method=type->GetMethodByDecl("void bp_fn_Construction()");
+                    if(*target&&method)ok=s.host->callMethod(object,method);
+                    break;
+                }
+                s.host->release(object);
+            }
+        }
+        s.host->discard(module);s.world=oldWorld;
+        if(!ok)
+        {
+            destroy(candidate);m_actorConstructionStatus="Construction preview failed; showing authored defaults.";
+            NX_ERROR("Blueprint Studio: isolated Construction preview failed: %s",id.c_str());return;
+        }
+        candidate->eachEntity([&](u32 entity,const World::Entity&){candidate->space().transform(entity&0xffffu);});
+        destroy(m_placementWorld);m_placementWorld=candidate;m_actorPreviewRoot=root;
+        m_actorConstructionApplied=true;m_actorConstructionStatus="Construction preview applied (not saved).";
+        NX_INFO("Blueprint Studio: isolated Construction preview ready: %s",id.c_str());
+    }
+
     void BlueprintWorkspace::refreshPlacementPreview(Services& s)
     {
         const bool classPreview=m_actorEditor&&m_assetBrowser&&m_assetLibrary;
@@ -932,6 +1011,8 @@ namespace nx
                     for(const char* field:{"behaviour","sound","camera","group","hits","onLand","mass","friction","bounce","gravity","drag","walker","animate"})entities->at(i)->remove(field);
                 json=root.write(true);JsonTree tree;
                 if(tree.parse(json.data(),json.size()))m_actorPreviewRoot=space.makeActor(tree.root(),folder.c_str(),{0,0,0});
+                m_actorConstructionApplied=false;m_actorConstructionStatus.clear();
+                if(m_actorPreviewRoot&&m_actorConstructionPreview)runConstructionPreview(s,owner,previewId,json,folder);
             }
             m_placementOmitted=m_actorPreviewRoot?0u:1u;
             if(m_actorPreviewRoot)NX_INFO("Blueprint Studio: Actor class preview ready: %s",previewId.c_str());
@@ -2125,6 +2206,13 @@ namespace nx
             m_actorDetailsScroll=std::clamp(m_actorDetailsScroll-input.wheel()*40.f,0.f,std::max(0.f,full-(kBottom-88)));return;
         }
         if(!click)return;
+        if(in(x,y,kWidth-244,5,kWidth-8,34))
+        {
+            m_actorConstructionPreview=!m_actorConstructionPreview;
+            releasePlacementPreview();
+            m_status=m_actorConstructionPreview?"Rebuilding isolated Construction preview.":"Showing authored actor defaults.";
+            return;
+        }
         if(in(x,y,kLeft,kTop+44,right,kBottom))
         {
             int picked=-1;float best=10.f,pickedDx=0,pickedDy=0;
@@ -2150,6 +2238,7 @@ namespace nx
             }
             if(picked>=0)
             {
+                if(m_actorConstructionApplied){m_status="Turn off Construction preview before dragging authored transforms.";return;}
                 const auto item=entries[static_cast<u32>(m_visualComponent)];
                 const char* prop=m_actorMode==0?"place":m_actorMode==1?"angles":"size";
                 std::vector<std::string> values;
@@ -2253,7 +2342,13 @@ namespace nx
         if(!selected)return;
         const auto button=[&](float x,float y,float w,const char* label)
         {c.rect(x,y,w,30,{0.24f,0.24f,0.26f,1});c.text(*m_font,label,x+w*0.5f,y+6,text,Align::Center);};
-        c.text(*m_font,("BLUEPRINT CLASS / "+selected->title+(m_document.dirty()?" *":"")).c_str(),12,10,text);
+        c.clip(12,0,kWidth-270,38);
+        c.text(*m_font,("BLUEPRINT CLASS / "+selected->title+(m_document.dirty()?" *":"")).c_str(),12,10,text);c.noClip();
+        button(kWidth-244,5,236,m_actorConstructionPreview?"Construction preview: ON":"Construction preview: OFF");
+        if(m_actorConstructionPreview&&!m_actorConstructionStatus.empty())
+        {
+            c.clip(12,24,kWidth-270,15);c.text(*m_font,m_actorConstructionStatus.c_str(),12,24,muted);c.noClip();
+        }
         button(12,39,138,"Content");button(158,39,150,"Event graph");button(316,39,150,"Add to screen");button(474,39,136,"Save");
         const float right=kWidth-m_actorRightPanel;
         const float fieldWidth=(m_actorRightPanel-16.f)/3.f;

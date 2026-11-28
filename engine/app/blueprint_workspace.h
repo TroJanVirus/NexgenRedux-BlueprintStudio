@@ -168,6 +168,9 @@ namespace nx
         unsigned m_placementOmitted=0;
         void releasePlacementPreview();
         void refreshPlacementPreview(Services& s);
+        bool m_actorConstructionPreview=false,m_actorConstructionApplied=false;
+        std::string m_actorConstructionStatus;
+        void runConstructionPreview(Services& s,const std::string& owner,const std::string& id,const std::string& actorJson,const std::string& folder);
         bool placementPoint(float x,float y,float height,float& wx,float& wz) const;
         bool placementProject(float wx,float wy,float wz,float& x,float& y) const;
         void updateVisualPlacement(Services& services,float x,float y,bool left,bool click);
