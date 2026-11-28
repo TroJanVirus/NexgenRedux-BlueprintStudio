@@ -3346,7 +3346,7 @@ namespace nx
             for(const auto& n:g.nodes)
             {
                 const auto* spec=blueprintSpec(n.kind);
-                const bool portable=n.kind=="entry"||n.kind=="return:function"||n.kind=="call:library"||n.kind=="branch"||n.kind=="sequence"||n.kind=="repeat"||n.kind.rfind("literal:",0)==0||n.kind.rfind("capture:",0)==0||n.kind.rfind("local:set:",0)==0||n.kind.rfind("make:",0)==0||typeNode(n.kind)||(spec&&!spec->operation.empty());
+                const bool portable=n.kind=="api:Input:Input::key:string"||n.kind=="api:Input:Input::padButton:uint,uint"||n.kind=="entry"||n.kind=="return:function"||n.kind=="call:library"||n.kind=="branch"||n.kind=="sequence"||n.kind=="repeat"||n.kind.rfind("literal:",0)==0||n.kind.rfind("capture:",0)==0||n.kind.rfind("local:set:",0)==0||n.kind.rfind("make:",0)==0||typeNode(n.kind)||(spec&&!spec->operation.empty());
                 if(!portable){error="Shared library "+g.name+" contains a non-portable node: "+n.kind;return false;}
             }
         }
@@ -3588,6 +3588,52 @@ namespace nx
             record(graph);g=next;error.clear();return true;
         }
         return setFunctionSignature(graph,parameters,result,error);
+    }
+    std::vector<BlueprintDocument::InputActionBinding> BlueprintDocument::inputActions() const
+    {
+        std::vector<InputActionBinding> result;
+        for(const auto& g:graphs)
+        {
+            if(!g.sharedLibrary||g.inlineMacro||g.returnType!="bool"||!g.parameters.empty()||g.name.rfind("Input_",0)!=0||g.nodes.size()!=5||g.links.size()!=4)continue;
+            if(g.nodes[0].kind!="entry"||g.nodes[1].kind!="api:Input:Input::key:string"||g.nodes[2].kind!="api:Input:Input::padButton:uint,uint"||g.nodes[3].kind!="or:bool"||g.nodes[4].kind!="return:function")continue;
+            const auto wired=[&](size_t from,const char* out,size_t to,const char* in){return std::any_of(g.links.begin(),g.links.end(),[&](const Link& l){return l.from==from&&l.to==to&&l.output==out&&l.input==in;});};
+            if(!wired(0,"then",4,"in")||!wired(1,"result",3,"a")||!wired(2,"result",3,"b")||!wired(3,"result",4,"value"))continue;
+            InputActionBinding binding;binding.name=g.name.substr(6);std::string button,pad;
+            for(const auto& v:g.nodes[1].values)if(v.pin=="name")binding.key=v.value;
+            for(const auto& v:g.nodes[2].values){if(v.pin=="button")button=v.value;if(v.pin=="pad")pad=v.value;}
+            if(binding.key.empty()||pad!="0")continue;
+            bool valid=false;for(unsigned i=0;i<=14;++i)if(button==std::to_string(i)){binding.button=i;valid=true;break;}
+            if(valid)result.push_back(std::move(binding));
+        }
+        return result;
+    }
+    bool BlueprintDocument::setInputAction(const std::string& action,const std::string& key,unsigned button,std::string& error)
+    {
+        const std::string functionName="Input_"+action;
+        const std::string keys="|None|Up|Down|Left|Right|Space|Enter|Escape|Tab|Backspace|Shift|Control|Alt|";
+        const bool validKey=(key.size()==1&&((key[0]>='A'&&key[0]<='Z')||(key[0]>='0'&&key[0]<='9')))||(!key.empty()&&key.find('|')==std::string::npos&&keys.find("|"+key+"|")!=std::string::npos);
+        if(!identifier(action)||!identifier(functionName)||!validKey||button>14||(key=="None"&&button==14)){error="Enter a valid action identifier and at least one keyboard or controller binding.";return false;}
+        const auto owners=screens();if(owners.empty()){error="Create a scene first.";return false;}
+        BlueprintDocument staged;staged.graphs=graphs;staged.name=name;staged.assetRoot=assetRoot;staged.manifests=manifests;staged.m_visualAssets=m_visualAssets;staged.m_visualSerial=m_visualSerial;staged.m_nextId=m_nextId;
+        size_t g=graphs.size();
+        if(const auto* existing=libraryFunction(functionName))
+        {
+            const auto actions=inputActions();
+            if(std::none_of(actions.begin(),actions.end(),[&](const InputActionBinding& a){return a.name==action;})){error="That shared function is not a managed input action.";return false;}
+            g=static_cast<size_t>(existing-graphs.data());
+        }
+        else
+        {
+            if(!staged.addFunction(functionName,error,owners.front())||!staged.setFunctionSignature(g,{},"bool",error)||
+                !staged.addNode(g,"api:Input:Input::key:string",24,220,error)||!staged.addNode(g,"api:Input:Input::padButton:uint,uint",24,400,error)||
+                !staged.addNode(g,"or:bool",340,220,error)||!staged.addNode(g,"return:function",660,60,error)||
+                !staged.connect(g,0,"then",4,"in",error)||!staged.connect(g,1,"result",3,"a",error)||
+                !staged.connect(g,2,"result",3,"b",error)||!staged.connect(g,3,"result",4,"value",error))return false;
+        }
+        if(!staged.setInputValue(g,1,"name",key,error)||!staged.setInputValue(g,2,"pad","0",error)||
+            !staged.setInputValue(g,2,"button",std::to_string(button),error)||!staged.setSharedLibrary(g,true,error))return false;
+        std::string checked;if(!staged.serialize(checked,error))return false;
+        recordGraphList();graphs=std::move(staged.graphs);m_nextId=staged.m_nextId;error.clear();return true;
     }
     bool BlueprintDocument::addFunction(const std::string& functionName,std::string& error,const std::string& owner)
     {

@@ -166,6 +166,9 @@ namespace nx
         bool setCubicPoints(size_t graph,size_t node,const std::vector<std::string>& points,std::string& error);
         bool setJointProjection(size_t graph,size_t node,const std::string& pin,unsigned plane,float horizontal,float vertical,std::string& error);
         bool setReference(size_t graph,size_t node,const std::string& value,std::string& error);
+        struct InputActionBinding { std::string name,key; unsigned button=14; };
+        std::vector<InputActionBinding> inputActions() const;
+        bool setInputAction(const std::string& action,const std::string& key,unsigned button,std::string& error);
         bool addFunction(const std::string& name,std::string& error,const std::string& owner="Screen");
         const Graph* function(const std::string& owner,const std::string& name) const;
         const Graph* libraryFunction(const std::string& name) const;

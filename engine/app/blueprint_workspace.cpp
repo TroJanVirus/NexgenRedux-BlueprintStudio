@@ -282,7 +282,7 @@ namespace nx
         return true;
     }
     bool BlueprintWorkspace::modalOpen() const
-    {return m_assetBrowser||m_browsing||m_focus==5||m_focus==6||m_focus==9||m_focus==10||m_focus==11||m_focus==12||m_focus==13||m_focus==14||m_focus==15||m_focus==17||m_focus==18||m_focus==20||m_focus==21||m_focus==22;}
+    {return m_assetBrowser||m_browsing||m_focus==5||m_focus==6||m_focus==9||m_focus==10||m_focus==11||m_focus==12||m_focus==13||m_focus==14||m_focus==15||m_focus==17||m_focus==18||m_focus==20||m_focus==21||m_focus==22||m_focus==23;}
     void BlueprintWorkspace::resetGraphTabs()
     {
         releaseContentPreviews();m_graphTabs.clear();m_actorTabs.clear();m_visualTabs.clear();m_activeVisualTab={};m_activeTab={};m_tabFirst=0;
@@ -4585,6 +4585,7 @@ namespace nx
         if(!click)return;
         if(in(x,y,120,160,450,512)){const auto at=m_sceneFirst+static_cast<size_t>((y-160)/44);if(at<scenes.size())m_sceneBrowserOwner=scenes[at];return;}
         if(in(x,y,470,160,1150,512)){const auto at=m_sceneAssetFirst+static_cast<size_t>((y-160)/44);if(at<assets.size())m_sceneBrowserAsset=assets[at]->id;return;}
+        if(in(x,y,120,582,450,616)){m_actionName="Jump";m_actionKey="Space";m_actionButton=8;m_actionField=0;m_actionFirst=0;m_focus=23;input.setTyping(true);m_status="Create a named held-input query.";return;}
         if(in(x,y,120,540,280,574)){for(size_t i=0;i<m_document.graphs.size();++i)if(m_document.graphs[i].owner==m_sceneBrowserOwner&&m_document.graphs[i].name=="update"){selectGraph(i);m_focus=0;input.setTyping(false);return;}}
         if(in(x,y,290,540,450,574)){m_focus=7;m_edit.clear();input.setTyping(true);m_status="New scene: enter a lowercase ID.";return;}
         if(in(x,y,470,540,630,574)){std::string id;if(m_document.createVisualAsset("sequence",id,m_status)){m_sceneBrowserAsset=id;beginSequenceAsset(id,input);}return;}
@@ -4592,6 +4593,37 @@ namespace nx
         if(in(x,y,810,540,970,574)&&!m_sceneBrowserAsset.empty()){size_t g=0,n=0;if(m_document.placeCameraSequence(m_sceneBrowserOwner,m_sceneBrowserAsset,g,n,m_status)){selectGraph(g);m_selection=n;m_selectedNodes={n};m_focus=0;input.setTyping(false);m_status="Placed cinematic. Connect execution and Play trigger."; }return;}
         if(in(x,y,980,540,1150,574)&&!m_sceneBrowserAsset.empty()){if(const auto* asset=m_document.visualAsset(m_sceneBrowserAsset)){m_sceneNameDraft=asset->title;m_sceneNaming=true;input.setTyping(true);}return;}
         if(in(x,y,470,582,630,616)&&!m_sceneBrowserAsset.empty()){if(m_document.removeVisualAsset(m_sceneBrowserAsset,m_status))m_sceneBrowserAsset.clear();}
+    }
+    void BlueprintWorkspace::updateInputActions(Services& s,float x,float y,bool click)
+    {
+        auto& input=*s.input;const auto actions=m_document.inputActions();
+        if(click&&in(x,y,1000,600,1150,638)){m_focus=22;input.setTyping(false);return;}
+        if(in(x,y,120,176,450,516)){if(input.wheel()<0&&m_actionFirst+8<actions.size())++m_actionFirst;if(input.wheel()>0&&m_actionFirst)--m_actionFirst;}
+        if(click&&in(x,y,120,176,450,512)){const auto i=m_actionFirst+static_cast<size_t>((y-176)/42);if(i<actions.size()){m_actionName=actions[i].name;m_actionKey=actions[i].key;m_actionButton=actions[i].button;m_actionField=0;}return;}
+        if(click&&in(x,y,120,540,450,574)){m_actionName.clear();m_actionKey="Space";m_actionButton=8;m_actionField=1;return;}
+        if(click&&in(x,y,480,180,1140,220))m_actionField=1;
+        if(click&&in(x,y,480,260,1140,300))m_actionField=2;
+        if(click&&in(x,y,480,344,1140,386)){m_actionButton=(m_actionButton+1)%15;m_actionField=0;}
+        if(click&&in(x,y,480,400,800,434)){m_actionKey="None";m_actionField=0;}
+        bool apply=click&&in(x,y,820,540,1140,574);
+        for(u32 i=0;i<input.typedCount();++i){const auto ch=input.typed(i);if(ch==13){apply=true;break;}if(!m_actionField)continue;auto& value=m_actionField==1?m_actionName:m_actionKey;if(ch==8&&!value.empty())value.pop_back();else if(ch>=32)appendCharacter(value,ch,58);}
+        if(apply&&m_document.setInputAction(m_actionName,m_actionKey,m_actionButton,m_status)){m_actionField=0;rebuildPins();filterCatalogue();m_status="Saved Input_"+m_actionName+". Add its shared function call to your Blueprint.";}
+    }
+    void BlueprintWorkspace::drawInputActions(Canvas& c)
+    {
+        static const char* buttons[]={"D-pad up","D-pad down","D-pad left","D-pad right","Start","Back","Left stick","Right stick","A","B","X","Y","Left shoulder","Right shoulder","None"};
+        c.roundRect(100,64,1080,594,8,{0.15f,0.17f,0.20f,1});c.text(*m_font,"INPUT ACTION EDITOR / HELD QUERIES",120,78,accent);
+        c.text(*m_font,"Project-scoped keyboard and controller 1 bindings. Stored as shared Blueprint functions.",120,110,muted);
+        const auto button=[&](float x,float y,float width,const char* label){c.roundRect(x,y,width,34,4,{0.20f,0.32f,0.45f,1});c.text(*m_font,label,x+width/2,y+7,text,Align::Center);};
+        const auto actions=m_document.inputActions();c.text(*m_font,"NAMED ACTIONS",120,150,accent);
+        for(size_t i=0;i<8&&m_actionFirst+i<actions.size();++i){const auto& a=actions[m_actionFirst+i];const float yy=176.f+42.f*static_cast<float>(i);c.rect(120,yy,330,38,a.name==m_actionName?Color{0.20f,0.34f,0.47f,1}:Color{0.20f,0.23f,0.27f,1});c.clip(128,yy,314,38);c.text(*m_font,a.name.c_str(),132,yy+4,text);c.text(*m_font,(a.key+" / "+buttons[a.button]).c_str(),132,yy+20,muted);c.noClip();}
+        if(actions.empty())c.text(*m_font,"No input actions yet.",132,190,muted);
+        c.text(*m_font,"Action name (identifier)",480,152,accent);c.roundRect(480,180,660,40,4,m_actionField==1?Color{0.24f,0.35f,0.48f,1}:Color{0.20f,0.23f,0.27f,1});c.text(*m_font,m_actionName.c_str(),492,190,text);
+        c.text(*m_font,"Keyboard (e.g. Space, E, Shift, or None)",480,232,accent);c.roundRect(480,260,660,40,4,m_actionField==2?Color{0.24f,0.35f,0.48f,1}:Color{0.20f,0.23f,0.27f,1});c.text(*m_font,m_actionKey.c_str(),492,270,text);
+        c.text(*m_font,"Controller button / click to cycle",480,316,accent);button(480,344,660,buttons[m_actionButton]);button(480,400,320,"Disable keyboard");
+        c.text(*m_font,"Returns true while either binding is held.",480,462,muted);c.text(*m_font,"Use the Input_ action in the shared function catalogue.",480,486,muted);
+        button(120,540,330,"+ New action");button(820,540,320,"Apply binding");button(1000,600,150,"Back");
+        c.clip(120,600,865,42);c.text(*m_font,m_status.c_str(),120,610,muted);c.noClip();
     }
     void BlueprintWorkspace::drawSceneBrowser(Canvas& c)
     {
@@ -4607,7 +4639,7 @@ namespace nx
             c.rect(470,yy,680,40,asset.id==m_sceneBrowserAsset?Color{0.20f,0.34f,0.47f,1}:Color{0.20f,0.23f,0.27f,1});c.clip(478,yy,500,40);c.text(*m_font,asset.title.c_str(),482,yy+4,text);c.text(*m_font,asset.id.c_str(),482,yy+21,muted);c.noClip();c.text(*m_font,("In scene: "+std::to_string(used)).c_str(),1000,yy+10,muted);
         }
         if(!index)c.text(*m_font,"Create your first reusable cinematic.",482,175,muted);
-        button(120,540,160,"Open Blueprint");button(290,540,160,"+ Scene");button(470,540,160,"+ Sequence");button(640,540,160,"Edit Sequence");button(810,540,160,"Place in Scene");button(980,540,170,"Rename");button(470,582,160,"Delete Asset");button(1030,610,130,"Close");
+        button(120,540,160,"Open Blueprint");button(290,540,160,"+ Scene");button(470,540,160,"+ Sequence");button(640,540,160,"Edit Sequence");button(810,540,160,"Place in Scene");button(980,540,170,"Rename");button(120,582,330,"Input Action Editor");button(470,582,160,"Delete Asset");button(1030,610,130,"Close");
         c.clip(120,620,880,26);c.text(*m_font,m_status.c_str(),120,626,muted);c.noClip();
         if(m_sceneNaming){c.rect(100,64,1080,594,{0,0,0,0.65f});c.roundRect(280,440,880,170,6,{0.16f,0.20f,0.25f,1});c.text(*m_font,"Rename cinematic",300,454,accent);c.roundRect(300,490,840,38,4,{0.24f,0.35f,0.48f,1});c.text(*m_font,m_sceneNameDraft.c_str(),310,498,text);c.text(*m_font,"Enter = Apply | Escape = Cancel",300,568,muted);button(830,556,150,"Apply");button(990,556,150,"Cancel");}
     }
@@ -4923,6 +4955,7 @@ namespace nx
             if(updateContentDrawer(s,x,y,left,click)||updateGraphTabs(s,x,y,click)||updateGraphMap(x,y,left,click)){m_left=left;return;}
         }
         if(modalOpen()){x-=modalX();y-=modalY();}
+        if(m_focus==23){updateInputActions(s,x,y,click);m_left=left;return;}
         if(m_focus==22){updateSceneBrowser(s,x,y,click);m_left=left;return;}
         if(m_focus==21){updateSequenceEditor(s,x,y,left,click);m_left=left;return;}
         if(m_focus==20){const auto results=findResults();if(click&&!in(x,y,220,100,1060,620)){m_focus=0;input.setTyping(false);m_left=left;return;}if(input.wheel()<0&&m_findFirst+10<results.size())++m_findFirst;if(input.wheel()>0&&m_findFirst)--m_findFirst;if(click&&in(x,y,240,190,1040,570)){const auto at=m_findFirst+static_cast<size_t>((y-190)/38);if(at<results.size()){openFindResult(results[at],input);m_left=left;return;}}for(u32 i=0;i<input.typedCount();++i){const auto ch=input.typed(i);if(ch==13){if(!results.empty())openFindResult(results[std::min(m_findFirst,results.size()-1)],input);break;}if(ch==8&&!m_findText.empty())m_findText.pop_back();else if(ch>=32)appendCharacter(m_findText,ch,128);m_findFirst=0;}m_left=left;return;}
@@ -6427,6 +6460,7 @@ namespace nx
                 c.text(*m_font,("Active: "+m_document.name+(m_document.dirty()?"  /  Unsaved changes":"")).c_str(),28,638,accent);
                 c.clip(28,665,1220,40);c.text(*m_font,m_status.c_str(),28,673,text);c.noClip();
             }
+            else if(m_focus==23)drawInputActions(c);
             else if(m_focus==22)drawSceneBrowser(c);
             else if(m_focus==21)drawSequenceEditor(c);
             else if(m_focus==20){c.roundRect(220,100,840,520,8,{0.16f,0.18f,0.22f,1});c.text(*m_font,"FIND IN BLUEPRINT",240,115,accent);c.roundRect(240,145,800,36,4,{0.24f,0.35f,0.48f,1});c.text(*m_font,m_findText.empty()?"Search nodes, functions, comments and values...":m_findText.c_str(),250,152,text);const auto results=findResults();for(size_t i=0;i<10&&m_findFirst+i<results.size();++i){const float yy=190.f+38.f*static_cast<float>(i);c.rect(240,yy,800,34,{0.22f,0.25f,0.3f,1});c.clip(250,yy,780,34);c.text(*m_font,results[m_findFirst+i].label.c_str(),250,yy+7,text);c.noClip();}c.text(*m_font,(std::to_string(results.size())+" results | Enter = Open | Escape = Close").c_str(),240,585,muted);}

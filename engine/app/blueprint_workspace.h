@@ -346,6 +346,11 @@ namespace nx
         void openSceneBrowser(Input& input);
         void updateSceneBrowser(Services& s,float x,float y,bool click);
         void drawSceneBrowser(Canvas& c);
+        std::string m_actionName,m_actionKey;
+        unsigned m_actionButton=8,m_actionField=0;
+        size_t m_actionFirst=0;
+        void updateInputActions(Services& s,float x,float y,bool click);
+        void drawInputActions(Canvas& c);
         bool beginSequenceAsset(const std::string& id,Input& input);
         size_t m_sequenceKey=0;
         float m_sequenceTime=0;

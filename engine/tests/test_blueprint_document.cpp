@@ -1919,6 +1919,22 @@ NX_TEST(nativeSharedLibraryFunctionAndMacroAcrossOwners)
     NX_EXPECT(compileBlueprint(copy,source,error)&&source.find("int bp_lib_Twice(")!=std::string::npos&&source.find("inline macro SharedMacro")!=std::string::npos);
 }
 
+NX_TEST(nativeNamedHeldInputActionsRoundTripAndRebind)
+{
+    BlueprintDocument doc;doc.create();std::string error,source,bytes;
+    NX_EXPECT(doc.setInputAction("Jump","Space",8,error));
+    auto actions=doc.inputActions();NX_EXPECT(actions.size()==1);
+    if(!actions.empty()){NX_EXPECT(actions[0].name=="Jump");NX_EXPECT(actions[0].key=="Space");NX_EXPECT(actions[0].button==8);}
+    NX_EXPECT(doc.addNode(1,"call:library",340,60,error,"Input_Jump")&&doc.connect(1,0,"then",1,"in",error));
+    NX_EXPECT(compileBlueprint(doc,source,error)&&source.find("bp_lib_Input_Jump")!=std::string::npos&&source.find("Input::key")!=std::string::npos&&source.find("Input::padButton")!=std::string::npos);
+    NX_EXPECT(doc.setInputAction("Jump","E",10,error));
+    NX_EXPECT(doc.serialize(bytes,error));BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error));
+    actions=copy.inputActions();NX_EXPECT(actions.size()==1);
+    if(!actions.empty()){NX_EXPECT(actions[0].key=="E");NX_EXPECT(actions[0].button==10);}
+    NX_EXPECT(!doc.setInputAction("bad name","Space",8,error));NX_EXPECT(!doc.setInputAction("Jump","None",14,error));NX_EXPECT(!doc.setInputAction("Jump","invalid",8,error));
+    NX_EXPECT(doc.undo());actions=doc.inputActions();NX_EXPECT(actions.size()==1);
+    if(!actions.empty())NX_EXPECT(actions[0].key=="Space");
+}
 NX_TEST(nativeCustomTypeDeclarationsAndEvents)
 {
     BlueprintDocument doc;doc.create();std::string error,source,bytes;
