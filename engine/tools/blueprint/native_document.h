@@ -51,7 +51,7 @@ namespace nx
     struct BlueprintDocument
     {
         struct InputValue { std::string pin,value; };
-        struct Node { std::string id, kind, ref; float x=0,y=0; std::vector<InputValue> values{}; bool watch=false; std::string displayName{},comment{}; unsigned colour=0; };
+        struct Node { std::string id, kind, ref; float x=0,y=0; std::vector<InputValue> values{}; bool watch=false; std::string displayName{},comment{}; unsigned colour=0; std::string watchCondition{}; };
         struct Point { float x=0,y=0; };
         struct Link { size_t from=0,to=0; std::string output,input; std::vector<Point> route{}; };
         struct Comment { std::string title; std::vector<std::string> members; float x=0,y=0,width=0,height=0; unsigned colour=0; };
@@ -162,6 +162,7 @@ namespace nx
         bool disconnect(size_t graph,size_t node,const std::string& pin,bool output);
         bool setLiteral(size_t graph,size_t node,const std::string& value,std::string& error);
         bool toggleWatch(size_t graph,size_t node);
+        bool setWatchCondition(size_t graph,size_t node,const std::string& condition,std::string& error);
         bool setInputValue(size_t graph,size_t node,const std::string& pin,const std::string& value,std::string& error);
         bool editNodeValues(size_t graph,size_t node,const std::vector<InputValue>& values,const std::string* literalValue,std::string& error,const std::string* displayName=nullptr,const std::string* comment=nullptr,const unsigned* colour=nullptr);
         bool disconnectNode(size_t graph,size_t node);

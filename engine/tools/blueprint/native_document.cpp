@@ -1,4 +1,5 @@
 #include "tools/blueprint/native_document.h"
+#include "script/breakpoint_condition.h"
 #include "ui/grid_slot.h"
 #include "ui/navigation_rule.h"
 #include "ui/scale_box.h"
@@ -2549,6 +2550,8 @@ namespace nx
                 Node node{n["id"].text(),kind,ref,x,y};
                 if(n["watch"].exists()&&n["watch"].type()!=JsonTree::Type::Bool){error="Invalid node watch flag.";return false;}
                 node.watch=n["watch"].flag();
+                if(n["watchCondition"].exists()&&(!n["watchCondition"].isString()||!validBreakpointCondition(n["watchCondition"].text()))){error="Invalid breakpoint condition.";return false;}
+                node.watchCondition=n["watchCondition"].text();
                 for(const char* key:{"displayName","comment"})if(n[key].exists()){const std::string annotation=n[key].text();if(!n[key].isString()||annotation.size()>(std::string(key)=="displayName"?96u:256u)){error="Invalid node annotation.";return false;}}
                 node.displayName=n["displayName"].text();node.comment=n["comment"].text();
                 if(n["colour"].exists())
@@ -2763,6 +2766,7 @@ namespace nx
                 auto* j=ns->add();if(!j||!text(*j,"id",n.id)||!text(*j,"kind",n.kind)||!number(*j,"x",n.x)||!number(*j,"y",n.y))return fail();
                 if((n.kind.rfind("literal:",0)==0||variableKind(n.kind)||globalKind(n.kind)||n.kind.rfind("capture:",0)==0||blueprintNamedCall(n.kind)||blueprintBehaviourReference(n.kind)||typeNode(n.kind)||typedVariable(n.kind))&&!text(*j,"value",n.ref))return fail();
                 if(n.watch){auto* watch=j->put("watch");if(!watch)return fail();watch->setFlag(true);}
+                if(!n.watchCondition.empty()&&(!validBreakpointCondition(n.watchCondition)||!text(*j,"watchCondition",n.watchCondition)))return fail();
                 if(!n.displayName.empty()&&!text(*j,"displayName",n.displayName))return fail();
                 if(!n.comment.empty()&&!text(*j,"comment",n.comment))return fail();
                 if(n.colour&&!text(*j,"colour",blueprintRGBHex(n.colour)))return fail();
@@ -3144,6 +3148,17 @@ namespace nx
         const auto exec=[](const BlueprintPin& p){return p.type=="exec";};
         if(!std::any_of(spec.inputs.begin(),spec.inputs.end(),exec)&&!std::any_of(spec.outputs.begin(),spec.outputs.end(),exec))return false;
         record(graph);graphs[graph].nodes[node].watch=!graphs[graph].nodes[node].watch;return true;
+    }
+    bool BlueprintDocument::setWatchCondition(size_t graph,size_t node,const std::string& condition,std::string& error)
+    {
+        if(graph>=graphs.size()||node>=graphs[graph].nodes.size()||!validBreakpointCondition(condition))
+        {error="Use a boolean variable name, !name, or blank.";return false;}
+        const auto& g=graphs[graph];BlueprintNodeSpec spec;
+        if(!nodeSpec(g,g.nodes[node],spec)){error="Invalid node.";return false;}
+        const auto exec=[](const BlueprintPin& p){return p.type=="exec";};
+        if(!std::any_of(spec.inputs.begin(),spec.inputs.end(),exec)&&!std::any_of(spec.outputs.begin(),spec.outputs.end(),exec))
+        {error="Select an execution node.";return false;}
+        record(graph);auto& n=graphs[graph].nodes[node];n.watchCondition=condition;n.watch=true;error.clear();return true;
     }
     bool BlueprintDocument::setLiteral(size_t graph,size_t node,const std::string& value,std::string& error)
     {

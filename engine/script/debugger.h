@@ -79,6 +79,7 @@ namespace nx
             std::string file;
             std::vector<int> lines;
             std::string fingerprint;
+            std::vector<std::pair<int,std::string>> conditions;
         };
 
         struct Ref

@@ -2497,3 +2497,16 @@ NX_TEST(nativeWidgetDuplicateRemapsSubtreeNavigation)
     NX_EXPECT(doc.appendVisualWidget(page,"button","Single",error,"item-7"));
     NX_EXPECT(!doc.duplicateVisualWidget(page,"item-8",created,error));
 }
+
+NX_TEST(nativeBreakpointConditionPersistsAndUndoes)
+{
+    BlueprintDocument doc;doc.create();std::string error,bytes;
+    NX_EXPECT(doc.setWatchCondition(0,0,"!ready",error));
+    NX_EXPECT(doc.graphs[0].nodes[0].watch&&doc.graphs[0].nodes[0].watchCondition=="!ready");
+    NX_EXPECT(!doc.setWatchCondition(0,0,"ready()",error));
+    NX_EXPECT(doc.serialize(bytes,error));
+    BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error));
+    NX_EXPECT(copy.graphs[0].nodes[0].watchCondition=="!ready");
+    NX_EXPECT(doc.undo()&&!doc.graphs[0].nodes[0].watch);
+    NX_EXPECT(doc.redo()&&doc.graphs[0].nodes[0].watchCondition=="!ready");
+}

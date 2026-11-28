@@ -5,6 +5,7 @@
 #include "script/studio_actor_value.h"
 #include "script/studio_preview.h"
 #include "script/debugger_numbers.h"
+#include "script/breakpoint_value.h"
 #include "bindings/script_refs.h"
 #include "scene/space.h"
 #include "scene/world.h"
@@ -307,10 +308,10 @@ namespace nx
             }
             if (these == nullptr)
             {
-                m_breakpoints.push_back({ file->text(), {}, {} });
+                m_breakpoints.push_back({ file->text(), {}, {}, {} });
                 these = &m_breakpoints.back();
             }
-            these->lines.clear();
+            these->lines.clear();these->conditions.clear();
             const auto* fingerprint=ask.find("fingerprint");
             these->fingerprint=fingerprint?fingerprint->text():"";
             // Legacy debugger clients omit this field. A guarded request
@@ -321,6 +322,16 @@ namespace nx
                 u32 line=0;
                 if(debuggerUnsigned(lines->at(i),line)&&line>0&&line<=2147483647u)
                     these->lines.push_back(static_cast<int>(line));
+            }
+            const auto* conditions=ask.find("conditions");
+            for(u32 i=0;conditions&&i<conditions->count();++i)
+            {
+                const auto* condition=conditions->at(i);u32 line=0;
+                if(!condition||!debuggerUnsigned(condition->find("line"),line)||line==0||line>2147483647u)continue;
+                const auto* value=condition->find("when");
+                const std::string predicate=value&&value->type()==JsonValue::Type::String?value->text():"?";
+                if(std::find(these->lines.begin(),these->lines.end(),static_cast<int>(line))!=these->lines.end())
+                    these->conditions.emplace_back(static_cast<int>(line),validBreakpointCondition(predicate)&&!predicate.empty()?predicate:"?");
             }
             m_files.clear();
             JsonValue reply;
@@ -343,6 +354,7 @@ namespace nx
             reply.put("remoteTrace")->setFlag(true);
             reply.put("studioActors")->setFlag(true);
             reply.put("studioPins")->setFlag(true);
+            reply.put("conditionalBreakpoints")->setFlag(true);
             const auto* svc=m_host&&m_host->engine()?static_cast<const Services*>(m_host->engine()->GetUserData()):nullptr;
             reply.put("studioPreview")->setFlag(svc&&svc->development&&svc->device&&svc->device->previewCaptureSupported());
             if(!m_launchId.empty()){putText(reply,"launchId",m_launchId);reply.put("liveSource")->setFlag(true);}
@@ -720,6 +732,9 @@ namespace nx
                             const auto* function=context->GetFunction(0);
                             if(!function||expected!=m_host->compiledFingerprint(function->GetModuleName(),here.section))continue;
                         }
+                        const auto& conditions=m_breakpoints[file].conditions;
+                        const auto condition=std::find_if(conditions.begin(),conditions.end(),[&](const auto& value){return value.first==at;});
+                        if(condition!=conditions.end()&&!breakpointConditionMatches(context,condition->second))continue;
                         stopHere(context, "breakpoint", nullptr);
                         return;
                     }

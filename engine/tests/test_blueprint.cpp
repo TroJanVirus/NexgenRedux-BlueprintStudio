@@ -1,4 +1,5 @@
 #include "script/debugger_numbers.h"
+#include "script/breakpoint_value.h"
 #include "script/source_fingerprint.h"
 #include "test.h"
 #include "script/source_fingerprint.h"
@@ -3842,3 +3843,21 @@ NX_TEST(debuggerRejectsMalformedNumericIdentifiers)
     value.setNumber(0);NX_EXPECT(debuggerUnsigned(&value,result)&&result==0);
     value.setNumber(42);NX_EXPECT(debuggerUnsigned(&value,result)&&result==42);
 }
+
+#ifdef NX_DESKTOP_BLUEPRINT
+NX_TEST(debuggerBooleanConditionsReadOnlyActualVmLocals)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    ScriptDebugger debugger;bool matched=false;
+    NX_EXPECT(debugger.startLocalTrace(r.host,[](void* user,const char*,int,u32,asIScriptContext* context)
+    {
+        if(breakpointConditionMatches(context,"ready")&&breakpointConditionMatches(context,"!blocked")&&
+            !breakpointConditionMatches(context,"!ready")&&!breakpointConditionMatches(context,"missing")&&
+            !breakpointConditionMatches(context,"!missing")&&!breakpointConditionMatches(context,"amount")&&
+            !breakpointConditionMatches(context,"ready()"))*static_cast<bool*>(user)=true;
+    },&matched));
+    NX_EXPECT(compile(r.host,"bool blocked=false; void check(){ bool ready=true; int amount=2;\n Save::set(\"condition\",ready ? \"yes\" : \"no\");\n }"));
+    NX_EXPECT(r.host.call(r.host.find("blueprint","void check()"))&&matched);
+    debugger.stopLocalTrace();
+}
+#endif

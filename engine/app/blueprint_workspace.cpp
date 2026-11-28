@@ -7,6 +7,7 @@
 #include "tools/blueprint/native_import.h"
 #include "script/script_host.h"
 #include "script/debugger.h"
+#include "script/breakpoint_value.h"
 #include "script/source_fingerprint.h"
 #include "screens/screens.h"
 #include "bindings/bindings.h"
@@ -288,7 +289,7 @@ namespace nx
         return true;
     }
     bool BlueprintWorkspace::modalOpen() const
-    {return m_assetBrowser||m_browsing||m_focus==5||m_focus==6||m_focus==9||m_focus==10||m_focus==11||m_focus==12||m_focus==13||m_focus==14||m_focus==15||m_focus==17||m_focus==18||m_focus==20||m_focus==21||m_focus==22||m_focus==23||m_focus==24||m_focus==25||m_focus==26||m_focus==27||m_focus==28||m_focus==29||m_focus==30;}
+    {return m_assetBrowser||m_browsing||m_focus==5||m_focus==6||m_focus==9||m_focus==10||m_focus==11||m_focus==12||m_focus==13||m_focus==14||m_focus==15||m_focus==17||m_focus==18||m_focus==20||m_focus==21||m_focus==22||m_focus==23||m_focus==24||m_focus==25||m_focus==26||m_focus==27||m_focus==28||m_focus==29||m_focus==30||m_focus==31;}
     void BlueprintWorkspace::resetGraphTabs()
     {
         releaseContentPreviews();m_graphTabs.clear();m_actorTabs.clear();m_visualTabs.clear();m_activeVisualTab={};m_activeTab={};m_tabFirst=0;
@@ -4173,7 +4174,7 @@ namespace nx
             {location=blueprintSourceLocation(screen.map,static_cast<size_t>(line));break;}
         if(location.graph>=m_document.graphs.size()||location.node>=m_document.graphs[location.graph].nodes.size())return;
         const auto& node=m_document.graphs[location.graph].nodes[location.node];
-        const bool firstWatch=node.watch||m_traceStep;
+        const bool firstWatch=(node.watch&&breakpointConditionMatches(context,node.watchCondition))||m_traceStep;
         if(!firstWatch&&!m_traceBudget)return;
         if(!m_traceHits.empty())
         {
@@ -5032,12 +5033,16 @@ namespace nx
         if(!m_device.ready()||!m_device.sourceIdentity()){m_deviceFeedback="Attach to a matching source-identity runtime first.";return;}
         std::vector<BlueprintScreenOutput> screens;std::string error;
         if(!compileBlueprintProject(m_document,screens,error)){m_deviceFeedback=error;return;}
+        for(const auto& graph:m_document.graphs)for(const auto& node:graph.nodes)
+            if(node.watch&&!node.watchCondition.empty()&&!m_device.conditionalBreakpoints())
+            {m_deviceFeedback="Attached runtime does not support conditional breakpoints; update it first.";return;}
         std::string commands="{\"cmd\":\"clearBreakpoints\"}\n";size_t total=0;
         for(const auto& screen:screens)
         {
             JsonValue message;message.put("cmd")->setText("breakpoints");message.put("file")->setText("showcase/"+screen.id+"/main.as");
             message.put("fingerprint")->setText(scriptFingerprint(screen.source.data(),screen.source.size()));
             auto* lines=message.put("lines");lines->setArray();
+            auto* conditions=message.put("conditions");conditions->setArray();
             std::vector<size_t> nodes;
             for(const auto& span:screen.map)
             {
@@ -5045,6 +5050,8 @@ namespace nx
                 if(g>=m_document.graphs.size()||n>=m_document.graphs[g].nodes.size()||!m_document.graphs[g].nodes[n].watch)continue;
                 if(std::find(nodes.begin(),nodes.end(),span.firstLine)!=nodes.end())continue;
                 nodes.push_back(span.firstLine);lines->add()->setNumber(static_cast<double>(span.firstLine));++total;
+                const auto& condition=m_document.graphs[g].nodes[n].watchCondition;
+                if(!condition.empty()){auto* item=conditions->add();item->put("line")->setNumber(static_cast<double>(span.firstLine));item->put("when")->setText(condition);}
             }
             if(!nodes.empty())commands+=message.write(true)+"\n";
         }
@@ -5913,10 +5920,11 @@ namespace nx
             if(click)
             {
                 m_nodeContext=false;
-                if(in(x,y,m_nodeContextX,m_nodeContextY+32,m_nodeContextX+270,m_nodeContextY+288))
+                if(in(x,y,m_nodeContextX,m_nodeContextY+32,m_nodeContextX+270,m_nodeContextY+320))
                 {
                     const int action=static_cast<int>((y-m_nodeContextY-32)/32);
-                    if(action==6){m_extractCollapsed=true;m_extractNodes=m_selectedNodes;m_edit.clear();m_focus=12;input.setTyping(true);m_status="Name the private collapsed graph.";}
+                    if(action==8){m_edit=m_document.graphs[m_graph].nodes[m_selection].watchCondition;m_focus=31;input.setTyping(true);m_status="Enter a VM boolean local/global name, !name, or blank.";}
+                    else if(action==6){m_extractCollapsed=true;m_extractNodes=m_selectedNodes;m_edit.clear();m_focus=12;input.setTyping(true);m_status="Name the private collapsed graph.";}
                     else if(action==7){const auto owner=m_document.graphs[m_graph].owner,name=m_document.graphs[m_graph].name;if(m_document.expandCollapsed(m_graph,m_selection,m_status)){for(size_t k=0;k<m_document.graphs.size();++k)if(m_document.graphs[k].owner==owner&&m_document.graphs[k].name==name){selectGraph(k);break;}m_status="Expanded graph; undo restores the collapsed node.";}}
                     else if(action==2)removeSelectedNode(input);
                     else if(action==3){if(m_document.disconnectNode(m_graph,m_selection)){clearWire();rebuildPins();m_diagnostic={};m_status="All node connections removed. Undo restores them.";}else m_status="Node has no connections.";}
@@ -5963,6 +5971,14 @@ namespace nx
         if(!modalOpen()&&!m_focus&&click&&in(x,y,kWidth*0.56f,kBottom+2,kWidth-12,kBottom+24))
         {m_focus=27;m_left=left;return;}
         if(modalOpen()){x-=modalX();y-=modalY();}
+        if(m_focus==31)
+        {
+            bool apply=click&&in(x,y,790,400,930,440);
+            if(click&&in(x,y,640,400,780,440)){m_focus=0;input.setTyping(false);m_left=left;return;}
+            for(u32 i=0;i<input.typedCount();++i){const auto ch=input.typed(i);if(ch==13)apply=true;else if(ch==8&&!m_edit.empty())m_edit.pop_back();else if(ch>=32&&ch<127)appendCharacter(m_edit,ch,96);}
+            if(apply&&m_document.setWatchCondition(m_graph,m_selection,m_edit,m_status)){m_focus=0;input.setTyping(false);m_traceEnabled=true;m_status="Breakpoint condition saved. Sync watches for remote debugging.";}
+            m_left=left;return;
+        }
         if(m_focus==26)
         {
             bool apply=click&&in(x,y,790,400,930,440);
@@ -7016,7 +7032,7 @@ namespace nx
                     const auto pin=hitPin(x,y);
                     if(pin.node<m_rows.size()){m_pinContext=true;m_pinContextNode=pin.node;m_pinContextName=pin.name;m_pinContextType=pin.type;m_pinContextOutput=pin.output;m_pinContextX=std::clamp(x,0.f,kWidth-260.f);m_pinContextY=std::clamp(y,0.f,kHeight-150.f);m_pan=false;m_left=left;return;}
                     const auto& nodes=m_document.graphs[m_graph].nodes;
-                    for(size_t i=nodes.size();i>0;--i){const auto p=nodeLayoutPosition(i-1);const float nx=kLeft+m_x+p.x*m_zoom,ny=kTop+m_y+p.y*m_zoom;if(!in(x,y,nx,ny,nx+m_rows[i-1].width*m_zoom,ny+m_rows[i-1].height*m_zoom))continue;m_selection=i-1;if(std::find(m_selectedNodes.begin(),m_selectedNodes.end(),i-1)==m_selectedNodes.end())m_selectedNodes={i-1};m_nodeContext=true;m_nodeContextX=std::clamp(x,0.f,kWidth-270.f);m_nodeContextY=std::clamp(y,0.f,kHeight-288.f);m_nodeClickTime=-1;break;}
+                    for(size_t i=nodes.size();i>0;--i){const auto p=nodeLayoutPosition(i-1);const float nx=kLeft+m_x+p.x*m_zoom,ny=kTop+m_y+p.y*m_zoom;if(!in(x,y,nx,ny,nx+m_rows[i-1].width*m_zoom,ny+m_rows[i-1].height*m_zoom))continue;m_selection=i-1;if(std::find(m_selectedNodes.begin(),m_selectedNodes.end(),i-1)==m_selectedNodes.end())m_selectedNodes={i-1};m_nodeContext=true;m_nodeContextX=std::clamp(x,0.f,kWidth-270.f);m_nodeContextY=std::clamp(y,0.f,kHeight-320.f);m_nodeClickTime=-1;break;}
                     if(!m_nodeContext){openPinMenu(x,y);input.setTyping(true);}
                 }
                 m_pan=false;m_left=left;return;
@@ -7455,10 +7471,10 @@ namespace nx
         }
         if(m_nodeContext&&m_selection<m_rows.size())
         {
-            const float x=m_nodeContextX,y=m_nodeContextY;c.roundRect(x,y,270,288,6,{0.16f,0.16f,0.17f,1});c.clip(x+8,y,254,32);c.text(*m_font,m_rows[m_selection].title.c_str(),x+10,y+7,accent);c.noClip();
+            const float x=m_nodeContextX,y=m_nodeContextY;c.roundRect(x,y,270,320,6,{0.16f,0.16f,0.17f,1});c.clip(x+8,y,254,32);c.text(*m_font,m_rows[m_selection].title.c_str(),x+10,y+7,accent);c.noClip();
             const auto& nodeTitle=m_rows[m_selection].title;
-            const std::string labels[]={"Edit "+nodeTitle,"Rename "+nodeTitle,"Delete "+nodeTitle,"Disconnect","Change Colour","Add comment","Collapse to graph","Expand collapsed graph"};
-            for(unsigned i=0;i<8;++i){const float yy=y+32.f+32.f*static_cast<float>(i);c.rect(x+4,yy+2,262,28,i==2?Color{0.38f,0.19f,0.23f,1}:Color{0.22f,0.22f,0.24f,1});c.clip(x+10,yy+2,250,28);c.text(*m_font,labels[i].c_str(),x+12,yy+6,text);c.noClip();}
+            const std::string labels[]={"Edit "+nodeTitle,"Rename "+nodeTitle,"Delete "+nodeTitle,"Disconnect","Change Colour","Add comment","Collapse to graph","Expand collapsed graph","Breakpoint condition"};
+            for(unsigned i=0;i<9;++i){const float yy=y+32.f+32.f*static_cast<float>(i);c.rect(x+4,yy+2,262,28,i==2?Color{0.38f,0.19f,0.23f,1}:Color{0.22f,0.22f,0.24f,1});c.clip(x+10,yy+2,250,28);c.text(*m_font,labels[i].c_str(),x+12,yy+6,text);c.noClip();}
         }
         if(m_pinMenu)
         {
@@ -7552,6 +7568,13 @@ namespace nx
                 c.rect(0,625,1280,95,{0.13f,0.16f,0.21f,1});
                 c.text(*m_font,("Active: "+m_document.name+(m_document.dirty()?"  /  Unsaved changes":"")+" / "+m_document.target().label()).c_str(),28,638,accent);
                 c.clip(28,665,1220,40);c.text(*m_font,m_status.c_str(),28,673,text);c.noClip();
+            }
+            else if(m_focus==31)
+            {
+                c.roundRect(330,250,620,210,8,{0.16f,0.18f,0.22f,1});c.text(*m_font,"BREAKPOINT CONDITION",350,265,accent);
+                c.text(*m_font,"Boolean VM local/global name, !name, or blank (always).",350,300,text);
+                c.rect(350,332,580,38,{0.24f,0.35f,0.48f,1});c.clip(356,332,568,38);c.text(*m_font,m_edit.c_str(),360,340,text);c.noClip();
+                c.text(*m_font,"Cancel",710,413,text,Align::Center);c.roundRect(790,400,140,40,4,{0.19f,0.4f,0.3f,1});c.text(*m_font,"Apply",860,411,text,Align::Center);
             }
             else if(m_focus==26)
             {

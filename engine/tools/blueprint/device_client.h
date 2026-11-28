@@ -21,6 +21,7 @@ namespace nx
         bool ready()const{return m_ready;}
         bool paused()const{return m_paused;}
         bool sourceIdentity()const{return m_sourceIdentity;}
+        bool conditionalBreakpoints()const{return m_conditionalBreakpoints;}
         bool traceSupported()const{return m_traceSupported;}
         struct Actor {u32 id=0,parent=0;std::string name;bool spatial=false;};
         struct ActorProperty {std::string name,value;bool editable=false;};
@@ -118,7 +119,7 @@ namespace nx
         void disconnect()
         {
             m_socket.close();if(m_network)netStop();m_network=m_ready=m_paused=m_hello=m_sourceIdentity=m_traceSupported=m_tracing=m_traceOutstanding=m_traceGap=false;m_hits.clear();
-            m_in.clear();m_out.clear();m_telemetryOutstanding=false;m_rows.clear();m_log.clear();m_file.clear();m_fingerprint.clear();m_variables.clear();m_line=0;
+            m_in.clear();m_out.clear();m_conditionalBreakpoints=false;m_telemetryOutstanding=false;m_rows.clear();m_log.clear();m_file.clear();m_fingerprint.clear();m_variables.clear();m_line=0;
             m_previewSupported=m_previewBusy=false;m_previewPixels.clear();m_previewWidth=m_previewHeight=0;m_previewStatus.clear();++m_previewSequence;
             m_pinsSupported=m_pinsCapped=false;m_pinValues.clear();m_actorsSupported=false;m_actorRequest=0;m_actorEpoch=m_actorOffset=m_actorCount=m_actorSelected=0;m_actors.clear();m_actorProperties.clear();m_actorScreen.clear();m_actorStatus.clear();
             m_status="Disconnected";m_launchId.clear();m_address.clear();m_liveSupported=false;m_liveStage=0;m_liveScreen.clear();m_liveFingerprint.clear();std::string().swap(m_liveBytes);
@@ -211,7 +212,7 @@ namespace nx
             if(event=="hello"&&id==1&&!m_ready)
             {
                 if(root["version"].exact()!=1){fail("Unsupported debugger protocol.");return;}
-                m_sourceIdentity=root["sourceIdentity"].flag();m_traceSupported=root["remoteTrace"].flag();m_actorsSupported=root["studioActors"].flag();m_pinsSupported=root["studioPins"].flag();m_previewSupported=root["studioPreview"].flag();m_launchId=root["launchId"].text();if(!studioLaunchIdentity(m_launchId))m_launchId.clear();m_liveSupported=root["liveSource"].flag()&&!m_launchId.empty();m_ready=true;m_poll=now;m_status="Connected; waiting for device telemetry.";
+                m_sourceIdentity=root["sourceIdentity"].flag();m_conditionalBreakpoints=root["conditionalBreakpoints"].flag();m_traceSupported=root["remoteTrace"].flag();m_actorsSupported=root["studioActors"].flag();m_pinsSupported=root["studioPins"].flag();m_previewSupported=root["studioPreview"].flag();m_launchId=root["launchId"].text();if(!studioLaunchIdentity(m_launchId))m_launchId.clear();m_liveSupported=root["liveSource"].flag()&&!m_launchId.empty();m_ready=true;m_poll=now;m_status="Connected; waiting for device telemetry.";
                 queue("{\"cmd\":\"ready\",\"id\":2}");
             }
             else if(event=="stopped"&&m_ready)
@@ -374,7 +375,7 @@ namespace nx
         std::string m_liveScreen,m_liveFingerprint,m_liveStatus,m_liveBytes;
         double m_tracePoll=0;
         std::vector<RemoteHit> m_hits;
-        bool m_telemetryOutstanding=false;
+        bool m_telemetryOutstanding=false,m_conditionalBreakpoints=false;
         double m_deadline=0,m_poll=0,m_telemetryDeadline=0;
         std::string m_in,m_out,m_status="Disconnected",m_log,m_file,m_fingerprint,m_launchId,m_launchStatus,m_address;
         unsigned m_line=0;
