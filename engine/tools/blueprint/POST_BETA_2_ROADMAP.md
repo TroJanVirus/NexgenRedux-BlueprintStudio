@@ -192,3 +192,8 @@ Content can now dock against all four graph edges, float or hide; side panels ha
 ## Scene framing and Windows diagnostic fix
 
 Inspected native scene/widget captures from artifact 15240686769, including the original native editor handoff and returned tab. The perspective screenshot revealed poor initial framing; the scene now frames constant placed actors when entering perspective and offers a Frame control for selected/all actors, including their preview component positions. Focus is retained per scene tab. This is editor camera framing, not gameplay camera changes. Removed a shadowed node spec variable rejected by MSVC /WX (C4456), confirmed in the Windows job logs. Full verification of the combined changes remains pending.
+
+
+## Perspective authoring camera independence (verification pending)
+
+Scene framing now changes only the editor camera target, never the placement plane. Moving existing instances retains their own Y coordinate, while new instances use the user-selected plane. Perspective view supports right-drag orbit, middle-drag pan, wheel zoom, proportional toolbar zoom and a reference grid centred near the camera target. The far plane expands for widely separated actors. Camera focus/pitch is retained per scene tab. The grid remains editor-only. No changes to exported gameplay camera behaviour.

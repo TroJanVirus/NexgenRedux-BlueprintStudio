@@ -1879,7 +1879,7 @@ namespace nx
             }
             if(m_editorGridMesh)
             {
-                gpu::MeshDraw grid;grid.mesh=m_editorGridMesh;grid.world=Mat4::translation({0,m_editorGridHeight-0.002f,0});
+                gpu::MeshDraw grid;grid.mesh=m_editorGridMesh;grid.world=Mat4::translation({m_editorGridX,m_editorGridHeight-0.002f,m_editorGridZ});
                 grid.cull=gpu::Cull::None;grid.lit=grid.fogged=false;device.drawMesh(grid);
             }
         }

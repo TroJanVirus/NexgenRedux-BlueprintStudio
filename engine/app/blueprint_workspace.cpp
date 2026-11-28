@@ -231,7 +231,7 @@ namespace nx
         if(std::abs(logicalWidth-kWidth)>0.5f||std::abs(logicalHeight-kHeight)>0.5f)
         {
             cancelDrag();clearWire();m_layoutDragging=m_quickDrag=m_quickMenu=m_pan=false;
-            cancelVisualPlacement();cancelActorDrag();m_contentDrag.clear();m_contentPanelDrag=m_contentResize=false;m_splitter=0;m_actorOrbit=false;m_widgetPreviewDrag=m_widgetDragging=false;m_placementReady=false;
+            cancelVisualPlacement();m_sceneOrbit=m_scenePan=false;cancelActorDrag();m_contentDrag.clear();m_contentPanelDrag=m_contentResize=false;m_splitter=0;m_actorOrbit=false;m_widgetPreviewDrag=m_widgetDragging=false;m_placementReady=false;
         }
         kWidth=logicalWidth;kHeight=logicalHeight;kLeft=m_leftPanel;kRight=kWidth-m_graphRightPanel;kBottom=kHeight-46;
         const float extra=std::max(0.f,kHeight-kBaseHeight);
@@ -391,7 +391,7 @@ namespace nx
         found->first=widget?m_widgetFirst:m_placementFirst;
         found->fourThree=m_widgetFourThree;found->threeD=m_placement3D;found->outliner=m_placementOutliner;
         found->yaw=m_placementYaw;found->distance=m_placementDistance;found->height=m_placementHeight;found->mode=m_gizmoMode;
-        found->focusX=m_sceneFocusX;found->focusZ=m_sceneFocusZ;
+        found->focusX=m_sceneFocusX;found->focusY=m_sceneFocusY;found->focusZ=m_sceneFocusZ;found->pitch=m_scenePitch;
         if(m_activeVisualTab!=key)
         {
             m_activeVisualTab=key;
@@ -425,7 +425,7 @@ namespace nx
         m_placementSelectedOwner=tab.screen;m_placementSelectedId=tab.instance;
         m_placementFirst=tab.widget?0:tab.first;m_placement3D=tab.threeD;m_placementOutliner=tab.outliner;
         m_placementYaw=tab.yaw;m_placementDistance=tab.distance;m_placementHeight=tab.height;m_gizmoMode=tab.mode;
-        m_sceneFocusX=tab.focusX;m_sceneFocusZ=tab.focusZ;
+        m_sceneFocusX=tab.focusX;m_sceneFocusY=tab.focusY;m_sceneFocusZ=tab.focusZ;m_scenePitch=tab.pitch;m_sceneOrbit=m_scenePan=false;
         rememberVisualTab();
         m_status=tab.widget?"Widget designer tab restored.":"Scene placement tab restored.";
     }
@@ -982,7 +982,7 @@ namespace nx
     }
     void BlueprintWorkspace::releasePlacementPreview()
     {
-        m_placementRoots.clear();
+        m_placementRoots.clear();m_sceneOrbit=m_scenePan=false;
         if(m_placementWorld){destroy(m_placementWorld);m_placementWorld=nullptr;}
         m_placementReady=false;m_placementRevision=static_cast<size_t>(-1);m_placementScreen.clear();m_actorPreviewId.clear();m_actorPreviewRoot=0;
     }
@@ -1142,7 +1142,7 @@ namespace nx
         }
         m_sceneFocusX=found?(loX+hiX)*0.5f:0;
         m_sceneFocusZ=found?(loZ+hiZ)*0.5f:0;
-        m_placementHeight=found?(loY+hiY)*0.5f:0;
+        m_sceneFocusY=found?(loY+hiY)*0.5f:0;
         m_placementDistance=found?std::clamp(std::max({hiX-loX,hiY-loY,hiZ-loZ})*2.2f,4.f,10000.f):25;
         m_placementReady=false;
         m_status=found?"Framed scene actors.":"Reset empty scene view.";
@@ -1209,7 +1209,7 @@ namespace nx
                         }
                         else
                         {
-                            const float height=m_placement3D?m_placementHeight:marker.y;
+                            const float height=marker.y;
                             float wx=0,wz=0;
                             if(placementPoint(x,y,height,wx,wz))ok=m_document.editVisualActorPlacement(assetScreen(),marker.id,"place",std::to_string(wx+m_placementGrabWorldX)+","+std::to_string(height)+","+std::to_string(wz+m_placementGrabWorldZ),m_status);
                             else m_status="No forward intersection with placement plane.";
@@ -1229,6 +1229,31 @@ namespace nx
             cancelVisualPlacement();return;
         }
         const float pointerX=x,pointerY=y;
+        const bool inside=in(x,y,planLeft,planTop,planRight,planBottom);
+        const auto& raw=s.input->raw();
+        const bool orbit=m_placement3D&&raw.mouseButtons[1],pan=m_placement3D&&raw.mouseButtons[2];
+        if(!orbit)m_sceneOrbit=false;
+        if(!pan)m_scenePan=false;
+        if(m_placement3D&&(m_sceneOrbit||m_scenePan||inside))
+        {
+            if(orbit||pan)
+            {
+                if(m_sceneOrbit||m_scenePan)
+                {
+                    const float dx=x-m_scenePointerX,dy=y-m_scenePointerY;
+                    if(orbit){m_placementYaw+=dx*0.008f;m_scenePitch=std::clamp(m_scenePitch+dy*0.008f,0.10f,1.45f);}
+                    else
+                    {
+                        const float units=m_placementDistance/std::max(1.f,planBottom-planTop);
+                        m_sceneFocusX+=(-dx*std::cos(m_placementYaw)-dy*std::sin(m_placementYaw))*units;
+                        m_sceneFocusZ+=(dx*std::sin(m_placementYaw)-dy*std::cos(m_placementYaw))*units;
+                    }
+                }
+                m_sceneOrbit=orbit;m_scenePan=pan;m_scenePointerX=x;m_scenePointerY=y;m_placementReady=false;return;
+            }
+            const float wheel=s.input->wheel();
+            if(inside&&wheel!=0){m_placementDistance=std::clamp(m_placementDistance*std::pow(0.88f,std::clamp(wheel,-8.f,8.f)),2.f,10000.f);m_placementReady=false;return;}
+        }
         if(layout.wide)
         {
             if(in(x,y,280+layout.sideDx,156+layout.sideDy,610+layout.sideDx,590+layout.sideDy))
@@ -1280,8 +1305,8 @@ namespace nx
         {
             const unsigned button=static_cast<unsigned>((x-630)/74);
             if(button==0)m_placementYaw-=0.35f;else if(button==1)m_placementYaw+=0.35f;
-            else if(button==2)m_placementDistance=std::max(4.f,m_placementDistance-3);
-            else if(button==3)m_placementDistance=std::min(10000.f,m_placementDistance+3);
+            else if(button==2)m_placementDistance=std::max(2.f,m_placementDistance*0.8f);
+            else if(button==3)m_placementDistance=std::min(10000.f,m_placementDistance*1.25f);
             else frameScenePlacement();
             m_placementReady=false;return;
         }
@@ -1357,10 +1382,9 @@ namespace nx
             {
                 m_placementGraph=it->graph;m_placementNode=it->node;m_placementAsset=it->asset;
                 m_placementSelectedId=it->id;m_visualSelection=it->asset;m_placementStartX=x;m_placementStartY=y;m_placementDragRevision=m_document.revision();
-                m_placementGrabWorldX=m_placementGrabWorldZ=0;
+                m_placementGrabWorldX=m_placementGrabWorldZ=0;m_placementMoveHeight=it->y;
                 if(m_placement3D)
                 {
-                    m_placementHeight=it->y;
                     float wx=0,wz=0;
                     if(placementPoint(x,y,it->y,wx,wz))
                     {m_placementGrabWorldX=it->x-wx;m_placementGrabWorldZ=it->z-wz;}
@@ -1385,9 +1409,12 @@ namespace nx
         {
             auto& space=m_placementWorld->space();
             const float d=m_placementDistance;
-            const Vec3 focus(m_sceneFocusX,m_placementHeight,m_sceneFocusZ);
-            space.setCamera(focus+Vec3(std::sin(m_placementYaw)*d,d*0.65f,std::cos(m_placementYaw)*d),focus,55);
+            const Vec3 focus(m_sceneFocusX,m_sceneFocusY,m_sceneFocusZ);
+            const float horizontal=d*std::cos(m_scenePitch);
+            space.setCamera(focus+Vec3(std::sin(m_placementYaw)*horizontal,d*std::sin(m_scenePitch),std::cos(m_placementYaw)*horizontal),focus,55);
+            space.setFar(std::max(400.f,d*4.f));
             space.m_editorGrid=true;space.m_editorGridHeight=m_placementHeight;
+            space.m_editorGridX=std::round(m_sceneFocusX);space.m_editorGridZ=std::round(m_sceneFocusZ);
             space.draw(c,planLeft+modalX(),planTop+modalY(),planRight-planLeft,planBottom-planTop);
             m_placementReady=true;
         }
@@ -1419,7 +1446,7 @@ namespace nx
         }
         if(m_placementDragging&&in(m_placementX,m_placementY,planLeft,planTop,planRight,planBottom))
         {
-            const float height=m_placement3D?m_placementHeight:0;
+            const float height=m_placementGraph!=static_cast<size_t>(-1)?m_placementMoveHeight:m_placement3D?m_placementHeight:0;
             float wx=0,wz=0,x=0,y=0;
             if(placementPoint(m_placementX,m_placementY,height,wx,wz)&&placementProject(wx+m_placementGrabWorldX,height,wz+m_placementGrabWorldZ,x,y))
                 c.roundRect(x-9,y-9,18,18,3,{0.35f,0.80f,0.56f,1});
@@ -1431,6 +1458,7 @@ namespace nx
             const char* labels[]={"Orbit L","Orbit R","Zoom +","Zoom -","Frame"};
             for(unsigned i=0;i<5;++i){const float x=630+74*static_cast<float>(i);c.rect(x,551,71,22,{0.19f,0.33f,0.50f,1});c.text(*m_font,labels[i],x+35,552,text,Align::Center);}
             c.text(*m_font,"Height -",635,575,text);c.text(*m_font,"Height +",925,575,text);
+            if(layout.wide){c.text(*m_font,("Plane Y: "+std::to_string(m_placementHeight)).c_str(),1010,551,muted);c.text(*m_font,"Right drag: orbit | Middle drag: pan | Wheel: zoom",1010,575,muted);}
             c.text(*m_font,m_gizmoMode==0?"Move XYZ":m_gizmoMode==1?"Rotate XYZ":"Scale XYZ",815,575,accent,Align::Center);
         }
         else

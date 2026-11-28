@@ -67,7 +67,7 @@ namespace nx
             std::pair<std::string,std::string> graph;
             size_t first=0;
             bool fourThree=false,threeD=false,outliner=false;
-            float yaw=0.65f,distance=25,height=0,focusX=0,focusZ=0;
+            float yaw=0.65f,distance=25,height=0,focusX=0,focusY=0,focusZ=0,pitch=0.576375f;
             unsigned mode=0;
         };
         std::vector<VisualTab> m_visualTabs;
@@ -182,7 +182,9 @@ namespace nx
         size_t m_placementRevision=static_cast<size_t>(-1);
         std::string m_placementScreen;
         float m_placementYaw=0.65f,m_placementDistance=25,m_placementHeight=0;
-        float m_sceneFocusX=0,m_sceneFocusZ=0;
+        float m_sceneFocusX=0,m_sceneFocusY=0,m_sceneFocusZ=0,m_scenePitch=0.576375f;
+        bool m_sceneOrbit=false,m_scenePan=false;
+        float m_scenePointerX=0,m_scenePointerY=0,m_placementMoveHeight=0;
         void frameScenePlacement();
         unsigned m_placementOmitted=0;
         void releasePlacementPreview();
