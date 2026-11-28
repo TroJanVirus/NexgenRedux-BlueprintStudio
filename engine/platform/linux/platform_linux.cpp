@@ -52,6 +52,7 @@ namespace nx
             case XK_Escape: return Key::Escape;
             case XK_Tab: return Key::Tab;
             case XK_BackSpace: return Key::Backspace;
+            case XK_Delete: return Key::Delete;
             case XK_Shift_L:
             case XK_Shift_R: return Key::Shift;
             case XK_Control_L:

@@ -403,6 +403,9 @@ namespace nx
         bool m_inspectorColourChanged=false,m_nodeContext=false;
         float m_nodeContextX=0,m_nodeContextY=0;
         bool removeSelectedNode(Input& input);
+        bool confirmNodeDeletion(Input& input);
+        bool m_confirmDelete=true,m_skipDeleteConfirmation=false;
+        std::vector<size_t> m_deleteSelection;
         double m_nodeClickTime=-1;
         size_t m_nodeClickGraph=static_cast<size_t>(-1),m_nodeClickIndex=static_cast<size_t>(-1);
         float m_nodeClickX=0,m_nodeClickY=0;

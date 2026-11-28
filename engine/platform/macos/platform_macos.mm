@@ -101,7 +101,7 @@ namespace nx
                 { 29, Key::Num0 }, { 18, Key::Num1 }, { 19, Key::Num2 }, { 20, Key::Num3 }, { 21, Key::Num4 }, { 23, Key::Num5 }, { 22, Key::Num6 },
                 { 26, Key::Num7 }, { 28, Key::Num8 }, { 25, Key::Num9 },
                 { 126, Key::Up }, { 125, Key::Down }, { 123, Key::Left }, { 124, Key::Right }, { 49, Key::Space }, { 36, Key::Enter }, { 76, Key::Enter },
-                { 53, Key::Escape }, { 48, Key::Tab }, { 51, Key::Backspace },
+                { 53, Key::Escape }, { 48, Key::Tab }, { 51, Key::Backspace }, { 117, Key::Delete },
             };
             for (const auto& m : map)
             {

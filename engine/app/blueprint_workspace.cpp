@@ -194,13 +194,13 @@ namespace nx
             ",\"contentTop\":"+(m_contentDockTop?"true":"false")+",\"contentHeight\":"+std::to_string(m_contentPanelHeight)+
             ",\"graphCategories\":"+(m_graphTree?"true":"false")+",\"contentSide\":"+std::to_string(m_contentDockSide)+
             ",\"contentSideWidth\":"+std::to_string(m_contentSideWidth)+",\"minimap\":"+(m_minimap?"true":"false")+
-            ",\"hideGraphLeft\":"+(m_graphHideLeft?"true":"false")+",\"hideGraphRight\":"+(m_graphHideRight?"true":"false")+",\"wireStyle\":"+std::to_string(m_wireStyle)+"}\n";
+            ",\"hideGraphLeft\":"+(m_graphHideLeft?"true":"false")+",\"hideGraphRight\":"+(m_graphHideRight?"true":"false")+",\"wireStyle\":"+std::to_string(m_wireStyle)+",\"confirmDelete\":"+(m_confirmDelete?"true":"false")+"}\n";
     }
     void BlueprintWorkspace::loadLayout(Services& s)
     {
         m_leftPanel=248;m_graphRightPanel=268;m_actorRightPanel=310;m_uiScale=0;m_actorCollapsed=0;m_contentDrawer=false;m_contentFloating=false;m_contentPanelX=0.25f;m_contentPanelY=0.65f;m_contentPanelWidth=620;m_contentDockTop=false;m_contentPanelHeight=174;m_contentDockSide=0;m_contentSideWidth=300;
         m_graphTree=true;m_minimap=m_minimapDragging=false;m_graphHideLeft=m_graphHideRight=false;m_navigationFirst=0;m_navigationCollapsed.clear();
-        m_wireStyle=0;
+        m_wireStyle=0;m_confirmDelete=true;m_skipDeleteConfirmation=false;m_deleteSelection.clear();
         FileData file;JsonTree tree;
         if(s.platform->readFile("own/blueprint-editor-layout.json",file,MemTag::General)&&file.size&&file.size<=4096&&
             tree.parse(reinterpret_cast<const char*>(file.data),file.size))
@@ -223,6 +223,7 @@ namespace nx
                 m_graphTree=root["graphCategories"].type()!=JsonTree::Type::Bool||root["graphCategories"].flag();m_minimap=root["minimap"].flag();
                 m_graphHideLeft=root["hideGraphLeft"].flag();m_graphHideRight=root["hideGraphRight"].flag();
                 m_wireStyle=static_cast<unsigned>(bounded("wireStyle",0,0,2));
+                m_confirmDelete=root["confirmDelete"].type()!=JsonTree::Type::Bool||root["confirmDelete"].flag();
                 m_contentDockSide=static_cast<unsigned>(bounded("contentSide",0,0,2));
                 m_contentSideWidth=bounded("contentSideWidth",300,260,480);
                 NX_INFO("Blueprint Studio: restored editor layout");
@@ -285,7 +286,7 @@ namespace nx
         return true;
     }
     bool BlueprintWorkspace::modalOpen() const
-    {return m_assetBrowser||m_browsing||m_focus==5||m_focus==6||m_focus==9||m_focus==10||m_focus==11||m_focus==12||m_focus==13||m_focus==14||m_focus==15||m_focus==17||m_focus==18||m_focus==20||m_focus==21||m_focus==22||m_focus==23||m_focus==24;}
+    {return m_assetBrowser||m_browsing||m_focus==5||m_focus==6||m_focus==9||m_focus==10||m_focus==11||m_focus==12||m_focus==13||m_focus==14||m_focus==15||m_focus==17||m_focus==18||m_focus==20||m_focus==21||m_focus==22||m_focus==23||m_focus==24||m_focus==25;}
     void BlueprintWorkspace::resetGraphTabs()
     {
         releaseContentPreviews();m_graphTabs.clear();m_actorTabs.clear();m_visualTabs.clear();m_activeVisualTab={};m_activeTab={};m_tabFirst=0;
@@ -4621,8 +4622,22 @@ namespace nx
     }
     bool BlueprintWorkspace::removeSelectedNode(Input& input)
     {
-        if(!m_document.deleteNode(m_graph,m_selection,m_status))return false;
-        m_focus=0;input.setTyping(false);m_selection=static_cast<size_t>(-1);m_selectedNodes.clear();clearWire();rebuildPins();filterCatalogue();m_diagnostic={};m_status="Node deleted. Undo restores it.";return true;
+        if(m_graph>=m_document.graphs.size())return false;
+        const auto& graph=m_document.graphs[m_graph];m_deleteSelection=m_selectedNodes;
+        if(m_deleteSelection.empty()&&m_selection<graph.nodes.size())m_deleteSelection.push_back(m_selection);
+        m_deleteSelection.erase(std::remove_if(m_deleteSelection.begin(),m_deleteSelection.end(),[&](size_t n){return n>=graph.nodes.size()||graph.nodes[n].kind=="entry";}),m_deleteSelection.end());
+        if(m_deleteSelection.empty()){m_status="Select a deletable node. Event entry is protected.";return false;}
+        m_skipDeleteConfirmation=false;
+        if(!m_confirmDelete)return confirmNodeDeletion(input);
+        m_focus=25;input.setTyping(false);m_status="Confirm node deletion; Undo restores deleted nodes.";return true;
+    }
+    bool BlueprintWorkspace::confirmNodeDeletion(Input& input)
+    {
+        if(!m_document.deleteNodes(m_graph,m_deleteSelection,m_status))return false;
+        if(m_skipDeleteConfirmation)m_confirmDelete=false;
+        const auto count=m_deleteSelection.size();m_deleteSelection.clear();m_skipDeleteConfirmation=false;
+        m_focus=0;input.setTyping(false);m_selection=static_cast<size_t>(-1);m_selectedNodes.clear();clearWire();rebuildPins();filterCatalogue();m_diagnostic={};
+        m_status=count==1?"Node deleted. Undo restores it.":"Selected nodes deleted. Undo restores them.";return true;
     }
     bool BlueprintWorkspace::beginInputEdit(size_t node,const std::string& pin,Input& input)
     {
@@ -5014,7 +5029,7 @@ namespace nx
             if(m_rgbOpen){m_rgbOpen=false;return;}
             if(m_moveWire!=static_cast<size_t>(-1)){m_moveWire=static_cast<size_t>(-1);m_status="Connection move cancelled.";return;}
             if(m_focus==22&&m_sceneNaming){m_sceneNaming=false;input.setTyping(false);return;}
-            if(m_focus){m_focus=0;input.setTyping(false);m_status="Input cancelled.";return;}
+            if(m_focus){if(m_focus==25){m_deleteSelection.clear();m_skipDeleteConfirmation=false;}m_focus=0;input.setTyping(false);m_status="Input cancelled.";return;}
             if(m_marquee){m_marquee=false;m_selectedNodes.clear();m_selection=static_cast<size_t>(-1);m_left=input.raw().mouseButtons[0];return;}
             if(m_minimapDragging){m_minimapDragging=false;return;}
             if(m_nodeContext){m_nodeContext=false;return;}
@@ -5047,7 +5062,7 @@ namespace nx
         const auto held=[&](Key key){return raw.keys[static_cast<size_t>(key)];};
         const bool control=held(Key::Control);
         const unsigned keys=(control&&held(Key::S)?1u:0u)|(control&&held(Key::Z)&&!held(Key::Shift)?2u:0u)|
-            (control&&(held(Key::Y)||(held(Key::Z)&&held(Key::Shift)))?4u:0u)|(!control&&held(Key::Q)?8u:0u)|(control&&held(Key::F)?16u:0u)|(!control&&held(Key::C)?32u:0u);
+            (control&&(held(Key::Y)||(held(Key::Z)&&held(Key::Shift)))?4u:0u)|(!control&&held(Key::Q)?8u:0u)|(control&&held(Key::F)?16u:0u)|(!control&&held(Key::C)?32u:0u)|(held(Key::Delete)?64u:0u)|(held(Key::Enter)?128u:0u);
         const unsigned pressed=keys&~m_shortcuts;m_shortcuts=keys;
         const bool click=left&&!m_left;
         if(!left)m_paletteDragging=false;
@@ -5119,6 +5134,13 @@ namespace nx
             if(updateContentDrawer(s,x,y,left,click)||updateGraphTabs(s,x,y,click)||updateGraphMap(x,y,left,click)){m_left=left;return;}
         }
         if(modalOpen()){x-=modalX();y-=modalY();}
+        if(m_focus==25)
+        {
+            if(click&&in(x,y,350,355,930,385))m_skipDeleteConfirmation=!m_skipDeleteConfirmation;
+            if(click&&in(x,y,660,405,790,445)){m_deleteSelection.clear();m_skipDeleteConfirmation=false;m_focus=0;m_status="Deletion cancelled.";}
+            else if((pressed&128u)||(click&&in(x,y,800,405,930,445))){if(confirmNodeDeletion(input))saveLayout(s);}
+            m_left=left;return;
+        }
         if(m_focus==24){updateBuildManager(s,x,y,click);m_left=left;return;}
         if(m_focus==23){updateInputActions(s,x,y,click);m_left=left;return;}
         if(m_focus==22){updateSceneBrowser(s,x,y,click);m_left=left;return;}
@@ -5209,6 +5231,7 @@ namespace nx
                 }
                 else if(in(x,y,300,575,550,605))
                 {m_wireStyle=(m_wireStyle+1)%3;saveLayout(s);m_status=std::string("Wire style: ")+(m_wireStyle==0?"Curved":m_wireStyle==1?"Orthogonal":"Straight");}
+                else if(in(x,y,300,605,550,635)){m_confirmDelete=!m_confirmDelete;saveLayout(s);m_status=m_confirmDelete?"Node deletion confirmation enabled.":"Node deletion confirmation disabled.";}
                 m_layoutMenu=false;
             }
             m_left=left;return;
@@ -5754,6 +5777,7 @@ namespace nx
         }
         if(!m_drag)
         {
+            if((pressed&64u)&&!m_focus&&!m_pinDrag&&!m_pan&&m_pending==static_cast<size_t>(-1)){if(removeSelectedNode(input)&&!m_confirmDelete)saveLayout(s);m_left=left;return;}
             if((pressed&16u)&&!m_focus){m_focus=20;m_findText.clear();m_findFirst=0;input.setTyping(true);m_left=left;return;}
             if((pressed&32u)&&!m_focus){const auto nodes=m_selectedNodes.empty()&&m_selection<m_rows.size()?std::vector<size_t>{m_selection}:m_selectedNodes;if(!nodes.empty()&&m_document.addComment(m_graph,nodes,"Comment",m_status)){m_layoutComment=m_document.graphs[m_graph].comments.size()-1;m_edit="Comment";m_commentColour=0;m_focus=11;input.setTyping(true);}m_left=left;return;}
             if((pressed&8u)&&m_selectedNodes.size()>1){if(m_document.alignNodes(m_graph,m_selectedNodes,true,m_status))m_status="Aligned selected nodes horizontally.";m_left=left;return;}
@@ -5916,7 +5940,7 @@ namespace nx
                 {m_edit=n.ref;m_focus=n.kind.rfind("literal:",0)==0?2:3;input.setTyping(true);}
                 else if(in(x,y,kRight+8,kTop+520+kPaletteExtra,kWidth-8,kTop+552+kPaletteExtra))
                 {beginNodeEditor(m_selection,input);}
-                else if(in(x,y,kRight+8,kBottom-40,kWidth-8,kBottom-8)&&m_document.deleteNode(m_graph,m_selection,m_status)){m_diagnostic={};clearWire();m_selection=static_cast<size_t>(-1);rebuildPins();m_selectedNodes.clear();m_status="Deleted node.";}
+                else if(in(x,y,kRight+8,kBottom-40,kWidth-8,kBottom-8))removeSelectedNode(input);
             }
             m_left=left;return;
         }
@@ -6542,11 +6566,11 @@ namespace nx
         if(m_contentFloating){drawGraphTabs(c);drawContentDrawer(c);}else{drawContentDrawer(c);drawGraphTabs(c);}
         if(m_layoutMenu)
         {
-            c.roundRect(300,35,250,570,5,{0.16f,0.16f,0.17f,1});
-            const char* labels[]={"Arrange graph","Align selected left","Align selected top","Comment selection","Collapse to function","Rename function","Duplicate function","Open selected function","Back to caller",m_document.graphs[m_graph].inlineMacro?"Convert to function":"Convert to inline macro",m_document.graphs[m_graph].sharedLibrary?"Make library graph local":"Publish to project library","Export project library",m_uiScale==0?"UI scale: Auto":m_uiScale==1?"UI scale: 100%":m_uiScale==2?"UI scale: 125%":"UI scale: 150%","Reset editor layout",m_minimap?"Hide graph overview":"Show graph overview",m_graphHideLeft?"Show navigator":"Hide navigator",m_graphHideRight?"Show node library":"Hide node library","Export project ZIP",m_wireStyle==0?"Wire style: Curved":m_wireStyle==1?"Wire style: Orthogonal":"Wire style: Straight"};
+            c.roundRect(300,35,250,600,5,{0.16f,0.16f,0.17f,1});
+            const char* labels[]={"Arrange graph","Align selected left","Align selected top","Comment selection","Collapse to function","Rename function","Duplicate function","Open selected function","Back to caller",m_document.graphs[m_graph].inlineMacro?"Convert to function":"Convert to inline macro",m_document.graphs[m_graph].sharedLibrary?"Make library graph local":"Publish to project library","Export project library",m_uiScale==0?"UI scale: Auto":m_uiScale==1?"UI scale: 100%":m_uiScale==2?"UI scale: 125%":"UI scale: 150%","Reset editor layout",m_minimap?"Hide graph overview":"Show graph overview",m_graphHideLeft?"Show navigator":"Hide navigator",m_graphHideRight?"Show node library":"Hide node library","Export project ZIP",m_wireStyle==0?"Wire style: Curved":m_wireStyle==1?"Wire style: Orthogonal":"Wire style: Straight",m_confirmDelete?"Confirm node deletion: On":"Confirm node deletion: Off"};
             const auto& activeGraph=m_document.graphs[m_graph];
             const bool hasSelection=m_selection<activeGraph.nodes.size()||!m_selectedNodes.empty();
-            for(size_t i=0;i<19;++i)
+            for(size_t i=0;i<20;++i)
             {
                 const bool enabled=i==0||i>=11||(i<=2&&m_selectedNodes.size()>=2)||((i==3||i==4)&&hasSelection)||((i==5||i==6)&&activeGraph.kind=="function")||
                     (i==7&&m_selection<activeGraph.nodes.size()&&(activeGraph.nodes[m_selection].kind=="call:function"||activeGraph.nodes[m_selection].kind=="call:library"))||(i==8&&!m_graphBack.empty())||((i==9||i==10)&&activeGraph.kind=="function");
@@ -6651,6 +6675,17 @@ namespace nx
                 c.rect(0,625,1280,95,{0.13f,0.16f,0.21f,1});
                 c.text(*m_font,("Active: "+m_document.name+(m_document.dirty()?"  /  Unsaved changes":"")).c_str(),28,638,accent);
                 c.clip(28,665,1220,40);c.text(*m_font,m_status.c_str(),28,673,text);c.noClip();
+            }
+            else if(m_focus==25)
+            {
+                c.roundRect(330,250,620,215,8,{0.16f,0.18f,0.22f,1});
+                c.text(*m_font,m_deleteSelection.size()==1?"Delete selected node?":"Delete selected nodes?",350,266,accent);
+                const auto question=m_deleteSelection.size()==1?std::string("Are you sure you wish to delete this node?"):"Delete "+std::to_string(m_deleteSelection.size())+" selected nodes?";
+                c.text(*m_font,question.c_str(),350,303,text);c.text(*m_font,"Connected wires will also be removed. Undo restores them.",350,328,muted);
+                c.roundRect(350,359,20,20,3,{0.25f,0.30f,0.36f,1});if(m_skipDeleteConfirmation)c.rect(354,363,12,12,accent);
+                c.text(*m_font,"Don't ask me again",380,360,text);
+                c.roundRect(660,405,130,40,4,{0.22f,0.31f,0.43f,1});c.text(*m_font,"Cancel",725,415,text,Align::Center);
+                c.roundRect(800,405,130,40,4,{0.48f,0.21f,0.25f,1});c.text(*m_font,"Delete",865,415,text,Align::Center);
             }
             else if(m_focus==24)drawBuildManager(c);
             else if(m_focus==23)drawInputActions(c);

@@ -2902,16 +2902,25 @@ namespace nx
         Node added{id,kind,variableName,x,y};added.displayName=nodeDisplayName(graph,added);record(graph);g.nodes.push_back(std::move(added));error.clear();return true;
     }
     bool BlueprintDocument::deleteNode(size_t graph,size_t node,std::string& error)
+    {return deleteNodes(graph,{node},error);}
+    bool BlueprintDocument::deleteNodes(size_t graph,const std::vector<size_t>& nodes,std::string& error)
     {
-        if(graph>=graphs.size()||node>=graphs[graph].nodes.size()||graphs[graph].nodes[node].kind=="entry")
-        {error="The event entry cannot be deleted.";return false;}
-        auto& g=graphs[graph];record(graph);
-        const auto id=g.nodes[node].id;
-        for(auto& comment:g.comments)comment.members.erase(std::remove(comment.members.begin(),comment.members.end(),id),comment.members.end());
+        if(graph>=graphs.size()||nodes.empty()){error="Select a node to delete.";return false;}
+        auto& g=graphs[graph];std::vector<bool> removed(g.nodes.size(),false);
+        for(const auto node:nodes)
+        {
+            if(node>=g.nodes.size()||g.nodes[node].kind=="entry"){error="The event entry cannot be deleted.";return false;}
+            removed[node]=true;
+        }
+        std::vector<size_t> remap(g.nodes.size());size_t next=0;
+        for(size_t n=0;n<g.nodes.size();++n)if(!removed[n])remap[n]=next++;
+        record(graph);
+        for(auto& comment:g.comments)comment.members.erase(std::remove_if(comment.members.begin(),comment.members.end(),[&](const std::string& id){for(size_t n=0;n<g.nodes.size();++n)if(removed[n]&&g.nodes[n].id==id)return true;return false;}),comment.members.end());
         g.comments.erase(std::remove_if(g.comments.begin(),g.comments.end(),[](const Comment& item){return item.members.empty();}),g.comments.end());
-        g.links.erase(std::remove_if(g.links.begin(),g.links.end(),[&](const Link& l){return l.from==node||l.to==node;}),g.links.end());
-        for(auto& l:g.links){if(l.from>node)--l.from;if(l.to>node)--l.to;}
-        g.nodes.erase(g.nodes.begin()+static_cast<std::ptrdiff_t>(node));error.clear();return true;
+        g.links.erase(std::remove_if(g.links.begin(),g.links.end(),[&](const Link& l){return removed[l.from]||removed[l.to];}),g.links.end());
+        for(auto& l:g.links){l.from=remap[l.from];l.to=remap[l.to];}
+        for(size_t n=g.nodes.size();n>0;--n)if(removed[n-1])g.nodes.erase(g.nodes.begin()+static_cast<std::ptrdiff_t>(n-1));
+        error.clear();return true;
     }
     bool BlueprintDocument::connect(size_t graph,size_t from,const std::string& output,size_t to,const std::string& input,std::string& error)
     {

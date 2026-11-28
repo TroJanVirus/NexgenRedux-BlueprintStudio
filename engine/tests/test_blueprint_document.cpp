@@ -7,6 +7,20 @@
 #include <algorithm>
 
 using namespace nx;
+NX_TEST(nativeDeleteSelectedNodesIsAtomic)
+{
+    BlueprintDocument doc;doc.create();std::string error;
+    NX_EXPECT(doc.addNode(0,"api:Save:Save::set:string,string",200,100,error));
+    NX_EXPECT(doc.addNode(0,"api:Save:Save::set:string,string",500,100,error));
+    NX_EXPECT(doc.connect(0,0,"then",1,"in",error));
+    NX_EXPECT(doc.connect(0,1,"then",2,"in",error));
+    NX_EXPECT(doc.addComment(0,{1,2},"Temporary nodes",error));
+    NX_EXPECT(!doc.deleteNodes(0,{0,1},error)&&doc.graphs[0].nodes.size()==3);
+    NX_EXPECT(doc.deleteNodes(0,{1,2},error));
+    NX_EXPECT(doc.graphs[0].nodes.size()==1&&doc.graphs[0].links.empty()&&doc.graphs[0].comments.empty());
+    NX_EXPECT(doc.undo()&&doc.graphs[0].nodes.size()==3&&doc.graphs[0].links.size()==2&&doc.graphs[0].comments.size()==1);
+    NX_EXPECT(doc.redo()&&doc.graphs[0].nodes.size()==1);
+}
 NX_TEST(nativeCatalogueContainsReferenceAPI)
 {
     NX_EXPECT(blueprintCatalogue().size()==1544);

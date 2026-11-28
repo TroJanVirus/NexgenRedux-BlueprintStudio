@@ -151,6 +151,7 @@ namespace nx
         bool addConnectedNode(size_t graph,size_t from,const std::string& output,const std::string& kind,float x,float y,std::string& error);
         bool addVariableNode(size_t graph,const std::string& variableName,bool global,bool setter,float x,float y,std::string& error);
         bool deleteNode(size_t graph,size_t node,std::string& error);
+        bool deleteNodes(size_t graph,const std::vector<size_t>& nodes,std::string& error);
         bool connect(size_t graph,size_t from,const std::string& output,size_t to,const std::string& input,std::string& error);
         bool disconnect(size_t graph,size_t node,const std::string& pin,bool output);
         bool setLiteral(size_t graph,size_t node,const std::string& value,std::string& error);
