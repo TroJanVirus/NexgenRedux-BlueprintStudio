@@ -407,6 +407,100 @@ namespace nx
             std::string source,bytes;if(!compileBlueprint(candidate,source,error)||!candidate.serialize(bytes,error))return false;
             BlueprintDocument checked;if(!checked.load(bytes.data(),bytes.size(),error))return false;document=std::move(checked);error.clear();return true;
         }
+        if(id=="flight"||id=="rolling-ball")
+        {
+            const bool flight=id=="flight";
+            candidate.name=flight?"Flight":"Rolling Ball";
+            bool ok=true;
+            const auto field=[&](const char* declaration){if(ok)ok=candidate.editVariableDeclaration("Screen",declaration,error);};
+            field("field hero:Entity@");
+            field(flight?"field speed:float=8":"field driveStrength:float=18");
+            field("field cameraDistance:float=7");
+            if(flight){field("field yaw:float=0");field("field pitch:float=0");}
+            const auto fn=[&](const char* name,bool delta=false)
+            {
+                const auto g=candidate.graphs.size();ok=ok&&candidate.addFunction(name,error);
+                if(delta)ok=ok&&candidate.setFunctionSignature(g,{{"dt","float"}},"void",error);
+                return g;
+            };
+            const auto arena=fn("BuildCourse"),spawn=fn("SpawnPlayer"),drive=fn(flight?"Fly":"DriveBall",true),camera=fn("FollowCamera");
+            const auto add=[&](size_t g,const char* kind,float x,float y,const char* target="")
+            {if(!ok)return size_t(0);const auto n=candidate.graphs[g].nodes.size();ok=candidate.addNode(g,kind,x,y,error,target);return n;};
+            const auto var=[&](size_t g,const char* name,bool set,float x,float y)
+            {if(!ok)return size_t(0);const auto n=candidate.graphs[g].nodes.size();ok=candidate.addVariableNode(g,name,false,set,x,y,error);return n;};
+            const auto wire=[&](size_t g,size_t from,const char* out,size_t to,const char* in){if(ok)ok=candidate.connect(g,from,out,to,in,error);};
+            const auto val=[&](size_t g,size_t n,const char* pin,const char* value){if(ok)ok=candidate.setInputValue(g,n,pin,value,error);};
+            const auto chain=[&](size_t g,size_t from,size_t to){wire(g,from,"then",to,"in");};
+            const auto note=[&](size_t g,const char* text)
+            {if(!ok)return;std::vector<size_t> members;for(size_t n=0;n<candidate.graphs[g].nodes.size();++n)members.push_back(n);ok=candidate.addComment(g,members,text,error);};
+            const auto build=add(0,"call:function",340,60,"BuildCourse"),player=add(0,"call:function",700,60,"SpawnPlayer");
+            chain(0,0,build);chain(0,build,player);note(0,"START | Build the course once, then spawn the controlled entity and keep its handle.");
+            const auto tick=add(1,"call:function",340,60,flight?"Fly":"DriveBall"),view=add(1,"call:function",700,60,"FollowCamera"),dt=add(1,"event:delta",30,270);
+            chain(1,0,tick);chain(1,tick,view);wire(1,dt,"value",tick,"arg_dt");
+            note(1,"UPDATE | Read native movement input, apply the controller, then update the camera. Delta time makes controls independent of frame rate.");
+            const auto render=add(2,"render:space",340,60);chain(2,0,render);note(2,"DRAW | Render the native scene with the current camera.");
+            for(size_t g:{size_t(3),size_t(4),size_t(5)})
+            {
+                if(flight){const auto lock=add(g,"api:Input:Input::lockMouse:bool",340,60);val(g,lock,"locked",g==4?"true":"false");chain(g,0,lock);}
+                note(g,g==3?"SUSPEND | The screen stops receiving updates.":g==4?"RESUME | Continue the screen lifecycle.":"EXIT | Native screen teardown releases the entities.");
+            }
+            const auto ground=add(arena,"api:Space:Space::ground:float",340,60),floor=add(arena,"spawn:plane",700,60),sky=add(arena,"api:Space:Space::sky:Color,Color",1060,60),sun=add(arena,"api:Space:Space::sun:Vec3,Color",1420,60);
+            chain(arena,0,ground);val(arena,ground,"height","0");chain(arena,ground,floor);val(arena,floor,"name","Course floor");val(arena,floor,"size","80,1,80");
+            chain(arena,floor,sky);val(arena,sky,"top","0.18,0.35,0.7,1");val(arena,sky,"horizon","0.65,0.8,0.95,1");
+            chain(arena,sky,sun);val(arena,sun,"direction","0.5,0.75,0.35");val(arena,sun,"color","1,0.95,0.85,1");
+            struct Marker{const char* name;const char* place;const char* size;};
+            const Marker markers[]={{"Left gate","-3,2,-8","1,4,1"},{"Right gate","3,2,-8","1,4,1"},{"Slalom left","-2,1,-15","2,2,2"},{"Slalom right","2,1,-22","2,2,2"},{"Finish","0,0.25,-30","7,0.5,2"}};
+            size_t last=sun;
+            for(size_t i=0;i<5;++i)
+            {
+                const auto box=add(arena,"spawn:box",340+float(i%3)*850,320+float(i/3)*300);
+                chain(arena,last,box);val(arena,box,"name",markers[i].name);val(arena,box,"place",markers[i].place);val(arena,box,"size",markers[i].size);last=box;
+                if(!flight){const auto col=add(arena,"api:Entity:cube:Entity@,Vec3,uint,uint",700+float(i%3)*850,320+float(i/3)*300);chain(arena,last,col);wire(arena,box,"result",col,"target");val(arena,col,"size",markers[i].size);last=col;}
+            }
+            note(arena,flight?"COURSE | Lightweight visual gates and slalom markers. This arcade flight controller does not simulate aircraft collisions.":"COURSE | Native ground plus five fixed collision obstacles. Navigate around the gates and slalom to the finish.");
+            const auto entity=add(spawn,"api:Space:Space::spawn:Vec3",340,60),keep=var(spawn,"hero",true,700,60),name=add(spawn,"api:Entity:set_name:Entity@,string",1060,60),size=add(spawn,"api:Entity:set_size:Entity@,Vec3",1420,60),shape=add(spawn,"api:Entity:shape:Entity@,Solid,Color",340,340);
+            chain(spawn,0,entity);val(spawn,entity,"place",flight?"0,4,0":"0,1,0");chain(spawn,entity,keep);wire(spawn,entity,"result",keep,"value");
+            chain(spawn,keep,name);wire(spawn,entity,"result",name,"target");val(spawn,name,"value",flight?"Aircraft":"Player Ball");
+            chain(spawn,name,size);wire(spawn,entity,"result",size,"target");val(spawn,size,"value",flight?"1.8,0.35,1.1":"1,1,1");
+            chain(spawn,size,shape);wire(spawn,entity,"result",shape,"target");val(spawn,shape,"solid",flight?"SolidBox":"SolidSphere");val(spawn,shape,"color","0.15,0.65,0.95,1");
+            if(flight){const auto lock=add(spawn,"api:Input:Input::lockMouse:bool",700,340);chain(spawn,shape,lock);val(spawn,lock,"locked","true");}
+            else
+            {
+                const auto collider=add(spawn,"api:Entity:sphere:Entity@,float,uint,uint",700,340),mass=add(spawn,"api:Entity:set_mass:Entity@,float",1060,340);
+                chain(spawn,shape,collider);wire(spawn,entity,"result",collider,"target");val(spawn,collider,"radius","0.5");chain(spawn,collider,mass);wire(spawn,entity,"result",mass,"target");val(spawn,mass,"value","1");
+            }
+            note(spawn,flight?"AIRCRAFT | A lightweight box stand-in. No rigid body is created; flight is directly controlled. Replace the visual with your own aircraft model.":"BALL | Native sphere appearance and 0.5 m sphere collider; 1 kg mass enables gravity and collision response.");
+            const auto hero=var(drive,"hero",false,30,240),move=add(drive,"api:Input:Input::get_move:",30,420);
+            if(flight)
+            {
+                const auto mouse=add(drive,"api:Input:Input::get_mouseMove:",30,600),pad=add(drive,"api:Input:Input::padRight:uint",30,760),yaw=var(drive,"yaw",false,340,240),pitch=var(drive,"pitch",false,340,420);
+                val(drive,pad,"pad","0");
+                const auto y=add(drive,"player:yaw",700,240),p=add(drive,"player:pitch",700,580),setY=var(drive,"yaw",true,1100,60),setP=var(drive,"pitch",true,1450,60);
+                for(size_t n:{y,p}){wire(drive,mouse,"result",n,"mouse");wire(drive,pad,"result",n,"pad");wire(drive,0,"arg_dt",n,"dt");}
+                wire(drive,yaw,"value",y,"yaw");wire(drive,pitch,"value",p,"pitch");
+                chain(drive,0,setY);wire(drive,y,"result",setY,"value");chain(drive,setY,setP);wire(drive,p,"result",setP,"value");
+                const auto place=add(drive,"api:Entity:get_place:Entity@",340,780),speed=var(drive,"speed",false,340,950),next=add(drive,"player:flight-position",1150,420),set=add(drive,"api:Entity:set_place:Entity@,Vec3",1810,60);
+                wire(drive,hero,"value",place,"target");wire(drive,place,"result",next,"place");wire(drive,move,"result",next,"move");wire(drive,yaw,"value",next,"yaw");wire(drive,pitch,"value",next,"pitch");wire(drive,speed,"value",next,"speed");wire(drive,0,"arg_dt",next,"dt");
+                chain(drive,setP,set);wire(drive,hero,"value",set,"target");wire(drive,next,"result",set,"value");
+                const auto angles=add(drive,"player:angles",1500,420),face=add(drive,"api:Entity:set_angles:Entity@,Vec3",2180,60);wire(drive,yaw,"value",angles,"yaw");chain(drive,set,face);wire(drive,hero,"value",face,"target");wire(drive,angles,"result",face,"value");
+            }
+            else
+            {
+                const auto force=var(drive,"driveStrength",false,30,590),impulse=add(drive,"player:ball-impulse",380,240),push=add(drive,"api:Entity:push:Entity@,Vec3",780,60);
+                wire(drive,move,"result",impulse,"move");wire(drive,force,"value",impulse,"strength");wire(drive,0,"arg_dt",impulse,"dt");chain(drive,0,push);wire(drive,hero,"value",push,"target");wire(drive,impulse,"result",push,"impulse");
+            }
+            note(drive,flight?"FLY | WASD / left stick moves along the yaw and pitch heading; mouse / right stick steers. Forward movement climbs or descends with pitch. Altitude is clamped above the floor.":"DRIVE | WASD / left stick applies a horizontal impulse scaled by delta time. Native rigid-body physics handles inertia, gravity and obstacle collisions.");
+            const auto ch=var(camera,"hero",false,30,240),target=add(camera,"api:Entity:get_place:Entity@",340,240),dist=var(camera,"cameraDistance",false,340,440),offset=add(camera,"player:chase-camera",700,240),cam=add(camera,"api:Space:Space::camera:Vec3,Vec3,float",1100,60);
+            wire(camera,ch,"value",target,"target");wire(camera,target,"result",offset,"pivot");wire(camera,dist,"value",offset,"distance");
+            if(flight){const auto yaw=var(camera,"yaw",false,30,420);wire(camera,yaw,"value",offset,"yaw");}else val(camera,offset,"yaw","0");
+            val(camera,offset,"pitch","-25");chain(camera,0,cam);wire(camera,offset,"result",cam,"from");wire(camera,target,"result",cam,"to");val(camera,cam,"angle","65");
+            note(camera,"FOLLOW CAMERA | Offset above and behind the controlled entity, then look at it. Change cameraDistance to adjust framing. No camera collision avoidance.");
+            if(!ok)return false;
+            std::string source,bytes;
+            if(!compileBlueprint(candidate,source,error)||!candidate.serialize(bytes,error))return false;
+            BlueprintDocument checked;if(!checked.load(bytes.data(),bytes.size(),error))return false;
+            document=std::move(checked);error.clear();return true;
+        }
         const bool third=id=="third-person";
         if(id!="first-person"&&!third){error="Unknown project template.";return false;}
         candidate.name=third?"Third Person":"First Person";
@@ -579,7 +673,7 @@ namespace nx
     }
     bool blueprintStageTemplateMedia(Platform& p,const std::string& root,const std::string& id,std::string& error)
     {
-        if(id=="blank"||id=="cinematic"){error.clear();return true;}
+        if(id=="blank"||id=="cinematic"||id=="flight"||id=="rolling-ball"){error.clear();return true;}
         if((id!="first-person"&&id!="third-person")||!blueprintAssetRoot(root)){error="Invalid template media request.";return false;}
         if(!ensure(p,root+"/_global")||!ensure(p,root+"/_global/model"))
         {error="Cannot create template model folder.";return false;}

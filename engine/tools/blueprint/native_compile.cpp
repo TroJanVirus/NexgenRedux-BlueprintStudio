@@ -1241,6 +1241,22 @@ Vec3 bp_player_chase_camera(Vec3 pivot, float yaw, float pitch, float distance)
     float a = yaw * 0.0174532925f, p = pitch * 0.0174532925f;
     return pivot - Vec3(sin(a) * cos(p), sin(p), -cos(a) * cos(p)) * max(0.25f, distance);
 }
+Vec3 bp_player_flight_position(Vec3 place, Vec2 move, float yaw, float pitch, float speed, float dt)
+{
+    float a = yaw * 0.0174532925f, p = pitch * 0.0174532925f;
+    float magnitude = sqrt(move.x * move.x + move.y * move.y);
+    if (magnitude > 1) move = move / magnitude;
+    Vec3 ahead(sin(a) * cos(p), sin(p), -cos(a) * cos(p)), side(cos(a), 0, sin(a));
+    Vec3 next = place + (ahead * -move.y + side * move.x) * max(0.0f, speed) * clamp(dt, 0, 0.1f);
+    next.y = max(0.5f, next.y);
+    return next;
+}
+Vec3 bp_player_ball_impulse(Vec2 move, float strength, float dt)
+{
+    float magnitude = sqrt(move.x * move.x + move.y * move.y);
+    if (magnitude > 1) move = move / magnitude;
+    return Vec3(move.x, 0, move.y) * max(0.0f, strength) * clamp(dt, 0, 0.1f);
+}
 Vec3 bp_player_angles(float yaw) { return Vec3(0, -yaw, 0); }
 )BP_PLAYER";
         bool usesAudio=false;

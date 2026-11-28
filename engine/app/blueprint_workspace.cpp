@@ -5168,7 +5168,7 @@ namespace nx
             }
             const auto selectTemplate=[&](unsigned kind)
             {
-                m_projectCreate=kind;m_projectName=kind==1?"":kind==2?"First Person":kind==3?"Third Person":"Cinematic Showcase";
+                m_projectCreate=kind;m_projectName=kind==1?"":kind==2?"First Person":kind==3?"Third Person":kind==4?"Cinematic Showcase":kind==5?"Flight":"Rolling Ball";
                 input.setTyping(true);m_status="Enter a unique project name, then Create.";
             };
             if(m_projectCreate)
@@ -5176,7 +5176,7 @@ namespace nx
                 for(u32 i=0;i<input.typedCount();++i)
                 {
                     const auto ch=input.typed(i);
-                    if(ch==13){createTemplate(s,m_projectCreate==1?"blank":m_projectCreate==2?"first-person":m_projectCreate==3?"third-person":"cinematic",m_projectName);break;}
+                    if(ch==13){createTemplate(s,m_projectCreate==1?"blank":m_projectCreate==2?"first-person":m_projectCreate==3?"third-person":m_projectCreate==4?"cinematic":m_projectCreate==5?"flight":"rolling-ball",m_projectName);break;}
                     if(ch==8&&!m_projectName.empty())
                     {
                         size_t end=m_projectName.size()-1;while(end&&(static_cast<unsigned char>(m_projectName[end])&0xc0)==0x80)--end;m_projectName.resize(end);
@@ -5185,12 +5185,14 @@ namespace nx
                 }
                 if(!m_browsing){m_left=left;return;}
                 if(click&&in(x,y,28,410,250,448)){m_projectName.clear();input.setTyping(true);}
-                if(click&&in(x,y,28,458,250,496)){createTemplate(s,m_projectCreate==1?"blank":m_projectCreate==2?"first-person":m_projectCreate==3?"third-person":"cinematic",m_projectName);m_left=left;return;}
+                if(click&&in(x,y,28,458,250,496)){createTemplate(s,m_projectCreate==1?"blank":m_projectCreate==2?"first-person":m_projectCreate==3?"third-person":m_projectCreate==4?"cinematic":m_projectCreate==5?"flight":"rolling-ball",m_projectName);m_left=left;return;}
             }
             if(click&&in(x,y,28,166,250,246))selectTemplate(1);
             else if(click&&in(x,y,28,256,250,310))selectTemplate(2);
             else if(click&&in(x,y,28,318,250,374))selectTemplate(3);
             else if(click&&in(x,y,28,502,250,554))selectTemplate(4);
+            else if(click&&in(x,y,28,559,135,615))selectTemplate(5);
+            else if(click&&in(x,y,143,559,250,615))selectTemplate(6);
             else if(click&&in(x,y,860,116,1000,150))
             {m_browsing=false;m_projectCreate=0;input.setTyping(false);}
             else if(click&&in(x,y,550,116,650,150))
@@ -6391,7 +6393,10 @@ namespace nx
                     projectButton(28,458,222,"Create & open",true);
                 }
                 c.roundRect(28,502,222,52,5,m_projectCreate==4?Color{0.19f,0.36f,0.56f,1}:Color{0.16f,0.20f,0.27f,1});c.text(*m_font,"CINEMATIC SHOWCASE",42,507,text);c.text(*m_font,"Boss intro / Sequencer",42,529,muted);
-                c.text(*m_font,"Planned: Flight / Rolling ball",28,574,muted);
+                c.roundRect(28,559,107,56,5,m_projectCreate==5?Color{0.19f,0.36f,0.56f,1}:Color{0.16f,0.20f,0.27f,1});
+                c.text(*m_font,"Flight",81.5f,577,text,Align::Center);
+                c.roundRect(143,559,107,56,5,m_projectCreate==6?Color{0.19f,0.36f,0.56f,1}:Color{0.16f,0.20f,0.27f,1});
+                c.text(*m_font,"Rolling ball",196.5f,577,text,Align::Center);
                 for(size_t i=0;i<12&&m_fileFirst+i<m_files.size();++i)
                 {
                     const float y=166+36*static_cast<float>(i);

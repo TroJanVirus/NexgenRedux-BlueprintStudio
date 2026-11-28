@@ -1049,7 +1049,7 @@ NX_TEST(nativeFirstPersonTemplateCompilesAndRuns)
 }
 NX_TEST(nativeAdditionalProjectTemplatesCompileAndRun)
 {
-    for(const std::string id:{"third-person","cinematic"})
+    for(const std::string id:{"third-person","cinematic","flight","rolling-ball"})
     {
         Rig r;NX_EXPECT(r.ok);if(!r.ok)return;r.platform.workspaceFiles=true;
         BlueprintDocument doc;std::string error,source,bytes;
@@ -1061,7 +1061,18 @@ NX_TEST(nativeAdditionalProjectTemplatesCompileAndRun)
         if(!r.screens.init(r.services,"project","main")){NX_EXPECT(false);return;}r.step(120);
         NX_EXPECT(!r.screens.failed()&&r.services.world);if(!r.services.world)return;auto& world=*r.services.world;
         if(id=="third-person"){const auto hero=world.findNamed("Player");const auto* spatial=world.space().getSpatial(hero);NX_EXPECT(spatial!=nullptr);if(!spatial)return;const auto eye=world.space().cameraPlace();NX_EXPECT(std::abs(eye.z-spatial->place.z-5.f)<0.2f);}
-        else {NX_EXPECT(world.findNamed("Boss")&&doc.visualAssets().size()==1);r.step(300);NX_EXPECT(!r.screens.failed());}
+        else if(id=="cinematic"){NX_EXPECT(world.findNamed("Boss")&&doc.visualAssets().size()==1);r.step(300);NX_EXPECT(!r.screens.failed());}
+        else
+        {
+            const auto hero=world.findNamed(id=="flight"?"Aircraft":"Player Ball");
+            const auto* spatial=world.space().getSpatial(hero);NX_EXPECT(spatial!=nullptr);if(!spatial)return;
+            NX_EXPECT(world.findNamed("Left gate")&&world.findNamed("Finish"));
+            if(id=="rolling-ball")NX_EXPECT(world.space().getCollider(hero)!=nullptr);
+            const Vec3 start=spatial->place;
+            r.platform.state.keys[static_cast<size_t>(Key::W)]=true;r.step(45);
+            r.platform.state.keys[static_cast<size_t>(Key::W)]=false;r.step(5);
+            NX_EXPECT(!r.screens.failed()&&world.space().getSpatial(hero)->place.z<start.z-0.2f);
+        }
         NX_EXPECT(blueprintExportPackage(r.platform,doc,"extra-template.bp.zip",error));BlueprintDocument restored;NX_EXPECT(blueprintImportPackage(r.platform,"extra-template.bp.zip",restored,error)&&compileBlueprint(restored,source,error));
     }
 }
