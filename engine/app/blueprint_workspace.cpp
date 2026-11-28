@@ -4607,6 +4607,7 @@ namespace nx
     bool BlueprintWorkspace::finishSequenceField()
     {
         if(m_sequenceField<0)return true;
+        if(m_sequenceField==8){auto candidate=m_sequenceKeys;candidate[m_sequenceKey].event=m_sequenceText;std::vector<BlueprintCameraKey> checked;if(!blueprintCameraKeys(blueprintCameraKeyText(candidate),checked,m_status))return false;m_sequenceKeys=std::move(checked);m_sequenceField=-1;return true;}
         char* end=nullptr;const float v=std::strtof(m_sequenceText.c_str(),&end);
         if(m_sequenceText.empty()||end!=m_sequenceText.c_str()+m_sequenceText.size()||!std::isfinite(v)){m_status="Enter a finite number.";return false;}
         auto candidate=m_sequenceKeys;auto& key=candidate[m_sequenceKey];
@@ -4625,7 +4626,7 @@ namespace nx
             const auto ch=input.typed(i);if(ch==13){if(m_sequenceField>=0){finishSequenceField();return;}apply=true;break;}
             if(m_sequenceField<0)continue;
             if(ch==8){if(m_sequenceReplace)m_sequenceText.clear();else if(!m_sequenceText.empty())m_sequenceText.pop_back();m_sequenceReplace=false;}
-            else if(ch<128&&std::string("0123456789.eE+-").find(static_cast<char>(ch))!=std::string::npos){if(m_sequenceReplace){m_sequenceText.clear();m_sequenceReplace=false;}appendCharacter(m_sequenceText,ch,48);}
+            else if(ch<128&&(m_sequenceField==8?(std::isalnum(static_cast<unsigned char>(ch))||ch==95):std::string("0123456789.eE+-").find(static_cast<char>(ch))!=std::string::npos)){if(m_sequenceReplace){m_sequenceText.clear();m_sequenceReplace=false;}appendCharacter(m_sequenceText,ch,48);}
         }
         if(apply){if(finishSequenceField()&&(m_sequenceAsset.empty()?m_document.setInputValue(m_graph,m_selection,"keys",blueprintCameraKeyText(m_sequenceKeys),m_status):m_document.setCameraSequenceKeys(m_sequenceAsset,m_sequenceKeys,m_status))){m_focus=0;input.setTyping(false);rebuildPins();m_status="Camera sequence applied."; }return;}
         if(click&&!finishSequenceField())return;
@@ -4636,13 +4637,13 @@ namespace nx
         {
             m_sequencePlaying=false;
             if(m_sequenceKeys.size()>=64){m_status="Maximum 64 keys.";return;}
-            auto key=blueprintCameraSample(m_sequenceKeys,m_sequenceTime);key.time=m_sequenceTime;key.cut=false;
-            if(std::any_of(m_sequenceKeys.begin(),m_sequenceKeys.end(),[&](const BlueprintCameraKey& k){return std::abs(k.time-key.time)<0.001f;})){key=m_sequenceKeys.back();key.time+=1.f;if(key.time>3600){m_status="Maximum sequence duration is 3600 seconds.";return;}}
+            auto key=blueprintCameraSample(m_sequenceKeys,m_sequenceTime);key.time=m_sequenceTime;key.cut=false;key.smooth=false;key.event.clear();
+            if(std::any_of(m_sequenceKeys.begin(),m_sequenceKeys.end(),[&](const BlueprintCameraKey& k){return std::abs(k.time-key.time)<0.001f;})){key=m_sequenceKeys.back();key.event.clear();key.time+=1.f;if(key.time>3600){m_status="Maximum sequence duration is 3600 seconds.";return;}}
             const auto at=std::lower_bound(m_sequenceKeys.begin(),m_sequenceKeys.end(),key.time,[](const BlueprintCameraKey& k,float time){return k.time<time;});
             m_sequenceKey=static_cast<size_t>(at-m_sequenceKeys.begin());m_sequenceKeys.insert(at,key);m_sequenceTime=key.time;return;
         }
         if(click&&in(x,y,510,115,650,148)){if(m_sequenceKey>0&&m_sequenceKeys.size()>2){m_sequenceKeys.erase(m_sequenceKeys.begin()+static_cast<std::ptrdiff_t>(m_sequenceKey));m_sequenceKey=std::min(m_sequenceKey,m_sequenceKeys.size()-1);m_sequenceTime=m_sequenceKeys[m_sequenceKey].time;}else m_status="Keep the first key and at least two keys.";return;}
-        if(click&&in(x,y,660,115,820,148)){m_sequenceKeys[m_sequenceKey].cut=!m_sequenceKeys[m_sequenceKey].cut;return;}
+        if(click&&in(x,y,660,115,820,148)){auto& key=m_sequenceKeys[m_sequenceKey];if(key.cut){key.cut=false;key.smooth=true;}else if(key.smooth)key.smooth=false;else key.cut=true;return;}
         const float duration=m_sequenceKeys.back().time;
         if(click&&in(x,y,280,175,1150,320))
         {
@@ -4651,6 +4652,7 @@ namespace nx
             m_sequenceScrub=true;m_sequenceTime=time;
         }
         if(m_sequenceScrub){if(left)m_sequenceTime=duration*std::clamp((x-280)/870.f,0.f,1.f);else m_sequenceScrub=false;}
+        if(click&&in(x,y,800,475,1150,512)){m_sequenceField=8;m_sequenceText=m_sequenceKeys[m_sequenceKey].event;m_sequenceReplace=true;m_sequencePlaying=false;return;}
         if(click&&in(x,y,120,374,1152,421))
         {
             const int field=std::min(7,static_cast<int>((x-120)/129.f));const auto& key=m_sequenceKeys[m_sequenceKey];const float values[]={key.time,key.from[0],key.from[1],key.from[2],key.to[0],key.to[1],key.to[2],key.fov};
@@ -4661,13 +4663,13 @@ namespace nx
     {
         c.roundRect(100,64,1080,594,8,{0.15f,0.17f,0.20f,1});c.text(*m_font,("SEQUENCER / "+(m_sequenceAsset.empty()?m_document.graphs[m_graph].owner:m_sequenceAsset)).c_str(),120,78,accent);
         const auto button=[&](float x,float y,float w,const char* label){c.roundRect(x,y,w,33,4,{0.20f,0.32f,0.45f,1});c.text(*m_font,label,x+w/2,y+7,text,Align::Center);};
-        button(120,115,110,m_sequencePlaying?"Pause":"Play");button(240,115,110,"Rewind");button(360,115,140,"+ Camera key");button(510,115,140,"Delete key");button(660,115,160,m_sequenceKeys[m_sequenceKey].cut?"Cut":"Interpolate");
+        button(120,115,110,m_sequencePlaying?"Pause":"Play");button(240,115,110,"Rewind");button(360,115,140,"+ Camera key");button(510,115,140,"Delete key");button(660,115,160,m_sequenceKeys[m_sequenceKey].cut?"Cut":m_sequenceKeys[m_sequenceKey].smooth?"Ease in/out":"Linear");
         const float duration=m_sequenceKeys.back().time;
         c.text(*m_font,("Time "+std::to_string(m_sequenceTime).substr(0,5)+" / "+std::to_string(duration).substr(0,5)+" s").c_str(),850,123,text);
         c.rect(120,165,1030,165,{0.10f,0.12f,0.15f,1});const char* tracks[]={"Camera position","Look target","Field of view"};
         for(unsigned i=0;i<3;++i){const float yy=207.f+38.f*static_cast<float>(i);c.rect(120,yy,1030,35,{0.22f,0.24f,0.28f,1});c.text(*m_font,tracks[i],132,yy+8,text);}
         for(unsigned i=0;i<=10;++i){const float xx=280.f+87.f*static_cast<float>(i);c.line(xx,184,xx,320,1,{0.33f,0.35f,0.38f,1});c.text(*m_font,std::to_string(duration*static_cast<float>(i)/10.f).substr(0,4).c_str(),xx,169,muted,Align::Center);}
-        for(size_t i=0;i<m_sequenceKeys.size();++i){const float xx=280+870*m_sequenceKeys[i].time/duration;for(unsigned j=0;j<3;++j)c.circle(xx,224.f+38.f*static_cast<float>(j),i==m_sequenceKey?6.f:4.f,i==m_sequenceKey?Color{1,0.75f,0.25f,1}:accent);}
+        for(size_t i=0;i<m_sequenceKeys.size();++i){const float xx=280+870*m_sequenceKeys[i].time/duration;for(unsigned j=0;j<3;++j)c.circle(xx,224.f+38.f*static_cast<float>(j),i==m_sequenceKey?6.f:4.f,i==m_sequenceKey?Color{1,0.75f,0.25f,1}:accent);if(!m_sequenceKeys[i].event.empty())c.rect(xx-4,309,8,8,{0.83f,0.49f,0.93f,1});}
         const float cursor=280+870*m_sequenceTime/duration;c.line(cursor,181,cursor,320,2,{1,0.45f,0.25f,1});
         const auto& key=m_sequenceKeys[m_sequenceKey];const float values[]={key.time,key.from[0],key.from[1],key.from[2],key.to[0],key.to[1],key.to[2],key.fov};const char* labels[]={"Time (s)","Position X","Position Y","Position Z","Target X","Target Y","Target Z","FOV"};
         c.text(*m_font,"SELECTED CAMERA KEY",120,344,accent);
@@ -4679,7 +4681,8 @@ namespace nx
         c.rect(120,460,650,120,{0.10f,0.12f,0.15f,1});
         for(size_t i=1;i<m_sequenceKeys.size();++i){const auto& a=m_sequenceKeys[i-1];const auto& b=m_sequenceKeys[i];if(!b.cut)c.line(px(a.from[0]),pz(a.from[2]),px(b.from[0]),pz(b.from[2]),2,accent);}
         const auto sample=blueprintCameraSample(m_sequenceKeys,m_sequenceTime);c.line(px(sample.from[0]),pz(sample.from[2]),px(sample.to[0]),pz(sample.to[2]),2,{1,0.75f,0.25f,1});c.circle(px(sample.from[0]),pz(sample.from[2]),5,accent);c.circle(px(sample.to[0]),pz(sample.to[2]),4,{1,0.75f,0.25f,1});
-        c.text(*m_font,"Camera  /  Target",800,470,text);c.text(*m_font,"Play in Redux to view the scene.",800,500,muted);
+        c.text(*m_font,"Camera  /  Target",800,470,text);c.text(*m_font,"Event at selected key (local void function)",800,447,muted);
+        c.roundRect(800,475,350,37,4,m_sequenceField==8?Color{0.24f,0.35f,0.48f,1}:Color{0.20f,0.23f,0.28f,1});const auto marker=m_sequenceField==8?m_sequenceText:key.event;c.clip(805,475,340,37);c.text(*m_font,marker.empty()?"Optional function name":marker.c_str(),810,483,text);c.noClip();
         if(m_sequenceAsset.empty())button(800,540,350,"Save as reusable sequence");
         c.clip(120,582,1040,25);c.text(*m_font,m_status.c_str(),120,586,muted);c.noClip();
         c.text(*m_font,"Enter = Apply (field first) | Escape = Cancel",120,620,muted);button(910,610,120,"Apply");button(1040,610,120,"Cancel");

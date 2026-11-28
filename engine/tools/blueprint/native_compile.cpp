@@ -1,6 +1,7 @@
 #include "tools/blueprint/native_compile.h"
 #include "base/json_value.h"
 #include <algorithm>
+#include <cstdio>
 #include <utility>
 
 namespace nx
@@ -168,7 +169,7 @@ namespace nx
                 }
                 if(n.kind=="camera:sequence")
                 {
-                    if(!available[node]||(pin!="active"&&pin!="finished"&&pin!="elapsed"))return fail(node,"Sequence outputs require execution first.");
+                    if(!available[node]||(pin!="active"&&pin!="finished"&&pin!="elapsed"&&pin!="found"))return fail(node,"Sequence outputs require execution first.");
                     result="bp_seq_"+pin+"_"+std::to_string(node);return true;
                 }
                 if(n.kind=="time:timeline"||n.kind=="camera:orbit-timed")
@@ -369,13 +370,16 @@ namespace nx
                     for(const auto& v:n.values)if(v.pin=="keys")raw=v.value;
                     std::string asset;for(const auto& v:n.values)if(v.pin=="asset")asset=v.value;
                     std::vector<BlueprintCameraKey> keys;std::string why;if(!(asset.empty()?blueprintCameraKeys(raw,keys,why):document.cameraSequenceKeys(asset,keys,why)))return fail(to,why);
-                    std::string play,stop,dt;if(!value(to,"play",play,0)||!value(to,"stop",stop,0)||!value(to,"dt",dt,0))return false;
+                    std::string play,stop,dt,anchor;if(!value(to,"play",play,0)||!value(to,"stop",stop,0)||!value(to,"dt",dt,0)||!value(to,"anchor",anchor,0))return false;
+                    for(const auto& key:keys)if(!key.event.empty()){const auto* target=document.function(graph.owner,key.event);if(!target||target->owner!=graph.owner||target->inlineMacro||target->sharedLibrary||!target->parameters.empty()||target->returnType!="void"||!target->dataRole.empty()||target->name=="Construction")return fail(to,"Sequence event requires a local void function with no parameters: "+key.event);}
                     const auto id=std::to_string(to),state="bp_seq_state_"+std::to_string(graphIndex)+"_"+id;
                     const auto active="bp_seq_active_"+id,finished="bp_seq_finished_"+id,elapsed="bp_seq_elapsed_"+id;
-                    const auto num=[](float f){return "float("+std::to_string(f)+")";};
+                    const auto num=[](float f){char value[48];std::snprintf(value,sizeof(value),"%.9g",static_cast<double>(f));return "float("+std::string(value)+")";};
                     const auto vec=[&](const float* v){return "Vec3("+num(v[0])+", "+num(v[1])+", "+num(v[2])+")";};
-                    source+=pad+"bool bp_seq_play_"+id+" = "+play+";\n"+pad+"if (bp_seq_play_"+id+" && !"+state+"_held) { "+state+"_running = true; "+state+"_time = 0; }\n";
+                    source+=pad+"bool bp_seq_play_"+id+" = "+play+";\n"+pad+"if (bp_seq_play_"+id+" && !"+state+"_held) { "+state+"_running = true; "+state+"_time = 0; "+state+"_previous = -1; }\n";
                     source+=pad+state+"_held = bp_seq_play_"+id+";\n"+pad+"if ("+stop+") "+state+"_running = false;\n";
+                    const auto found="bp_seq_found_"+id,anchorName="bp_seq_anchor_name_"+id,target="bp_seq_anchor_"+id,offset="bp_seq_offset_"+id;
+                    source+=pad+"string "+anchorName+" = "+anchor+";\n"+pad+"Entity@ "+target+" = Scene::find("+anchorName+");\n"+pad+"bool "+found+" = "+anchorName+" == \"\" || ("+target+" !is null && "+target+".alive);\n"+pad+"if (!"+found+") "+state+"_running = false;\n"+pad+"Vec3 "+offset+"(0, 0, 0);\n"+pad+"if ("+anchorName+" != \"\" && "+found+") "+offset+" = "+target+".place;\n";
                     source+=pad+"bool "+active+" = "+state+"_running;\n"+pad+"bool "+finished+" = false;\n"+pad+"float "+elapsed+" = "+state+"_time;\n";
                     source+=pad+"if ("+active+")\n"+pad+"{\n"+pad+"    "+elapsed+" = min("+state+"_time, "+num(keys.back().time)+");\n";
                     for(size_t i=1;i<keys.size();++i)
@@ -383,9 +387,12 @@ namespace nx
                         const auto& a=keys[i-1];const auto& b=keys[i];const auto f="bp_seq_mix_"+id;
                         source+=pad+"    "+(i==1?"if (":"else if (")+elapsed+" < "+num(b.time)+")\n"+pad+"    {\n";
                         source+=pad+"        float "+f+" = "+(b.cut?std::string("float(0)"):"clamp(("+elapsed+" - "+num(a.time)+") / "+num(b.time-a.time)+", float(0), float(1))")+";\n";
-                        source+=pad+"        Space::camera("+vec(a.from)+" + ("+vec(b.from)+" - "+vec(a.from)+") * "+f+", "+vec(a.to)+" + ("+vec(b.to)+" - "+vec(a.to)+") * "+f+", "+num(a.fov)+" + ("+num(b.fov-a.fov)+") * "+f+");\n"+pad+"    }\n";
+                        if(b.smooth)source+=pad+"        "+f+" = "+f+" * "+f+" * (float(3) - float(2) * "+f+");\n";
+                        source+=pad+"        Space::camera("+offset+" + "+vec(a.from)+" + ("+vec(b.from)+" - "+vec(a.from)+") * "+f+", "+offset+" + "+vec(a.to)+" + ("+vec(b.to)+" - "+vec(a.to)+") * "+f+", "+num(a.fov)+" + ("+num(b.fov-a.fov)+") * "+f+");\n"+pad+"    }\n";
                     }
-                    const auto& last=keys.back();source+=pad+"    else Space::camera("+vec(last.from)+", "+vec(last.to)+", "+num(last.fov)+");\n";
+                    const auto& last=keys.back();source+=pad+"    else Space::camera("+offset+" + "+vec(last.from)+", "+offset+" + "+vec(last.to)+", "+num(last.fov)+");\n";
+                    for(const auto& key:keys)if(!key.event.empty())source+=pad+"    if ("+state+"_previous < "+num(key.time)+" && "+elapsed+" >= "+num(key.time)+") bp_fn_"+key.event+"();\n";
+                    source+=pad+"    "+state+"_previous = "+elapsed+";\n";
                     source+=pad+"    "+finished+" = "+elapsed+" >= "+num(last.time)+";\n"+pad+"    "+state+"_running = !"+finished+";\n"+pad+"    "+state+"_time = min("+num(last.time)+", "+elapsed+" + max(float(0), "+dt+"));\n"+pad+"}\n";
                     available[to]=true;mark(start,to);return flow(to,"then",indent,depth+1);
                 }
@@ -1064,7 +1071,7 @@ namespace nx
                     result+="    bool "+key+"_active = false;\n    bool "+key+"_loop = false;\n    float "+key+"_period = 0;\n    float "+key+"_remaining = 0;\n";
                 }
                 else if(kind=="camera:sequence")
-                {const auto state="bp_seq_state_"+std::to_string(gi)+"_"+std::to_string(ni);result+="    float "+state+"_time = 0;\n    bool "+state+"_held = false;\n    bool "+state+"_running = false;\n";}
+                {const auto state="bp_seq_state_"+std::to_string(gi)+"_"+std::to_string(ni);result+="    float "+state+"_time = 0;\n    float "+state+"_previous = -1;\n    bool "+state+"_held = false;\n    bool "+state+"_running = false;\n";}
                 else if(kind=="time:timeline"||kind=="camera:orbit-timed")
                     result+="    float bp_timeline_state_"+std::to_string(gi)+"_"+std::to_string(ni)+" = 0;\n";
                 else if(kind=="flow:do-once"||kind=="flow:do-n"||kind=="flow:flip-flop"||kind=="flow:multi-gate"||kind=="flow:controlled-gate")

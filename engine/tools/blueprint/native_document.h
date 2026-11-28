@@ -25,7 +25,7 @@ namespace nx
     std::vector<std::string> blueprintEnumChoices(const std::string& type);
     bool blueprintEnumValue(const std::string& type,const std::string& value);
     std::string blueprintEnumType(const std::string& value);
-    struct BlueprintCameraKey { float time=0,from[3]{},to[3]{},fov=60; bool cut=false; };
+    struct BlueprintCameraKey { float time=0,from[3]{},to[3]{},fov=60; bool cut=false,smooth=false; std::string event{}; };
     bool blueprintCameraKeys(const std::string& text,std::vector<BlueprintCameraKey>& keys,std::string& error);
     std::string blueprintCameraKeyText(const std::vector<BlueprintCameraKey>& keys);
     BlueprintCameraKey blueprintCameraSample(const std::vector<BlueprintCameraKey>& keys,float time);

@@ -59,7 +59,7 @@ namespace nx
             {"player:target","Look target from yaw and pitch","Actors / Character","eye:Vec3|yaw:float|pitch:float","result:Vec3","bp_player_target","","","pure","Vec3","","in:eye|in:yaw|in:pitch",""},
             {"player:angles","Character facing from yaw","Actors / Character","yaw:float","result:Vec3","bp_player_angles","","","pure","Vec3","","in:yaw",""},
             {"camera:orbit-timed","Orbit camera around entity (timed)","Space / Camera","in:exec|name:string|radius:float|height:float|duration:float|turns:float|angle:float|loop:bool|reset:bool|dt:float","then:exec|progress:float|elapsed:float|finished:bool|found:bool","","","","","void","","","name:\"Target\"|radius:float(6)|height:float(2)|duration:float(8)|turns:float(1)|angle:float(60)|loop:false|reset:false|dt:dt"},
-            {"camera:sequence","Camera Sequence (Sequencer)","Space / Camera","in:exec|play:bool|stop:bool|dt:float|asset:string|keys:string","then:exec|active:bool|finished:bool|elapsed:float","","","","","void","","","play:false|stop:false|dt:dt|asset:\"\"|keys:\"0,0,2,8,0,1,0,60,0;3,5,3,5,0,1,0,50,0;6,0,2,4,0,1,0,60,0\""},
+            {"camera:sequence","Camera Sequence (Sequencer)","Space / Camera","in:exec|play:bool|stop:bool|dt:float|anchor:string|asset:string|keys:string","then:exec|active:bool|finished:bool|elapsed:float|found:bool","","","","","void","","","play:false|stop:false|dt:dt|anchor:\"\"|asset:\"\"|keys:\"0,0,2,8,0,1,0,60,0;3,5,3,5,0,1,0,50,0;6,0,2,4,0,1,0,60,0\""},
             {"camera:activate-actor","Activate actor camera","Space / Camera","in:exec|actor:Entity@|component:string","then:exec|result:bool","Space::activateActorCamera","","","","bool","","in:actor|in:component","component:\"\""},
             {"actor:component","Get actor component","Space / Blueprint Classes","actor:Entity@|component:string","result:Entity@","Space::actorComponent","","","pure","Entity@","","in:actor|in:component"},
             {"actor:valid","Is valid entity","Space / Blueprint Classes","entity:Entity@","result:bool","Space::validEntity","","","pure","bool","","in:entity"},
@@ -376,17 +376,17 @@ namespace nx
         size_t at=0;
         while(at<text.size())
         {
-            const auto end=text.find(';',at);const auto row=text.substr(at,end==std::string::npos?end:end-at);float v[9]{};size_t pos=0;
+            const auto end=text.find(';',at);auto row=text.substr(at,end==std::string::npos?end:end-at);std::string event;const auto marker=row.find('@');if(marker!=std::string::npos){event=row.substr(marker+1);row.erase(marker);if(!identifier(event)||event.size()>64){error="Event key requires a valid Blueprint function name.";return false;}}float v[9]{};size_t pos=0;
             for(unsigned i=0;i<9;++i)
             {
-                const auto comma=row.find(',',pos);if((i==8)!=(comma==std::string::npos)){error="Each key requires time, position XYZ, target XYZ, FOV and cut (0/1).";return false;}
+                const auto comma=row.find(',',pos);if((i==8)!=(comma==std::string::npos)){error="Each key requires time, position XYZ, target XYZ, FOV and interpolation (0 linear, 1 cut, 2 eased).";return false;}
                 const auto part=row.substr(pos,comma==std::string::npos?comma:comma-pos);char* tail=nullptr;const auto number=std::strtof(part.c_str(),&tail);
                 if(part.empty()||tail!=part.c_str()+part.size()||!std::isfinite(number)||std::abs(number)>1000000.f){error="Invalid camera key number.";return false;}
                 v[i]=number;pos=comma==std::string::npos?row.size():comma+1;
             }
-            if((result.empty()?v[0]!=0:v[0]<=result.back().time)||v[0]>3600||v[7]<1||v[7]>179||(v[8]!=0&&v[8]!=1)||result.size()>=64){error="Keys must start at zero, increase strictly, have FOV 1–179 and valid cut flags.";return false;}
+            if((result.empty()?v[0]!=0:v[0]<=result.back().time)||v[0]>3600||v[7]<1||v[7]>179||(v[8]!=0&&v[8]!=1&&v[8]!=2)||result.size()>=64){error="Keys must start at zero, increase strictly, have FOV 1–179 and valid cut flags.";return false;}
             if(v[1]==v[4]&&v[2]==v[5]&&v[3]==v[6]){error="Camera position and target must differ.";return false;}
-            BlueprintCameraKey key;key.time=v[0];for(unsigned i=0;i<3;++i){key.from[i]=v[1+i];key.to[i]=v[4+i];}key.fov=v[7];key.cut=v[8]!=0;result.push_back(key);
+            BlueprintCameraKey key;key.time=v[0];for(unsigned i=0;i<3;++i){key.from[i]=v[1+i];key.to[i]=v[4+i];}key.fov=v[7];key.cut=v[8]==1;key.smooth=v[8]==2;key.event=event;result.push_back(key);
             if(end==std::string::npos)break;
             at=end+1;if(at==text.size()){error="Empty camera key.";return false;}
         }
@@ -396,7 +396,7 @@ namespace nx
     std::string blueprintCameraKeyText(const std::vector<BlueprintCameraKey>& keys)
     {
         std::string result;const auto add=[&](float f){char value[48];std::snprintf(value,sizeof(value),"%.9g",static_cast<double>(f));if(!result.empty()&&result.back()!=';')result+=",";result+=value;};
-        for(const auto& k:keys){if(!result.empty())result+=";";add(k.time);for(float f:k.from)add(f);for(float f:k.to)add(f);add(k.fov);add(k.cut?1.f:0.f);}
+        for(const auto& k:keys){if(!result.empty())result+=";";add(k.time);for(float f:k.from)add(f);for(float f:k.to)add(f);add(k.fov);add(k.cut?1.f:k.smooth?2.f:0.f);if(!k.event.empty())result+="@"+k.event;}
         return result;
     }
     BlueprintCameraKey blueprintCameraSample(const std::vector<BlueprintCameraKey>& keys,float time)
@@ -406,7 +406,7 @@ namespace nx
         for(size_t i=1;i<keys.size();++i)if(time<keys[i].time)
         {
             const auto& a=keys[i-1];const auto& b=keys[i];auto out=a;out.time=time;
-            const float f=b.cut?0.f:(time-a.time)/(b.time-a.time);
+            float f=b.cut?0.f:(time-a.time)/(b.time-a.time);if(b.smooth)f=f*f*(3.f-2.f*f);
             for(unsigned j=0;j<3;++j){out.from[j]=a.from[j]+(b.from[j]-a.from[j])*f;out.to[j]=a.to[j]+(b.to[j]-a.to[j])*f;}out.fov=a.fov+(b.fov-a.fov)*f;return out;
         }
         return keys.back();

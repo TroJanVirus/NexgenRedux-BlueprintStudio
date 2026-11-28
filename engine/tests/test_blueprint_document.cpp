@@ -252,7 +252,8 @@ NX_TEST(nativeReusableCameraSequenceSceneReferences)
     NX_EXPECT(doc.placeCameraSequence("arena",id,graph,node,error)&&doc.graphs[graph].owner=="arena");
     std::vector<BlueprintCameraKey> keys;NX_EXPECT(doc.cameraSequenceKeys(id,keys,error));keys.back().fov=33;
     NX_EXPECT(doc.setCameraSequenceKeys(id,keys,error)&&doc.renameVisualAsset(id,"Boss reveal",error));
-    NX_EXPECT(compileBlueprint(doc,source,error)&&source.find("float(33.000000)")!=std::string::npos);
+    std::vector<BlueprintScreenOutput> output;NX_EXPECT(compileBlueprintProject(doc,output,error)&&output.size()==2);
+    for(const auto& item:output)NX_EXPECT(item.source.find("float(33)")!=std::string::npos);
     NX_EXPECT(!doc.removeVisualAsset(id,error));
     NX_EXPECT(doc.serialize(bytes,error));BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error));
     NX_EXPECT(copy.cameraSequenceKeys(id,keys,error)&&keys.back().fov==33);
@@ -270,9 +271,13 @@ NX_TEST(nativeCameraSequenceKeysAndCompilation)
     NX_EXPECT(blueprintCameraKeyText(keys)==encoded);
     NX_EXPECT(!blueprintCameraKeys("0,0,0,0,0,0,0,60,0",keys,error));
     BlueprintDocument doc;doc.create();
+    const std::string eased="0,0,2,8,0,1,0,60,0;2,4,2,8,0,1,0,40,2@Reveal";
+    NX_EXPECT(blueprintCameraKeys(eased,keys,error)&&blueprintCameraSample(keys,0.5f).from[0]==0.625f&&blueprintCameraKeyText(keys)==eased);
     NX_EXPECT(!doc.addNode(0,"camera:sequence",0,0,error));
     NX_EXPECT(doc.addNode(1,"camera:sequence",300,60,error)&&doc.connect(1,0,"then",1,"in",error));
-    NX_EXPECT(doc.setInputValue(1,1,"keys",encoded,error)&&doc.setInputValue(1,1,"play","true",error));
+    NX_EXPECT(doc.setInputValue(1,1,"keys",eased,error)&&doc.setInputValue(1,1,"play","true",error)&&doc.setInputValue(1,1,"anchor","Boss",error));
+    NX_EXPECT(!compileBlueprint(doc,source,error)&&error.find("Reveal")!=std::string::npos);
+    NX_EXPECT(doc.addFunction("Reveal",error));
     NX_EXPECT(compileBlueprint(doc,source,error)&&source.find("bp_seq_state_1_1_running")!=std::string::npos&&source.find("Space::camera(")!=std::string::npos);
     std::string bytes;NX_EXPECT(doc.serialize(bytes,error));BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error)&&compileBlueprint(copy,source,error));
 }
