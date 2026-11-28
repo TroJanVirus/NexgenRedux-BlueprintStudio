@@ -7,7 +7,7 @@
       "id": "actor-1",
       "kind": "actor",
       "title": "Floor",
-      "source": "{\"entities\":[{\"name\":\"Floor\",\"shape\":\"box\",\"size\":[8,0.5,8],\"color\":[0.24,0.32,0.42,1],\"cube\":[8,0.5,8],\"group\":0,\"hits\":[],\"wall\":true}]}",
+      "source": "{\"entities\":[{\"name\":\"Floor\",\"shape\":\"box\",\"size\":[8,0.5,8],\"color\":[0.24,0.32,0.42,1],\"cube\":[1,1,1],\"group\":0,\"hits\":[],\"wall\":true}]}",
       "dependencies": []
     },
     {
