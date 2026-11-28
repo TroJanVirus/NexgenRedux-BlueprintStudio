@@ -634,7 +634,7 @@ NX_TEST(nativeBlueprintWorkspaceAuthorsSavesAndRunsThroughMouseAndKeyboard)
     click(468,138);click(630,353);
     click(630,375);type("workspace_key");
     click(630,397);type("first");
-    click(900,18);type("Workspace Test");
+    click(850,18);click(755,133);type("Workspace Test");
     const std::string path="own/blueprint-project-Workspace Test.bp.json";
     auto found=r.platform.files.find(path);
     NX_EXPECT(found!=r.platform.files.end());
@@ -1005,7 +1005,7 @@ NX_TEST(nativeFirstPersonTemplateCompilesAndRuns)
     BlueprintDocument doc;std::string source,error,bytes;
     if(!blueprintProjectTemplate("first-person",doc,error)||!compileBlueprint(doc,source,error)||!doc.serialize(bytes,error))
     {NX_ERROR("First-person template: %s",error.c_str());NX_EXPECT(false);return;}
-    NX_EXPECT(doc.graphs.size()==12&&source.find("bp_player_motion(")!=std::string::npos);
+    NX_EXPECT(doc.graphs.size()==13&&source.find("bp_player_motion(")!=std::string::npos);
     for(const auto& g:doc.graphs)NX_EXPECT(!g.comments.empty());
     NX_EXPECT(blueprintCreateAssetRoot(r.platform,doc.assetRoot,error));
     NX_EXPECT(blueprintStageTemplateMedia(r.platform,doc.assetRoot,"first-person",error));
@@ -1015,9 +1015,30 @@ NX_TEST(nativeFirstPersonTemplateCompilesAndRuns)
     if(!r.screens.init(r.services,"project","main")){NX_EXPECT(false);return;}
     r.step(120);NX_EXPECT(!r.screens.failed());
     NX_EXPECT(r.services.world!=nullptr);if(!r.services.world)return;
-    // Exercise the real native input path and world update, not just script compilation.
-    r.input.simulate(Action::Up);r.step(10);NX_EXPECT(!r.screens.failed());
-    r.input.simulate(Action::Accept);r.step(10);NX_EXPECT(!r.screens.failed());
+    // Exercise real inputs and check the actual native world's state.
+    World& world=*r.services.world;
+    const u32 hero=world.findNamed("Player"),marker=world.findNamed("Orange marker");
+    NX_EXPECT(hero&&marker);if(!hero||!marker)return;
+    const auto* shape=world.space().getCollider(hero);
+    const auto* appearance=world.space().getAppearance(hero);
+    NX_EXPECT(shape&&appearance&&appearance->model&&world.space().getCollider(marker));
+    const auto* spatial=world.space().getSpatial(hero);
+    NX_EXPECT(spatial);if(!spatial)return;
+    const Vec3 start=spatial->place;
+    r.platform.state.keys[static_cast<size_t>(Key::W)]=true;
+    r.step(45);
+    r.platform.state.keys[static_cast<size_t>(Key::W)]=false;
+    r.step(10);
+    NX_EXPECT(!r.screens.failed()&&world.space().getSpatial(hero)->place.z<start.z-0.2f);
+    const float beforeJump=world.space().getSpatial(hero)->place.y;
+    r.platform.state.keys[static_cast<size_t>(Key::Space)]=true;
+    r.step(10);
+    r.platform.state.keys[static_cast<size_t>(Key::Space)]=false;
+    NX_EXPECT(!r.screens.failed()&&world.space().getSpatial(hero)->place.y>beforeJump+0.1f);
+    r.step(100);
+    NX_EXPECT(std::abs(world.space().getSpatial(hero)->place.y-beforeJump)<0.2f);
+    const auto eye=world.space().cameraPlace();
+    NX_EXPECT(std::abs(eye.y-world.space().getSpatial(hero)->place.y-1.55f)<0.2f);
     NX_EXPECT(blueprintExportPackage(r.platform,doc,"first-person.bp.zip",error));
     BlueprintDocument restored;
     NX_EXPECT(blueprintImportPackage(r.platform,"first-person.bp.zip",restored,error));
@@ -1928,7 +1949,7 @@ NX_TEST(nativeWorkspacePreservesExternallyReplacedRecoveryAcrossEditAndSave)
     NX_EXPECT(current.load(bytes.data(),bytes.size(),error)&&current.graphs[0].nodes.size()==3);
     external.name="Another Draft";NX_EXPECT(external.serialize(other,error));
     r.platform.files[path]=other;
-    click(900,18);type("Conflict Save");
+    click(850,18);click(755,133);type("Conflict Save");
     NX_EXPECT(r.platform.files.count("own/blueprint-project-Conflict Save.bp.json"));
     NX_EXPECT(r.platform.files[path]==other);
     studio.close(r.services);
@@ -2015,7 +2036,7 @@ NX_TEST(nativeWorkspaceBrowserRecoversArchivesAndImportsSource)
     const auto restoredBytes=r.platform.files[recovery];
     NX_EXPECT(restored.load(restoredBytes.data(),restoredBytes.size(),error)&&compileBlueprint(restored,code,error));
     NX_EXPECT(code.find("Save::set(\"archive\", \"ok\")")!=std::string::npos);
-    click(900,18);type("Restored Archive");
+    click(850,18);click(755,133);type("Restored Archive");
     NX_EXPECT(r.platform.files.count("own/blueprint-project-Restored Archive.bp.json"));
     NX_EXPECT(r.platform.files[archive]==bytes&&r.platform.files[corrupt]=="broken");
     // Documents sort first, then recovery archives, then standalone source.

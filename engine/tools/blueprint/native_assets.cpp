@@ -402,7 +402,9 @@ namespace nx
             return index;
         };
         const auto arena=fn("BuildArena"),spawn=fn("SpawnCharacter"),look=fn("UpdateLook",true),
-            movement=fn("UpdateMovement",true),camera=fn("UpdateCamera"),hud=fn("DrawHUD");
+            movement=fn("UpdateMovement",true),camera=fn("UpdateCamera"),hud=fn("DrawHUD"),obstacle=fn("AddObstacle");
+        ok=ok&&candidate.setFunctionSignature(hud,{{"surface","Canvas@"}},"void",error)&&
+            candidate.setFunctionSignature(obstacle,{{"name","string"},{"place","Vec3"},{"size","Vec3"},{"color","Color"}},"void",error);
         // Each function owns one compact, documented task. World-space layout leaves
         // room for variable-width titles and both left and right pin columns.
         const auto add=[&](size_t g,const char* kind,float x,float y,const char* target="")
@@ -429,9 +431,11 @@ namespace nx
         chain(1,0,inputLook);chain(1,inputLook,move);chain(1,move,view);
         wire(1,dt,"value",inputLook,"arg_dt");wire(1,dt,"value",move,"arg_dt");
         note(1,"FRAME UPDATE | Apply mouse/right-stick look, calculate physics motion from left-stick/WASD and jump, then aim the first-person camera. Delta time keeps movement frame-rate independent.");
-        const auto draw=add(2,"render:space",340,60),overlay=add(2,"call:function",680,60,"DrawHUD");
-        chain(2,0,draw);chain(2,draw,overlay);
-        note(2,"RENDER | Native Space draws the scene. DrawHUD is a reserved hook for future crosshair, health and interaction UI.");
+        const auto canvasPin=add(2,"event:canvas",24,240),design=add(2,"api:Canvas:design:Canvas@,float,float",340,60),
+            draw=add(2,"render:space",700,60),overlay=add(2,"call:function",1040,60,"DrawHUD");
+        chain(2,0,design);wire(2,canvasPin,"value",design,"target");value(2,design,"width","1280");value(2,design,"height","720");
+        chain(2,design,draw);chain(2,draw,overlay);wire(2,canvasPin,"value",overlay,"arg_surface");
+        note(2,"RENDER | Establish a 1280 x 720 virtual canvas. Native Space draws the scene first, then DrawHUD draws the crosshair on top. The same graph runs on desktop and Xbox.");
         for(size_t g:{size_t(3),size_t(4),size_t(5)})
         {
             const auto lock=add(g,"api:Input:Input::lockMouse:bool",360,60);
@@ -448,16 +452,33 @@ namespace nx
         const auto sun=add(arena,"api:Space:Space::sun:Vec3,Color",1480,60);chain(arena,sky,sun);
         value(arena,sun,"direction","0.5,0.75,0.35");value(arena,sun,"color","1,0.93,0.8,1");
         size_t last=sun;
-        for(unsigned i=0;i<3;++i)
+        struct Marker{const char* name;const char* place;const char* size;const char* color;};
+        constexpr Marker markers[]={
+            {"Orange marker","0,1,-7","2,2,2","0.92,0.35,0.12,1"},
+            {"Blue marker","-5,0.75,-11","2,1.5,2","0.15,0.45,0.9,1"},
+            {"Green marker","5,1.5,-12","2,3,2","0.2,0.75,0.36,1"},
+            {"North wall","0,1,-20","40,2,1","0.46,0.49,0.55,1"},
+            {"South wall","0,1,20","40,2,1","0.46,0.49,0.55,1"},
+            {"West wall","-20,1,0","1,2,40","0.46,0.49,0.55,1"},
+            {"East wall","20,1,0","1,2,40","0.46,0.49,0.55,1"}};
+        for(unsigned i=0;i<7;++i)
         {
-            const auto box=add(arena,"spawn:box",340+static_cast<float>(i)*440,300);
+            const auto& marker=markers[i];
+            const auto box=add(arena,"call:function",340+static_cast<float>(i%3)*490,310+static_cast<float>(i/3)*250,"AddObstacle");
             chain(arena,last,box);last=box;
-            value(arena,box,"name",i==0?"Orange marker":i==1?"Blue marker":"Green marker");
-            value(arena,box,"place",i==0?"0,1,-7":i==1?"-5,0.75,-11":"5,1.5,-12");
-            value(arena,box,"size",i==0?"2,2,2":i==1?"2,1.5,2":"2,3,2");
-            value(arena,box,"color",i==0?"0.92,0.35,0.12,1":i==1?"0.15,0.45,0.9,1":"0.2,0.75,0.36,1");
+            value(arena,box,"arg_name",marker.name);value(arena,box,"arg_place",marker.place);
+            value(arena,box,"arg_size",marker.size);value(arena,box,"arg_color",marker.color);
         }
-        note(arena,"ARENA | Space::ground supplies the collision plane. The native floor and coloured landmarks give orientation and scale; sky and sun provide lighting. The marker boxes are decorative, not collision obstacles.");
+        note(arena,"ARENA | Native ground supplies collision. Floor, sky and sunlight establish the scene; seven calls to AddObstacle build solid markers and perimeter walls. Change each instance's position, size and colour.");
+        const auto box=add(obstacle,"spawn:box",380,60),collider=add(obstacle,"api:Entity:cube:Entity@,Vec3,uint,uint",820,60);
+        chain(obstacle,0,box);chain(obstacle,box,collider);
+        for(const char* pin:{"name","place","size","color"})
+        {
+            const auto arg=std::string("arg_")+pin;
+            wire(obstacle,0,arg.c_str(),box,pin);
+        }
+        wire(obstacle,box,"result",collider,"target");wire(obstacle,0,"arg_size",collider,"size");
+        note(obstacle,"OBSTACLE | Create a native SolidBox with the supplied visual transform, then attach a matching static 3D cube collider. No mass is assigned, so the obstacle stays fixed. Reuse this function for walls and platforms.");
         const auto entity=add(spawn,"api:Space:Space::spawn:Vec3",340,60);
         value(spawn,entity,"place","0,0.2,0");chain(spawn,0,entity);
         const auto keep=variable(spawn,"hero",true,680,60);chain(spawn,entity,keep);wire(spawn,entity,"result",keep,"value");
@@ -516,7 +537,17 @@ namespace nx
         wire(camera,cy,"value",angles,"yaw");wire(camera,angles,"result",face,"value");wire(camera,ch,"value",face,"target");
         chain(camera,0,face);chain(camera,face,cam);wire(camera,eye,"result",cam,"from");wire(camera,target,"result",cam,"to");value(camera,cam,"angle","72");
         note(camera,"FIRST PERSON | Eye is feet position plus eye height. Target is one unit along yaw/pitch direction; field of view is 72 degrees vertically. Rotate the attached robot body with yaw, then set the native Space camera.");
-        note(hud,"HUD EXTENSION POINT | The main draw graph renders Space first. Add native Canvas drawing to draw, or replace this hook with a reusable widget page. No gameplay state belongs here.");
+        const auto horizontal=add(hud,"api:Canvas:line:Canvas@,float,float,float,float,float,Color",360,60),
+            vertical=add(hud,"api:Canvas:line:Canvas@,float,float,float,float,float,Color",830,60);
+        chain(hud,0,horizontal);chain(hud,horizontal,vertical);
+        for(size_t line:{horizontal,vertical})
+        {
+            wire(hud,0,"arg_surface",line,"target");value(hud,line,"thickness","2");
+            value(hud,line,"color","1,1,1,0.9");
+            value(hud,line,"x1",line==horizontal?"632":"640");value(hud,line,"x2",line==horizontal?"648":"640");
+            value(hud,line,"y1",line==horizontal?"360":"352");value(hud,line,"y2",line==horizontal?"360":"368");
+        }
+        note(hud,"HUD | Two native Canvas lines draw a small central crosshair after the world. The virtual canvas is 1280 x 720, so 640,360 is its centre. Add health, ammo or interaction prompts here without affecting the character.");
         if(!ok)return false;
         std::string source,bytes;
         if(!compileBlueprint(candidate,source,error)||!candidate.serialize(bytes,error))return false;

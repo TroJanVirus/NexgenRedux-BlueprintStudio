@@ -645,7 +645,7 @@ namespace nx
             if(is({"Events","Events / Dispatchers","Flow","Time / Async","Time / Animation","Tween","Functions","Functions / Libraries","Thread","Channel"}))return 0;
             if(is({"Values","Variables","Module variables","Custom types","Arrays","Collections","Json","Data","Packed","Zip","Save"}))return 1;
             if(is({"Math","Maths","Math / Vector","Math / Camera","Logic","String","Conversions","Vec2","Random","Curve","Curve / Visual","Path","Paths and noise","Color"}))return 2;
-            if(is({"Level","Behaviours","Space / Blueprint Classes","Space / Primitives","Entity","Scene","Space"}))
+            if(is({"Level","Behaviours","Actors / Character","Space / Blueprint Classes","Space / Primitives","Entity","Scene","Space"}))
             {
                 for(const char* term:{"::hinge","::join","::weld","::rope","::spring","::slider","::motor","::wheel","::drag","::unjoin","::gravity","::raycast","::sphereCast","::spherePick","::pick","::body","::collider","::force","::impulse","::velocity","::mass","::friction","::bounce"})
                     if(id.find(term)!=std::string::npos)return 4;

@@ -17,3 +17,5 @@ In Assets, click Screen / asset: to switch to Shared / global:. Dropped files ar
 ## Project browser and first-person template
 
 Select Blueprint Studio in the Redux library to open a dedicated project workspace. Projects in the editor opens the same view, with Blank and First Person templates, saved project list, import entries, Save, Save copy and return to editor/Redux. The browser uses the existing application window (not a detachable OS window). Existing files are never overwritten, and active unsaved work must be saved before another project is opened. The First Person template builds named annotated native functions and copies the installed robot GLB into the project's own shared media directory. Third person, Flight and Rolling Ball are listed as planned, not selectable templates.
+
+See [FIRST_PERSON_TEMPLATE.md](FIRST_PERSON_TEMPLATE.md) for graph-by-graph documentation and controls. The first-person arena now uses static colliders, a native ground plane, a robot model and a central crosshair.
