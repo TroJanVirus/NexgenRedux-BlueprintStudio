@@ -72,7 +72,7 @@ jobs:
         run: |
           set -euo pipefail
           suffix="${GITHUB_REF_NAME#blueprint/beta-}"
-          [[ "$suffix" =~ ^[0-9]+$ ]] || { echo "Invalid beta branch number"; exit 1; }
+          [[ "$suffix" =~ ^[0-9]+(\.[0-9]+)?$ ]] || { echo "Invalid beta branch number"; exit 1; }
           tag="blueprint-studio-beta.$suffix"
           # Never overwrite an existing beta or move its tag.
           if gh release view "$tag" >/dev/null 2>&1; then
@@ -109,6 +109,35 @@ jobs:
           - Native 3D viewport for constant linked actor placements, with camera orbit, zoom and height-plane snapping.
 
           These are initial implementations. Named animation clips, graph-triggered playback, per-instance widget overrides, camera selection/blending, arbitrary scene entity editing and transform gizmos remain future work. Test exported projects on the intended hardware.
+          EOF
+          elif [[ "$suffix" == 3 || "$suffix" == 3.1 ]]; then
+            cat >> notes.md <<'EOF'
+
+          ## Beta 3 changes
+          - Expanded native Blueprint execution and authoring: custom events, event dispatchers, enums, structures, maps, sets, shared function/macro libraries, asynchronous operations, conversions, actor class inheritance and casting.
+          - Actor component inheritance and overrides, construction previews, exposed spawn fields, transform gizmos and mesh-surface picking.
+          - Responsive graph, actor, widget and scene workspaces with unified tabs, categorized navigation, inline scalar pin editing and an interactive graph overview.
+          - Four-edge content docking, floating content panels and independent graph dock visibility.
+          - Native widget thumbnails, responsive layout tools and expanded designer authoring.
+          - Perspective scene orbit, pan, zoom, framing and placement-plane controls; read-only visual context from saved native scenes.
+          - Native desktop input, document, runtime and sanitizer regression coverage.
+
+          ## Known limitations
+          - True detachable operating-system windows and universal panel docking are not implemented.
+          - Native scene context is a render-only preview of supported saved scene entities; edit native scenes using the original scene editor. Terrain and arbitrary scene entity editing are not fully integrated.
+          - Unreal Engine visual and Blueprint feature parity is not complete. Inline editing does not cover every pin layout.
+          - Desktop UI tests do not certify every hardware configuration; the Cook binaries and console builds should be tested on the intended systems. This prerelease does not replace the separate rolling Redux latest release.
+          EOF
+          fi
+          if [[ "$suffix" == 3.1 ]]; then
+            cat >> notes.md <<'EOF'
+
+          ## Beta 3.1 upstream integration
+          - Redux engine synchronized through upstream revision 17ee0d3, including scripting threads, expanded 2D physics and canvas APIs, audio synthesis and streaming, deterministic random and system/window services.
+          - Regenerated Blueprint node catalogues; persistent Thread, Channel, Samples and AudioStream references can be stored in native graphs.
+          - Create and start a worker from a graph, communicate with named channels and poll results without blocking the main screen. Worker scripts still need to be authored separately in AngelScript; blocking waits are intentionally omitted from normal screen graphs.
+          - Includes the Windows Cook executable Defender verification gate and SHA256 build information. A scan is not a substitute for code signing or hardware testing.
+          - Upstream runtime now plays WAV, Ogg and ADPCM; use Cook to convert MP3 or FLAC sources before runtime.
           EOF
           fi
           printf '\nBuilt from commit %s.\n' "$GITHUB_SHA" >> notes.md
