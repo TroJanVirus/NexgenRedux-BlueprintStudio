@@ -420,6 +420,10 @@ namespace nx
                         setFullscreen(!m_fullscreen);
                         return 0;
                     }
+                    m_input.keys[static_cast<size_t>(Key::Alt)] = (HIWORD(lParam)&KF_ALTDOWN)!=0||wParam==VK_MENU;
+                    break;
+                case WM_SYSKEYUP:
+                    if(wParam==VK_MENU||wParam==VK_LMENU||wParam==VK_RMENU)m_input.keys[static_cast<size_t>(Key::Alt)]=false;
                     break;
                 case WM_KEYDOWN:
                 case WM_KEYUP:

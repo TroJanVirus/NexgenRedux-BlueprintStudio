@@ -2133,6 +2133,7 @@ namespace nx
         if(m_visualInput)
         {
             const bool colorPicker=m_visualInput==7&&themeColorProperty(m_visualProperty),mediaPicker=m_visualInput==7&&themeMediaProperty(m_visualProperty);
+            if(colorPicker){unsigned colour=0;if(!m_rgbOpen){const auto old=themePickerColor(m_visualText);startRGB(themePickerHex(old).substr(0,6),true,old.a);}updateRGB(input,x,y,left,click,colour);if(!m_rgbOpen){if(m_rgbApplied){const auto value=colour?"#"+themePickerHex(rgbColour(colour,{1,1,1,1})).substr(0,6)+themePickerHex({0,0,0,m_rgbAlpha}).substr(6):std::string{};if(!m_document.setVisualThemeProperty(m_visualSelection,m_themeStyle,themeStates[m_themeState],m_visualProperty,value,m_status)){m_rgbOpen=true;return;}}m_visualInput=0;input.setTyping(false);}return;}
             const float dialogTop=colorPicker?250.f:mediaPicker?265.f:286.f,footer=colorPicker?445.f:mediaPicker?505.f:379.f;
             const bool applyClick=click&&in(x,y,650,footer,745,footer+32);
             if(click&&(!in(x,y,420,dialogTop,860,footer+37)||in(x,y,750,footer,840,footer+32)))
@@ -3437,25 +3438,8 @@ namespace nx
         c.clip(statusX,statusY,wide?kWidth-24:720,26);c.text(*m_font,m_status.c_str(),statusX,statusY+4,text);c.noClip();
         if(m_visualInput==7&&themeColorProperty(m_visualProperty))
         {
-            c.roundRect(420,250,440,230,6,{0.08f,0.12f,0.18f,1});
-            c.text(*m_font,m_visualProperty.c_str(),440,260,accent);
-            const Color value=themePickerColor(m_visualText);
-            c.rect(440,286,48,24,{0.5f,0.5f,0.5f,1});c.rect(440,286,48,24,value);
-            c.text(*m_font,m_visualText.empty()?"Default":m_visualText.c_str(),500,286,text);
-            const float channels[]={value.r,value.g,value.b,value.a};const char* labels[]={"R","G","B","A"};
-            for(int i=0;i<4;++i)
-            {
-                const float y=320+28.f*static_cast<float>(i);c.text(*m_font,labels[i],450,y,text);
-                for(int j=0;j<32;++j)
-                {
-                    Color sample=value;const float t=static_cast<float>(j)/31.f;
-                    if(i==0)sample.r=t;else if(i==1)sample.g=t;else if(i==2)sample.b=t;else sample.a=t;
-                    c.rect(500+10.f*static_cast<float>(j),y,10,20,{0.35f,0.35f,0.35f,1});
-                    c.rect(500+10.f*static_cast<float>(j),y,10,20,sample);
-                }
-                c.rect(500+320.f*channels[i]-2,y,4,20,{1,1,1,1});
-            }
-            c.text(*m_font,"Enter = Apply",440,443,muted);c.text(*m_font,"Escape = Cancel",440,459,muted);c.roundRect(650,445,95,32,4,{0.19f,0.4f,0.3f,1});c.text(*m_font,"Apply",697.5f,450,text,Align::Center);c.roundRect(750,445,90,32,4,{0.22f,0.31f,0.43f,1});c.text(*m_font,"Cancel",795,450,text,Align::Center);
+            if(!m_rgbOpen){const auto old=themePickerColor(m_visualText);startRGB(themePickerHex(old).substr(0,6),true,old.a);}
+            drawRGB(c);
         }
         else if(m_visualInput==7&&themeMediaProperty(m_visualProperty))
         {
@@ -4409,39 +4393,65 @@ namespace nx
         }
         return details;
     }
+    namespace
+    {
+        Color spectrum(float h,float s,float v,float a=1.f)
+        {
+            h=std::clamp(h,0.f,1.f)*6.f;const float c=v*s,k=c*(1.f-std::abs(std::fmod(h,2.f)-1.f)),m=v-c;
+            if(h<1)return {c+m,k+m,m,a};
+            if(h<2)return {k+m,c+m,m,a};
+            if(h<3)return {m,c+m,k+m,a};
+            if(h<4)return {m,k+m,c+m,a};
+            if(h<5)return {k+m,m,c+m,a};
+            return {c+m,m,k+m,a};
+        }
+        void spectrumCoordinates(Color c,float& h,float& s,float& v)
+        {
+            v=std::max({c.r,c.g,c.b});const float lo=std::min({c.r,c.g,c.b}),delta=v-lo;s=v>0?delta/v:0;h=0;
+            if(delta>0){if(v==c.r)h=std::fmod((c.g-c.b)/delta+6.f,6.f);else if(v==c.g)h=(c.b-c.r)/delta+2.f;else h=(c.r-c.g)/delta+4.f;h/=6.f;}
+        }
+        std::string spectrumHex(Color c)
+        {
+            const auto byte=[](float n){return static_cast<unsigned>(std::round(std::clamp(n,0.f,1.f)*255.f));};
+            return blueprintRGBHex(0x1000000u|(byte(c.r)<<16)|(byte(c.g)<<8)|byte(c.b));
+        }
+    }
+    void BlueprintWorkspace::startRGB(const std::string& value,bool alpha,float opacity)
+    {
+        m_rgbOpen=true;m_rgbReplace=true;m_rgbApplied=false;m_rgbAlphaEnabled=alpha;m_rgbAlpha=std::clamp(opacity,0.f,1.f);m_rgbText=value.empty()?"FFFFFF":value;
+    }
     bool BlueprintWorkspace::updateRGB(Input& input,float x,float y,bool left,bool click,unsigned& colour)
     {
         if(!m_rgbOpen)return false;
-        if(click&&(!in(x,y,390,205,890,515)||in(x,y,750,462,870,500))){m_rgbOpen=false;return true;}
-        if(left&&in(x,y,495,274,865,376))
-        {
-            unsigned current=0;blueprintParseRGB(m_rgbText,current);
-            const unsigned channel=static_cast<unsigned>((y-274)/34.f),shift=(2u-channel)*8u;
-            const unsigned value=static_cast<unsigned>(std::round(std::clamp((x-495)/370.f,0.f,1.f)*255.f));
-            current=(current&~(255u<<shift))|(value<<shift)|0x1000000u;m_rgbText=blueprintRGBHex(current);m_rgbReplace=true;
-        }
-        if(click&&in(x,y,410,398,870,436))m_rgbReplace=true;
-        bool apply=click&&in(x,y,620,462,740,500);
+        if(click&&(!in(x,y,370,105,910,615)||in(x,y,770,565,890,603))){m_rgbOpen=false;return true;}
+        unsigned current=0;blueprintParseRGB(m_rgbText,current);const Color base=rgbColour(current,{1,1,1,1});float h=0,s=0,v=1;spectrumCoordinates(base,h,s,v);
+        if(left&&in(x,y,390,148,790,378)){h=std::clamp((x-390)/400.f,0.f,1.f);s=1.f-std::clamp((y-148)/230.f,0.f,1.f);m_rgbText=spectrumHex(spectrum(h,s,v));m_rgbReplace=true;}
+        if(left&&in(x,y,390,395,890,419)){v=std::clamp((x-390)/500.f,0.f,1.f);m_rgbText=spectrumHex(spectrum(h,s,v));m_rgbReplace=true;}
+        if(m_rgbAlphaEnabled&&left&&in(x,y,390,434,890,458))m_rgbAlpha=std::clamp((x-390)/500.f,0.f,1.f);
+        if(click&&in(x,y,390,477,890,515))m_rgbReplace=true;
+        bool apply=click&&in(x,y,640,565,760,603);
         for(u32 i=0;i<input.typedCount();++i){const auto ch=input.typed(i);if(ch==13){apply=true;break;}if(ch==8){if(m_rgbReplace)m_rgbText.clear();else if(!m_rgbText.empty())m_rgbText.pop_back();m_rgbReplace=false;}else if(ch<128&&std::string("0123456789abcdefABCDEF#").find(static_cast<char>(ch))!=std::string::npos){if(m_rgbReplace){m_rgbText.clear();m_rgbReplace=false;}appendCharacter(m_rgbText,ch,7);}}
-        if(click&&in(x,y,410,462,530,500)){colour=0;m_rgbOpen=false;return true;}
-        if(apply){unsigned value;if(blueprintParseRGB(m_rgbText,value)){colour=value;m_rgbText=blueprintRGBHex(value);m_rgbOpen=false;}else m_status="Enter six hexadecimal RGB digits (optional #).";}
+        if(click&&in(x,y,390,565,510,603)){colour=0;m_rgbApplied=true;m_rgbOpen=false;return true;}
+        if(apply){unsigned value;if(blueprintParseRGB(m_rgbText,value)){colour=value;m_rgbText=blueprintRGBHex(value);m_rgbApplied=true;m_rgbOpen=false;}else m_status="Enter six hexadecimal RGB digits (optional #).";}
         return true;
     }
     void BlueprintWorkspace::drawRGB(Canvas& c)
     {
-        c.rect(0,0,1280,720,{0,0,0,0.48f});c.roundRect(390,205,500,310,7,{0.12f,0.16f,0.21f,1});c.text(*m_font,"RGB COLOUR",410,218,accent);
-        unsigned packed=0;blueprintParseRGB(m_rgbText,packed);const Color base=rgbColour(packed,{1,1,1,1});c.rect(410,244,460,22,base);
-        for(unsigned i=0;i<3;++i)
-        {
-            const float y=274.f+34.f*static_cast<float>(i);c.text(*m_font,i==0?"R":i==1?"G":"B",420,y+4,text);
-            for(unsigned j=0;j<64;++j){Color sample=base;const float v=static_cast<float>(j)/63.f;if(i==0)sample.r=v;else if(i==1)sample.g=v;else sample.b=v;c.rect(495.f+370.f*static_cast<float>(j)/64.f,y,370.f/64.f+0.5f,24,sample);}
-            const float channel=i==0?base.r:i==1?base.g:base.b;c.rect(495+370*channel-2,y,4,24,text);
-        }
-        c.roundRect(410,398,460,38,4,{0.24f,0.35f,0.48f,1});c.text(*m_font,("HEX  "+m_rgbText).c_str(),420,407,text);
-        c.text(*m_font,"Enter = Apply | Escape = Cancel",410,438,muted);
-        c.roundRect(410,462,120,38,4,{0.22f,0.31f,0.43f,1});c.text(*m_font,m_focus==6?"Reset RGB":"Default",470,471,text,Align::Center);
-        c.roundRect(620,462,120,38,4,{0.19f,0.4f,0.3f,1});c.text(*m_font,"Apply",680,471,text,Align::Center);
-        c.roundRect(750,462,120,38,4,{0.22f,0.31f,0.43f,1});c.text(*m_font,"Cancel",810,471,text,Align::Center);
+        c.rect(0,0,1280,720,{0,0,0,0.48f});c.roundRect(370,105,540,510,7,{0.12f,0.16f,0.21f,1});c.text(*m_font,"COLOUR PICKER",390,116,accent);
+        unsigned packed=0;blueprintParseRGB(m_rgbText,packed);const Color base=rgbColour(packed,{1,1,1,1});float h=0,s=0,v=1;spectrumCoordinates(base,h,s,v);
+        for(unsigned y=0;y<24;++y)for(unsigned x=0;x<60;++x){const float hh=static_cast<float>(x)/59.f,ss=1.f-static_cast<float>(y)/23.f;c.rect(390.f+400.f*static_cast<float>(x)/60.f,148.f+230.f*static_cast<float>(y)/24.f,400.f/60.f+0.5f,230.f/24.f+0.5f,spectrum(hh,ss,v));}
+        c.ring(390+400*h,148+230*(1-s),7,2,{0,0,0,1});c.ring(390+400*h,148+230*(1-s),9,1,{1,1,1,1});
+        for(unsigned y=0;y<12;++y)for(unsigned x=0;x<5;++x)c.rect(806.f+16.f*static_cast<float>(x),148.f+19.f*static_cast<float>(y),16,19,(x+y)%2?Color{0.32f,0.32f,0.32f,1}:Color{0.7f,0.7f,0.7f,1});
+        c.rect(806,148,80,228,{base.r,base.g,base.b,m_rgbAlphaEnabled?m_rgbAlpha:1.f});
+        for(unsigned j=0;j<64;++j){const float f=static_cast<float>(j)/63.f;c.rect(390.f+500.f*static_cast<float>(j)/64.f,395,500.f/64.f+0.5f,24,spectrum(h,s,f));if(m_rgbAlphaEnabled){const float xx=390.f+500.f*static_cast<float>(j)/64.f;c.rect(xx,434,500.f/64.f+0.5f,24,j%2?Color{0.3f,0.3f,0.3f,1}:Color{0.7f,0.7f,0.7f,1});c.rect(xx,434,500.f/64.f+0.5f,24,{base.r,base.g,base.b,f});}}
+        c.ring(390+500*v,407,7,2,text);if(m_rgbAlphaEnabled)c.ring(390+500*m_rgbAlpha,446,7,2,text);
+        c.roundRect(390,477,500,38,4,{0.24f,0.35f,0.48f,1});c.text(*m_font,("HEX  "+m_rgbText).c_str(),400,486,text);
+        const auto byte=[](float n){return static_cast<unsigned>(std::round(std::clamp(n,0.f,1.f)*255.f));};
+        const auto channels="R "+std::to_string(byte(base.r))+"    G "+std::to_string(byte(base.g))+"    B "+std::to_string(byte(base.b))+(m_rgbAlphaEnabled?"    Alpha "+std::to_string(static_cast<unsigned>(std::round(m_rgbAlpha*100)))+"%":"");
+        c.text(*m_font,channels.c_str(),390,520,text);c.text(*m_font,"Enter = Apply | Escape = Cancel",390,542,muted);
+        c.roundRect(390,565,120,38,4,{0.22f,0.31f,0.43f,1});c.text(*m_font,"Default",450,574,text,Align::Center);
+        c.roundRect(640,565,120,38,4,{0.19f,0.4f,0.3f,1});c.text(*m_font,"Apply",700,574,text,Align::Center);
+        c.roundRect(770,565,120,38,4,{0.22f,0.31f,0.43f,1});c.text(*m_font,"Cancel",830,574,text,Align::Center);
     }
     void BlueprintWorkspace::beginNodeEditor(size_t node,Input& input)
     {
@@ -4642,8 +4652,8 @@ namespace nx
             if(m_audioEditor){stopTone(s);m_audioEditor=false;m_status="Audio editor closed.";return;}
             if(m_contentPanelDrag||m_contentResize){m_contentPanelDrag=m_contentResize=false;m_status="Content panel move ended.";return;}
             if(!m_contentDrag.empty()){m_contentDrag.clear();m_status="Content drag cancelled.";return;}
-            if(m_actorEditor){if(m_visualInput){m_visualInput=0;m_visualText.clear();input.setTyping(false);}else if(m_actorDragAxis>=0){cancelActorDrag();m_status="Component drag cancelled.";}else{leaveActorViewport(true);}return;}
-            if(m_assetBrowser){if(m_visualInput){m_visualInput=0;m_visualText.clear();input.setTyping(false);m_status="Input cancelled.";return;}if(m_placementDragging){cancelVisualPlacement();m_status="Placement cancelled.";return;}if(m_visualPlacement){m_visualPlacement=false;return;}if(m_widgetDesigner){if(m_widgetPreviewDrag){m_widgetPreviewDrag=false;m_status="Widget drag cancelled.";return;}if(m_widgetDragging){m_widgetDragging=false;m_widgetDragId.clear();return;}m_widgetDesigner=false;releaseWidgetPreview();return;}m_assetBrowser=false;m_status="Asset browser closed.";return;}
+            if(m_actorEditor){if(m_visualInput){m_rgbOpen=false;m_visualInput=0;m_visualText.clear();input.setTyping(false);}else if(m_actorDragAxis>=0){cancelActorDrag();m_status="Component drag cancelled.";}else{leaveActorViewport(true);}return;}
+            if(m_assetBrowser){if(m_visualInput){m_rgbOpen=false;m_visualInput=0;m_visualText.clear();input.setTyping(false);m_status="Input cancelled.";return;}if(m_placementDragging){cancelVisualPlacement();m_status="Placement cancelled.";return;}if(m_visualPlacement){m_visualPlacement=false;return;}if(m_widgetDesigner){if(m_widgetPreviewDrag){m_widgetPreviewDrag=false;m_status="Widget drag cancelled.";return;}if(m_widgetDragging){m_widgetDragging=false;m_widgetDragId.clear();return;}m_widgetDesigner=false;releaseWidgetPreview();return;}m_assetBrowser=false;m_status="Asset browser closed.";return;}
             if(m_browsing){if(m_projectCreate){m_projectCreate=0;m_projectName.clear();input.setTyping(false);}else{m_browsing=false;m_status="Project browser closed.";}return;}
             if(m_rgbOpen){m_rgbOpen=false;return;}
             if(m_moveWire!=static_cast<size_t>(-1)){m_moveWire=static_cast<size_t>(-1);m_status="Connection move cancelled.";return;}
@@ -5032,7 +5042,7 @@ namespace nx
             }
             m_left=left;return;
         }
-        if(m_rgbOpen&&(m_focus==15||m_focus==11||m_focus==6)){auto& colour=m_focus==15?m_inspectorColour:m_focus==11?m_commentColour:m_pinColour;const auto before=colour;updateRGB(input,x,y,left,click,colour);if(m_focus==15&&colour!=before)m_inspectorColourChanged=true;if(m_focus==6&&!m_rgbOpen&&colour!=before){const auto alpha=m_inputComponents[3];blueprintInputComponents("Color",colour?blueprintRGBHex(colour):"FFFFFF",m_inputComponents);m_inputComponents[3]=alpha;}m_left=left;return;}
+        if(m_rgbOpen&&(m_focus==15||m_focus==11||m_focus==6)){auto& colour=m_focus==15?m_inspectorColour:m_focus==11?m_commentColour:m_pinColour;const auto before=colour;updateRGB(input,x,y,left,click,colour);if(m_focus==15&&colour!=before)m_inspectorColourChanged=true;if(m_focus==6&&!m_rgbOpen&&m_rgbApplied){blueprintInputComponents("Color",colour?blueprintRGBHex(colour):"FFFFFF",m_inputComponents);m_inputComponents[3]=std::to_string(m_rgbAlpha);}m_left=left;return;}
         if(click&&((m_focus==10&&!in(x,y,150,100,1130,625))||(m_focus==17&&!in(x,y,210,100,1070,620))||(m_focus==15&&!in(x,y,160,68,1140,652))||(m_focus==6&&!in(x,y,340,226,940,m_inputChoices.empty()?450.f:628.f))||(m_focus==5&&!in(x,y,340,240,940,445))||(m_focus==9&&!in(x,y,200,226,1080,466))||(m_focus>=11&&m_focus<=14&&!in(x,y,260,230,1020,450))))
         {m_focus=0;input.setTyping(false);m_left=left;return;}
         if(m_focus==10)
@@ -5184,7 +5194,7 @@ namespace nx
         if(m_focus==15)
         {
             if(click&&in(x,y,650,603,840,640)){removeSelectedNode(input);m_left=left;return;}
-            if(click&&in(x,y,760,82,1104,116)){m_rgbOpen=true;m_rgbReplace=true;m_rgbText=blueprintRGBHex(m_inspectorColour);if(m_rgbText.empty())m_rgbText="34577A";m_left=left;return;}
+            if(click&&in(x,y,760,82,1104,116)){startRGB(m_inspectorColour?blueprintRGBHex(m_inspectorColour):"34577A");m_left=left;return;}
             const auto count=m_inspectorRows.size();m_inspectorFirst=std::min(m_inspectorFirst,count>9?count-9:0);
             if(input.wheel()<0&&m_inspectorFirst+9<count)++m_inspectorFirst;
             if(input.wheel()>0&&m_inspectorFirst)--m_inspectorFirst;
@@ -5220,7 +5230,7 @@ namespace nx
         if(m_focus==6&&click&&in(x,y,790,391,920,430)){m_focus=0;input.setTyping(false);m_left=left;return;}
         if(m_focus==6&&!m_inputComponents.empty())
         {
-            if(m_editType=="Color"&&m_inputComponents.size()==4&&click&&in(x,y,550,391,640,430)){const auto byte=[](const std::string& v){return static_cast<unsigned>(std::round(std::clamp(std::strtof(v.c_str(),nullptr),0.f,1.f)*255.f));};m_pinColour=0x1000000u|(byte(m_inputComponents[0])<<16)|(byte(m_inputComponents[1])<<8)|byte(m_inputComponents[2]);m_rgbText=blueprintRGBHex(m_pinColour);m_rgbOpen=true;m_rgbReplace=true;m_left=left;return;}
+            if(m_editType=="Color"&&m_inputComponents.size()==4&&click&&in(x,y,550,391,640,430)){const auto byte=[](const std::string& v){return static_cast<unsigned>(std::round(std::clamp(std::strtof(v.c_str(),nullptr),0.f,1.f)*255.f));};m_pinColour=0x1000000u|(byte(m_inputComponents[0])<<16)|(byte(m_inputComponents[1])<<8)|byte(m_inputComponents[2]);startRGB(blueprintRGBHex(m_pinColour),true,std::strtof(m_inputComponents[3].c_str(),nullptr));m_left=left;return;}
             if(click&&in(x,y,360,285,920,341))
             {m_inputComponent=std::min(m_inputComponents.size()-1,static_cast<size_t>((x-360)/(560.f/static_cast<float>(m_inputComponents.size()))));m_inputReplace=true;}
             for(u32 i=0;i<input.typedCount()+(inputApply?1u:0u);++i)
@@ -5256,7 +5266,7 @@ namespace nx
         if(m_focus)
         {
             const int focus=m_focus;
-            if(focus==11&&click&&in(x,y,820,244,1000,280)){m_rgbOpen=true;m_rgbReplace=true;m_rgbText=blueprintRGBHex(m_commentColour);if(m_rgbText.empty())m_rgbText="405F6B";m_left=left;return;}
+            if(focus==11&&click&&in(x,y,820,244,1000,280)){startRGB(m_commentColour?blueprintRGBHex(m_commentColour):"405F6B");m_left=left;return;}
             const bool form=focus==5||focus==9||(focus>=11&&focus<=14);
             const float footerY=focus==9?420.f:focus==5?400.f:400.f;
             const bool applyClick=inputApply||(form&&click&&in(x,y,720,footerY,840,footerY+36));

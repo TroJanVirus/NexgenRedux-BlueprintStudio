@@ -352,7 +352,10 @@ namespace nx
         std::vector<bool> m_inspectorChanged;
         bool m_inspectorReplace=false,m_inspectorLiteral=false;
         unsigned m_inspectorColour=0,m_commentColour=0,m_pinColour=0;
-        bool m_rgbOpen=false,m_rgbReplace=true;
+        bool m_rgbOpen=false,m_rgbReplace=true,m_rgbApplied=false;
+        float m_rgbAlpha=1.f;
+        bool m_rgbAlphaEnabled=false;
+        void startRGB(const std::string& value,bool alpha=false,float opacity=1.f);
         std::string m_rgbText;
         bool updateRGB(Input& input,float x,float y,bool left,bool click,unsigned& colour);
         void drawRGB(Canvas& c);
