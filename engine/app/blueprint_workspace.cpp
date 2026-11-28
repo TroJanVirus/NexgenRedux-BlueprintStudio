@@ -1834,15 +1834,17 @@ namespace nx
             layout.previewWidth=fit.w;layout.previewHeight=fit.h;layout.previewX=fit.x;layout.previewY=fit.y;
         };
         apply(fitUiDesign(630,207,370,208,uiDesignSize(target.resolution)));
-        if(kWidth<1500||kHeight<720)return layout;
+        if(kWidth<1280||kHeight<720)return layout;
         layout.wide=true;
         const float ox=modalX(),oy=modalY();
         layout.leftDx=12-ox-280;layout.leftDy=96-oy-156;
         layout.rightDx=kWidth-382-ox-630;layout.rightDy=96-oy-156;
         layout.propsDy=layout.rightDy-218;
         layout.headerDx=kWidth-12-ox-1000;layout.headerDy=12-oy-116;
-        const float l=354-ox,r=kWidth-394-ox,t=112-oy,b=kBottom-48-oy;
-        apply(fitUiDesign(l+10,t+10,r-l-20,b-t-20,uiDesignSize(target.resolution)));
+        const float l=354-ox,r=kWidth-394-ox,t=112-oy;
+        layout.timelineX=l;layout.timelineY=kBottom-242-oy;layout.timelineWidth=r-l;
+        const float bottom=m_widgetTimeline?layout.timelineY-8:kBottom-48-oy;
+        apply(fitUiDesign(l+10,t+10,r-l-20,std::max(20.f,bottom-t-20),uiDesignSize(target.resolution)));
         return layout;
     }
     void BlueprintWorkspace::updateWidgetDesigner(Services& s,float x,float y,bool left,bool click)
@@ -1904,6 +1906,61 @@ namespace nx
         }
         m_widgetTimelineLast=now;
         m_widgetTimelineTime=std::clamp(m_widgetTimelineTime,0.f,duration);
+        if(layout.wide&&m_widgetTimeline)
+        {
+            const float tx=pointerX-layout.timelineX,ty=pointerY-layout.timelineY,tw=layout.timelineWidth;
+            const float trackLeft=100.f,trackWidth=tw-trackLeft-12.f;
+            const auto seek=[&](){m_widgetTimelineTime=std::min(duration,std::round(duration*std::clamp((tx-trackLeft)/trackWidth,0.f,1.f)*100.f)/100.f);m_widgetTimelinePlay=false;};
+            if(m_widgetTimelineScrub)
+            {
+                if(left)seek();else m_widgetTimelineScrub=false;
+                return;
+            }
+            if(click&&in(tx,ty,0,0,tw,194))
+            {
+                if(m_widgetSelection.empty()){m_status="Select a widget in the hierarchy first.";return;}
+                if(ty<32)
+                {
+                    const int action=std::clamp(static_cast<int>(tx/(tw/5.f)),0,4);
+                    if(action==0){if(m_widgetTimelineTime>=duration)m_widgetTimelineTime=0;m_widgetTimelineLast=now;m_widgetTimelinePlay=!m_widgetTimelinePlay;}
+                    else if(action==1){m_widgetTimelineTime=0;m_widgetTimelinePlay=false;}
+                    else if(action==2){m_visualProperty="duration";m_visualText=std::to_string(duration);m_visualInput=9;m_widgetTimelinePlay=false;s.input->setTyping(true);}
+                    else if(action==3)m_document.setWidgetKey(m_visualSelection,m_widgetSelection,"loop",animation["loop"].flag()?"false":"true",0,m_status);
+                    else {const auto autoPlay=animation["autoPlay"];m_document.setWidgetKey(m_visualSelection,m_widgetSelection,"autoPlay",!autoPlay.exists()||autoPlay.flag()?"false":"true",0,m_status);}
+                    return;
+                }
+                if(ty>=48&&ty<158)
+                {
+                    m_widgetTimelineTrack=static_cast<unsigned>((ty-48)/22);
+                    if(tx>=trackLeft)
+                    {
+                        seek();float distance=7.f;
+                        for(auto key=animation[timelineTracks[m_widgetTimelineTrack]].first();key.exists();key=key.next())
+                        {
+                            const float keyTime=key[0u].number(),delta=std::abs(tx-(trackLeft+trackWidth*keyTime/duration));
+                            if(keyTime>=0&&keyTime<=duration&&delta<distance){distance=delta;m_widgetTimelineTime=keyTime;}
+                        }
+                        m_widgetTimelineScrub=distance>=7.f;
+                    }
+                    return;
+                }
+                if(ty>=32&&ty<48&&tx>=trackLeft){seek();m_widgetTimelineScrub=true;return;}
+                if(ty>=164)
+                {
+                    if(tx<tw/2.f)
+                    {
+                        m_visualProperty=timelineTracks[m_widgetTimelineTrack];m_visualText=m_widgetTimelineTrack==2||m_widgetTimelineTrack==3?"1":"0";
+                        for(auto key=animation[m_visualProperty.c_str()].first();key.exists();key=key.next())
+                            if(std::abs(key[0u].number()-m_widgetTimelineTime)<0.00001f)m_visualText=std::to_string(key[1u].number());
+                        m_visualInput=9;m_widgetTimelinePlay=false;s.input->setTyping(true);m_status="Enter value at selected time.";
+                    }
+                    else{m_widgetTimelinePlay=false;m_document.setWidgetKey(m_visualSelection,m_widgetSelection,timelineTracks[m_widgetTimelineTrack],"",m_widgetTimelineTime,m_status);}
+                    return;
+                }
+                return;
+            }
+        }
+        else m_widgetTimelineScrub=false;
         const float previewScale=layout.previewScale,previewWidth=layout.previewWidth,previewHeight=layout.previewHeight;
         const float previewX=layout.previewX,previewY=layout.previewY;
         if(m_widgetPreviewDrag)
@@ -2030,10 +2087,10 @@ namespace nx
         {if(m_document.moveVisualWidget(m_visualSelection,m_widgetSelection,-1,m_status))m_status="Moved widget up.";return;}
         if(!m_widgetSelection.empty()&&in(x,y,450,548,610,581))
         {if(m_document.moveVisualWidget(m_visualSelection,m_widgetSelection,1,m_status))m_status="Moved widget down.";return;}
-        if(in(x,y,500,524,610,545)){m_widgetTimeline=!m_widgetTimeline;m_widgetTimelinePlay=false;m_widgetTimelineTime=0;m_widgetAnchors=m_widgetEvents=false;return;}
+        if(in(x,y,500,524,610,545)){m_widgetTimeline=!m_widgetTimeline;m_widgetTimelinePlay=m_widgetTimelineScrub=false;m_widgetTimelineTime=0;m_widgetAnchors=m_widgetEvents=false;return;}
         if(in(x,y,280,524,500,545)){m_widgetAnchors=!m_widgetAnchors;m_widgetEvents=m_widgetTimeline=m_widgetTimelinePlay=false;return;}
-        if(in(x,y,630,420,1000,438)){if(m_widgetTimeline||m_widgetAnchors){m_widgetTimeline=m_widgetTimelinePlay=m_widgetAnchors=false;return;}m_widgetEvents=x>=877;m_widgetAdvanced=x>=753&&x<877;m_widgetUnbind=m_widgetNavigation=false;return;}
-        if(m_widgetTimeline)
+        if(in(x,y,630,420,1000,438)){if((m_widgetTimeline&&!layout.wide)||m_widgetAnchors){m_widgetTimeline=m_widgetTimelinePlay=m_widgetAnchors=false;return;}m_widgetEvents=x>=877;m_widgetAdvanced=x>=753&&x<877;m_widgetUnbind=m_widgetNavigation=false;return;}
+        if(m_widgetTimeline&&!layout.wide)
         {
             if(m_widgetSelection.empty())return;
             if(in(x,y,630,439,810,472)){m_widgetTimelineTrack=(m_widgetTimelineTrack+1)%5;return;}
@@ -2161,12 +2218,12 @@ namespace nx
         const auto* page=m_document.visualAsset(m_visualSelection);
         JsonTree tree;std::vector<DesignRow> rows;
         if(page&&tree.parse(page->source.data(),page->source.size()))designRows(tree.root(),rows,0);
-        const char* labels[]={"Vertical Box","Size Box","Scale Box","Horizontal Box","Grid","Canvas / Stack","Scroll Box","Text","Button","Check Box","Slider","Progress Bar","Text Field","Spacer","User Widget"};
+        const char* paletteLabels[]={"Vertical Box","Size Box","Scale Box","Horizontal Box","Grid","Canvas / Stack","Scroll Box","Text","Button","Check Box","Slider","Progress Bar","Text Field","Spacer","User Widget"};
         for(size_t i=0;i<sizeof(designPalette)/sizeof(designPalette[0]);++i)
         {
             const float xx=280+110.f*static_cast<float>(i%3),yy=192+26.f*static_cast<float>(i/3);
             c.roundRect(xx,yy,106,23,3,{0.19f,0.26f,0.34f,1});
-            c.clip(xx+3,yy,100,23);c.text(*m_font,labels[i],xx+53,yy+2,text,Align::Center);c.noClip();
+            c.clip(xx+3,yy,100,23);c.text(*m_font,paletteLabels[i],xx+53,yy+2,text,Align::Center);c.noClip();
         }
         c.text(*m_font,"HIERARCHY / scroll or drag to reparent",280,324,accent);
         for(size_t i=0;i<6&&i+m_widgetFirst<rows.size()+1;++i)
@@ -2179,7 +2236,8 @@ namespace nx
         }
         if(m_widgetAnchors){button(280,548,106,"Fill X");button(390,548,106,"Fill Y");button(500,548,110,"Fill both");}
         else {button(280,548,160,"Move up");button(450,548,160,"Move down");}
-        if(!m_widgetSelection.empty())button(280,584,160,"Duplicate");button(450,584,160,"UI report");
+        if(!m_widgetSelection.empty())button(280,584,160,"Duplicate");
+        button(450,584,160,"UI report");
         c.rect(280,524,220,21,{0.19f,0.33f,0.50f,1});c.text(*m_font,m_widgetAnchors?"Back to properties":"Anchors / offset",390,525,text,Align::Center);
         c.rect(502,524,108,21,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Timeline",556,525,text,Align::Center);
         c.pop();
@@ -2208,7 +2266,7 @@ namespace nx
         const float px=layout.previewX,py=layout.previewY;
         if(layout.wide)
         {
-            c.rect(354-modalX(),112-modalY(),kWidth-748,kBottom-160,{0.065f,0.065f,0.07f,1});
+            c.rect(354-modalX(),112-modalY(),kWidth-748,m_widgetTimeline?layout.timelineY+modalY()-120:kBottom-160,{0.065f,0.065f,0.07f,1});
             c.text(*m_font,(std::string("DESIGN PREVIEW / ")+target.resolutionName()).c_str(),366-modalX(),92-modalY(),muted);
             c.rect(px-1,py-1,screenWidth+2,layout.previewHeight+2,{0.34f,0.36f,0.39f,1});
         }
@@ -2266,11 +2324,61 @@ namespace nx
             }
             c.pop();
         }
+        if(layout.wide&&m_widgetTimeline)
+        {
+            const auto animation=designItem(tree.root(),m_widgetSelection)["animation"];
+            const float duration=animation["duration"].exists()?std::clamp(animation["duration"].number(),0.01f,60.f):2.f;
+            const float tw=layout.timelineWidth,trackLeft=100.f,trackWidth=tw-trackLeft-12.f;
+            c.push();c.translate(layout.timelineX,layout.timelineY);
+            c.rect(0,0,tw,194,{0.13f,0.16f,0.20f,1});
+            const auto compactButton=[&](float xx,float yy,float ww,const char* label,bool selected)
+            {
+                c.roundRect(xx+2,yy+2,ww-4,26,3,selected?Color{0.22f,0.38f,0.50f,1}:Color{0.20f,0.25f,0.31f,1});
+                c.clip(xx+4,yy+2,ww-8,26);c.text(*m_font,label,xx+ww/2,yy+5,text,Align::Center);c.noClip();
+            };
+            char durationLabel[40];std::snprintf(durationLabel,sizeof(durationLabel),"%.2f s",duration);
+            compactButton(0,0,tw/5,m_widgetTimelinePlay?"Pause":"Play",m_widgetTimelinePlay);
+            compactButton(tw/5,0,tw/5,"Rewind",false);
+            compactButton(2*tw/5,0,tw/5,durationLabel,false);
+            compactButton(3*tw/5,0,tw/5,animation["loop"].flag()?"Loop on":"Loop off",animation["loop"].flag());
+            compactButton(4*tw/5,0,tw/5,"Autoplay",!animation["autoPlay"].exists()||animation["autoPlay"].flag());
+            const char* trackLabels[]={"Position X","Position Y","Scale","Opacity","Rotation"};
+            for(unsigned i=0;i<5;++i)
+            {
+                const float yy=48+22.f*static_cast<float>(i);
+                c.rect(0,yy,tw,21,i==m_widgetTimelineTrack?Color{0.19f,0.31f,0.41f,1}:Color{0.18f,0.21f,0.26f,1});
+                c.text(*m_font,trackLabels[i],6,yy+2,text);
+            }
+            for(unsigned i=0;i<=5;++i)
+            {
+                const float xx=trackLeft+trackWidth*static_cast<float>(i)/5.f;
+                char tick[24];std::snprintf(tick,sizeof(tick),"%.1f",duration*static_cast<float>(i)/5.f);
+                c.line(xx,47,xx,158,1,{0.33f,0.37f,0.42f,1});
+                c.text(*m_font,tick,xx,30,muted,Align::Center);
+            }
+            for(unsigned i=0;i<5;++i)
+            {
+                const float yy=58+22.f*static_cast<float>(i);
+                bool havePrevious=false;float previousX=0;
+                for(auto key=animation[timelineTracks[i]].first();key.exists();key=key.next())
+                {
+                    const float time=key[0u].number(),xx=trackLeft+trackWidth*std::clamp(time/duration,0.f,1.f);
+                    if(havePrevious)c.line(previousX,yy,xx,yy,2,{0.35f,0.55f,0.69f,1});
+                    c.circle(xx,yy,i==m_widgetTimelineTrack&&std::abs(time-m_widgetTimelineTime)<0.001f?6.f:4.f,i==m_widgetTimelineTrack?Color{1.f,0.75f,0.25f,1}:accent);
+                    havePrevious=true;previousX=xx;
+                }
+            }
+            const float playhead=trackLeft+trackWidth*std::clamp(m_widgetTimelineTime/duration,0.f,1.f);
+            c.line(playhead,46,playhead,158,2,{1.f,0.48f,0.24f,1});
+            char keyLabel[48];std::snprintf(keyLabel,sizeof(keyLabel),"Set key at %.2fs",m_widgetTimelineTime);
+            compactButton(0,164,tw/2,keyLabel,false);compactButton(tw/2,164,tw/2,"Delete selected key",false);
+            c.pop();
+        }
         c.push();c.translate(layout.rightDx,layout.propsDy);
-        if(m_widgetTimeline||m_widgetAnchors)
+        if((m_widgetTimeline&&!layout.wide)||m_widgetAnchors)
         {
             c.rect(630,420,370,18,{0.19f,0.33f,0.50f,1});
-            c.text(*m_font,m_widgetTimeline?"TIMELINE / click to exit":"ANCHORS / Stack children / click to exit",630,420,text);
+            c.text(*m_font,m_widgetTimeline&&!layout.wide?"TIMELINE / click to exit":"ANCHORS / Stack children / click to exit",630,420,text);
         }
         else
         {
@@ -2283,7 +2391,7 @@ namespace nx
                 c.text(*m_font,names[i],x+60,420,text,Align::Center);
             }
         }
-        if(m_widgetTimeline)
+        if(m_widgetTimeline&&!layout.wide)
         {
             const auto a=designItem(tree.root(),m_widgetSelection)["animation"];
             const float duration=a["duration"].exists()?std::clamp(a["duration"].number(),0.01f,60.f):2.f;
@@ -3698,7 +3806,7 @@ namespace nx
         {
             c.roundRect(420,286,440,130,6,{0.08f,0.12f,0.18f,1});
             c.text(*m_font,m_visualInput==1?"RENAME ASSET":m_visualInput==5?"THEME ASSET ID":m_visualInput==6?"STYLE NAME":m_visualInput>=3?m_visualProperty.c_str():"NEXT WIDGET TEXT",440,300,accent);
-            c.clip(440,330,400,34);drawEntryText(c,m_visualText.c_str(),440,336,text,true);c.noClip();
+            c.clip(440,330,400,34);drawEntryText(c,m_visualText.c_str(),440,336,text,true,nullptr,Align::Left,396);c.noClip();
             c.text(*m_font,"Enter = Apply",440,377,muted);c.text(*m_font,"Escape = Cancel",440,393,muted);c.roundRect(650,379,95,32,4,{0.19f,0.4f,0.3f,1});c.text(*m_font,"Apply",697.5f,384,text,Align::Center);c.roundRect(750,379,90,32,4,{0.22f,0.31f,0.43f,1});c.text(*m_font,"Cancel",795,384,text,Align::Center);
         }
     }
@@ -5621,7 +5729,7 @@ namespace nx
             c.text(*m_font,labels[i],140,y+9,muted);
             c.roundRect(420,y,720,36,4,m_deployField==i?Color{0.24f,0.35f,0.48f,1}:Color{0.18f,0.22f,0.29f,1});
             const std::string value=i==7?std::string(m_deployPassword.size(),'*'):m_deployFields[i];
-            c.clip(430,y,700,36);drawEntryText(c,value.c_str(),430,y+8,text,m_deployField==i);c.noClip();
+            c.clip(430,y,700,36);drawEntryText(c,value.c_str(),430,y+8,text,m_deployField==i,nullptr,Align::Left,696);c.noClip();
         }
         const auto screens=m_document.screens();
         c.roundRect(140,493,1000,33,4,{0.20f,0.32f,0.45f,1});
@@ -5682,6 +5790,13 @@ namespace nx
         for(u32 i=0;i<input.typedCount();++i)
         {
             const auto ch=input.typed(i);if(ch==13){if(m_sequenceField>=0){finishSequenceField();return;}apply=true;break;}
+            if(ch==9&&m_sequenceField>=0)
+            {
+                const int next=(m_sequenceField+(input.raw().keys[static_cast<size_t>(Key::Shift)]?8:1))%9;
+                if(!finishSequenceField())return;
+                const auto& key=m_sequenceKeys[m_sequenceKey];const float values[]={key.time,key.from[0],key.from[1],key.from[2],key.to[0],key.to[1],key.to[2],key.fov};
+                m_sequenceField=next;m_sequenceText=next==8?key.event:std::to_string(values[next]);m_sequenceReplace=true;return;
+            }
             if(m_sequenceField<0)continue;
             if(ch==8){if(m_sequenceReplace)m_sequenceText.clear();else if(!m_sequenceText.empty())m_sequenceText.pop_back();m_sequenceReplace=false;}
             else if(ch<128&&(m_sequenceField==8?(std::isalnum(static_cast<unsigned char>(ch))||ch==95):std::string("0123456789.eE+-").find(static_cast<char>(ch))!=std::string::npos)){if(m_sequenceReplace){m_sequenceText.clear();m_sequenceReplace=false;}appendCharacter(m_sequenceText,ch,48);}
@@ -5747,7 +5862,7 @@ namespace nx
         const float cursor=280+870*m_sequenceTime/duration;c.line(cursor,181,cursor,320,2,{1,0.45f,0.25f,1});
         const auto& key=m_sequenceKeys[m_sequenceKey];const float values[]={key.time,key.from[0],key.from[1],key.from[2],key.to[0],key.to[1],key.to[2],key.fov};const char* labels[]={"Time (s)","Position X","Position Y","Position Z","Target X","Target Y","Target Z","FOV"};
         c.text(*m_font,"SELECTED CAMERA KEY / drag keys to retime (Shift = free)",120,344,accent);
-        for(unsigned i=0;i<8;++i){const float xx=120.f+129.f*static_cast<float>(i);c.text(*m_font,labels[i],xx,374,muted);c.roundRect(xx,395,123,26,3,static_cast<int>(i)==m_sequenceField?Color{0.24f,0.35f,0.48f,1}:Color{0.20f,0.23f,0.28f,1});const auto value=static_cast<int>(i)==m_sequenceField?m_sequenceText:std::to_string(values[i]);c.clip(xx+4,395,115,26);drawEntryText(c,value.c_str(),xx+5,400,text,static_cast<int>(i)==m_sequenceField);c.noClip();}
+        for(unsigned i=0;i<8;++i){const float xx=120.f+129.f*static_cast<float>(i);c.text(*m_font,labels[i],xx,374,muted);c.roundRect(xx,395,123,26,3,static_cast<int>(i)==m_sequenceField?Color{0.24f,0.35f,0.48f,1}:Color{0.20f,0.23f,0.28f,1});const auto value=static_cast<int>(i)==m_sequenceField?m_sequenceText:std::to_string(values[i]);c.clip(xx+4,395,115,26);drawEntryText(c,value.c_str(),xx+5,400,text,static_cast<int>(i)==m_sequenceField,nullptr,Align::Left,112);c.noClip();}
         c.text(*m_font,"CAMERA PATH PREVIEW / XZ (schematic)",120,438,muted);
         float loX=key.from[0],hiX=loX,loZ=key.from[2],hiZ=loZ;
         for(const auto& k:m_sequenceKeys){loX=std::min({loX,k.from[0],k.to[0]});hiX=std::max({hiX,k.from[0],k.to[0]});loZ=std::min({loZ,k.from[2],k.to[2]});hiZ=std::max({hiZ,k.from[2],k.to[2]});}
@@ -5759,7 +5874,7 @@ namespace nx
         c.roundRect(800,475,350,37,4,m_sequenceField==8?Color{0.24f,0.35f,0.48f,1}:Color{0.20f,0.23f,0.28f,1});const auto marker=m_sequenceField==8?m_sequenceText:key.event;c.clip(805,475,340,37);drawEntryText(c,marker.c_str(),810,483,text,m_sequenceField==8,"Optional function name");c.noClip();
         if(m_sequenceAsset.empty())button(800,540,350,"Save as reusable sequence");
         c.clip(120,582,1040,25);c.text(*m_font,m_status.c_str(),120,586,muted);c.noClip();
-        c.text(*m_font,"Drag keys / scrub ruler | Enter = Apply | Escape = Cancel",120,620,muted);button(910,610,120,"Apply");button(1040,610,120,"Cancel");
+        c.text(*m_font,"Drag keys / scrub ruler | Tab fields | Enter = Apply | Esc = Cancel",120,620,muted);button(910,610,120,"Apply");button(1040,610,120,"Cancel");
     }
     bool BlueprintWorkspace::beginCurveEditor(Input& input)
     {
@@ -7195,10 +7310,15 @@ namespace nx
         if (!control && !held(Key::Shift) && input.pressed(Action::Alternate)) selectGraph((m_graph+1)%m_document.graphs.size());
     }
 
-    void BlueprintWorkspace::drawEntryText(Canvas& c,const char* value,float x,float y,Color ink,bool focused,const char* placeholder,Align align)
+    void BlueprintWorkspace::drawEntryText(Canvas& c,const char* value,float x,float y,Color ink,bool focused,const char* placeholder,Align align,float available)
     {
         const bool empty=!value||!*value;
         const char* shown=empty&&placeholder?placeholder:empty?"":value;
+        if(focused&&!empty&&available>0&&align==Align::Left)
+        {
+            while(*shown&&c.measure(*m_font,shown).x>available-4.f)
+            {++shown;while((static_cast<unsigned char>(*shown)&0xc0)==0x80)++shown;}
+        }
         c.text(*m_font,shown,x,y,empty&&placeholder?muted:ink,align);
         if(!focused||!m_caretVisible)return;
         const float width=c.measure(*m_font,shown).x;
@@ -7519,7 +7639,7 @@ namespace nx
         c.text(*m_font,"NODE LIBRARY",kRight+12,kTop+10,accent);
         c.roundRect(kRight+8,kTop+38,kWidth-kRight-16,30,4,m_focus==1?Color{0.24f,0.35f,0.48f,1}:Color{0.16f,0.21f,0.28f,1});
         c.clip(kRight+12,kTop+38,kWidth-kRight-24,30);
-        drawEntryText(c,m_query.c_str(),kRight+14,kTop+43,text,m_focus==1,"Search nodes...");c.noClip();
+        drawEntryText(c,m_query.c_str(),kRight+14,kTop+43,text,m_focus==1,"Search nodes...",Align::Left,kWidth-kRight-28);c.noClip();
         const bool back=m_query.empty()&&!m_paletteGroup.empty();
         const size_t visible=kPaletteRows-(back?1u:0u),maxFirst=m_paletteRows.size()>visible?m_paletteRows.size()-visible:0;
         const float listTop=kTop+80+(back?26.f:0.f),listHeight=26.f*static_cast<float>(visible);
@@ -7820,7 +7940,7 @@ namespace nx
                     c.rect(180,yy,920,40,{0.15f,0.20f,0.27f,1});
                     c.push();c.clip(190,yy,225,40);c.text(*m_font,row.name.c_str(),190,yy+2,text);c.text(*m_font,row.type.c_str(),190,yy+20,muted);c.pop();
                     if(row.editable)c.roundRect(425,yy+4,480,32,4,i==m_inspectorRow?Color{0.26f,0.42f,0.59f,1}:Color{0.22f,0.28f,0.35f,1});
-                    c.push();c.clip(430,yy,474,40);c.text(*m_font,(i==0&&m_inspectorDraft[i].empty()?title(selected)+" (default)":i==1&&m_inspectorDraft[i].empty()?std::string("Add comment..."):row.editable?m_inspectorDraft[i]:row.value).c_str(),435,yy+11,text);c.pop();
+                    c.push();c.clip(430,yy,474,40);drawEntryText(c,(row.editable?m_inspectorDraft[i]:row.value).c_str(),435,yy+11,text,row.editable&&i==m_inspectorRow,i==0?"Default title":i==1?"Add comment...":nullptr,Align::Left,467);c.pop();
                     c.text(*m_font,m_inspectorChanged[i]?"Modified":row.origin.c_str(),920,yy+10,muted);
                 }
                 if(m_inspectorRows.empty())c.text(*m_font,"This node has no editable literal inputs.",190,175,muted);
@@ -7859,7 +7979,7 @@ namespace nx
                 if(m_inputComponents.empty())
                 {
                     c.roundRect(360,285,560,36,4,{0.24f,0.35f,0.48f,1});
-                    c.clip(364,285,552,36);drawEntryText(c,m_edit.c_str(),370,293,text,true);c.noClip();
+                    c.clip(364,285,552,36);drawEntryText(c,m_edit.c_str(),370,293,text,true,nullptr,Align::Left,544);c.noClip();
                 }
                 else
                 {
@@ -7869,7 +7989,7 @@ namespace nx
                         const float xx=360+width*static_cast<float>(i);
                         c.text(*m_font,labels[i].c_str(),xx+6,282,muted);
                         c.roundRect(xx+2,303,width-4,34,4,i==m_inputComponent?Color{0.26f,0.42f,0.59f,1}:Color{0.17f,0.23f,0.31f,1});
-                        c.push();c.clip(xx+5,303,width-10,34);drawEntryText(c,m_inputComponents[i].c_str(),xx+8,310,text,i==m_inputComponent);c.pop();
+                        c.push();c.clip(xx+5,303,width-10,34);drawEntryText(c,m_inputComponents[i].c_str(),xx+8,310,text,i==m_inputComponent,nullptr,Align::Left,width-15);c.pop();
                     }
                 }
                 c.paragraph(*m_font,m_status.c_str(),360,345,560,muted);

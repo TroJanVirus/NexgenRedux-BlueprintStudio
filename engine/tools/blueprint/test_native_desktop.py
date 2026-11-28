@@ -391,15 +391,17 @@ with menu_log.open("wb") as out:
         # Open native UI Designer: add a container, nest a label, edit its
         # width, and switch the native-rendered preview to 4:3 and back.
         click(445, 564, window)
-        click(335, 205, window)  # Vertical Box in persistent palette
-        click(445, 477, window)  # Select new container in hierarchy
-        click(445, 257, window)  # Text in persistent palette
-        click(445, 507, window)  # Select nested label
-        click(810, 455, window)
+        click(67, 145, window)  # Vertical Box in persistent palette
+        click(177, 417, window)  # Select new container in hierarchy
+        click(177, 197, window)  # Text in persistent palette
+        click(177, 447, window)  # Select nested label
+        click(1078, 177, window)
         enter_text("320")
-        click(910, 172, window)
-        click(910, 172, window)
-        click(720, 172, window)
+        click(1178, 112, window)
+        click(1080, 221, window)  # 720p preview
+        click(1178, 112, window)
+        click(1080, 148, window)  # 640x480 preview
+        click(988, 112, window)  # Return to content
         click(720, 564, window)
         click(910, 564, window)
         click(360, 172, window)

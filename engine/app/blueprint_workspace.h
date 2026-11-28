@@ -3,6 +3,7 @@
 #include "tools/blueprint/device_client.h"
 #include "tools/blueprint/native_assets.h"
 #include "audio/audio.h"
+#include "canvas/canvas.h"
 #include <utility>
 
 class asIScriptContext;
@@ -229,7 +230,7 @@ namespace nx
         bool m_targetResolutionMenu=false;
         unsigned m_widgetGuideMask=7; // editor-only overlays
         bool m_widgetAdvanced=false,m_widgetNavigation=false;
-        bool m_widgetTimeline=false,m_widgetTimelinePlay=false;
+        bool m_widgetTimeline=false,m_widgetTimelinePlay=false,m_widgetTimelineScrub=false;
         unsigned m_widgetTimelineTrack=0;
         float m_widgetTimelineTime=0;
         double m_widgetTimelineLast=0;
@@ -251,6 +252,7 @@ namespace nx
             bool wide=false;
             float leftDx=0,leftDy=0,rightDx=0,rightDy=0,propsDy=0,headerDx=0,headerDy=0;
             float previewX=0,previewY=0,previewWidth=0,previewHeight=208,previewScale=208.f/720.f,previewScaleX=208.f/720.f;
+            float timelineX=0,timelineY=0,timelineWidth=0;
         };
         WidgetLayout widgetLayout() const;
         int m_visualInput=0; // 1 rename asset, 2 palette label, 3 actor property, 4 widget property
@@ -424,7 +426,7 @@ namespace nx
         const std::string* remotePinValue(size_t graph,size_t node,const std::string& pin,bool output) const;
         void toggleRemoteTrace();
         void drawRemoteControls(Canvas& c);
-        void drawEntryText(Canvas& c,const char* value,float x,float y,Color ink,bool focused,const char* placeholder=nullptr,Align align=Align::Left);
+        void drawEntryText(Canvas& c,const char* value,float x,float y,Color ink,bool focused,const char* placeholder=nullptr,Align align=Align::Left,float available=0);
         bool m_caretVisible=true;
         BlueprintLocation mapRemoteLocation(const std::string& file,const std::string& fingerprint,unsigned line) const;
         struct RemoteGraphHit {BlueprintLocation location;double time;};
