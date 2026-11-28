@@ -21,7 +21,7 @@ namespace nx
     {
     public:
         bool active() const { return m_font != nullptr; }
-        void open(Services& services);
+        void open(Services& services,bool projects=false);
         void close(Services& services);
         void update(Services& services);
         bool previewing() const { return m_playing; }

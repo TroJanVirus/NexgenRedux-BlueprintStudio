@@ -101,7 +101,7 @@ namespace nx
         }
     }
 
-    void BlueprintWorkspace::open(Services& s)
+    void BlueprintWorkspace::open(Services& s,bool projects)
     {
         if (active()) return;
         if(!s.platform->acquireBlueprintLease())
@@ -152,6 +152,7 @@ namespace nx
         }
         if(!m_document.graphs.empty()&&m_graphTabs.empty())selectGraph(std::min(m_graph,m_document.graphs.size()-1));
         filterCatalogue();
+        if(projects)browseFiles(s);
         NX_INFO("Blueprint Studio: workspace ready (%s)",m_status.c_str());
     }
 
