@@ -4324,6 +4324,7 @@ namespace nx
     }
     std::vector<BlueprintWorkspace::FindResult> BlueprintWorkspace::findResults() const
     {
+        const auto lower=[](std::string value){for(char& ch:value)ch=static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));return value;};
         std::vector<FindResult> results;const auto query=lower(m_findText);
         if(query.empty())return results;
         for(size_t i=0;i<m_document.graphs.size();++i)
