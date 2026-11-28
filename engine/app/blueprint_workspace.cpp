@@ -172,7 +172,7 @@ namespace nx
     {
         if (!active()) return;
         stopPreview(s);
-        m_device.disconnect();m_deviceAddressEditing=false;
+        m_device.disconnect();m_deviceAddressEditing=false;m_deployPassword.clear();m_deployField=-1;
         stopTone(s);m_audioEditor=false;m_toneWav.clear();m_clipSource.clear();m_audioClip=BlueprintAudioClip{};
         s.platform->setEditorChrome(false);
         saveActorTab();cancelActorDrag();m_actorOrbit=false;m_splitter=0;m_actorEditor=false;m_contentDrag.clear();m_contentPanelDrag=false;releaseContentPreviews();
@@ -288,7 +288,7 @@ namespace nx
         return true;
     }
     bool BlueprintWorkspace::modalOpen() const
-    {return m_assetBrowser||m_browsing||m_focus==5||m_focus==6||m_focus==9||m_focus==10||m_focus==11||m_focus==12||m_focus==13||m_focus==14||m_focus==15||m_focus==17||m_focus==18||m_focus==20||m_focus==21||m_focus==22||m_focus==23||m_focus==24||m_focus==25||m_focus==26||m_focus==27;}
+    {return m_assetBrowser||m_browsing||m_focus==5||m_focus==6||m_focus==9||m_focus==10||m_focus==11||m_focus==12||m_focus==13||m_focus==14||m_focus==15||m_focus==17||m_focus==18||m_focus==20||m_focus==21||m_focus==22||m_focus==23||m_focus==24||m_focus==25||m_focus==26||m_focus==27||m_focus==28;}
     void BlueprintWorkspace::resetGraphTabs()
     {
         releaseContentPreviews();m_graphTabs.clear();m_actorTabs.clear();m_visualTabs.clear();m_activeVisualTab={};m_activeTab={};m_tabFirst=0;
@@ -4911,6 +4911,7 @@ namespace nx
     {
         if(!click)return;
         if(in(x,y,140,600,425,638)){m_focus=27;return;}
+        if(in(x,y,435,600,720,638)){m_focus=28;return;}
         if(in(x,y,1000,600,1150,638)){m_focus=22;return;}
         if(in(x,y,140,420,470,455)||in(x,y,480,420,790,455)||in(x,y,800,420,1140,455))
         {
@@ -4958,6 +4959,7 @@ namespace nx
         c.text(*m_font,target.warning().c_str(),140,484,{1.f,0.72f,0.22f,1.f});
         c.text(*m_font,"Exports are source/media. Actual target runtime integrity and performance remain unverified.",140,508,muted);
         c.roundRect(140,600,285,38,4,{0.20f,0.32f,0.45f,1});c.text(*m_font,"Device Manager",282,609,text,Align::Center);
+        c.roundRect(435,600,285,38,4,{0.20f,0.32f,0.45f,1});c.text(*m_font,"Play on Xbox",577,609,text,Align::Center);
         c.roundRect(1000,600,150,38,4,{0.20f,0.32f,0.45f,1});c.text(*m_font,"Back",1075,609,text,Align::Center);
         c.clip(120,535,1030,58);c.paragraph(*m_font,m_status.c_str(),120,540,1020,text);c.noClip();
     }
@@ -5087,10 +5089,7 @@ namespace nx
         if(in(x,y,560,600,760,638)){m_deviceVariables=!m_deviceVariables;return;}
         if(in(x,y,770,600,990,638))
         {
-            if(!m_document.target().xbox()){m_deviceFeedback="Choose the original Xbox project target first.";return;}
-            if(compileAndExport(s))m_deviceFeedback="Exported "+m_deviceExport+"; use deploy_xbox.py to cook/install.";
-            else m_deviceFeedback=m_status;
-            return;
+            m_focus=28;m_deviceAddressEditing=false;input.setTyping(false);return;
         }
         if(in(x,y,1000,600,1150,638)){m_deviceAddressEditing=false;input.setTyping(false);m_focus=24;}
     }
@@ -5118,8 +5117,106 @@ namespace nx
         button(140,600,200,"Sync watches",m_device.ready()&&m_device.sourceIdentity());
         button(350,600,200,"Locate node",m_device.paused()&&!m_device.fingerprint().empty());
         button(560,600,200,m_deviceVariables?"Show telemetry":"Show locals",true);
-        button(770,600,220,"Export Xbox project",m_document.target().xbox());
+        button(770,600,220,"Play on Xbox",m_document.target().xbox());
         button(1000,600,150,"Back",true);
+    }
+    void BlueprintWorkspace::pollXboxDeploy(Services& s)
+    {
+        if(!m_deployRunning)return;
+        const int code=s.platform->pollBlueprintProcess();if(code==-1)return;
+        m_deployRunning=false;
+        FileData result;
+        if(!m_deployResult.empty()&&s.platform->fileTime(m_deployResult.c_str())&&s.platform->readFile(m_deployResult.c_str(),result,MemTag::General))
+        {
+            JsonTree json;
+            if(result.size<=16384&&json.parse(reinterpret_cast<const char*>(result.data),result.size))
+            {
+                const auto root=json.root();
+                m_deployStatus=(code==0&&root["ok"].flag()?"Complete: ":"Failed: ")+std::string(root["message"].text());
+                return;
+            }
+        }
+        m_deployStatus="Deployment helper exited without a valid result. Check Python, helper path and permissions.";
+    }
+    void BlueprintWorkspace::updateXboxDeploy(Services& s,float x,float y,bool click)
+    {
+        auto& input=*s.input;
+        if(click&&in(x,y,1000,600,1150,638)){m_focus=27;m_deployField=-1;m_deployPassword.clear();input.setTyping(false);return;}
+        if(m_deployRunning)return;
+        const auto screens=m_document.screens();
+        if(click&&in(x,y,140,493,1140,526)&&!screens.empty())
+        {m_deployStart=(m_deployStart+1)%screens.size();m_deployField=-1;input.setTyping(false);return;}
+        if(click&&in(x,y,420,152,1140,488))
+        {m_deployField=static_cast<int>((y-152)/42);input.setTyping(true);}
+        if(m_deployField>=0&&m_deployField<8)
+        {
+            auto& value=m_deployField==7?m_deployPassword:m_deployFields[m_deployField];
+            const auto& raw=input.raw();const bool paste=raw.keys[static_cast<size_t>(Key::Control)]&&raw.keys[static_cast<size_t>(Key::V)];
+            if(paste&&!m_deployPaste)
+            {
+                std::string clip;if(s.platform->clipboard(clip))for(unsigned char ch:clip)if(ch>=32&&ch<127&&value.size()<256)value+=static_cast<char>(ch);
+            }
+            m_deployPaste=paste;
+            for(u32 i=0;i<input.typedCount();++i)
+            {
+                const auto ch=input.typed(i);
+                if(ch==13){m_deployField=-1;input.setTyping(false);break;}
+                if(ch==8&&!value.empty())value.pop_back();
+                else if(ch>=32&&ch<127&&value.size()<256)value+=static_cast<char>(ch);
+            }
+        }
+        if(!click||!in(x,y,140,600,430,638))return;
+        m_deployField=-1;input.setTyping(false);
+        if(!m_document.target().xbox()||screens.empty()){m_deployStatus="Select an Original Xbox project with a start screen.";return;}
+        if(m_deployFields[0].empty()||m_deployFields[1].empty()||m_deployFields[2].empty()||m_deployFields[3].empty())
+        {m_deployStatus="Set Python executable, deployment helper, Xbox runtime folder and cooker.";return;}
+        const bool ftp=!m_deployFields[4].empty();
+        if(ftp)
+        {
+            u32 ip=0;
+            if(!netParseAddress(m_deployFields[4].c_str(),ip)||!ip||ip==kBroadcast||m_deployFields[5].empty()||m_deployFields[6].empty()||m_deployPassword.empty())
+            {m_deployStatus="For FTP, supply IPv4, user, new remote Games folder and password.";return;}
+            if(!s.platform->showMessage("Play on Xbox","Upload a NEW title using plaintext FTP on your trusted LAN? Existing titles will not be overwritten.",true))
+            {m_deployStatus="FTP cancelled.";return;}
+        }
+        if(!compileAndExport(s)){m_deployStatus=m_status;return;}
+        const std::string job=m_deviceExport+"-job",output=m_deviceExport+"-xbox";
+        if(!s.platform->createOwnFolder(job.substr(4).c_str())){m_deployStatus="Cannot create deployment job folder.";return;}
+        std::string exportPath,outputPath,requestPath;
+        if(!s.platform->blueprintOwnPath(m_deviceExport.c_str(),exportPath)||!s.platform->blueprintOwnPath(output.c_str(),outputPath)||!s.platform->blueprintOwnPath((job+"/request.json").c_str(),requestPath))
+        {m_deployStatus="Cannot resolve desktop export paths.";return;}
+        JsonValue request;
+        request.put("export")->setText(exportPath);request.put("output")->setText(outputPath);
+        request.put("runtime")->setText(m_deployFields[2]);request.put("cook")->setText(m_deployFields[3]);
+        request.put("start")->setText(screens[m_deployStart%screens.size()]);
+        request.put("host")->setText(m_deployFields[4]);request.put("user")->setText(m_deployFields[5]);request.put("remote")->setText(m_deployFields[6]);
+        if(!writeVerified(s,job+"/request.json",request.write(false))){m_deployStatus=m_status;return;}
+        m_deployResult=job+"/result.json";
+        m_deployRunning=s.platform->startBlueprintProcess(m_deployFields[0],{m_deployFields[1],"--request",requestPath},ftp?m_deployPassword:std::string());
+        m_deployPassword.clear();
+        m_deployStatus=m_deployRunning?"Cooking / preparing title in a separate process...":"Could not start the deployment helper.";
+    }
+    void BlueprintWorkspace::drawXboxDeploy(Canvas& c)
+    {
+        c.roundRect(100,64,1080,594,8,{0.15f,0.17f,0.20f,1});
+        c.text(*m_font,"PLAY ON XBOX / BUILD & DEPLOY",120,78,accent);
+        c.text(*m_font,"Cook a fresh development title; optional FTP upload; then launch on the dashboard.",140,110,muted);
+        const char* labels[]={"Python executable","deploy_xbox.py path","Extracted Xbox runtime","Redux cook executable","FTP IPv4 (blank = local only)","FTP username","New remote folder","FTP password (not saved)"};
+        for(int i=0;i<8;++i)
+        {
+            const float y=152+42.f*static_cast<float>(i);
+            c.text(*m_font,labels[i],140,y+9,muted);
+            c.roundRect(420,y,720,36,4,m_deployField==i?Color{0.24f,0.35f,0.48f,1}:Color{0.18f,0.22f,0.29f,1});
+            const std::string value=i==7?std::string(m_deployPassword.size(),'*'):m_deployFields[i];
+            c.clip(430,y,700,36);c.text(*m_font,value.c_str(),430,y+8,text);c.noClip();
+        }
+        const auto screens=m_document.screens();
+        c.roundRect(140,493,1000,33,4,{0.20f,0.32f,0.45f,1});
+        c.text(*m_font,("Start screen: "+(screens.empty()?std::string("None"):screens[m_deployStart%screens.size()])+" >").c_str(),150,500,text);
+        c.clip(140,533,1000,62);c.paragraph(*m_font,m_deployStatus.empty()?"Use matching runtime and cooker. FTP is optional; password is not written to the job file.":m_deployStatus.c_str(),140,535,1000,muted);c.noClip();
+        c.roundRect(140,600,290,38,4,m_deployRunning?Color{0.20f,0.22f,0.25f,1}:Color{0.20f,0.32f,0.45f,1});
+        c.text(*m_font,m_deployRunning?"Working...":"Build / install new title",285,608,text,Align::Center);
+        c.roundRect(1000,600,150,38,4,{0.20f,0.32f,0.45f,1});c.text(*m_font,"Back",1075,608,text,Align::Center);
     }
     void BlueprintWorkspace::drawSceneBrowser(Canvas& c)
     {
@@ -5359,7 +5456,7 @@ namespace nx
     void BlueprintWorkspace::update(Services& s)
     {
         auto& input = *s.input;
-        m_device.update(s.platform->seconds());updateRemoteGraph(s.platform->seconds());
+        m_device.update(s.platform->seconds());updateRemoteGraph(s.platform->seconds());pollXboxDeploy(s);
         resizeWorkspace(*s.canvas);
         rememberVisualTab();refreshWidgetPreview(s);refreshPlacementPreview(s);refreshContentPreviews(s);
         if (input.pressed(Action::Menu))
@@ -5373,6 +5470,7 @@ namespace nx
             if(m_browsing){if(m_projectCreate){m_projectCreate=0;m_projectName.clear();input.setTyping(false);}else{m_browsing=false;m_status="Project browser closed.";}return;}
             if(m_rgbOpen){m_rgbOpen=false;return;}
             if(m_moveWire!=static_cast<size_t>(-1)){m_moveWire=static_cast<size_t>(-1);m_status="Connection move cancelled.";return;}
+            if(m_focus==28){m_deployField=-1;m_deployPassword.clear();input.setTyping(false);m_focus=27;return;}
             if(m_focus==27){m_deviceAddressEditing=false;input.setTyping(false);m_focus=24;return;}
             if(m_focus==22&&m_sceneNaming){m_sceneNaming=false;input.setTyping(false);return;}
             if(m_focus){if(m_focus==25){m_deleteSelection.clear();m_skipDeleteConfirmation=false;}m_focus=0;input.setTyping(false);m_status="Input cancelled.";return;}
@@ -5576,6 +5674,7 @@ namespace nx
             else if((pressed&128u)||(click&&in(x,y,800,405,930,445))){if(confirmNodeDeletion(input))saveLayout(s);}
             m_left=left;return;
         }
+        if(m_focus==28){updateXboxDeploy(s,x,y,click);m_left=left;return;}
         if(m_focus==27){updateDeviceManager(s,x,y,click);m_left=left;return;}
         if(m_focus==24){updateBuildManager(s,x,y,click);m_left=left;return;}
         if(m_focus==23){updateInputActions(s,x,y,click);m_left=left;return;}
@@ -7161,6 +7260,7 @@ namespace nx
                 c.roundRect(660,405,130,40,4,{0.22f,0.31f,0.43f,1});c.text(*m_font,"Cancel",725,415,text,Align::Center);
                 c.roundRect(800,405,130,40,4,{0.48f,0.21f,0.25f,1});c.text(*m_font,"Delete",865,415,text,Align::Center);
             }
+            else if(m_focus==28)drawXboxDeploy(c);
             else if(m_focus==27)drawDeviceManager(c);
             else if(m_focus==24)drawBuildManager(c);
             else if(m_focus==23)drawInputActions(c);

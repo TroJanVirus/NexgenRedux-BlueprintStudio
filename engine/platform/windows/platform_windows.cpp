@@ -333,6 +333,17 @@ namespace nx
         return swprintf(full, kMaxPath, L"%ls\\%hs.sav%ls", m_saves, name, suffix) > 0;
     }
 
+    bool PlatformWindows::blueprintOwnPath(const char* path,std::string& out)
+    {
+        wchar_t full[kMaxPath];
+        if(strncmp(path,"own/",4)!=0||strstr(path,"..")||!mediaPath(path,L"",full))return false;
+        const int needed=WideCharToMultiByte(CP_UTF8,0,full,-1,nullptr,0,nullptr,nullptr);
+        if(needed<=0)return false;
+        out.resize(static_cast<size_t>(needed));
+        if(!WideCharToMultiByte(CP_UTF8,0,full,-1,out.data(),needed,nullptr,nullptr)){out.clear();return false;}
+        out.pop_back();return true;
+    }
+
     bool PlatformWindows::mediaPath(const char* path, const wchar_t* suffix, wchar_t (&full)[kMaxPath]) const
     {
         wchar_t relative[kMaxPath];

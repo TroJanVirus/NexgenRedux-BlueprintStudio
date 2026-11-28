@@ -11,6 +11,10 @@
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
+#include <spawn.h>
+#include <sys/wait.h>
+
+extern char** environ;
 
 namespace nx
 {
@@ -80,7 +84,41 @@ namespace nx
         return fclose(file) == 0 && ok && rename(fresh, full) == 0;
     }
 
-    PlatformPosix::~PlatformPosix(){releaseBlueprintLease();}
+    PlatformPosix::~PlatformPosix(){releaseBlueprintLease();pollBlueprintProcess();}
+    bool PlatformPosix::blueprintOwnPath(const char* path,std::string& out)
+    {
+        char full[kMaxPath];
+        if(strncmp(path,"own/",4)!=0||strstr(path,"..")||!mediaPath(path,full))return false;
+        out=full;return true;
+    }
+    bool PlatformPosix::startBlueprintProcess(const std::string& program,const std::vector<std::string>& args,const std::string& secret)
+    {
+        if(m_blueprintChild>=0||program.empty()||secret.size()>256)return false;
+        int pipeEnds[2];if(pipe(pipeEnds)!=0)return false;
+        const std::string data=secret+"\n";
+        if(write(pipeEnds[1],data.data(),data.size())!=static_cast<ssize_t>(data.size()))
+        {close(pipeEnds[0]);close(pipeEnds[1]);return false;}
+        close(pipeEnds[1]);
+        std::vector<std::string> words={program};words.insert(words.end(),args.begin(),args.end());
+        std::vector<char*> argv;for(auto& word:words)argv.push_back(word.data());argv.push_back(nullptr);
+        posix_spawn_file_actions_t actions;
+        if(posix_spawn_file_actions_init(&actions)!=0){close(pipeEnds[0]);return false;}
+        const bool configured=posix_spawn_file_actions_adddup2(&actions,pipeEnds[0],STDIN_FILENO)==0&&
+            (pipeEnds[0]==STDIN_FILENO||posix_spawn_file_actions_addclose(&actions,pipeEnds[0])==0);
+        pid_t child=0;
+        const bool started=configured&&posix_spawnp(&child,argv[0],&actions,nullptr,argv.data(),environ)==0;
+        posix_spawn_file_actions_destroy(&actions);close(pipeEnds[0]);
+        if(started)m_blueprintChild=static_cast<int>(child);
+        return started;
+    }
+    int PlatformPosix::pollBlueprintProcess()
+    {
+        if(m_blueprintChild<0)return -2;
+        int status=0;const auto result=waitpid(m_blueprintChild,&status,WNOHANG);
+        if(result==0||(result<0&&errno==EINTR))return -1;
+        m_blueprintChild=-1;
+        return result>0&&WIFEXITED(status)?WEXITSTATUS(status):1;
+    }
 
     bool PlatformPosix::acquireBlueprintLease()
     {

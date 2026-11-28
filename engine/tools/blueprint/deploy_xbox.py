@@ -10,6 +10,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import sys
 
 INVALID_FATX = set('"+,/:;<=>?[]\\|*')
 
@@ -159,7 +160,38 @@ def upload_new(title, host, port, user, password, destination):
             raise
 
 
+def run_request(request_file):
+    """Studio sends public settings via JSON, FTP password only via stdin."""
+    path = Path(request_file)
+    result = path.with_name("result.json")
+    def report(ok, message):
+        fresh = result.with_suffix(".new")
+        fresh.write_text(json.dumps({"ok": ok, "message": str(message)[:1000]}), encoding="utf-8")
+        fresh.replace(result)
+    password = ""
+    try:
+        options = json.loads(path.read_text(encoding="utf-8"))
+        password = sys.stdin.readline(258).rstrip("\r\n")
+        host = options.get("host", "")
+        destination = options.get("remote", "")
+        if host:
+            remote_folder(destination)
+            if not options.get("user") or not password:
+                raise ValueError("FTP user and password are required.")
+        prepare(Path(options["export"]), Path(options["runtime"]), Path(options["output"]),
+                Path(options["cook"]), options["start"], True)
+        if host:
+            upload_new(Path(options["output"]), host, 21, options["user"], password, destination)
+        report(True, "Installed; launch default.xbe from the dashboard." if host else "Cooked title prepared: " + options["output"])
+        return 0
+    except Exception as error:
+        report(False, str(error).replace(password, "[redacted]") if password else str(error))
+        return 1
+
+
 def main():
+    if len(sys.argv) == 3 and sys.argv[1] == "--request":
+        return run_request(sys.argv[2])
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--export", required=True, type=Path)
     parser.add_argument("--runtime", required=True, type=Path)
@@ -187,4 +219,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

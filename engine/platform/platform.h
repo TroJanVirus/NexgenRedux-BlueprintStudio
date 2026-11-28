@@ -4,6 +4,7 @@
 #include "base/types.h"
 
 #include <string>
+#include <vector>
 
 namespace nx
 {
@@ -177,6 +178,11 @@ namespace nx
         virtual bool writeFile(const char*, const void*, size_t) { return false; }
         // Development exports: exclusively create a directory under own/, with validated relative components.
         virtual bool createOwnFolder(const char*) { return false; }
+        // Desktop-only, no shell; secret delivered through child stdin.
+        virtual bool blueprintOwnPath(const char*,std::string&) { return false; }
+        virtual bool startBlueprintProcess(const std::string&,const std::vector<std::string>&,const std::string&) { return false; }
+        // -2 absent, -1 running, otherwise exit code.
+        virtual int pollBlueprintProcess() { return -2; }
         // Exclusive desktop authoring lease for the current own/ directory.
         // Released by the OS if the process exits unexpectedly.
         virtual bool acquireBlueprintLease() { return false; }

@@ -20,11 +20,62 @@ namespace nx
         public:
             ~PlatformWin32() override
             {
+                if(m_blueprintProcess)CloseHandle(m_blueprintProcess);
                 if (m_window)
                 {
                     DestroyWindow(m_window);
                 }
                 UnregisterClassW(kWindowClass, GetModuleHandleW(nullptr));
+            }
+
+            bool startBlueprintProcess(const std::string& program,const std::vector<std::string>& args,const std::string& secret) override
+            {
+                if(m_blueprintProcess||program.empty()||secret.size()>256)return false;
+                const auto wide=[](const std::string& value)
+                {
+                    const int size=MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,value.c_str(),-1,nullptr,0);
+                    std::wstring result;if(size<=0)return result;
+                    result.resize(static_cast<size_t>(size));
+                    if(!MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,value.c_str(),-1,result.data(),size)){result.clear();return result;}
+                    result.pop_back();return result;
+                };
+                const auto quote=[](const std::wstring& value)
+                {
+                    std::wstring out=L"\"";size_t slashes=0;
+                    for(wchar_t ch:value)
+                    {
+                        if(ch==L'\\'){++slashes;continue;}
+                        out.append(slashes*(ch==L'"'?2u:1u),L'\\');slashes=0;
+                        if(ch==L'"')out+=L'\\';
+                        out+=ch;
+                    }
+                    out.append(slashes*2,L'\\');out+=L'"';return out;
+                };
+                const auto executable=wide(program);if(executable.empty())return false;
+                std::wstring command=quote(executable);
+                for(const auto& arg:args){const auto converted=wide(arg);if(!arg.empty()&&converted.empty())return false;command+=L" "+quote(converted);}
+                SECURITY_ATTRIBUTES security={sizeof(SECURITY_ATTRIBUTES),nullptr,TRUE};
+                HANDLE reader=nullptr,writer=nullptr;
+                if(!CreatePipe(&reader,&writer,&security,0))return false;
+                const std::string data=secret+"\n";DWORD written=0;
+                const bool supplied=WriteFile(writer,data.data(),static_cast<DWORD>(data.size()),&written,nullptr)&&written==static_cast<DWORD>(data.size());
+                CloseHandle(writer);
+                HANDLE sink=CreateFileW(L"NUL",GENERIC_WRITE,FILE_SHARE_READ|FILE_SHARE_WRITE,&security,OPEN_EXISTING,0,nullptr);
+                STARTUPINFOW startup={};startup.cb=sizeof(startup);startup.dwFlags=STARTF_USESTDHANDLES;
+                startup.hStdInput=reader;startup.hStdOutput=sink;startup.hStdError=sink;
+                PROCESS_INFORMATION process={};
+                const bool started=supplied&&sink!=INVALID_HANDLE_VALUE&&CreateProcessW(executable.c_str(),command.data(),nullptr,nullptr,TRUE,CREATE_NO_WINDOW,nullptr,nullptr,&startup,&process);
+                CloseHandle(reader);if(sink!=INVALID_HANDLE_VALUE)CloseHandle(sink);
+                if(started){CloseHandle(process.hThread);m_blueprintProcess=process.hProcess;}
+                return started;
+            }
+            int pollBlueprintProcess() override
+            {
+                if(!m_blueprintProcess)return -2;
+                if(WaitForSingleObject(m_blueprintProcess,0)==WAIT_TIMEOUT)return -1;
+                DWORD code=1;GetExitCodeProcess(m_blueprintProcess,&code);
+                CloseHandle(m_blueprintProcess);m_blueprintProcess=nullptr;
+                return code==0?0:1;
             }
 
             bool init()
@@ -495,6 +546,7 @@ namespace nx
                 return self ? self->handle(window, message, wParam, lParam) : DefWindowProcW(window, message, wParam, lParam);
             }
 
+            HANDLE m_blueprintProcess=nullptr;
             HWND m_window = nullptr;
             HCURSOR m_pointer = nullptr;
             TitleBar m_titleBar;

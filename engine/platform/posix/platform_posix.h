@@ -23,6 +23,9 @@ namespace nx
         bool setSaveFolder(const char* path) override;
         bool writeFile(const char* path, const void* data, size_t size) override;
         bool createOwnFolder(const char* name) override;
+        bool blueprintOwnPath(const char* path,std::string& out) override;
+        bool startBlueprintProcess(const std::string& program,const std::vector<std::string>& args,const std::string& secret) override;
+        int pollBlueprintProcess() override;
         void list(const char* path, bool folders, FolderCallback callback, void* user) override;
         bool takeDropped(std::string& name) override;
         u64 totalMemory() override;
@@ -49,5 +52,6 @@ namespace nx
         std::vector<std::string> m_dropped;
         double m_start = 0;
         int m_blueprintLease = -1;
+        int m_blueprintChild=-1;
     };
 }

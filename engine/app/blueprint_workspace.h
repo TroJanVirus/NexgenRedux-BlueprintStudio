@@ -387,6 +387,14 @@ namespace nx
         bool m_deviceAddressEditing=false;
         std::string m_deviceFeedback,m_deviceExport;
         bool m_deviceVariables=false;
+        void updateXboxDeploy(Services& s,float x,float y,bool click);
+        void drawXboxDeploy(Canvas& c);
+        void pollXboxDeploy(Services& s);
+        std::string m_deployFields[7]={"python3","","","","","xbox",""};
+        std::string m_deployPassword,m_deployStatus,m_deployResult;
+        int m_deployField=-1;
+        size_t m_deployStart=0;
+        bool m_deployRunning=false,m_deployPaste=false;
         void syncDeviceBreakpoints();
         void locateDeviceNode();
         void updateRemoteGraph(double now);
