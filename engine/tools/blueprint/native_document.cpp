@@ -110,6 +110,17 @@ namespace nx
             {"null:playlist","No playlist (null)","Values","","value:Playlist@"},
             {"null:websocket","No WebSocket (null)","Values","","value:WebSocket@"},
             {"null:widget","No widget (null)","Values","","value:Widget@"},
+            {"null:thread","No Thread (null)","Values","","value:Thread@"},
+            {"null:channel","No Channel (null)","Values","","value:Channel@"},
+            {"null:samples","No Samples (null)","Values","","value:Samples@"},
+            {"null:audiostream","No AudioStream (null)","Values","","value:AudioStream@"},
+            {"null:sound","No Sound (null)","Values","","value:Sound@"},
+            {"null:curve","No Curve (null)","Values","","value:Curve@"},
+            {"null:batch","No Batch (null)","Values","","value:Batch@"},
+            {"null:packed","No Packed (null)","Values","","value:Packed@"},
+            {"null:zip","No Zip (null)","Values","","value:Zip@"},
+            {"null:font","No Font (null)","Values","","value:Font@"},
+            {"null:texture","No Texture (null)","Values","","value:Texture@"},
             {"var:get:Playlist@","Get Playlist@ variable","Variables","","value:Playlist@"},
             {"var:set:Playlist@","Set Playlist@ variable","Variables","in:exec|value:Playlist@","then:exec"},
             {"global:get:Playlist@","Get Playlist@ global","Module variables","","value:Playlist@"},
@@ -416,7 +427,7 @@ namespace nx
                 for(const std::string target:{"int","uint","int64","uint64","float","double"})
                     if(target!=type)operation("cast:"+type+":"+target,"Convert "+type+" to "+target,"Conversions",type,target,"cast",true);
             }
-            for(const std::string type:{"bool","int","uint","int64","uint64","float","double","string","Vec2","Vec3","Color","Entity@","Playlist@","WebSocket@","Widget@"})
+            for(const std::string type:{"bool","int","uint","int64","uint64","float","double","string","Vec2","Vec3","Color","Entity@","Playlist@","WebSocket@","Widget@","Thread@","Channel@","Samples@","AudioStream@","Sound@","Curve@","Batch@","Packed@","Zip@","Font@","Texture@"})
             {
                 BlueprintNodeSpec spec;
                 spec.id="capture:"+type;spec.title="Capture "+type;spec.category="Variables";

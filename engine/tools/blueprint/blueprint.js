@@ -192,7 +192,7 @@
         if (k === 'gate') return signature('Gate', 'Flow', [pin('open','bool',true)], [], true, ['then']);
         if (k === 'doN') return signature('Do N', 'Flow', [pin('count','int',1),pin('reset','bool',false)], [pin('counter','int')], true, ['then']);
         if (k === 'reroute' && types.includes(t)) return signature('Reroute ' + t, 'Values', [pin('value',t)], [pin('result',t)]);
-        if (k === 'clamp' && ['float','int','uint','double'].includes(t)) return signature('Clamp ('+t+')','Math',[pin('value',t),pin('min',t),pin('max',t,1)],[pin('result',t)]);
+        if (k === 'clamp' && ['float','int','uint','int64','uint64','double'].includes(t)) return signature('Clamp ('+t+')','Math',[pin('value',t),pin('min',t),pin('max',t,t.endsWith('64')?'1':1)],[pin('result',t)]);
         if (k === 'lerp') return signature('Lerp (float)','Math',[pin('a','float'),pin('b','float',1),pin('alpha','float')],[pin('result','float')]);
         if (k === 'entry') {
             let p = g.kind === 'event' ? events[doc.kind]?.[g.name] : g.params?.map(p => [p.name, p.type]);
@@ -260,7 +260,7 @@
                 return signature('Get ' + t + '.' + n.ref, 'Math', [pin('value', t)], [pin('result', 'float')]);
         }
         if (Object.hasOwn(maths, k) && (['int', 'uint', 'int64', 'uint64', 'float', 'double'].includes(t) && !['and', 'or'].includes(k) || t === 'bool' && ['and', 'or', 'equal'].includes(k) || t === 'string' && ['add', 'equal'].includes(k))) {
-            return signature(k + ' (' + t + ')', 'Math', [pin('a', t), pin('b', t, k === 'divide' ? 1 : undefined)], [pin('result', ['less', 'greater', 'equal', 'and', 'or'].includes(k) ? 'bool' : t)]);
+            return signature(k + ' (' + t + ')', 'Math', [pin('a', t), pin('b', t, k === 'divide' ? (t.endsWith('64')?'1':1) : undefined)], [pin('result', ['less', 'greater', 'equal', 'and', 'or'].includes(k) ? 'bool' : t)]);
         }
         return null;
     }

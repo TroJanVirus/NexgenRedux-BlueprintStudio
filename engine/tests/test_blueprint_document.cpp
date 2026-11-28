@@ -9,7 +9,7 @@
 using namespace nx;
 NX_TEST(nativeCatalogueContainsReferenceAPI)
 {
-    NX_EXPECT(blueprintCatalogue().size()==1476);
+    NX_EXPECT(blueprintCatalogue().size()==1509);
     const auto* save=blueprintSpec("api:Save:Save::set:string,string");
     NX_EXPECT(save&&save->inputs.size()==3&&save->outputs.size()==1);
     if(save&&save->inputs.size()==3)NX_EXPECT(save->inputs[0].type=="exec"&&save->inputs[2].type=="string");
@@ -2014,4 +2014,34 @@ NX_TEST(nativeWideIntegerLiteralsAndLosslessConversions)
     BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error)&&compileBlueprint(copy,source,error));
     NX_EXPECT(source.find("(-int64(9223372036854775807)-int64(1))")!=std::string::npos);
     NX_EXPECT(source.find("uint64(18446744073709551615)")!=std::string::npos);
+}
+
+NX_TEST(nativeImportUpstreamObjectsAndWideIntegers)
+{
+    BlueprintDocument doc;std::string error,source,bytes;
+    const char* code=R"(class Example : Screen {
+        Curve@ path;
+        Batch@ batch;
+        Packed@ payload;
+        int64 counter = int64(9007199254740993);
+        void onEnter() {
+            @path = Curve();
+            path.add(Vec2(0.0f, 0.0f));
+            @batch = Batch();
+            @payload = Packed();
+            payload.writeI64(counter);
+            Packed@ copy = Packed(payload.bytes);
+            int64 got = copy.readI64();
+            if (got == counter) { Save::set("packed", "yes"); }
+            @path = null;
+        }
+    })";
+    const bool ok=importBlueprintScreen(code,doc,error);
+    if(!ok)NX_ERROR("Upstream object import: %s",error.c_str());
+    NX_EXPECT(ok);if(!ok)return;
+    NX_EXPECT(doc.serialize(bytes,error)&&compileBlueprint(doc,source,error));
+    NX_EXPECT(source.find("int64(9007199254740993)")!=std::string::npos);
+    NX_EXPECT(source.find("Curve()")!=std::string::npos&&source.find("Batch()")!=std::string::npos);
+    NX_EXPECT(source.find(".readI64()")!=std::string::npos);
+    NX_EXPECT(source.find("@bp_var_path = null")!=std::string::npos);
 }

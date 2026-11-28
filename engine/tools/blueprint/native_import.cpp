@@ -111,7 +111,7 @@ namespace nx
                 out=peek().text;++at;return true;
             }
             static bool supportedHandle(const std::string& type)
-            {return type=="Entity@"||type=="Playlist@"||type=="WebSocket@"||type=="Widget@";}
+            {return type=="Entity@"||type=="Playlist@"||type=="WebSocket@"||type=="Widget@"||type=="Thread@"||type=="Channel@"||type=="Samples@"||type=="AudioStream@"||type=="Sound@"||type=="Curve@"||type=="Batch@"||type=="Packed@"||type=="Zip@"||type=="Font@"||type=="Texture@";}
             static bool compatible(const std::string& from,const std::string& to)
             {
                 return from==to||(!blueprintArrayElement(from).empty()&&to==from+"@")||
@@ -123,6 +123,17 @@ namespace nx
                 if(type=="Playlist@")return "null:playlist";
                 if(type=="WebSocket@")return "null:websocket";
                 if(type=="Widget@")return "null:widget";
+                if(type=="Thread@")return "null:thread";
+                if(type=="Channel@")return "null:channel";
+                if(type=="Samples@")return "null:samples";
+                if(type=="AudioStream@")return "null:audiostream";
+                if(type=="Sound@")return "null:sound";
+                if(type=="Curve@")return "null:curve";
+                if(type=="Batch@")return "null:batch";
+                if(type=="Packed@")return "null:packed";
+                if(type=="Zip@")return "null:zip";
+                if(type=="Font@")return "null:font";
+                if(type=="Texture@")return "null:texture";
                 return "";
             }
             bool declaredType(std::string& type)
@@ -163,6 +174,12 @@ namespace nx
             }
             void chain(Flow& flow,size_t node)
             {doc.graphs[graph].links.push_back({flow.node,node,flow.pin,"in"});flow={node,"then"};}
+            static std::string variableNode(const std::string& type,bool global,bool setter)
+            {
+                const std::string ordinary=std::string(global?"global:":"var:")+(setter?"set:":"get:")+type;
+                if(blueprintSpec(ordinary))return ordinary;
+                return std::string(global?"typed:global:":"typed:field:")+(setter?"set":"get");
+            }
             bool field(const std::string& id,Value& v,bool instanceOnly=false)
             {
                 if(!instanceOnly)
@@ -186,10 +203,10 @@ namespace nx
                 {
                     const auto global=globals.find(id);
                     if(instanceOnly||global==globals.end())return fail("Unknown field or unsupported expression: "+id+".");
-                    size_t n;if(!add("global:get:"+global->second,n,id))return false;
+                    size_t n;if(!add(variableNode(global->second,true,false),n,id))return false;
                     v={global->second,"","value",n};return true;
                 }
-                size_t n;if(!add("var:get:"+found->second,n,id))return false;
+                size_t n;if(!add(variableNode(found->second,false,false),n,id))return false;
                 v={found->second,"","value",n};return true;
             }
             bool numeric(Value& v)
@@ -246,7 +263,14 @@ namespace nx
                         if(pin==spec.inputs.end()||!compatible(args[i].type,pin->type)){match=false;break;}
                     }
                     if(!match)continue;
-                    if(selected)return fail("Ambiguous API overload: "+id+".");
+                    // Prefer the exact arity to a defaulted overload, including
+                    // the old paragraph signature retained for saved graphs.
+                    if(selected)
+                    {
+                        if(selected->arguments.size()==args.size()&&spec.arguments.size()!=args.size())continue;
+                        if(selected->arguments.size()!=args.size()&&spec.arguments.size()==args.size()){selected=&spec;continue;}
+                        return fail("Ambiguous API overload: "+id+".");
+                    }
                     selected=&spec;
                 }
                 if(!selected)return fail("No exact supported "+std::string(pure?"value":"action")+" API signature for "+id+".");
@@ -330,8 +354,14 @@ namespace nx
                 if(is("("))
                 {
                     if(instanceOnly)return fail("Instance method calls must supply a complete execution value.");
+                    if((id=="int64"||id=="uint64")&&is("("))
+                    {
+                        const size_t start=at+1;const bool neg=tokens[start].text=="-";const size_t number=start+(neg?1:0);
+                        if(number+1<tokens.size()&&tokens[number].kind==Kind::Number&&tokens[number].text.find_first_not_of("0123456789")==std::string::npos&&tokens[number+1].text==")")
+                        {v={id,(neg?"-":"")+tokens[number].text,"",static_cast<size_t>(-1)};at=number+2;return true;}
+                    }
                     std::vector<Value> args;if(!arguments(args))return false;
-                    if(id=="int"||id=="uint"||id=="float"||id=="double")
+                    if(id=="int"||id=="uint"||id=="int64"||id=="uint64"||id=="float"||id=="double")
                     {
                         if(args.size()!=1)return fail("Expected one numeric conversion argument.");
                         if(args[0].type==id){v=args[0];return true;}
@@ -419,7 +449,7 @@ namespace nx
                     size_t scan=at+1;std::string id=peek().text;
                     while(scan+1<tokens.size()&&tokens[scan].text=="::"&&tokens[scan+1].kind==Kind::Name)
                     {id+="::"+tokens[scan+1].text;scan+=2;}
-                    if(scan<tokens.size()&&tokens[scan].text=="("&&(id.find("::")!=std::string::npos||id=="Playlist"||id=="WebSocket"))
+                    if(scan<tokens.size()&&tokens[scan].text=="("&&(id.find("::")!=std::string::npos||id=="Playlist"||id=="WebSocket"||supportedHandle(id+"@")))
                     {
                         bool action=false,pure=false;
                         for(const auto& spec:blueprintCatalogue())if(!spec.member&&spec.call==id&&spec.property.empty())
@@ -431,6 +461,31 @@ namespace nx
                             if(result.type=="void")return fail("Void action cannot supply a value.");
                             return true;
                         }
+                    }
+                }
+                // A complete member action returning a value must execute once at
+                // its original statement, never become a reevaluated pure expression.
+                size_t receiver=at;const bool explicitThis=is("this");
+                if(explicitThis&&at+2<tokens.size()&&tokens[at+1].text==".")receiver=at+2;
+                if(receiver+3<tokens.size()&&tokens[receiver].kind==Kind::Name&&tokens[receiver+1].text=="."&&tokens[receiver+2].kind==Kind::Name&&tokens[receiver+3].text=="(")
+                {
+                    const std::string object=tokens[receiver].text,method=tokens[receiver+2].text;
+                    std::string type;
+                    if(!explicitThis&&locals.count(object))type=locals.at(object).type;
+                    else if(fields.count(object))type=fields.at(object);
+                    else if(!explicitThis&&globals.count(object))type=globals.at(object);
+                    bool action=false,pure=false;
+                    for(const auto& spec:blueprintCatalogue())
+                    {
+                        if(!spec.member||spec.call!=method||!spec.property.empty()||spec.hasOut)continue;
+                        if(std::none_of(spec.inputs.begin(),spec.inputs.end(),[&](const BlueprintPin& p){return p.name=="target"&&p.type==type;}))continue;
+                        if(spec.pure)pure=true;else if(spec.result!="void")action=true;
+                    }
+                    if(action&&!pure)
+                    {
+                        Value target;if(!field(object,target,explicitThis))return false;
+                        at=receiver+3;std::vector<Value> args;
+                        return arguments(args)&&api(method,args,&target,false,"",result,&flow);
                     }
                 }
                 return expression(result);
@@ -580,7 +635,7 @@ namespace nx
                         Value before;if(!field(id,before,instanceOnly))return false;
                         if(increment)
                         {
-                            if(before.type!="int"&&before.type!="uint"&&before.type!="float"&&before.type!="double")
+                            if(before.type!="int"&&before.type!="uint"&&before.type!="int64"&&before.type!="uint64"&&before.type!="float"&&before.type!="double")
                                 return fail("Increment requires a numeric local or field.");
                             v={before.type,"1","",static_cast<size_t>(-1)};
                         }
@@ -613,7 +668,7 @@ namespace nx
                         if(found==fields.end()&&(instanceOnly||global==globals.end()))return fail("Assignment requires a declared field or module variable.");
                         const auto type=found==fields.end()?global->second:found->second;
                         if(handleAssignment!=supportedHandle(type))return fail("Handle reassignment requires explicit @; scalar assignment must not use @.");
-                        size_t n;if(!add(found==fields.end()?"global:set:"+type:"var:set:"+type,n,id)||!bind(n,"value",v))return false;
+                        size_t n;if(!add(variableNode(type,found==fields.end(),true),n,id)||!bind(n,"value",v))return false;
                         chain(flow,n);
                     }
                     else
@@ -668,7 +723,7 @@ namespace nx
                         {
                             if(!blueprintArrayElement(type).empty())return fail("Array initializers are not yet supported; use an empty array and explicit operations.");
                             field.initialized=true;
-                            const bool explicitUint=type=="uint"&&take("uint");
+                            const bool explicitUint=(type=="uint"||type=="int64"||type=="uint64")&&take(type.c_str());
                             if(explicitUint&&!expect("("))return false;
                             const bool negative=take("-");Value v;
                             if(peek().kind==Kind::Number){if(!numeric(v))return false;}
@@ -676,8 +731,8 @@ namespace nx
                             else if(!negative&&peek().kind==Kind::String){v.type="string";v.literal=peek().text;++at;}
                             else if(!negative&&(is("true")||is("false"))){v.type="bool";v.literal=peek().text;++at;}
                             else return fail("Field initializer must be a supported typed literal.");
-                            if(explicitUint){if(v.type!="int"||negative||!expect(")"))return fail("Expected uint(decimal).");v.type="uint";}
-                            if(v.type!=type||(negative&&(type=="uint"||type=="bool"||type=="string")))return fail("Field initializer requires an exact literal type.");
+                            if(explicitUint){if(v.type!="int"||(negative&&type!="int64")||!expect(")"))return fail("Expected an explicitly typed decimal integer.");v.type=type;}
+                            if(v.type!=type||(negative&&(type=="uint"||type=="uint64"||type=="bool"||type=="string")))return fail("Field initializer requires an exact literal type.");
                             field.value=(negative?"-":"")+v.literal;
                         }
                         if(!expect(";"))return false;

@@ -245,7 +245,7 @@ namespace nx
                     if(!value(node,"b",b,depth))return false;
                     result="("+a+" "+spec->operation+" "+b+")";return true;
                 }
-                if((n.kind=="null:entity"||n.kind=="null:playlist"||n.kind=="null:websocket"||n.kind=="null:widget")&&pin=="value"){result="null";return true;}
+                if(n.kind.rfind("null:",0)==0&&pin=="value"){result="null";return true;}
                 if(n.kind=="event:delta"&&graph.name=="update"&&pin=="value"){result="dt";return true;}
                 if(n.kind=="event:canvas"&&graph.name=="draw"&&pin=="value"){result="canvas";return true;}
                 if(n.kind=="event:entity"&&pin=="value"){result="entity";return true;}
