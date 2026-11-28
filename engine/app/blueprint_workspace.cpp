@@ -1900,6 +1900,15 @@ namespace nx
         for(size_t n=0;n<countAssets&&m_sceneContentFirst+n<assets.size();++n){const auto& a=assets[m_sceneContentFirst+n];const float xx=232+126.f*static_cast<float>(n);c.roundRect(xx,kBottom-110,120,74,4,{0.22f,0.25f,0.29f,1});c.text(*m_font,a.kind.c_str(),xx+8,kBottom-104,muted);c.clip(xx+4,kBottom-77,112,30);c.text(*m_font,a.title.c_str(),xx+8,kBottom-75,text);c.noClip();}
         c.clip(8,kBottom+4,kWidth-16,24);c.text(*m_font,m_status.c_str(),12,kBottom+5,muted);c.noClip();
         c.pop();drawVisualPlacement(c);
+        if(m_visualInput)
+        {
+            c.roundRect(420,286,440,130,6,{0.08f,0.12f,0.18f,1});
+            c.text(*m_font,m_visualProperty.c_str(),440,300,accent);
+            c.clip(440,330,400,34);c.text(*m_font,m_visualText.c_str(),440,336,text);c.noClip();
+            c.text(*m_font,"Enter = Apply",440,377,muted);c.text(*m_font,"Escape = Cancel",440,393,muted);
+            c.roundRect(650,379,95,32,4,{0.19f,0.4f,0.3f,1});c.text(*m_font,"Apply",697.5f,384,text,Align::Center);
+            c.roundRect(750,379,90,32,4,{0.22f,0.31f,0.43f,1});c.text(*m_font,"Cancel",795,384,text,Align::Center);
+        }
     }
     namespace
     {

@@ -47,6 +47,18 @@ def click(x,y):
     xdo("mouseup",1)
     time.sleep(0.3)
 
+def drag(x1,y1,x2,y2):
+    xdo("mousemove","--window",window,x1,y1)
+    time.sleep(0.15)
+    xdo("mousedown",1)
+    try:
+        time.sleep(0.2)
+        xdo("mousemove","--window",window,x2,y2)
+        time.sleep(0.5)
+    finally:
+        xdo("mouseup",1)
+    time.sleep(0.5)
+
 def key(name, duration=0.2):
     xdo("keydown",name)
     try:
@@ -120,7 +132,31 @@ with log.open("wb") as out:
         click(500,180)
         wait_for(lambda:logged("Opened "+path.name),"reopen saved project")
         assert json.loads(path.read_text())==project
-        print("Native Redux tile, project browser, first-person template, preview, movement, export and reopen passed.",flush=True)
+        # Use the primary workspace navigation, not the legacy asset dialog.
+        assert len([a for a in project.get("visualAssets",[]) if a["kind"]=="actor"])==8
+        def placed_count():
+            return sum(n["kind"]=="actor:spawn-asset" for g in json.loads(path.read_text())["graphs"] for n in g["nodes"])
+        assert placed_count()==8
+        click(373,53)
+        wait_for(lambda:logged("Framed scene actors."),"integrated scene viewport")
+        time.sleep(1)
+        capture("08-integrated-scene")
+        # Switch to plan mode for deterministic placement coordinates.
+        click(270,90)
+        drag(100,135,660,375)
+        click(803,53)
+        wait_for(lambda:placed_count()==9,"primitive placement saved from scene")
+        capture("09-scene-primitive")
+        click(455,53)
+        time.sleep(0.5)
+        # Drag a Column widget from Palette to the page root in Hierarchy.
+        drag(70,158,235,158)
+        click(803,53)
+        wait_for(lambda:any(a["kind"]=="widget" for a in json.loads(path.read_text()).get("visualAssets",[])),"UI designer asset saved")
+        capture("10-integrated-ui")
+        click(290,53)
+        capture("11-return-to-graph")
+        print("Native Redux project browser, template preview, export, integrated scene placement and UI workspace passed.",flush=True)
     except Exception:
         if window is not None and process.poll() is None:
             try: capture("failure-state")
