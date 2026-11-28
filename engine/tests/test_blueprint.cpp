@@ -3190,3 +3190,34 @@ NX_TEST(nativeCubicCurveAuthoringRunsNativeCurve)
     if(!r.screens.init(r.services,"project","main")){NX_EXPECT(false);return;}
     r.step(3);NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("curve_midpoint",""),"yes")==0);
 }
+
+#ifdef NX_DESKTOP_BLUEPRINT
+NX_TEST(nativePortableProjectZipRoundTripAndCorruption)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    r.platform.workspaceFiles=true;
+    BlueprintDocument doc;doc.create();std::string error,original,restored;
+    NX_EXPECT(blueprintCreateAssetRoot(r.platform,doc.assetRoot,error));
+    NX_EXPECT(blueprintEnsureAssetFolder(r.platform,doc.assetRoot,"Screen",error));
+    const std::string payload("a\0b\xff",4),root=doc.assetRoot;
+    r.platform.files["own/"+root+"/Screen/asset/model/mesh.glb"]=payload;
+    r.platform.files["own/"+root+"/_global/shared.txt"]="shared";
+    NX_EXPECT(doc.serialize(original,error));
+    NX_EXPECT(blueprintExportPackage(r.platform,doc,"portable.bp.zip",error));
+    NX_EXPECT(!blueprintExportPackage(r.platform,doc,"portable.bp.zip",error));
+    NX_EXPECT(!blueprintExportPackage(r.platform,doc,"../bad.bp.zip",error));
+    BlueprintDocument copy;
+    const bool ok=blueprintImportPackage(r.platform,"portable.bp.zip",copy,error);
+    if(!ok)NX_ERROR("Package: %s",error.c_str());
+    NX_EXPECT(ok);if(!ok)return;
+    NX_EXPECT(copy.assetRoot!=root&&copy.dirty());
+    NX_EXPECT(r.platform.files["own/"+copy.assetRoot+"/Screen/asset/model/mesh.glb"]==payload);
+    NX_EXPECT(r.platform.files["own/"+copy.assetRoot+"/_global/shared.txt"]=="shared");
+    NX_EXPECT(r.platform.files["own/"+root+"/Screen/asset/model/mesh.glb"]==payload);
+    copy.assetRoot=root;NX_EXPECT(copy.serialize(restored,error)&&restored==original);
+    auto damaged=r.platform.files["own/portable.bp.zip"];NX_EXPECT(damaged.size()>60);
+    damaged[55]^=1;r.platform.files["own/damaged.bp.zip"]=damaged;
+    NX_EXPECT(!blueprintImportPackage(r.platform,"damaged.bp.zip",copy,error));
+    NX_EXPECT(copy.assetRoot==root);
+}
+#endif

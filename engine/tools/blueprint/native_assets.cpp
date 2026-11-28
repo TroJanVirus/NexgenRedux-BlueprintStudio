@@ -2,6 +2,8 @@
 #include "platform/platform.h"
 #include "base/json_tree.h"
 #include "base/json_value.h"
+#include "assets/decode.h"
+#include <unordered_set>
 #include <cmath>
 #include <algorithm>
 #include <cstring>
@@ -325,5 +327,190 @@ namespace nx
         {error="Cannot create native asset type folder.";return false;}
         size_t total=0;
         return copy(p,"own/"+file,"own/"+dest+relative,total,error);
+    }
+
+    namespace
+    {
+        // Standard stored ZIP entries. No encryption, data descriptors, ZIP64,
+        // compressed data, links or directory records are accepted by this package reader.
+        constexpr size_t packageLimit=kMaxTotal+4*1024*1024;
+        struct PackageEntry {std::string name;size_t offset=0,size=0;u32 crc=0;};
+        void put16(std::string& s,u32 v){s+=static_cast<char>(v&255);s+=static_cast<char>((v>>8)&255);}
+        void put32(std::string& s,u32 v){put16(s,v);put16(s,v>>16);}
+        u32 get16(const u8* p){return static_cast<u32>(p[0])|(static_cast<u32>(p[1])<<8);}
+        u32 get32(const u8* p){return get16(p)|(get16(p+2)<<16);}
+        bool range(size_t at,size_t count,size_t limit){return at<=limit&&count<=limit-at;}
+        bool relativeAsset(const std::string& path)
+        {
+            if(path.empty()||path.size()>90)return false;
+            size_t start=0;unsigned depth=0;
+            for(;;)
+            {
+                const auto slash=path.find('/',start);
+                if(!blueprintAssetName(path.substr(start,slash==std::string::npos?slash:slash-start),slash!=std::string::npos))return false;
+                if(slash==std::string::npos)return true;
+                if(++depth>4)return false;
+                start=slash+1;
+            }
+        }
+        bool packageAsset(const std::string& name,const std::vector<std::string>& screens)
+        {
+            if(name.rfind("assets/_global/",0)==0)return relativeAsset(name.substr(15));
+            for(const auto& screen:screens)
+            {
+                const auto prefix="assets/"+screen+"/asset/";
+                if(name.rfind(prefix,0)==0)return relativeAsset(name.substr(prefix.size()));
+            }
+            return false;
+        }
+        bool appendPackage(std::string& zip,std::vector<PackageEntry>& entries,const std::string& name,const void* bytes,size_t size,std::string& error)
+        {
+            if(size>kMaxFile||entries.size()>=kMaxFiles+1||!range(zip.size(),size+30+name.size(),packageLimit))
+            {error="Project package size or file limit exceeded.";return false;}
+            const auto crc=crc32Of(static_cast<const u8*>(bytes),size);
+            entries.push_back({name,zip.size(),size,crc});
+            put32(zip,0x04034b50);put16(zip,20);put16(zip,0);put16(zip,0);put16(zip,0);put16(zip,33);
+            put32(zip,crc);put32(zip,static_cast<u32>(size));put32(zip,static_cast<u32>(size));
+            put16(zip,static_cast<u32>(name.size()));put16(zip,0);zip+=name;
+            if(size)zip.append(static_cast<const char*>(bytes),size);
+            return true;
+        }
+        bool finishPackage(std::string& zip,const std::vector<PackageEntry>& entries)
+        {
+            const size_t central=zip.size();
+            for(const auto& e:entries)
+            {
+                if(!range(zip.size(),46+e.name.size(),packageLimit))return false;
+                put32(zip,0x02014b50);put16(zip,20);put16(zip,20);put16(zip,0);put16(zip,0);put16(zip,0);put16(zip,33);
+                put32(zip,e.crc);put32(zip,static_cast<u32>(e.size));put32(zip,static_cast<u32>(e.size));
+                put16(zip,static_cast<u32>(e.name.size()));put16(zip,0);put16(zip,0);put16(zip,0);put16(zip,0);put32(zip,0);
+                put32(zip,static_cast<u32>(e.offset));zip+=e.name;
+            }
+            if(!range(zip.size(),22,packageLimit))return false;
+            const auto directorySize=static_cast<u32>(zip.size()-central);
+            put32(zip,0x06054b50);put16(zip,0);put16(zip,0);
+            put16(zip,static_cast<u32>(entries.size()));put16(zip,static_cast<u32>(entries.size()));
+            put32(zip,directorySize);put32(zip,static_cast<u32>(central));put16(zip,0);return true;
+        }
+        bool readPackage(const FileData& data,std::vector<PackageEntry>& entries,std::string& error)
+        {
+            const auto fail=[&](){error="Invalid, unsupported or damaged project ZIP (stored entries only).";return false;};
+            const auto* bytes=static_cast<const u8*>(data.data);const size_t n=data.size;
+            if(n<22||n>packageLimit)return fail();
+            const size_t end=n-22;const auto* footer=bytes+end;
+            if(get32(footer)!=0x06054b50||get16(footer+4)||get16(footer+6)||get16(footer+20))return fail();
+            const size_t count=get16(footer+10),central=get32(footer+16);
+            if(count==0||count>kMaxFiles+1||get16(footer+8)!=count||!range(central,get32(footer+12),end)||central+get32(footer+12)!=end)return fail();
+            size_t at=central,nextLocal=0,total=0;std::unordered_set<std::string> names;
+            for(size_t i=0;i<count;++i)
+            {
+                if(!range(at,46,end))return fail();
+                const auto* e=bytes+at;
+                const size_t length=get16(e+28),size=get32(e+24),local=get32(e+42);
+                const u32 crc=get32(e+16);
+                if(get32(e)!=0x02014b50||get16(e+8)||get16(e+10)||get16(e+30)||get16(e+32)||get16(e+34)||
+                    get32(e+38)||get32(e+20)!=size||size>kMaxFile||length==0||length>128||!range(at+46,length,end)||local!=nextLocal||
+                    !range(local,30,central)||!range(local+30,length,central))return fail();
+                const auto* h=bytes+local;
+                if(get32(h)!=0x04034b50||get16(h+6)||get16(h+8)||get16(h+28)||get16(h+26)!=length||
+                    get32(h+14)!=crc||get32(h+18)!=size||get32(h+22)!=size||std::memcmp(h+30,e+46,length)!=0)return fail();
+                const size_t payload=local+30+length;
+                if(!range(payload,size,central)||size>kMaxTotal-total||crc32Of(bytes+payload,size)!=crc)return fail();
+                std::string name(reinterpret_cast<const char*>(e+46),length);
+                if(!names.insert(name).second)return fail();
+                entries.push_back({std::move(name),payload,size,crc});
+                total+=size;nextLocal=payload+size;at+=46+length;
+            }
+            if(at!=end||nextLocal!=central)return fail();
+            return true;
+        }
+    }
+    bool blueprintPackageName(const std::string& file)
+    {
+        if(!file.ends_with(".bp.zip")||file.size()>100||file.size()<=7)return false;
+        const auto stem=file.substr(0,file.size()-7);
+        std::string ignored;
+        return blueprintManagedName(stem,ignored);
+    }
+    bool blueprintExportPackage(Platform& p,const BlueprintDocument& doc,const std::string& file,std::string& error)
+    {
+        const auto target="own/"+file;
+        if(!blueprintPackageName(file)||p.fileTime(target.c_str())){error="Invalid package filename or package already exists.";return false;}
+        std::string graph;
+        if(!doc.serialize(graph,error))return false;
+        BlueprintDocument portable;
+        if(!portable.load(graph.data(),graph.size(),error))return false;
+        portable.assetRoot.clear();
+        if(!portable.serialize(graph,error))return false;
+        std::string zip;std::vector<PackageEntry> entries;
+        if(!appendPackage(zip,entries,"project.bp.json",graph.data(),graph.size(),error))return false;
+        size_t total=graph.size(),directories=0;
+        if(!doc.assetRoot.empty())
+        {
+            if(!blueprintAssetRoot(doc.assetRoot)||!p.fileTime(("own/"+doc.assetRoot).c_str()))
+            {error="Project asset directory is missing.";return false;}
+            std::vector<std::string> scopes={"_global"};
+            for(const auto& screen:doc.screens())scopes.push_back(screen+"/asset");
+            for(const auto& scope:scopes)
+            {
+                const auto base="own/"+doc.assetRoot+"/"+scope;
+                if(!p.fileTime(base.c_str()))continue;
+                std::vector<std::string> files;
+                if(!collect(p,base,"",0,directories,files,error))return false;
+                for(const auto& name:files)
+                {
+                    FileData data;
+                    if(!p.readFile((base+"/"+name).c_str(),data,MemTag::General)||data.size>kMaxFile||data.size>kMaxTotal-total)
+                    {error="Cannot read package asset or size limit exceeded: "+name;return false;}
+                    total+=data.size;
+                    if(!appendPackage(zip,entries,"assets/"+scope+"/"+name,data.data,data.size,error))return false;
+                }
+            }
+        }
+        if(!finishPackage(zip,entries)){error="Project ZIP exceeds package limit.";return false;}
+        if(!p.writeFile(target.c_str(),zip.data(),zip.size())){error="Cannot write project package.";return false;}
+        FileData check;
+        if(!p.readFile(target.c_str(),check,MemTag::General)||check.size!=zip.size()||std::memcmp(check.data,zip.data(),zip.size())!=0)
+        {error="Package write verification failed.";return false;}
+        error.clear();return true;
+    }
+    bool blueprintImportPackage(Platform& p,const std::string& file,BlueprintDocument& document,std::string& error)
+    {
+        if(!blueprintPackageName(file)){error="Choose a .bp.zip project package.";return false;}
+        FileData data;
+        if(!p.readFile(("own/"+file).c_str(),data,MemTag::General)){error="Cannot read project package.";return false;}
+        std::vector<PackageEntry> entries;
+        if(!readPackage(data,entries,error))return false;
+        const auto graph=std::find_if(entries.begin(),entries.end(),[](const PackageEntry& e){return e.name=="project.bp.json";});
+        if(graph==entries.end()){error="Package has no project.bp.json.";return false;}
+        const auto* bytes=reinterpret_cast<const char*>(data.data);
+        BlueprintDocument candidate;
+        if(!candidate.load(bytes+graph->offset,graph->size,error))return false;
+        if(!candidate.assetRoot.empty()){error="Package graph must not refer to an external asset root.";return false;}
+        const auto screens=candidate.screens();
+        // Validate every member before creating a directory or writing files.
+        for(const auto& e:entries)if(e.name!="project.bp.json"&&!packageAsset(e.name,screens))
+        {error="Invalid package asset path: "+e.name;return false;}
+        if(entries.size()>1)
+        {
+            std::string fresh;
+            if(!blueprintCreateAssetRoot(p,fresh,error))return false;
+            for(const auto& screen:screens)if(!blueprintEnsureAssetFolder(p,fresh,screen,error))return false;
+            for(const auto& e:entries)
+            {
+                if(e.name=="project.bp.json")continue;
+                const auto rel=e.name.substr(7),dest=fresh+"/"+rel;
+                for(size_t at=rel.find('/');at!=std::string::npos;at=rel.find('/',at+1))
+                    if(!ensure(p,fresh+"/"+rel.substr(0,at))){error="Cannot create package folder.";return false;}
+                const auto target="own/"+dest;
+                if(p.fileTime(target.c_str())||!p.writeFile(target.c_str(),bytes+e.offset,e.size))
+                {error="Cannot restore package asset: "+rel;return false;}
+                FileData check;
+                if(!p.readFile(target.c_str(),check,MemTag::General)||check.size!=e.size||(e.size&&std::memcmp(check.data,bytes+e.offset,e.size)!=0))
+                {error="Package asset verification failed: "+rel;return false;}
+            }
+            candidate.assetRoot=std::move(fresh);
+        }
+        candidate.markRecovered();document=std::move(candidate);error.clear();return true;
     }
 }

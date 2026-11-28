@@ -942,6 +942,15 @@ namespace nx
             m_browsing=false;selectGraph(m_graph);checkpoint(s,true);m_status="Imported library "+file;return true;
         }
         if(m_document.dirty()){m_status="Save changes before opening another Blueprint.";return false;}
+        if(blueprintPackageName(file))
+        {
+            BlueprintDocument candidate;
+            if(!blueprintImportPackage(*s.platform,file,candidate,m_status))return false;
+            resetGraphTabs();m_actorTabId.clear();m_actorTabScreen.clear();m_contentFirst=0;m_contentDrag.clear();
+            m_document=std::move(candidate);m_filePath.clear();m_fileBaseline.clear();m_checkpointRevision=static_cast<size_t>(-1);
+            m_graphBack.clear();m_first=0;selectGraph(0);m_browsing=false;checkpoint(s,true);
+            m_status="Imported "+file+". Save as a new project.";return true;
+        }
         m_actorTabId.clear();m_actorTabScreen.clear();m_contentFirst=0;m_contentDrag.clear();
         const bool archive=recoveryArchiveName(file);
         if(!blueprintFileName(file)&&!archive){m_status="Choose a Blueprint or recovery archive.";return false;}
@@ -976,7 +985,7 @@ namespace nx
         s.platform->list("own",false,[](const char* name,void* user)
         {
             auto& files=*static_cast<std::vector<std::string>*>(user);
-            if(files.size()<4096&&(blueprintFileName(name)||recoveryArchiveName(name)||standaloneSourceName(name)))files.emplace_back(name);
+            if(files.size()<4096&&(blueprintFileName(name)||blueprintPackageName(name)||recoveryArchiveName(name)||standaloneSourceName(name)))files.emplace_back(name);
         },&m_files);
         s.platform->listFolders("own",[](const char* name,void* user)
         {
@@ -4032,7 +4041,7 @@ namespace nx
         {
             if(m_assetBrowser&&m_assetLibrary)m_status="Switch to Media before importing files.";
             else if(m_assetBrowser)importAsset(s,dropped);
-            else if(blueprintFileName(dropped))openFile(s,dropped,false);
+            else if(blueprintFileName(dropped)||blueprintPackageName(dropped))openFile(s,dropped,false);
             else if(dropped.ends_with(".as"))importSource(s,dropped);
             else m_status="Open Assets before dropping a scene or media file.";
         }
@@ -4130,6 +4139,17 @@ namespace nx
                 else if(in(x,y,300,455,550,485)){m_minimap=!m_minimap;m_status=m_minimap?"Graph overview enabled. Click or drag to navigate.":"Graph overview hidden.";NX_INFO("Blueprint Studio: minimap %s",m_minimap?"enabled":"hidden");}
                 else if(in(x,y,300,485,550,515)){m_graphHideLeft=!m_graphHideLeft;m_status=m_graphHideLeft?"Navigator hidden.":"Navigator shown.";NX_INFO("Blueprint Studio: %s",m_status.c_str());}
                 else if(in(x,y,300,515,550,545)){m_graphHideRight=!m_graphHideRight;m_status=m_graphHideRight?"Node library hidden.":"Node library shown.";NX_INFO("Blueprint Studio: %s",m_status.c_str());}
+                else if(in(x,y,300,545,550,575))
+                {
+                    std::string file;
+                    for(unsigned i=1;i<=10000;++i)
+                    {
+                        const auto candidate="blueprint-package-"+std::to_string(i)+".bp.zip";
+                        if(!s.platform->fileTime(("own/"+candidate).c_str())){file=candidate;break;}
+                    }
+                    if(file.empty())m_status="No free project package name.";
+                    else if(blueprintExportPackage(*s.platform,m_document,file,m_status))m_status="Exported own/"+file;
+                }
                 m_layoutMenu=false;
             }
             m_left=left;return;
@@ -5218,11 +5238,11 @@ namespace nx
         if(m_contentFloating){drawGraphTabs(c);drawContentDrawer(c);}else{drawContentDrawer(c);drawGraphTabs(c);}
         if(m_layoutMenu)
         {
-            c.roundRect(300,35,250,510,5,{0.16f,0.16f,0.17f,1});
-            const char* labels[]={"Arrange graph","Align selected left","Align selected top","Comment selection","Collapse to function","Rename function","Duplicate function","Open selected function","Back to caller",m_document.graphs[m_graph].inlineMacro?"Convert to function":"Convert to inline macro",m_document.graphs[m_graph].sharedLibrary?"Make library graph local":"Publish to project library","Export project library",m_uiScale==0?"UI scale: Auto":m_uiScale==1?"UI scale: 100%":m_uiScale==2?"UI scale: 125%":"UI scale: 150%","Reset editor layout",m_minimap?"Hide graph overview":"Show graph overview",m_graphHideLeft?"Show navigator":"Hide navigator",m_graphHideRight?"Show node library":"Hide node library"};
+            c.roundRect(300,35,250,540,5,{0.16f,0.16f,0.17f,1});
+            const char* labels[]={"Arrange graph","Align selected left","Align selected top","Comment selection","Collapse to function","Rename function","Duplicate function","Open selected function","Back to caller",m_document.graphs[m_graph].inlineMacro?"Convert to function":"Convert to inline macro",m_document.graphs[m_graph].sharedLibrary?"Make library graph local":"Publish to project library","Export project library",m_uiScale==0?"UI scale: Auto":m_uiScale==1?"UI scale: 100%":m_uiScale==2?"UI scale: 125%":"UI scale: 150%","Reset editor layout",m_minimap?"Hide graph overview":"Show graph overview",m_graphHideLeft?"Show navigator":"Hide navigator",m_graphHideRight?"Show node library":"Hide node library","Export project ZIP"};
             const auto& activeGraph=m_document.graphs[m_graph];
             const bool hasSelection=m_selection<activeGraph.nodes.size()||!m_selectedNodes.empty();
-            for(size_t i=0;i<17;++i)
+            for(size_t i=0;i<18;++i)
             {
                 const bool enabled=i==0||i>=11||(i<=2&&m_selectedNodes.size()>=2)||((i==3||i==4)&&hasSelection)||((i==5||i==6)&&activeGraph.kind=="function")||
                     (i==7&&m_selection<activeGraph.nodes.size()&&(activeGraph.nodes[m_selection].kind=="call:function"||activeGraph.nodes[m_selection].kind=="call:library"))||(i==8&&!m_graphBack.empty())||((i==9||i==10)&&activeGraph.kind=="function");
@@ -5287,7 +5307,7 @@ namespace nx
                     const float y=166+36*static_cast<float>(i);
                     c.rect(280,y,720,33,{0.22f,0.22f,0.24f,1});
                     const auto& file=m_files[m_fileFirst+i];
-                    const std::string label=(recoveryArchiveName(file)?"RECOVERY  /  ":standaloneSourceName(file)?"SOURCE  /  ":projectFolderName(file)?"PROJECT FOLDER  /  ":"")+file;
+                    const std::string label=(blueprintPackageName(file)?"PACKAGE  /  ":recoveryArchiveName(file)?"RECOVERY  /  ":standaloneSourceName(file)?"SOURCE  /  ":projectFolderName(file)?"PROJECT FOLDER  /  ":"")+file;
                     c.clip(286,y,708,33);c.text(*m_font,label.c_str(),290,y+8,text);c.noClip();
                 }
                 if(m_files.empty())c.text(*m_font,"No projects, archives, source or project folders in own/.",640,330,muted,Align::Center);

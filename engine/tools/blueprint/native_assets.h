@@ -3,6 +3,9 @@
 namespace nx
 {
     class Platform;
+    bool blueprintPackageName(const std::string& file);
+    bool blueprintExportPackage(Platform& platform,const BlueprintDocument& document,const std::string& file,std::string& error);
+    bool blueprintImportPackage(Platform& platform,const std::string& file,BlueprintDocument& document,std::string& error);
     bool blueprintCreateAssetRoot(Platform& platform,std::string& root,std::string& error);
     bool blueprintEnsureAssetFolder(Platform& platform,const std::string& root,const std::string& screen,std::string& error);
     bool blueprintListAssets(Platform& platform,const std::string& root,const std::string& screen,std::vector<std::string>& files,std::string& error);
