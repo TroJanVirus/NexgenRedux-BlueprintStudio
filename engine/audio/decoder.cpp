@@ -252,38 +252,56 @@ namespace nx
         return true;
     }
 
-    i16* decodeAll(const SoundData& sound, u32& frames)
+    i16* decodeAll(const SoundData& sound, u32& frames, size_t maxBytes)
     {
-        SoundDecoder* d = openDecoder(sound);
         frames = 0;
-        if (d == nullptr)
-        {
+        if (sound.channels < 1 || sound.channels > 2 || sound.rate == 0)
             return nullptr;
-        }
-        size_t room = sound.rate;
-        i16* samples = static_cast<i16*>(memAlloc(room * sound.channels * sizeof(i16), MemTag::Audio));
+        const size_t frameBytes = sound.channels * sizeof(i16);
+        const size_t limit = maxBytes / frameBytes;
+        const u32 maxFrames = limit > 0xffffffffu ? 0xffffffffu : static_cast<u32>(limit);
+        if (!maxFrames || sound.frames > maxFrames)
+            return nullptr;
+        SoundDecoder* d = openDecoder(sound);
+        if (!d)
+            return nullptr;
+        u32 room = sound.rate < maxFrames ? sound.rate : maxFrames;
+        i16* samples = static_cast<i16*>(memAlloc(static_cast<size_t>(room) * frameBytes, MemTag::Audio));
         while (samples)
         {
-            if (frames + 4096 > room)
+            if (frames == room)
             {
-                i16* bigger = static_cast<i16*>(memAlloc(room * 2 * sound.channels * sizeof(i16), MemTag::Audio));
+                // Probe at the boundary so an exactly fitting sound does not grow or fail.
+                i16 probe[2];
+                if (decode(*d, probe, 1) == 0)
+                    break;
+                if (room == maxFrames)
+                {
+                    memFree(samples);
+                    samples = nullptr;
+                    break;
+                }
+                const u32 next = room > maxFrames / 2 ? maxFrames : room * 2;
+                i16* bigger = static_cast<i16*>(memAlloc(static_cast<size_t>(next) * frameBytes, MemTag::Audio));
                 if (bigger)
                 {
-                    memcpy(bigger, samples, static_cast<size_t>(frames) * sound.channels * sizeof(i16));
+                    memcpy(bigger, samples, static_cast<size_t>(frames) * frameBytes);
+                    memcpy(bigger + static_cast<size_t>(frames) * sound.channels, probe, frameBytes);
+                    ++frames;
                 }
                 memFree(samples);
                 samples = bigger;
-                room *= 2;
+                room = next;
                 continue;
             }
-            const u32 got = decode(*d, samples + static_cast<size_t>(frames) * sound.channels, 4096);
-            if (got == 0)
-            {
+            const u32 count = room - frames < 4096 ? room - frames : 4096;
+            const u32 got = decode(*d, samples + static_cast<size_t>(frames) * sound.channels, count);
+            if (!got)
                 break;
-            }
             frames += got;
         }
         closeDecoder(d);
+        if (!samples)
+            frames = 0;
         return samples;
-    }
-}
+    }}
