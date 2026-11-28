@@ -1,7 +1,7 @@
 name: Blueprint Studio beta
 on:
   push:
-    branches: ["blueprint/beta-*"]
+    branches: ["blueprint/beta-[0-9]*", "!blueprint/beta-*-development"]
   workflow_dispatch:
 permissions:
   contents: read

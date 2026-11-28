@@ -2850,7 +2850,16 @@ namespace nx
         std::vector<BlueprintPin> vars;if(!variables(vars,error,g.owner))return false;
         if(std::any_of(vars.begin(),vars.end(),[&](const BlueprintPin& v){return v.name==variable;})){error="Choose a new variable name.";return false;}
         if(!output&&std::any_of(g.links.begin(),g.links.end(),[&](const Link& l){return l.to==node&&l.input==pin;})){error="Disconnect the input before promoting it.";return false;}
-        if(output&&(!findPin(spec.outputs,"then")||!findPin(spec.inputs,"in"))){error="Promote an executed output, or wire this pure value into a Set variable node.";return false;}
+        size_t executionSource=node;std::string executionPin="then";
+        if(output&&!findPin(spec.outputs,"then"))
+        {
+            // A pure output can be captured before its one directly connected action.
+            // Refuse ambiguous branches or several consumers rather than invent an execution order.
+            size_t consumer=static_cast<size_t>(-1);for(const auto& l:g.links)if(l.from==node&&l.output==pin){if(consumer!=static_cast<size_t>(-1)&&consumer!=l.to){error="Pure value has multiple consumers. Use an explicit Set node.";return false;}consumer=l.to;}
+            const auto before=std::find_if(g.links.begin(),g.links.end(),[&](const Link& l){return l.to==consumer&&l.input=="in";});
+            if(before==g.links.end()){error="Connect the pure value to one executed action first.";return false;}
+            executionSource=before->from;executionPin=before->output;
+        }
         BlueprintDocument staged;staged.name=name;staged.assetRoot=assetRoot;staged.graphs=graphs;staged.manifests=manifests;staged.m_visualAssets=m_visualAssets;staged.m_visualSerial=m_visualSerial;staged.m_nextId=m_nextId;
         std::string declaration="field "+variable+":"+p->type;
         if(!output&&blueprintLiteralType(p->type))
@@ -2865,15 +2874,33 @@ namespace nx
         auto& next=staged.graphs[graph];const auto added=next.nodes.size()-1;
         if(output)
         {
-            std::vector<Link> continuation;for(const auto& l:next.links)if(l.from==node&&l.output=="then")continuation.push_back(l);
+            std::vector<Link> continuation;for(const auto& l:next.links)if(l.from==executionSource&&l.output==executionPin)continuation.push_back(l);
             if(continuation.size()>1){error="Ambiguous execution continuation.";return false;}
-            staged.disconnect(graph,node,"then",true);
-            if(!staged.connect(graph,node,pin,added,"value",error)||!staged.connect(graph,node,"then",added,"in",error))return false;
+            staged.disconnect(graph,executionSource,executionPin,true);
+            if(!staged.connect(graph,node,pin,added,"value",error)||!staged.connect(graph,executionSource,executionPin,added,"in",error))return false;
             for(const auto& l:continuation)if(!staged.connect(graph,added,"then",l.to,l.input,error))return false;
         }
         else if(!staged.connect(graph,added,"value",node,pin,error))return false;
         std::string checked;if(!staged.serialize(checked,error))return false;
         recordGraphList();graphs.swap(staged.graphs);m_nextId=staged.m_nextId;error.clear();return true;
+    }
+    bool BlueprintDocument::canAutoConvertPin(size_t graph,size_t from,const std::string& output,const std::string& toType) const
+    {
+        if(graph>=graphs.size()||from>=graphs[graph].nodes.size())return false;
+        const auto& g=graphs[graph];const auto& node=g.nodes[from];BlueprintNodeSpec spec;
+        if(!nodeSpec(g,node,spec))return false;
+        const auto* pin=findPin(spec.outputs,output);if(!pin)return false;
+        const auto& type=pin->type;
+        if(type==toType||blueprintLosslessConversion(type,toType)||classAssignable(type,toType))return true;
+        // These numeric conversions are only automatic for literal values proven exact.
+        // An explicit cast node remains visible and editable if the literal is later changed.
+        if(node.kind!="literal:"+type||!literal(node.kind,node.ref))return false;
+        if(type!="int"&&type!="uint"&&type!="double"&&type!="float")return false;
+        double n=std::strtod(node.ref.c_str(),nullptr);if(type=="float")n=static_cast<float>(n);
+        if(toType=="float")return std::abs(n)<=3.402823466e38&&static_cast<double>(static_cast<float>(n))==n;
+        if(toType=="int")return std::floor(n)==n&&n>=-2147483648.0&&n<=2147483647.0;
+        if(toType=="uint")return std::floor(n)==n&&n>=0&&n<=4294967295.0;
+        return false;
     }
     bool BlueprintDocument::connectCompatible(size_t graph,size_t from,const std::string& output,size_t to,const std::string& input,std::string& error)
     {
@@ -2884,7 +2911,7 @@ namespace nx
         const auto* out=findPin(a.outputs,output);const auto* in=findPin(b.inputs,input);
         if(!out||!in){error="Unknown pin.";return false;}
         if(out->type==in->type||arrayBorrow(out->type,in->type)||classAssignable(out->type,in->type))return connect(graph,from,output,to,input,error);
-        if(!blueprintLosslessConversion(out->type,in->type)){error="Pins need matching types or an explicit conversion.";return false;}
+        if(!canAutoConvertPin(graph,from,output,in->type)){error="Pins need matching types or an explicit conversion.";return false;}
         BlueprintDocument staged;staged.name=name;staged.assetRoot=assetRoot;staged.graphs=graphs;staged.manifests=manifests;staged.m_nextId=m_nextId;
         const float x=(g.nodes[from].x+g.nodes[to].x)*0.5f,y=(g.nodes[from].y+g.nodes[to].y)*0.5f+100.f;
         if(!staged.addNode(graph,"cast:"+out->type+":"+in->type,x,y,error))return false;
@@ -2914,7 +2941,7 @@ namespace nx
             const BlueprintPin* match=nullptr;
             for(const auto& candidate:candidates)if((otherPin.empty()||otherPin==candidate.name)&&candidate.type==endpoint->type){match=&candidate;break;}
             if(!match)for(const auto& candidate:candidates)if((otherPin.empty()||otherPin==candidate.name)&&
-                (output?(blueprintLosslessConversion(endpoint->type,candidate.type)||staged.classAssignable(endpoint->type,candidate.type)):(blueprintLosslessConversion(candidate.type,endpoint->type)||staged.classAssignable(candidate.type,endpoint->type)))){match=&candidate;break;}
+                (output?staged.canAutoConvertPin(graph,existing,pin,candidate.type):staged.canAutoConvertPin(graph,added,candidate.name,endpoint->type))){match=&candidate;break;}
             if(!match){error="No compatible pin on this node.";return false;}
             if(!(output?staged.connectCompatible(graph,existing,pin,added,match->name,error):staged.connectCompatible(graph,added,match->name,existing,pin,error)))return false;
         }
@@ -3520,6 +3547,7 @@ namespace nx
     {
         if(graph>=graphs.size()||graphs[graph].kind!="function"||behaviourOwner(graphs[graph].owner)){error="Select a screen function or macro.";return false;}
         auto& g=graphs[graph];if(g.sharedLibrary==enabled){error.clear();return true;}
+        if(g.collapsed){error="Collapsed graphs are private; expand them before publishing.";return false;}
         if(enabled&&visualWidgetUsesFunction(g.owner,g.name)){error="Unbind the widget callback first.";return false;}
         const bool old=g.sharedLibrary;g.sharedLibrary=enabled;std::string checked;
         const bool ok=serialize(checked,error);g.sharedLibrary=old;if(!ok)return false;
@@ -3718,7 +3746,7 @@ namespace nx
     {
         if(graph>=graphs.size()||graphs[graph].kind!="function"){error="Select a reusable graph.";return false;}
         auto& g=graphs[graph];
-        if(enabled&&(visualWidgetUsesFunction(g.owner,g.name)||!g.dataRole.empty())){error="Widget callbacks and explicit graph roles cannot become inline macros.";return false;}
+        if(enabled&&(g.collapsed||visualWidgetUsesFunction(g.owner,g.name)||!g.dataRole.empty())){error="Widget callbacks and explicit graph roles cannot become inline macros.";return false;}
         if(enabled&&(g.returnType!="void"||std::any_of(g.nodes.begin(),g.nodes.end(),[](const Node& n){return n.kind=="return:function";})))
         {error="Inline macros require a void signature and no return nodes.";return false;}
         if(g.inlineMacro!=enabled){record(graph);g.inlineMacro=enabled;}error.clear();return true;

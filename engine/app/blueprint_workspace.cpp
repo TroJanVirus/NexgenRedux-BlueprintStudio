@@ -745,7 +745,7 @@ namespace nx
             for(const auto& p:pins)
             {
                 const bool exact=p.type==m_pinType;
-                if(exact||(m_pendingOutput?(blueprintLosslessConversion(m_pinType,p.type)||m_document.classAssignable(m_pinType,p.type)):(blueprintLosslessConversion(p.type,m_pinType)||m_document.classAssignable(p.type,m_pinType))))
+                if(exact||(m_pendingOutput?m_document.canAutoConvertPin(m_graph,m_pending,m_pendingPin,p.type):(blueprintLosslessConversion(p.type,m_pinType)||m_document.classAssignable(p.type,m_pinType))))
                     m_contextResults.push_back({spec.id,reference,label+" / "+p.name+(exact?"":" (convert)"),p.name,!exact});
             }
         };
@@ -790,6 +790,14 @@ namespace nx
                 if(base->id.rfind("var:",0)==0)consider(*base,"",base->title);
             }
             else consider(*base,"",base->title);
+        }
+        if(m_pinType.empty()&&behaviour)
+        {
+            for(const auto& event:m_document.graphs)if(event.owner==graph.owner&&event.kind=="event")
+            {
+                const std::string label=event.name=="start"?"Event Begin Play":event.name=="update"?"Event Tick":event.name=="onHit"?"Event On Hit":event.name=="onLeave"?"Event On Leave":event.name=="onGone"?"Event On Gone":"Event "+event.name;
+                if(lower(label+" "+event.name+" Actor").find(contextQuery)!=std::string::npos)m_contextResults.push_back({"open:actor-event",event.name,label+" (open graph)","",false});
+            }
         }
         std::stable_sort(m_contextResults.begin(),m_contextResults.end(),[](const ContextResult& a,const ContextResult& b){return a.conversion<b.conversion;});
     }
@@ -5133,7 +5141,11 @@ namespace nx
                         {
                             const auto& type=(m_pendingOutput?row.outputTypes:row.inputTypes)[static_cast<size_t>(it-pins.begin())];
                             const auto& from=m_pendingOutput?type:hit.type;const auto& to=m_pendingOutput?hit.type:type;
-                            m_pinHover+=from==to||m_document.classAssignable(from,to)?" | matching type":blueprintLosslessConversion(from,to)?" | safe conversion":" | incompatible types";
+                            const auto src=m_pendingOutput?m_pending:hit.node,dst=m_pendingOutput?hit.node:m_pending;
+                            const auto& out=m_pendingOutput?m_pendingPin:hit.name;const auto& in=m_pendingOutput?hit.name:m_pendingPin;
+                            const auto& links=m_document.graphs[m_graph].links;
+                            const bool occupied=std::any_of(links.begin(),links.end(),[&](const BlueprintDocument::Link& l){return (l.to==dst&&l.input==in)||(from=="exec"&&l.from==src&&l.output==out);});
+                            m_pinHover+=occupied?" | disconnect existing link first":from==to||m_document.classAssignable(from,to)?" | matching type":m_document.canAutoConvertPin(m_graph,src,out,to)?" | conversion available":" | incompatible types";
                         }
                     }
                 }
@@ -5320,7 +5332,9 @@ namespace nx
             auto choose=[&](size_t index)
             {
                 if(index>=m_contextResults.size())return false;
-                const auto choice=m_contextResults[index];const size_t added=m_document.graphs[m_graph].nodes.size();
+                const auto choice=m_contextResults[index];
+                if(choice.kind=="open:actor-event"){const auto owner=m_document.graphs[m_graph].owner;for(size_t k=0;k<m_document.graphs.size();++k)if(m_document.graphs[k].owner==owner&&m_document.graphs[k].name==choice.reference&&m_document.graphs[k].kind=="event"){closePinMenu(s);selectGraph(k);m_status="Opened actor event graph.";return true;}return false;}
+                const size_t added=m_document.graphs[m_graph].nodes.size();
                 if(!m_document.placeContextNode(m_graph,m_pending,m_pendingPin,m_pendingOutput,choice.kind,choice.reference,choice.pin,(m_pinX-kLeft-m_x)/m_zoom,(m_pinY-kTop-m_y)/m_zoom,m_status))return false;
                 closePinMenu(s);m_diagnostic={};rebuildPins();m_selection=added;m_selectedNodes.clear();m_status="Added "+choice.title+".";return true;
             };

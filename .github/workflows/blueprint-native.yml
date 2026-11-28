@@ -1,7 +1,7 @@
 name: Native Blueprint
 on:
   push:
-    branches: ["blueprint/visual-authoring", "blueprint/upstream-*", "blueprint/audio-authoring", "blueprint/node-input-collision-qol", "blueprint/beta-7-development"]
+    branches: ["blueprint/visual-authoring", "blueprint/upstream-*", "blueprint/audio-authoring", "blueprint/node-input-collision-qol", "blueprint/node-parity"]
   pull_request:
     branches: ["blueprint/verification-base"]
   workflow_dispatch:

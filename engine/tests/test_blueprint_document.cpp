@@ -7,12 +7,32 @@
 #include <algorithm>
 
 using namespace nx;
+NX_TEST(nativeLiteralSafeAutomaticConversion)
+{
+    BlueprintDocument doc;doc.create();std::string error;
+    NX_EXPECT(doc.addNode(0,"literal:int",0,200,error)&&doc.addNode(0,"add:float",300,200,error));
+    NX_EXPECT(doc.setLiteral(0,1,"180",error)&&doc.canAutoConvertPin(0,1,"value","float"));
+    NX_EXPECT(doc.setLiteral(0,1,"16777217",error)&&!doc.canAutoConvertPin(0,1,"value","float"));
+    NX_EXPECT(!doc.connectCompatible(0,1,"value",2,"a",error));
+    NX_EXPECT(doc.setLiteral(0,1,"180",error)&&doc.connectCompatible(0,1,"value",2,"a",error));
+    NX_EXPECT(doc.graphs[0].nodes.back().kind=="cast:int:float"&&doc.undo());
+}
+NX_TEST(nativePromoteOutputPinToVariable)
+{
+    BlueprintDocument doc;doc.create();std::string error,source;
+    NX_EXPECT(doc.addNode(0,"literal:string",0,200,error)&&doc.addNode(0,"api:Save:Save::set:string,string",600,100,error));
+    NX_EXPECT(doc.setLiteral(0,1,"payload",error)&&doc.setInputValue(0,2,"key","example",error));
+    NX_EXPECT(doc.connect(0,0,"then",2,"in",error)&&doc.connect(0,1,"value",2,"value",error));
+    NX_EXPECT(doc.promotePin(0,1,"value",true,"savedPayload",error));
+    NX_EXPECT(doc.graphs[0].nodes.size()==4&&compileBlueprint(doc,source,error)&&source.find("savedPayload")!=std::string::npos);
+    NX_EXPECT(doc.undo()&&doc.graphs[0].nodes.size()==3);
+}
 NX_TEST(nativePromoteInputPinToVariable)
 {
     BlueprintDocument doc;doc.create();std::string error,source;
     NX_EXPECT(doc.addNode(0,"api:Save:Save::set:string,string",300,100,error));
     NX_EXPECT(doc.connect(0,0,"then",1,"in",error));
-    NX_EXPECT(doc.setInputValue(0,1,"key","example",error));
+    NX_EXPECT(doc.setInputValue(0,1,"key","example",error)&&doc.setInputValue(0,1,"value","payload",error));
     NX_EXPECT(doc.promotePin(0,1,"key",false,"saveKey",error));
     NX_EXPECT(doc.graphs[0].nodes.size()==3&&doc.graphs[0].links.size()==2);
     NX_EXPECT(compileBlueprint(doc,source,error)&&source.find("saveKey")!=std::string::npos);
