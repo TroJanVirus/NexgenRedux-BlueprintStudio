@@ -136,7 +136,7 @@ namespace nx
         m_host->setWatcher(nullptr);
         m_host = nullptr;
         m_pendingLaunch.clear();m_launchKey.clear();m_launchId.clear();m_liveUpload.clear();
-        resetRemoteTrace();
+        resetRemoteTrace();resetProfiler();
         m_client.close();
         m_listener.close();
         netStop();
@@ -183,6 +183,7 @@ namespace nx
                 // A new one starts with nothing set.
                 m_pendingLaunch.clear();m_liveUpload.clear();
                 m_breakpoints.clear();
+                resetProfiler();m_last=Where();m_from=Where();
                 resetRemoteTrace();
                 m_files.clear();
                 m_mode = Mode::Run;
@@ -243,6 +244,7 @@ namespace nx
         {
             // Gone: nothing is to stop the scripts any more.
             m_breakpoints.clear();
+            resetProfiler();m_last=Where();m_from=Where();
             resetRemoteTrace();
             m_files.clear();
             m_mode = Mode::Run;
@@ -400,6 +402,7 @@ namespace nx
             putNumber(*t,"sceneBytes",static_cast<double>(memStats(MemTag::Scene).bytes));
             putNumber(*t,"scriptBytes",static_cast<double>(memStats(MemTag::Script).bytes));
             putNumber(*t,"audioBytes",static_cast<double>(memStats(MemTag::Audio).bytes));
+            putNumber(*t,"uiBytes",static_cast<double>(memStats(MemTag::UI).bytes));
             send(reply.write(true));
         }
         else if (name == "pause")
@@ -667,7 +670,7 @@ namespace nx
         here.line = context->GetLineNumber(0, nullptr, &here.section);
         here.run = m_host->runs();
         // A line with several statements is stopped at once; so is one that is come back to in a loop.
-        const bool moved = here.line != m_last.line || here.section != m_last.section || here.depth != m_last.depth || here.context != m_last.context;
+        const bool moved = here.line != m_last.line || here.section != m_last.section || here.depth != m_last.depth || here.context != m_last.context || here.run != m_last.run;
         if(m_remoteTrace&&(moved||here.run!=m_last.run))recordRemoteTrace(here);
         m_last = here;
         const bool fresh = here.line != m_from.line || here.section != m_from.section || here.depth != m_from.depth || here.context != m_from.context || here.run != m_from.run;
@@ -799,7 +802,7 @@ namespace nx
     {
         m_mode = mode;
         m_resume = true;
-        m_last = Where();
+        m_last = m_from;
         JsonValue event;
         putText(event, "event", "continued");
         send(event.write(true));

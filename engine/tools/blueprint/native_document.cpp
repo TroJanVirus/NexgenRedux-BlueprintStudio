@@ -1219,6 +1219,68 @@ namespace nx
         }
         error="Widget page not found.";return false;
     }
+    bool BlueprintDocument::duplicateVisualWidget(const std::string& id,const std::string& widget,std::string& created,std::string& error)
+    {
+        created.clear();
+        auto assets=m_visualAssets;
+        for(auto& page:assets)if(page.id==id&&page.kind=="widget")
+        {
+            JsonValue root;
+            if(!root.parse(page.source.data(),page.source.size(),error)||root.type()!=JsonValue::Type::Array)return false;
+            WidgetMatch match;findVisualWidget(root,widget,match);
+            if(widget.empty()||match.matches!=1||!match.siblings||match.siblings->count()>=64)
+            {error="Select a unique widget in a container with room.";return false;}
+            const auto single=[&](auto&& self,JsonValue& node)->bool
+            {
+                if((node.find("sizeBox")==match.siblings||node.find("scaleBox")==match.siblings))return true;
+                for(u32 i=0;i<node.count();++i)if(self(self,*node.at(i)))return true;
+                return false;
+            };
+            if(single(single,root)){error="A Size Box or Scale Box supports only one child.";return false;}
+            JsonValue copy;if(!copy.setCopy(*match.item))return false;
+            std::vector<std::pair<std::string,std::string>> remap;
+            unsigned next=1;
+            const auto rename=[&](auto&& self,JsonValue& node)->bool
+            {
+                if(widgetKind(node))if(auto* key=node.find("id"))
+                {
+                    if(key->type()!=JsonValue::Type::String||key->text().empty())return false;
+                    std::string fresh;
+                    for(;next<=4096;++next)
+                    {
+                        fresh="item-"+std::to_string(next);
+                        WidgetMatch existing;findVisualWidget(root,fresh,existing);
+                        if(!existing.matches)break;
+                    }
+                    if(next>4096)return false;
+                    ++next;remap.emplace_back(key->text(),fresh);key->setText(fresh);
+                }
+                for(u32 i=0;i<node.count();++i)if(!self(self,*node.at(i)))return false;
+                return true;
+            };
+            if(!rename(rename,copy)||remap.empty()){error="Cannot allocate unique duplicate IDs.";return false;}
+            const auto relink=[&](auto&& self,JsonValue& node)->void
+            {
+                if(widgetKind(node))for(const char* property:uiNavigationProperties)
+                    if(auto* rule=node.find(property))
+                    {
+                        const std::string target=rule->text();
+                        for(const auto& entry:remap)
+                            if(target==entry.first||target.rfind(entry.first+"/",0)==0)
+                            {rule->setText(entry.second+target.substr(entry.first.size()));break;}
+                    }
+                for(u32 i=0;i<node.count();++i)self(self,*node.at(i));
+            };
+            relink(relink,copy);
+            auto* added=match.siblings->add();
+            if(!added||!added->setCopy(copy)){error="Widget hierarchy nesting limit reached.";return false;}
+            page.source=root.write(true);
+            BlueprintDocument staged;staged.m_visualAssets=assets;std::string resolved;
+            if(!staged.visualWidgetPage(id,resolved,error)||!replaceVisualAssets(assets,error))return false;
+            created=remap.front().second;return true;
+        }
+        error="Select a widget page.";return false;
+    }
     bool BlueprintDocument::moveVisualWidget(const std::string& id,const std::string& widget,int direction,std::string& error)
     {
         if(direction!=-1&&direction!=1){error="Invalid sibling movement.";return false;}

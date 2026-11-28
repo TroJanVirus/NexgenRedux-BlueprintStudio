@@ -2474,3 +2474,26 @@ NX_TEST(nativeStudioPreviewCodec)
     NX_EXPECT(!studioPreviewDecode("garbage",3,1,rgba)&&rgba.size()==12);
     NX_EXPECT(!studioPreviewDecode(wire,129,1,rgba));
 }
+
+NX_TEST(nativeWidgetDuplicateRemapsSubtreeNavigation)
+{
+    BlueprintDocument doc;doc.create();std::string page,error,created,source;
+    NX_EXPECT(doc.createVisualAsset("widget",page,error));
+    NX_EXPECT(doc.appendVisualWidget(page,"column","",error));
+    NX_EXPECT(doc.appendVisualWidget(page,"button","First",error,"item-1"));
+    NX_EXPECT(doc.appendVisualWidget(page,"button","Second",error,"item-1"));
+    NX_EXPECT(doc.setVisualWidgetProperty(page,"item-2","navDown","item-3",error));
+    const auto before=doc.visualAsset(page)->source;
+    NX_EXPECT(doc.duplicateVisualWidget(page,"item-1",created,error)&&created=="item-4");
+    NX_EXPECT(doc.visualWidgetPage(page,source,error));
+    JsonTree tree;NX_EXPECT(tree.parse(source.data(),source.size()));
+    const auto clone=tree.root()[1u]["column"];
+    NX_EXPECT(std::string(clone[0u]["id"].text())=="item-5");
+    NX_EXPECT(std::string(clone[0u]["navDown"].text())=="item-6");
+    NX_EXPECT(std::string(clone[1u]["id"].text())=="item-6");
+    NX_EXPECT(doc.undo()&&doc.visualAsset(page)->source==before);
+    NX_EXPECT(doc.redo());
+    NX_EXPECT(doc.appendVisualWidget(page,"scaleBox","",error));
+    NX_EXPECT(doc.appendVisualWidget(page,"button","Single",error,"item-7"));
+    NX_EXPECT(!doc.duplicateVisualWidget(page,"item-8",created,error));
+}

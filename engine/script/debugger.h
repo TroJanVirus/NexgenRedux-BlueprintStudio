@@ -62,7 +62,7 @@ namespace nx
 
         void line(asIScriptContext* context) override;
         void exception(asIScriptContext* context) override;
-        void compiled() override { m_files.clear();m_last=Where();m_remoteTraceHits.clear();m_remoteTraceGap=true; }
+        void compiled() override { resetProfiler();m_files.clear();m_last=Where();m_remoteTraceHits.clear();m_remoteTraceGap=true; }
 
     private:
         enum class Mode : u8 { Run, Pause, StepIn, StepOver, StepOut };
@@ -135,6 +135,7 @@ namespace nx
         static constexpr u32 kRemoteTraceLimit=32;
         std::vector<RemoteTraceHit> m_remoteTraceHits;
         void profile(int id, bool on);
+        void resetProfiler(){m_profiling=false;m_functionHits.clear();m_lineHits.clear();m_samples=0;m_profileTick=0;m_nextSample=0;}
         bool callGetter(void* object, asIScriptFunction* getter, Ref& out);
         void forget();
 

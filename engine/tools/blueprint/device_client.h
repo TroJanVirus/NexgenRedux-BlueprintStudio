@@ -118,7 +118,7 @@ namespace nx
         void disconnect()
         {
             m_socket.close();if(m_network)netStop();m_network=m_ready=m_paused=m_hello=m_sourceIdentity=m_traceSupported=m_tracing=m_traceOutstanding=m_traceGap=false;m_hits.clear();
-            m_in.clear();m_out.clear();m_rows.clear();m_log.clear();m_file.clear();m_fingerprint.clear();m_variables.clear();m_line=0;
+            m_in.clear();m_out.clear();m_telemetryOutstanding=false;m_rows.clear();m_log.clear();m_file.clear();m_fingerprint.clear();m_variables.clear();m_line=0;
             m_previewSupported=m_previewBusy=false;m_previewPixels.clear();m_previewWidth=m_previewHeight=0;m_previewStatus.clear();++m_previewSequence;
             m_pinsSupported=m_pinsCapped=false;m_pinValues.clear();m_actorsSupported=false;m_actorRequest=0;m_actorEpoch=m_actorOffset=m_actorCount=m_actorSelected=0;m_actors.clear();m_actorProperties.clear();m_actorScreen.clear();m_actorStatus.clear();
             m_status="Disconnected";m_launchId.clear();m_address.clear();m_liveSupported=false;m_liveStage=0;m_liveScreen.clear();m_liveFingerprint.clear();std::string().swap(m_liveBytes);
@@ -154,7 +154,9 @@ namespace nx
             if(m_previewBusy&&now>m_previewDeadline){fail("Preview response timed out.");return;}
             if(actorBusy()&&now>m_actorDeadline){fail("Actor request timed out; reconnect to refresh.");return;}
             if(liveBusy()&&now>m_liveDeadline){m_liveStatus="Live Link timed out; reconnect to inspect actual running source.";fail("Live Link response timed out.");return;}
-            if(m_ready&&!liveBusy()&&now>=m_poll){m_poll=now+1;queue("{\"cmd\":\"telemetry\",\"id\":4}");if(m_liveSupported)queue("{\"cmd\":\"liveInfo\",\"id\":10}");}
+            if(m_telemetryOutstanding&&now>m_telemetryDeadline&&!liveBusy()){fail("Device telemetry timed out; reconnect to recover.");return;}
+            if(m_ready&&!liveBusy()&&!m_telemetryOutstanding&&now>=m_poll&&m_out.size()<4096)
+            {m_poll=now+1;m_telemetryDeadline=now+12;m_telemetryOutstanding=true;queue("{\"cmd\":\"telemetry\",\"id\":4}");if(m_liveSupported)queue("{\"cmd\":\"liveInfo\",\"id\":10}");}
             if(m_ready&&!liveBusy()&&m_tracing&&!m_traceOutstanding&&now>=m_tracePoll){m_tracePoll=now+0.25;m_traceOutstanding=true;queue("{\"cmd\":\"traceDrain\",\"id\":7}");}
             if(!m_out.empty())
             {
@@ -328,12 +330,12 @@ namespace nx
             }
             else if(id==4&&root["telemetry"].isObject())
             {
-                const auto t=root["telemetry"];m_rows.clear();
+                m_telemetryOutstanding=false;const auto t=root["telemetry"];m_rows.clear();
                 const auto number=[&](const char* label,const char* key,double divisor,const char* suffix)
                 {
                     if(!t[key].isNumber()){m_rows.emplace_back(std::string(label)+": unknown");return;}
                     const double n=t[key].exact()/divisor;
-                    if(n<0||n>1000000000){m_rows.emplace_back(std::string(label)+": unknown");return;}
+                    if(!(n>=0&&n<=1000000000)){m_rows.emplace_back(std::string(label)+": unknown");return;}
                     const auto tenth=static_cast<u64>(n*10+0.5);
                     m_rows.emplace_back(std::string(label)+": "+std::to_string(tenth/10)+"."+std::to_string(tenth%10)+suffix);
                 };
@@ -346,7 +348,7 @@ namespace nx
                 number("Tracked allocations","trackedBytes",1048576," MiB");number("Tracked peak","peakBytes",1048576," MiB");
                 number("Textures","textureBytes",1048576," MiB");number("Buffers","bufferBytes",1048576," MiB");
                 number("Scene","sceneBytes",1048576," MiB");number("Scripts","scriptBytes",1048576," MiB");
-                number("Audio","audioBytes",1048576," MiB");number("Audio voices","voices",1,"");
+                number("Audio","audioBytes",1048576," MiB");number("Audio voices","voices",1,"");number("UI allocations","uiBytes",1048576," MiB");
                 m_status=m_paused?"Paused; FPS is the last running sample.":"Connected / live device counters";
             }
         }
@@ -372,7 +374,8 @@ namespace nx
         std::string m_liveScreen,m_liveFingerprint,m_liveStatus,m_liveBytes;
         double m_tracePoll=0;
         std::vector<RemoteHit> m_hits;
-        double m_deadline=0,m_poll=0;
+        bool m_telemetryOutstanding=false;
+        double m_deadline=0,m_poll=0,m_telemetryDeadline=0;
         std::string m_in,m_out,m_status="Disconnected",m_log,m_file,m_fingerprint,m_launchId,m_launchStatus,m_address;
         unsigned m_line=0;
         std::vector<std::string> m_rows,m_variables;

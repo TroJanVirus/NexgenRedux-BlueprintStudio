@@ -1878,7 +1878,7 @@ namespace nx
         }
         if(layout.wide)
         {
-            if(in(x,y,280+layout.leftDx,156+layout.leftDy,610+layout.leftDx,582+layout.leftDy))
+            if(in(x,y,280+layout.leftDx,156+layout.leftDy,610+layout.leftDx,620+layout.leftDy))
             {x-=layout.leftDx;y-=layout.leftDy;}
             else if(in(x,y,630+layout.rightDx,156+layout.rightDy,1000+layout.rightDx,189+layout.rightDy))
             {x-=layout.rightDx;y-=layout.rightDy;}
@@ -1997,6 +1997,13 @@ namespace nx
             else {m_widgetSelection=row?rows[row-1].id:"";if(!m_widgetSelection.empty()){m_widgetDragging=true;m_widgetDragId=m_widgetSelection;m_widgetDragX=x;m_widgetDragY=y;}}
             return;
         }
+        if(!m_widgetPalette&&!m_widgetSelection.empty()&&in(x,y,280,584,610,617))
+        {
+            std::string created;
+            if(m_document.duplicateVisualWidget(m_visualSelection,m_widgetSelection,created,m_status))
+            {m_widgetSelection=created;m_widgetTimelinePlay=false;m_widgetTimelineTime=0;m_status="Duplicated widget subtree; event handlers shared, internal navigation remapped.";}
+            return;
+        }
         if(m_widgetAnchors&&in(x,y,280,548,610,581))
         {
             const size_t at=static_cast<size_t>((x-280)/110);const char* modes[]={"stretch-x","stretch-y","stretch-both"};
@@ -2017,11 +2024,20 @@ namespace nx
             if(in(x,y,820,439,1000,472))
             {m_visualProperty="duration";m_visualText=std::to_string(duration);m_visualInput=9;m_widgetTimelinePlay=false;s.input->setTyping(true);return;}
             if(in(x,y,630,475,1000,510))
-            {m_widgetTimelineTime=std::min(duration,std::round(duration*std::clamp((x-640)/350.f,0.f,1.f)*100)/100);m_widgetTimelinePlay=false;return;}
+            {
+                m_widgetTimelineTime=std::min(duration,std::round(duration*std::clamp((x-640)/350.f,0.f,1.f)*100)/100);
+                float distance=7.f;
+                for(auto key=animation[timelineTracks[m_widgetTimelineTrack]].first();key.exists();key=key.next())
+                {
+                    const float time=key[0u].number(),delta=std::abs(x-(640+350*time/duration));
+                    if(time>=0&&time<=duration&&delta<distance){distance=delta;m_widgetTimelineTime=time;}
+                }
+                m_widgetTimelinePlay=false;return;
+            }
             if(in(x,y,630,512,745,545))
             {m_document.setWidgetKey(m_visualSelection,m_widgetSelection,"loop",animation["loop"].flag()?"false":"true",0,m_status);return;}
             if(in(x,y,752,512,870,545))
-            {if(m_widgetTimelineTime>=duration)m_widgetTimelineTime=0;m_widgetTimelinePlay=!m_widgetTimelinePlay;return;}
+            {if(m_widgetTimelineTime>=duration)m_widgetTimelineTime=0;m_widgetTimelineLast=now;m_widgetTimelinePlay=!m_widgetTimelinePlay;return;}
             if(in(x,y,877,512,1000,545))
             {
                 m_visualProperty=timelineTracks[m_widgetTimelineTrack];m_visualText=m_widgetTimelineTrack==2||m_widgetTimelineTrack==3?"1":"0";
@@ -2140,6 +2156,7 @@ namespace nx
         }
         if(m_widgetAnchors){button(280,548,106,"Fill X");button(390,548,106,"Fill Y");button(500,548,110,"Fill both");}
         else {button(280,548,160,"Move up");button(450,548,160,"Move down");}
+        if(!m_widgetPalette&&!m_widgetSelection.empty())button(280,584,330,"Duplicate widget");
         c.rect(280,524,220,21,{0.19f,0.33f,0.50f,1});c.text(*m_font,m_widgetAnchors?"Back to properties":"Anchors / offset",390,525,text,Align::Center);
         c.rect(502,524,108,21,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Timeline",556,525,text,Align::Center);
         c.pop();
@@ -2182,6 +2199,23 @@ namespace nx
                 float sx=0,sy=0;m_designUi->place(*selected,sx,sy);
                 const float selectedWidth=selected->w*selected->visualScale(),selectedHeight=selected->h*selected->visualScale();
                 c.roundLine(sx,sy,selectedWidth,selectedHeight,0,3,{0.25f,0.85f,0.55f,1});
+                if(m_widgetNavigation)
+                {
+                    const auto source=designItem(tree.root(),m_widgetSelection);
+                    const Color ink[]={ {0.3f,0.9f,0.5f,1},{1.f,0.72f,0.2f,1},{0.35f,0.75f,1.f,1},{0.9f,0.5f,0.9f,1} };
+                    for(unsigned i=0;i<4;++i)
+                    {
+                        const auto rule=source[navigationDesignProps[i]];
+                        if(!rule.isString())continue;
+                        const std::string name=rule.text();
+                        if(name.empty()||name=="@auto"||name=="@stop")continue;
+                        const auto* dest=m_designUi->find(name.c_str());if(!dest)continue;
+                        float dx=0,dy=0;m_designUi->place(*dest,dx,dy);
+                        dx+=dest->w*dest->visualScale()*0.5f;dy+=dest->h*dest->visualScale()*0.5f;
+                        const float ax=sx+selectedWidth*0.5f,ay=sy+selectedHeight*0.5f;
+                        c.line(ax,ay,dx,dy,3,ink[i]);c.circle(dx,dy,6,ink[i]);
+                    }
+                }
                 if(m_widgetPreviewDrag)
                 {
                     const float gx=sx+m_widgetPreviewDx,gy=sy+m_widgetPreviewDy;
@@ -2239,7 +2273,7 @@ namespace nx
             c.rect(cursor-1,476,2,24,{0.4f,0.9f,0.7f,1});
             snprintf(label,sizeof(label),"%.2fs / %.2fs",m_widgetTimelineTime,duration);c.text(*m_font,label,815,493,text,Align::Center);
             button(630,512,115,a["loop"].flag()?"Loop on":"Loop off");button(752,512,118,m_widgetTimelinePlay?"Pause":"Play");button(877,512,123,"Set key");
-            button(630,548,180,"Delete key");button(820,548,180,"Rewind");
+            button(630,548,180,"Delete selected key");button(820,548,180,"Rewind");
             button(630,584,370,!a["autoPlay"].exists()||a["autoPlay"].flag()?"Runtime autoplay: on":"Runtime autoplay: off");
             c.pop();resolutionMenu();return;
         }
