@@ -27,6 +27,14 @@ NX_TEST(nativePromoteOutputPinToVariable)
     NX_EXPECT(doc.graphs[0].nodes.size()==4&&compileBlueprint(doc,source,error)&&source.find("savedPayload")!=std::string::npos);
     NX_EXPECT(doc.undo()&&doc.graphs[0].nodes.size()==3);
 }
+NX_TEST(nativePromoteVectorInputPreservesDefault)
+{
+    BlueprintDocument doc;doc.create();std::string error,bytes,source;
+    NX_EXPECT(doc.addNode(0,"spawn:box",300,100,error)&&doc.connect(0,0,"then",1,"in",error));
+    NX_EXPECT(doc.setInputValue(0,1,"place","1,2,3",error)&&doc.promotePin(0,1,"place",false,"spawnPosition",error));
+    NX_EXPECT(doc.serialize(bytes,error)&&compileBlueprint(doc,source,error)&&source.find("bp_var_spawnPosition")!=std::string::npos);
+    BlueprintDocument loaded;NX_EXPECT(loaded.load(bytes.data(),bytes.size(),error)&&compileBlueprint(loaded,source,error));
+}
 NX_TEST(nativePromoteInputPinToVariable)
 {
     BlueprintDocument doc;doc.create();std::string error,source;

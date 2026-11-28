@@ -39,7 +39,7 @@ namespace nx
         constexpr float kNodeWidth = 196, kNodeHeight = 72;
         // Each native pin is provided by the generated catalogue.
         constexpr float kPinStart=38, kPinStep=22;
-        constexpr const char* variableTypes[]={"bool","int","uint","int64","uint64","float","double","string","Playlist@","WebSocket@","Widget@","Thread@","Channel@","Samples@","AudioStream@","Sound@","Voice","Curve@","Batch@","Packed@","Zip@","Font@","Texture@","array<int>","array<uint>","array<float>","array<bool>","array<string>","array<Vec2>","array<Color>","BP_MapInt","BP_MapString","BP_SetInt","BP_SetString"};
+        constexpr const char* variableTypes[]={"bool","int","uint","int64","uint64","float","double","string","Vec2","Vec3","Color","Playlist@","WebSocket@","Widget@","Thread@","Channel@","Samples@","AudioStream@","Sound@","Voice","Curve@","Batch@","Packed@","Zip@","Font@","Texture@","array<int>","array<uint>","array<float>","array<bool>","array<string>","array<Vec2>","array<Color>","BP_MapInt","BP_MapString","BP_SetInt","BP_SetString"};
         constexpr Color text = {0.88f, 0.91f, 0.96f, 1};
         constexpr Color muted = {0.57f, 0.65f, 0.76f, 1};
         constexpr Color accent = {0.27f, 0.65f, 0.98f, 1};
@@ -393,7 +393,7 @@ namespace nx
         }
         revealTab(static_cast<size_t>(found-m_graphTabs.begin()));
         cancelDrag();clearWire();m_highlightWire=m_moveWire=m_lastClickedWire=static_cast<size_t>(-1);m_nodeClickTime=m_wireClickTime=-1;m_diagnostic={};
-        m_quickDrag=m_quickMenu=m_pinMenu=m_rightDown=false;m_quickVariableFirst=0;
+        m_quickDrag=m_quickMenu=m_pinMenu=m_rightDown=m_pinContext=false;m_pinHover.clear();m_quickVariableFirst=0;
         m_componentNavFirst=0;m_nodeContext=false;m_rgbOpen=false;m_commentResize=0;m_layoutMenu=m_layoutDragging=false;m_layoutComment=m_layoutLink=static_cast<size_t>(-1);m_selectedNodes.clear();
         m_graph = index; m_selection = static_cast<size_t>(-1);
         rebuildPins();fitGraph();filterCatalogue();

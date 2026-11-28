@@ -454,7 +454,7 @@ namespace nx
         if(colour<8)colour=legacy[colour];
         char out[7];snprintf(out,sizeof(out),"%06X",colour&0xFFFFFFu);return out;
     }
-    bool blueprintVariableType(const std::string& type){return type=="Entity@"||blueprintLiteralType(type)||!blueprintArrayElement(type).empty()||type=="Playlist@"||type=="WebSocket@"||type=="Widget@"||type=="Thread@"||type=="Channel@"||type=="Samples@"||type=="AudioStream@"||type=="Voice"||type=="Sound@"||type=="Curve@"||type=="Batch@"||type=="Packed@"||type=="Zip@"||type=="Font@"||type=="Texture@"||type=="BP_MapInt"||type=="BP_MapString"||type=="BP_SetInt"||type=="BP_SetString"||customTypeName(type)||classTypeName(type);}
+    bool blueprintVariableType(const std::string& type){return type=="Entity@"||type=="Vec2"||type=="Vec3"||type=="Color"||blueprintLiteralType(type)||!blueprintArrayElement(type).empty()||type=="Playlist@"||type=="WebSocket@"||type=="Widget@"||type=="Thread@"||type=="Channel@"||type=="Samples@"||type=="AudioStream@"||type=="Voice"||type=="Sound@"||type=="Curve@"||type=="Batch@"||type=="Packed@"||type=="Zip@"||type=="Font@"||type=="Texture@"||type=="BP_MapInt"||type=="BP_MapString"||type=="BP_SetInt"||type=="BP_SetString"||customTypeName(type)||classTypeName(type);}
     bool blueprintLosslessConversion(const std::string& from,const std::string& to)
     {return arrayBorrow(from,to)||(to=="double"&&(from=="int"||from=="uint"||from=="float"))||(to=="int64"&&(from=="int"||from=="uint"))||(to=="uint64"&&from=="uint");}
     bool blueprintInvokesFunction(const std::string& kind)
@@ -2326,7 +2326,7 @@ namespace nx
                     Field field{f["name"].text(),f["type"].text(),f["value"].text(),f["value"].exists()};
                     if(!f.isObject()||!identifier(field.name)||!blueprintVariableType(field.type)||!names.insert(field.name).second||
                         (behaviourOwner(owner)&&field.name=="entity")||
-                        (field.initialized&&(!f["value"].isString()||!literal("literal:"+field.type,field.value))))
+                        (field.initialized&&(!f["value"].isString()||!inputLiteral(field.type,field.value))))
                     {error="Invalid or duplicate field declaration.";return false;}
                     const auto exposed=f["exposed"];
                     if(exposed.exists()&&(exposed.type()!=JsonTree::Type::Bool||!behaviourOwner(owner)||!blueprintLiteralType(field.type)))
@@ -2358,7 +2358,7 @@ namespace nx
                 {
                     Field field{f["name"].text(),f["type"].text(),f["value"].text(),f["value"].exists()};
                     if(!f.isObject()||!identifier(field.name)||!blueprintVariableType(field.type)||!names.insert(field.name).second||
-                        (field.initialized&&(!f["value"].isString()||!literal("literal:"+field.type,field.value))))
+                        (field.initialized&&(!f["value"].isString()||!inputLiteral(field.type,field.value))))
                     {error="Invalid or duplicate module variable.";return false;}
                     g.globals.push_back(std::move(field));
                 }
@@ -2862,13 +2862,13 @@ namespace nx
         }
         BlueprintDocument staged;staged.name=name;staged.assetRoot=assetRoot;staged.graphs=graphs;staged.manifests=manifests;staged.m_visualAssets=m_visualAssets;staged.m_visualSerial=m_visualSerial;staged.m_nextId=m_nextId;
         std::string declaration="field "+variable+":"+p->type;
-        if(!output&&blueprintLiteralType(p->type))
+        if(!output&&blueprintInputLiteralType(p->type))
         {
             const auto custom=std::find_if(g.nodes[node].values.begin(),g.nodes[node].values.end(),[&](const InputValue& v){return v.pin==pin;});
             std::string initial;
             if(custom!=g.nodes[node].values.end())initial=custom->value;
             else if(const auto* fallback=findPin(spec.defaults,pin)){initial=fallback->type;const auto prefix=p->type+"(";if(initial.rfind(prefix,0)==0&&initial.ends_with(")"))initial=initial.substr(prefix.size(),initial.size()-prefix.size()-1);if(p->type=="string"&&initial.size()>=2&&initial.front()=='"'&&initial.back()=='"')initial=initial.substr(1,initial.size()-2);}
-            if(literal("literal:"+p->type,initial))declaration+="="+initial;
+            if(inputLiteral(p->type,initial))declaration+="="+initial;
         }
         if(!staged.editVariableDeclaration(g.owner,declaration,error)||!staged.addVariableNode(graph,variable,false,output,g.nodes[node].x+(output?300.f:-300.f),g.nodes[node].y+80.f,error))return false;
         auto& next=staged.graphs[graph];const auto added=next.nodes.size()-1;
@@ -3291,7 +3291,7 @@ namespace nx
             next.initialized=equals!=std::string::npos;
             if(next.initialized)next.value=body.substr(equals+1);
             if(!identifier(next.name)||!blueprintVariableType(next.type)||(!global&&behaviourOwner(scope)&&next.name=="entity")||
-                (next.initialized&&!literal("literal:"+next.type,next.value)))
+                (next.initialized&&!inputLiteral(next.type,next.value)))
             {error="Invalid name, primitive type or literal initializer.";return false;}
         }
         if(!identifier(oldName)){error="Invalid variable name.";return false;}
@@ -3390,6 +3390,7 @@ namespace nx
         std::unordered_set<std::string> dataNames;
         for(const auto& g:graphs)
         {
+            if(g.collapsed&&(g.kind!="function"||g.inlineMacro||g.sharedLibrary||!g.dataRole.empty())){error="Invalid private collapsed graph.";return false;}
             if(g.dataRole=="coroutine"&&(behaviourOwner(g.owner)||g.returnType!="void"||!g.parameters.empty()||g.inlineMacro||g.sharedLibrary||g.name=="Construction")){error="Coroutines must be local screen void() graphs.";return false;}
             if(g.dataRole=="event"&&(g.returnType!="void"||g.inlineMacro||g.sharedLibrary||g.name=="Construction")){error="Custom events must be local callable void graphs.";return false;}
             if(g.dataRole=="enum"||g.dataRole=="struct")
@@ -3439,12 +3440,15 @@ namespace nx
             }
         }
         std::vector<std::vector<size_t>> calls(graphs.size());
+        std::vector<unsigned> collapsedUses(graphs.size(),0);
         for(size_t i=0;i<graphs.size();++i)for(const auto& node:graphs[i].nodes)
         {
             if(!blueprintInvokesFunction(node.kind)&&node.kind!="call:parent")continue;
             const auto* target=node.kind=="call:library"?libraryFunction(node.ref):node.kind=="call:parent"?function(parentBehaviour(graphs[i].owner),graphs[i].name):function(graphs[i].owner,node.ref);
             if(!target){error="Missing function: "+node.ref;return false;}
-            calls[i].push_back(static_cast<size_t>(target-graphs.data()));
+            const auto targetIndex=static_cast<size_t>(target-graphs.data());
+            if(target->collapsed&&(node.kind!="call:function"||graphs[i].owner!=target->owner||++collapsedUses[targetIndex]>1)){error="Collapsed graphs belong to one private call site.";return false;}
+            calls[i].push_back(targetIndex);
             if(node.kind=="dispatch:broadcast")for(const auto* handler:dispatcherListeners(graphs[i].owner,node.ref))calls[i].push_back(static_cast<size_t>(handler-graphs.data()));
         }
         // Topological elimination avoids recursion and catches indirect cycles.

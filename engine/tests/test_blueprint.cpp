@@ -1504,6 +1504,10 @@ NX_TEST(nativeWorkspaceWatchPausesAtBoundaryAndStepsWithoutRunningWhilePaused)
         NX_EXPECT(studio.tracePaused()&&r.host.runs()>stopped);
         const auto stepped=r.host.runs();frame();NX_EXPECT(r.host.runs()==stepped);
         click(360,640);frame();NX_EXPECT(studio.previewing()&&!studio.tracePaused()&&r.host.runs()>stepped);
+        const auto beforeLive=r.host.runs();state.keys[static_cast<size_t>(Key::Control)]=true;state.keys[static_cast<size_t>(Key::L)]=true;frame();
+        state.keys[static_cast<size_t>(Key::L)]=false;state.keys[static_cast<size_t>(Key::Control)]=false;frame();
+        NX_EXPECT(studio.liveTraceView()&&r.host.runs()>beforeLive);
+        r.device->beginFrame({});r.canvas.begin();studio.draw(r.canvas);studio.drawPreviewOverlay(r.canvas);r.canvas.end();r.device->endFrame();
     }
     studio.stopPreview(r.services);studio.close(r.services);
     NX_EXPECT(!studio.previewing()&&!studio.tracePaused()&&r.services.save==&r.save);

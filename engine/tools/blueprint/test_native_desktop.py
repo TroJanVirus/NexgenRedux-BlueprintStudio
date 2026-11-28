@@ -64,7 +64,7 @@ def xdo(*args):
                                    stderr=subprocess.DEVNULL, timeout=10).strip()
 
 
-def click(x, y, window_id=None):
+def click(x, y, window_id=None, button=1):
     if window_id is None:
         xdo("mousemove", x, y)
     else:
@@ -75,9 +75,9 @@ def click(x, y, window_id=None):
         py = round(y * scale + (geo.height - 720 * scale) / 2)
         xdo("mousemove", "--window", window_id, px, py)
     time.sleep(0.15)
-    xdo("mousedown", 1)
+    xdo("mousedown", button)
     time.sleep(0.20)
-    xdo("mouseup", 1)
+    xdo("mouseup", button)
     time.sleep(0.35)
 
 
@@ -342,6 +342,18 @@ with menu_log.open("wb") as out:
         click(800, 53, window)
         wait_for(lambda: len(json.loads(authored.read_text())["graphs"][0]["nodes"]) == 2,
                  "keyboard deletion undone", process)
+
+        # Right-click a data socket and promote it through the native pin menu.
+        click(630, 375, window, button=3)
+        click(700, 375 + 30 + 3 * 30 + 12, window)
+        enter_text("promotedKey")
+        click(800, 53, window)
+        wait_for(lambda: len(json.loads(authored.read_text())["graphs"][0]["nodes"]) == 3,
+                 "native pin promotion", process)
+        key("ctrl+z")
+        click(800, 53, window)
+        wait_for(lambda: len(json.loads(authored.read_text())["graphs"][0]["nodes"]) == 2,
+                 "pin promotion undone", process)
 
         # An external valid file modification must not be overwritten, even
         # if the current authoring process still holds the cooperative lease.
