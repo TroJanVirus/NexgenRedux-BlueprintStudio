@@ -1047,6 +1047,24 @@ NX_TEST(nativeFirstPersonTemplateCompilesAndRuns)
     NX_EXPECT(blueprintImportPackage(r.platform,"first-person.bp.zip",restored,error));
     NX_EXPECT(compileBlueprint(restored,source,error));
 }
+NX_TEST(nativeAdditionalProjectTemplatesCompileAndRun)
+{
+    for(const std::string id:{"third-person","cinematic"})
+    {
+        Rig r;NX_EXPECT(r.ok);if(!r.ok)return;r.platform.workspaceFiles=true;
+        BlueprintDocument doc;std::string error,source,bytes;
+        if(!blueprintProjectTemplate(id,doc,error)||!compileBlueprint(doc,source,error)||!doc.serialize(bytes,error))
+        {NX_ERROR("Template %s: %s",id.c_str(),error.c_str());NX_EXPECT(false);return;}
+        for(const auto& g:doc.graphs)NX_EXPECT(!g.comments.empty());
+        NX_EXPECT(blueprintCreateAssetRoot(r.platform,doc.assetRoot,error)&&blueprintStageTemplateMedia(r.platform,doc.assetRoot,id,error));
+        r.platform.files["project/main/screen.json"]="{\"title\":\"Template\"}";r.platform.files["project/main/main.as"]=source;
+        if(!r.screens.init(r.services,"project","main")){NX_EXPECT(false);return;}r.step(120);
+        NX_EXPECT(!r.screens.failed()&&r.services.world);if(!r.services.world)return;auto& world=*r.services.world;
+        if(id=="third-person"){const auto hero=world.findNamed("Player");const auto* spatial=world.space().getSpatial(hero);NX_EXPECT(spatial!=nullptr);if(!spatial)return;const auto eye=world.space().cameraPlace();NX_EXPECT(std::abs(eye.z-spatial->place.z-5.f)<0.2f);}
+        else {NX_EXPECT(world.findNamed("Boss")&&doc.visualAssets().size()==1);r.step(300);NX_EXPECT(!r.screens.failed());}
+        NX_EXPECT(blueprintExportPackage(r.platform,doc,"extra-template.bp.zip",error));BlueprintDocument restored;NX_EXPECT(blueprintImportPackage(r.platform,"extra-template.bp.zip",restored,error)&&compileBlueprint(restored,source,error));
+    }
+}
 NX_TEST(nativeAudioGraphTemplatesCompileAndRun)
 {
     BlueprintTone tone;tone.channels=2;tone.independentStereo=true;tone.rate=22050;

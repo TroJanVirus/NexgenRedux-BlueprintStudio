@@ -386,14 +386,36 @@ namespace nx
     {
         BlueprintDocument candidate;candidate.create();
         if(id=="blank"){document=std::move(candidate);error.clear();return true;}
-        if(id!="first-person"){error="Unknown project template.";return false;}
-        candidate.name="First Person";
+        if(id=="cinematic")
+        {
+            candidate.name="Cinematic Showcase";std::string sequence;
+            const auto add=[&](size_t g,const char* kind,float x,float y){return candidate.addNode(g,kind,x,y,error);};
+            const auto val=[&](size_t g,size_t node,const char* pin,const char* text){return candidate.setInputValue(g,node,pin,text,error);};
+            const auto chain=[&](size_t g,size_t from,size_t to){return candidate.connect(g,from,"then",to,"in",error);};
+            bool ok=add(0,"spawn:plane",320,60)&&val(0,1,"name","Stage floor")&&val(0,1,"size","30,1,30")&&chain(0,0,1)&&
+                add(0,"spawn:box",660,60)&&val(0,2,"name","Boss")&&val(0,2,"place","0,1.5,0")&&val(0,2,"size","2,3,2")&&val(0,2,"color","0.85,0.18,0.12,1")&&chain(0,1,2)&&
+                add(0,"api:Space:Space::sky:Color,Color",1020,60)&&val(0,3,"top","0.12,0.22,0.42,1")&&val(0,3,"horizon","0.6,0.65,0.8,1")&&chain(0,2,3)&&
+                add(0,"api:Space:Space::sun:Vec3,Color",1380,60)&&chain(0,3,4)&&candidate.createVisualAsset("sequence",sequence,error)&&candidate.renameVisualAsset(sequence,"Boss Introduction",error);
+            std::vector<BlueprintCameraKey> keys;
+            ok=ok&&blueprintCameraKeys("0,0,2,10,0,0,0,65,0;2,5,2,5,0,0,0,55,2@RevealBoss;4,0,1,4,0,0,0,45,1;6,0,2,8,0,0,0,60,2",keys,error)&&candidate.setCameraSequenceKeys(sequence,keys,error);
+            size_t graph=0,node=0;
+            ok=ok&&candidate.placeCameraSequence("Screen",sequence,graph,node,error)&&val(graph,node,"play","true")&&val(graph,node,"anchor","Boss")&&
+                add(2,"render:space",340,60)&&chain(2,0,1)&&candidate.addFunction("RevealBoss",error);
+            if(!ok)return false;
+            const char* notes[]={"BUILD STAGE | Create the floor, a red boss stand-in, sky and sunlight. Replace the boss box with your own actor.","CINEMATIC | Play the reusable sequence once. The anchor binds camera and look target offsets to Boss. Open Sequencer to edit timing, cuts and easing.","DRAW | Render the native 3D scene using the active cinematic camera.","SUSPEND | The scene stops receiving Update while suspended.","RESUME | Continue the scene lifecycle.","EXIT | Native scene teardown releases its entities.","REVEAL EVENT | Fires at two seconds. Add animation, sound, lighting or HUD logic to this function."};
+            for(size_t g=0;g<candidate.graphs.size();++g){std::vector<size_t> members;for(size_t i=0;i<candidate.graphs[g].nodes.size();++i)members.push_back(i);if(!candidate.addComment(g,members,notes[g],error))return false;}
+            std::string source,bytes;if(!compileBlueprint(candidate,source,error)||!candidate.serialize(bytes,error))return false;
+            BlueprintDocument checked;if(!checked.load(bytes.data(),bytes.size(),error))return false;document=std::move(checked);error.clear();return true;
+        }
+        const bool third=id=="third-person";
+        if(id!="first-person"&&!third){error="Unknown project template.";return false;}
+        candidate.name=third?"Third Person":"First Person";
         bool ok=true;
         const auto field=[&](const char* command){if(ok&&!candidate.editVariableDeclaration("Screen",command,error)){ok=false;error=std::string(command)+": "+error;}};
         field("field hero:Entity@");field("field yaw:float=0");field("field pitch:float=0");
         field("field walkSpeed:float=4.6");field("field jumpSpeed:float=6.4");field("field eyeHeight:float=1.55");
         field("field mouseSensitivity:float=0.2");field("field gamepadYawSpeed:float=130");field("field gamepadPitchSpeed:float=100");
-        field("field groundGrip:float=14");field("field airGrip:float=4");
+        field("field groundGrip:float=14");field("field airGrip:float=4");if(third)field("field cameraDistance:float=5");
         const auto fn=[&](const char* name,bool delta=false)
         {
             const auto index=candidate.graphs.size();
@@ -535,8 +557,8 @@ namespace nx
         wire(camera,ch,"value",feet,"target");wire(camera,feet,"result",eye,"feet");wire(camera,height,"value",eye,"height");
         wire(camera,eye,"result",target,"eye");wire(camera,cy,"value",target,"yaw");wire(camera,cp,"value",target,"pitch");
         wire(camera,cy,"value",angles,"yaw");wire(camera,angles,"result",face,"value");wire(camera,ch,"value",face,"target");
-        chain(camera,0,face);chain(camera,face,cam);wire(camera,eye,"result",cam,"from");wire(camera,target,"result",cam,"to");value(camera,cam,"angle","72");
-        note(camera,"FIRST PERSON | Eye is feet position plus eye height. Target is one unit along yaw/pitch direction; field of view is 72 degrees vertically. Rotate the attached robot body with yaw, then set the native Space camera.");
+        chain(camera,0,face);chain(camera,face,cam);if(third){const auto chase=add(camera,"player:chase-camera",1080,550),distance=variable(camera,"cameraDistance",false,700,730);wire(camera,eye,"result",chase,"pivot");wire(camera,cy,"value",chase,"yaw");wire(camera,cp,"value",chase,"pitch");wire(camera,distance,"value",chase,"distance");wire(camera,chase,"result",cam,"from");wire(camera,eye,"result",cam,"to");}else{wire(camera,eye,"result",cam,"from");wire(camera,target,"result",cam,"to");}value(camera,cam,"angle","72");
+        note(camera,third?"THIRD PERSON | Pivot is above the character feet. Chase camera offsets backward along yaw/pitch by cameraDistance, looks at the pivot, and follows the robot. Camera collision avoidance is not included.":"FIRST PERSON | Eye is feet position plus eye height. Target is one unit along yaw/pitch direction; field of view is 72 degrees vertically. Rotate the attached robot body with yaw, then set the native Space camera.");
         const auto horizontal=add(hud,"api:Canvas:line:Canvas@,float,float,float,float,float,Color",360,60),
             vertical=add(hud,"api:Canvas:line:Canvas@,float,float,float,float,float,Color",830,60);
         chain(hud,0,horizontal);chain(hud,horizontal,vertical);
@@ -557,8 +579,8 @@ namespace nx
     }
     bool blueprintStageTemplateMedia(Platform& p,const std::string& root,const std::string& id,std::string& error)
     {
-        if(id=="blank"){error.clear();return true;}
-        if(id!="first-person"||!blueprintAssetRoot(root)){error="Invalid template media request.";return false;}
+        if(id=="blank"||id=="cinematic"){error.clear();return true;}
+        if((id!="first-person"&&id!="third-person")||!blueprintAssetRoot(root)){error="Invalid template media request.";return false;}
         if(!ensure(p,root+"/_global")||!ensure(p,root+"/_global/model"))
         {error="Cannot create template model folder.";return false;}
         size_t total=0;

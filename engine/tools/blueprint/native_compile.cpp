@@ -1236,6 +1236,11 @@ Vec3 bp_player_target(Vec3 eye, float yaw, float pitch)
     float a = yaw * 0.0174532925f, p = pitch * 0.0174532925f;
     return eye + Vec3(sin(a) * cos(p), sin(p), -cos(a) * cos(p));
 }
+Vec3 bp_player_chase_camera(Vec3 pivot, float yaw, float pitch, float distance)
+{
+    float a = yaw * 0.0174532925f, p = pitch * 0.0174532925f;
+    return pivot - Vec3(sin(a) * cos(p), sin(p), -cos(a) * cos(p)) * max(0.25f, distance);
+}
 Vec3 bp_player_angles(float yaw) { return Vec3(0, -yaw, 0); }
 )BP_PLAYER";
         bool usesAudio=false;

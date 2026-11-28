@@ -5168,7 +5168,7 @@ namespace nx
             }
             const auto selectTemplate=[&](unsigned kind)
             {
-                m_projectCreate=kind;m_projectName=kind==1?"":"First Person";
+                m_projectCreate=kind;m_projectName=kind==1?"":kind==2?"First Person":kind==3?"Third Person":"Cinematic Showcase";
                 input.setTyping(true);m_status="Enter a unique project name, then Create.";
             };
             if(m_projectCreate)
@@ -5176,7 +5176,7 @@ namespace nx
                 for(u32 i=0;i<input.typedCount();++i)
                 {
                     const auto ch=input.typed(i);
-                    if(ch==13){createTemplate(s,m_projectCreate==1?"blank":"first-person",m_projectName);break;}
+                    if(ch==13){createTemplate(s,m_projectCreate==1?"blank":m_projectCreate==2?"first-person":m_projectCreate==3?"third-person":"cinematic",m_projectName);break;}
                     if(ch==8&&!m_projectName.empty())
                     {
                         size_t end=m_projectName.size()-1;while(end&&(static_cast<unsigned char>(m_projectName[end])&0xc0)==0x80)--end;m_projectName.resize(end);
@@ -5185,10 +5185,12 @@ namespace nx
                 }
                 if(!m_browsing){m_left=left;return;}
                 if(click&&in(x,y,28,410,250,448)){m_projectName.clear();input.setTyping(true);}
-                if(click&&in(x,y,28,458,250,496)){createTemplate(s,m_projectCreate==1?"blank":"first-person",m_projectName);m_left=left;return;}
+                if(click&&in(x,y,28,458,250,496)){createTemplate(s,m_projectCreate==1?"blank":m_projectCreate==2?"first-person":m_projectCreate==3?"third-person":"cinematic",m_projectName);m_left=left;return;}
             }
             if(click&&in(x,y,28,166,250,246))selectTemplate(1);
-            else if(click&&in(x,y,28,256,250,374))selectTemplate(2);
+            else if(click&&in(x,y,28,256,250,310))selectTemplate(2);
+            else if(click&&in(x,y,28,318,250,374))selectTemplate(3);
+            else if(click&&in(x,y,28,502,250,554))selectTemplate(4);
             else if(click&&in(x,y,860,116,1000,150))
             {m_browsing=false;m_projectCreate=0;input.setTyping(false);}
             else if(click&&in(x,y,550,116,650,150))
@@ -6378,10 +6380,9 @@ namespace nx
                 projectButton(550,116,100,"Save");projectButton(660,116,190,"Save copy");projectButton(860,116,140,"Editor");projectButton(1010,116,225,"Return to Redux");
                 c.roundRect(28,166,222,80,5,m_projectCreate==1?Color{0.19f,0.36f,0.56f,1}:Color{0.16f,0.20f,0.27f,1});
                 c.text(*m_font,"BLANK",42,179,text);c.text(*m_font,"Empty event graphs",42,210,muted);
-                c.roundRect(28,256,222,118,5,m_projectCreate==2?Color{0.19f,0.36f,0.56f,1}:Color{0.16f,0.20f,0.27f,1});
-                c.text(*m_font,"FIRST PERSON",42,269,text);
-                c.text(*m_font,"Robot / capsule walker",42,300,muted);
-                c.text(*m_font,"Mouse + gamepad",42,322,muted);c.text(*m_font,"Editable gameplay graphs",42,344,muted);
+                c.roundRect(28,256,222,54,5,m_projectCreate==2?Color{0.19f,0.36f,0.56f,1}:Color{0.16f,0.20f,0.27f,1});
+                c.text(*m_font,"FIRST PERSON",42,263,text);c.text(*m_font,"Robot / capsule walker",42,285,muted);
+                c.roundRect(28,318,222,56,5,m_projectCreate==3?Color{0.19f,0.36f,0.56f,1}:Color{0.16f,0.20f,0.27f,1});c.text(*m_font,"THIRD PERSON",42,325,text);c.text(*m_font,"Robot / chase camera",42,347,muted);
                 if(m_projectCreate)
                 {
                     c.text(*m_font,"PROJECT NAME",28,386,accent);
@@ -6389,8 +6390,8 @@ namespace nx
                     c.clip(38,410,202,38);c.text(*m_font,m_projectName.empty()?"Enter name...":m_projectName.c_str(),38,419,text);c.noClip();
                     projectButton(28,458,222,"Create & open",true);
                 }
-                c.text(*m_font,"More templates planned:",28,530,muted);
-                c.text(*m_font,"Third person / Flight",28,552,muted);c.text(*m_font,"Rolling ball",28,574,muted);
+                c.roundRect(28,502,222,52,5,m_projectCreate==4?Color{0.19f,0.36f,0.56f,1}:Color{0.16f,0.20f,0.27f,1});c.text(*m_font,"CINEMATIC SHOWCASE",42,507,text);c.text(*m_font,"Boss intro / Sequencer",42,529,muted);
+                c.text(*m_font,"Planned: Flight / Rolling ball",28,574,muted);
                 for(size_t i=0;i<12&&m_fileFirst+i<m_files.size();++i)
                 {
                     const float y=166+36*static_cast<float>(i);
