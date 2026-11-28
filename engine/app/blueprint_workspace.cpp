@@ -176,7 +176,7 @@ namespace nx
         saveActorTab();cancelActorDrag();m_actorOrbit=false;m_splitter=0;m_actorEditor=false;m_contentDrag.clear();m_contentPanelDrag=false;releaseContentPreviews();
         releaseWidgetPreview();releasePlacementPreview();m_widgetDesigner=m_visualPlacement=false;
         checkpoint(s,true);saveLayout(s);
-        cancelDrag();clearWire();m_quickDrag=m_quickMenu=m_pinMenu=m_rightDown=false;m_layoutMenu=m_layoutDragging=false;m_graphBack.clear();m_focus=0;m_browsing=false;m_assetBrowser=false;s.input->setTyping(m_previousTyping);
+        cancelDrag();clearWire();m_quickDrag=m_quickMenu=m_pinMenu=m_rightDown=m_pinContext=false;m_layoutMenu=m_layoutDragging=false;m_graphBack.clear();m_focus=0;m_browsing=false;m_assetBrowser=false;s.input->setTyping(m_previousTyping);
         s.assets->release(m_font);
         m_font = nullptr;m_measureCanvas=nullptr;
         s.platform->releaseBlueprintLease();
@@ -286,7 +286,7 @@ namespace nx
         return true;
     }
     bool BlueprintWorkspace::modalOpen() const
-    {return m_assetBrowser||m_browsing||m_focus==5||m_focus==6||m_focus==9||m_focus==10||m_focus==11||m_focus==12||m_focus==13||m_focus==14||m_focus==15||m_focus==17||m_focus==18||m_focus==20||m_focus==21||m_focus==22||m_focus==23||m_focus==24||m_focus==25;}
+    {return m_assetBrowser||m_browsing||m_focus==5||m_focus==6||m_focus==9||m_focus==10||m_focus==11||m_focus==12||m_focus==13||m_focus==14||m_focus==15||m_focus==17||m_focus==18||m_focus==20||m_focus==21||m_focus==22||m_focus==23||m_focus==24||m_focus==25||m_focus==26;}
     void BlueprintWorkspace::resetGraphTabs()
     {
         releaseContentPreviews();m_graphTabs.clear();m_actorTabs.clear();m_visualTabs.clear();m_activeVisualTab={};m_activeTab={};m_tabFirst=0;
@@ -5030,8 +5030,9 @@ namespace nx
             if(m_moveWire!=static_cast<size_t>(-1)){m_moveWire=static_cast<size_t>(-1);m_status="Connection move cancelled.";return;}
             if(m_focus==22&&m_sceneNaming){m_sceneNaming=false;input.setTyping(false);return;}
             if(m_focus){if(m_focus==25){m_deleteSelection.clear();m_skipDeleteConfirmation=false;}m_focus=0;input.setTyping(false);m_status="Input cancelled.";return;}
-            if(m_marquee){m_marquee=false;m_selectedNodes.clear();m_selection=static_cast<size_t>(-1);m_left=input.raw().mouseButtons[0];return;}
+            if(m_marquee){m_marquee=false;m_selectedNodes=m_marqueeBase;m_selection=m_selectedNodes.empty()?static_cast<size_t>(-1):m_selectedNodes.back();m_left=input.raw().mouseButtons[0];return;}
             if(m_minimapDragging){m_minimapDragging=false;return;}
+            if(m_pinContext){m_pinContext=false;return;}
             if(m_nodeContext){m_nodeContext=false;return;}
             if(m_layoutDragging||m_layoutMenu){m_commentResize=0;m_layoutDragging=m_layoutMenu=false;m_status="Layout action cancelled.";return;}
             if(m_quickDrag||m_quickMenu){m_quickDrag=m_quickMenu=false;m_status="Variable placement cancelled.";return;}
@@ -5093,10 +5094,69 @@ namespace nx
             else m_inlineCaret=placeInlineCaret(m_edit,(x-fx)/m_zoom-4.f);
         };
 
+        struct HitPin{size_t node=static_cast<size_t>(-1);bool output=false;std::string name,type;};
+        const auto hitPin=[&](float px,float py)
+        {
+            HitPin hit;
+            if(m_graph>=m_document.graphs.size())return hit;
+            for(size_t i=m_rows.size();i>0;--i)
+            {
+                const auto pos=nodeLayoutPosition(i-1);const auto& row=m_rows[i-1];
+                for(unsigned side=0;side<2;++side)
+                {
+                    const auto& pins=side?row.outputs:row.inputs;const auto& types=side?row.outputTypes:row.inputTypes;
+                    const float xx=kLeft+m_x+(pos.x+(side?row.width:0))*m_zoom,yy=kTop+m_y+pos.y*m_zoom;
+                    for(size_t p=0;p<pins.size();++p)if(std::abs(px-xx)<=std::min(9.f,10.f*m_zoom)&&std::abs(py-yy-pinY(p)*m_zoom)<=std::min(9.f,0.45f*kPinStep*m_zoom))
+                        return HitPin{i-1,side!=0,pins[p],types[p]};
+                }
+            }
+            return hit;
+        };
+        m_pinHover.clear();
+        if(over&&!m_focus&&!modalOpen()&&!m_pinMenu&&!m_pinContext&&!m_nodeContext&&!m_drag&&!m_marquee&&!m_assetBrowser&&!m_actorEditor&&!m_layoutMenu)
+        {
+            const auto hit=hitPin(x,y);
+            if(hit.node<m_rows.size())
+            {
+                m_pinHover=hit.name+" : "+hit.type;m_pinHoverX=x;m_pinHoverY=y;
+                if(m_pinDrag&&m_pending<m_rows.size())
+                {
+                    if(hit.output==m_pendingOutput||hit.node==m_pending)m_pinHover+=" | incompatible direction";
+                    else
+                    {
+                        const auto& row=m_rows[m_pending];const auto& pins=m_pendingOutput?row.outputs:row.inputs;
+                        const auto it=std::find(pins.begin(),pins.end(),m_pendingPin);
+                        if(it!=pins.end())
+                        {
+                            const auto& type=(m_pendingOutput?row.outputTypes:row.inputTypes)[static_cast<size_t>(it-pins.begin())];
+                            const auto& from=m_pendingOutput?type:hit.type;const auto& to=m_pendingOutput?hit.type:type;
+                            m_pinHover+=from==to||m_document.classAssignable(from,to)?" | matching type":blueprintLosslessConversion(from,to)?" | safe conversion":" | incompatible types";
+                        }
+                    }
+                }
+            }
+        }
         if(m_moveWire!=static_cast<size_t>(-1))
         {
             m_moveWireX=x;m_moveWireY=y;
             if(!left){bool done=false;for(size_t i=m_rows.size();i>0&&!done;--i){const auto& n=m_document.graphs[m_graph].nodes[i-1];const auto& row=m_rows[i-1];const float nx=kLeft+m_x+n.x*m_zoom,ny=kTop+m_y+n.y*m_zoom,px=nx+(m_moveWireOutput?row.width*m_zoom:0);const auto& pins=m_moveWireOutput?row.outputs:row.inputs;for(size_t j=0;j<pins.size();++j)if(std::abs(x-px)<=9&&std::abs(y-ny-pinY(j)*m_zoom)<=9){done=true;if(m_document.moveConnection(m_graph,m_moveWire,i-1,pins[j],m_moveWireOutput,m_status)){rebuildPins();m_diagnostic={};m_status="Connection moved.";}break;}}if(!done)m_status="Connection move cancelled.";m_moveWire=m_highlightWire=static_cast<size_t>(-1);}
+            m_left=left;return;
+        }
+        if(m_pinContext)
+        {
+            if(right){m_pinContext=false;m_left=left;return;}
+            if(click)
+            {
+                m_pinContext=false;
+                if(in(x,y,m_pinContextX,m_pinContextY+30,m_pinContextX+260,m_pinContextY+150))
+                {
+                    const int action=static_cast<int>((y-m_pinContextY-30)/30);
+                    if(action==0){if(m_document.disconnect(m_graph,m_pinContextNode,m_pinContextName,m_pinContextOutput)){rebuildPins();m_diagnostic={};m_status="Pin links removed.";}else m_status="Pin has no links.";}
+                    else if(action==1){if(!m_pinContextOutput&&m_document.clearInputValue(m_graph,m_pinContextNode,m_pinContextName)){rebuildPins();m_diagnostic={};m_status="Input reset.";}else m_status="No editable override to reset.";}
+                    else if(action==2){m_pending=m_pinContextNode;m_pendingPin=m_pinContextName;m_pendingOutput=m_pinContextOutput;openPinMenu(x,y);if(m_pinMenu)input.setTyping(true);}
+                    else if(action==3){m_selection=m_pinContextNode;m_editPin=m_pinContextName;m_edit="";m_focus=26;input.setTyping(true);m_status="Name the new variable.";}
+                }
+            }
             m_left=left;return;
         }
         if(m_nodeContext)
@@ -5120,8 +5180,14 @@ namespace nx
         {
             m_marqueeEndX=std::clamp(x,graphAreaLeft(),graphAreaRight());m_marqueeEndY=std::clamp(y,graphAreaTop(),tabTop());
             const float x1=std::min(m_marqueeX,m_marqueeEndX),x2=std::max(m_marqueeX,m_marqueeEndX),y1=std::min(m_marqueeY,m_marqueeEndY),y2=std::max(m_marqueeY,m_marqueeEndY);
-            m_selectedNodes.clear();const auto& nodes=m_document.graphs[m_graph].nodes;
-            if(x2-x1>3||y2-y1>3)for(size_t i=0;i<nodes.size();++i){const float nx=kLeft+m_x+nodes[i].x*m_zoom,ny=kTop+m_y+nodes[i].y*m_zoom;if(nx<=x2&&nx+m_rows[i].width*m_zoom>=x1&&ny<=y2&&ny+m_rows[i].height*m_zoom>=y1)m_selectedNodes.push_back(i);}
+            m_selectedNodes=m_marqueeMode?m_marqueeBase:std::vector<size_t>{};const auto& nodes=m_document.graphs[m_graph].nodes;
+            if(x2-x1>3||y2-y1>3)for(size_t i=0;i<nodes.size();++i)
+            {
+                const float nx=kLeft+m_x+nodes[i].x*m_zoom,ny=kTop+m_y+nodes[i].y*m_zoom;
+                if(nx>x2||nx+m_rows[i].width*m_zoom<x1||ny>y2||ny+m_rows[i].height*m_zoom<y1)continue;
+                const auto found=std::find(m_selectedNodes.begin(),m_selectedNodes.end(),i);
+                if(found==m_selectedNodes.end())m_selectedNodes.push_back(i);else if(m_marqueeMode==2)m_selectedNodes.erase(found);
+            }
             m_selection=m_selectedNodes.empty()?static_cast<size_t>(-1):m_selectedNodes.back();
             if(x2-x1>3||y2-y1>3)m_wireClickTime=-1;
             if(!left)m_marquee=false;
@@ -5134,6 +5200,14 @@ namespace nx
             if(updateContentDrawer(s,x,y,left,click)||updateGraphTabs(s,x,y,click)||updateGraphMap(x,y,left,click)){m_left=left;return;}
         }
         if(modalOpen()){x-=modalX();y-=modalY();}
+        if(m_focus==26)
+        {
+            bool apply=click&&in(x,y,790,400,930,440);
+            if(click&&in(x,y,640,400,780,440)){m_focus=0;input.setTyping(false);m_left=left;return;}
+            for(u32 i=0;i<input.typedCount();++i){const auto ch=input.typed(i);if(ch==13)apply=true;else if(ch==8&&!m_edit.empty())m_edit.pop_back();else if(ch>=32&&ch<127)appendCharacter(m_edit,ch,64);}
+            if(apply&&m_document.promotePin(m_graph,m_pinContextNode,m_pinContextName,m_pinContextOutput,m_edit,m_status)){m_focus=0;input.setTyping(false);rebuildPins();filterCatalogue();m_diagnostic={};m_status="Promoted pin to variable. Undo restores original graph.";}
+            m_left=left;return;
+        }
         if(m_focus==25)
         {
             if(click&&in(x,y,350,355,930,385))m_skipDeleteConfirmation=!m_skipDeleteConfirmation;
@@ -6115,7 +6189,7 @@ namespace nx
                     m_wireClickTime=now;m_lastClickedWire=wire;m_wireClickX=x;m_wireClickY=y;m_left=left;return;
                 }
                 m_highlightWire=m_lastClickedWire=static_cast<size_t>(-1);m_wireClickTime=-1;
-                m_selectedNodes.clear();m_selection=static_cast<size_t>(-1);m_marquee=true;m_marqueeX=m_marqueeEndX=x;m_marqueeY=m_marqueeEndY=y;
+                m_marqueeMode=control?2u:held(Key::Shift)?1u:0u;m_marqueeBase=m_selectedNodes;if(!m_marqueeMode){m_selectedNodes.clear();m_selection=static_cast<size_t>(-1);}m_marquee=true;m_marqueeX=m_marqueeEndX=x;m_marqueeY=m_marqueeEndY=y;
                 m_left=left;return;
             }
         }
@@ -6171,6 +6245,8 @@ namespace nx
                 }
                 else
                 {
+                    const auto pin=hitPin(x,y);
+                    if(pin.node<m_rows.size()){m_pinContext=true;m_pinContextNode=pin.node;m_pinContextName=pin.name;m_pinContextType=pin.type;m_pinContextOutput=pin.output;m_pinContextX=std::clamp(x,0.f,kWidth-260.f);m_pinContextY=std::clamp(y,0.f,kHeight-150.f);m_pan=false;m_left=left;return;}
                     const auto& nodes=m_document.graphs[m_graph].nodes;
                     for(size_t i=nodes.size();i>0;--i){const auto p=nodeLayoutPosition(i-1);const float nx=kLeft+m_x+p.x*m_zoom,ny=kTop+m_y+p.y*m_zoom;if(!in(x,y,nx,ny,nx+m_rows[i-1].width*m_zoom,ny+m_rows[i-1].height*m_zoom))continue;m_selection=i-1;m_selectedNodes={i-1};m_nodeContext=true;m_nodeContextX=std::clamp(x,0.f,kWidth-270.f);m_nodeContextY=std::clamp(y,0.f,kHeight-224.f);m_nodeClickTime=-1;break;}
                     if(!m_nodeContext){openPinMenu(x,y);input.setTyping(true);}
@@ -6316,6 +6392,7 @@ namespace nx
                     if(std::max(a.x,b.x)<kLeft||std::min(a.x,b.x)>kRight||std::max(a.y,b.y)<kTop||std::min(a.y,b.y)>kBottom)continue;
                     c.line(a.x,a.y,b.x,b.y,wire==m_highlightWire?3.5f:2.f,color);
                 }
+                if(points.size()>1){const auto& a=points[points.size()/2-1];const auto& b=points[points.size()/2];const float dx=b.x-a.x,dy=b.y-a.y,len=std::hypot(dx,dy);if(len>1){const float xx=(a.x+b.x)*.5f,yy=(a.y+b.y)*.5f,ux=dx/len,uy=dy/len;c.line(xx,yy,xx-6*ux+4*uy,yy-6*uy-4*ux,1.8f,color);c.line(xx,yy,xx-6*ux-4*uy,yy-6*uy+4*ux,1.8f,color);}}
                 for(size_t j=0;j<l.route.size();++j){const auto p=routeLayoutPosition(wire,j);c.circle(kLeft+m_x+p.x*m_zoom,kTop+m_y+p.y*m_zoom,6,color);}
             }
             if(m_moveWire<graph.links.size()){const auto points=wireRoute(m_moveWire);if(!points.empty()){const auto& fixed=m_moveWireOutput?points.back():points.front();c.line(fixed.x,fixed.y,m_moveWireX,m_moveWireY,2,accent);}}
@@ -6577,6 +6654,18 @@ namespace nx
                 const float yy=35+30*static_cast<float>(i);c.rect(304,yy+2,242,26,enabled?Color{0.19f,0.33f,0.50f,1}:Color{0.22f,0.22f,0.24f,1});c.text(*m_font,labels[i],312,yy+5,enabled?text:muted);
             }
         }
+        if(!m_pinHover.empty()&&!m_pinContext&&!m_pinMenu&&!modalOpen())
+        {
+            const float ww=std::min(450.f,c.measure(*m_font,m_pinHover.c_str()).x+16),xx=std::clamp(m_pinHoverX+12,0.f,kWidth-ww),yy=std::clamp(m_pinHoverY+12,0.f,kHeight-26);
+            c.roundRect(xx,yy,ww,26,4,{0.12f,0.16f,0.22f,0.98f});c.clip(xx+6,yy,ww-12,26);c.text(*m_font,m_pinHover.c_str(),xx+8,yy+4,text);c.noClip();
+        }
+        if(m_pinContext)
+        {
+            const float x=m_pinContextX,y=m_pinContextY;c.roundRect(x,y,260,150,6,{0.16f,0.16f,0.17f,1});
+            c.clip(x+6,y,248,28);c.text(*m_font,(m_pinContextName+" : "+m_pinContextType).c_str(),x+8,y+5,accent);c.noClip();
+            const char* labels[]={"Break links","Reset input to default","Add compatible node","Promote to variable"};
+            for(unsigned n=0;n<4;++n){const float yy=y+30+30.f*static_cast<float>(n);c.rect(x+4,yy+2,252,26,{0.22f,0.22f,0.24f,1});c.text(*m_font,labels[n],x+10,yy+5,text);}
+        }
         if(m_nodeContext&&m_selection<m_rows.size())
         {
             const float x=m_nodeContextX,y=m_nodeContextY;c.roundRect(x,y,270,224,6,{0.16f,0.16f,0.17f,1});c.clip(x+8,y,254,32);c.text(*m_font,m_rows[m_selection].title.c_str(),x+10,y+7,accent);c.noClip();
@@ -6675,6 +6764,12 @@ namespace nx
                 c.rect(0,625,1280,95,{0.13f,0.16f,0.21f,1});
                 c.text(*m_font,("Active: "+m_document.name+(m_document.dirty()?"  /  Unsaved changes":"")).c_str(),28,638,accent);
                 c.clip(28,665,1220,40);c.text(*m_font,m_status.c_str(),28,673,text);c.noClip();
+            }
+            else if(m_focus==26)
+            {
+                c.roundRect(330,250,620,210,8,{0.16f,0.18f,0.22f,1});c.text(*m_font,"PROMOTE PIN TO VARIABLE",350,265,accent);
+                c.text(*m_font,(m_pinContextName+" : "+m_pinContextType).c_str(),350,300,text);c.rect(350,332,580,38,{0.24f,0.35f,0.48f,1});c.text(*m_font,m_edit.c_str(),360,340,text);
+                c.text(*m_font,"Cancel",710,413,text,Align::Center);c.roundRect(790,400,140,40,4,{0.19f,0.4f,0.3f,1});c.text(*m_font,"Create",860,411,text,Align::Center);
             }
             else if(m_focus==25)
             {

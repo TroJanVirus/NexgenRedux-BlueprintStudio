@@ -2836,6 +2836,41 @@ namespace nx
         }
         return true;
     }
+    bool BlueprintDocument::promotePin(size_t graph,size_t node,const std::string& pin,bool output,const std::string& variable,std::string& error)
+    {
+        if(graph>=graphs.size()||node>=graphs[graph].nodes.size()||!identifier(variable)){error="Choose a valid variable name.";return false;}
+        const auto& g=graphs[graph];BlueprintNodeSpec spec;
+        if(!nodeSpec(g,g.nodes[node],spec)){error="Unknown node.";return false;}
+        const auto* p=findPin(output?spec.outputs:spec.inputs,pin);
+        if(!p||!blueprintVariableType(p->type)||!blueprintArrayElement(p->type).empty()){error="This pin cannot be promoted.";return false;}
+        std::vector<BlueprintPin> vars;if(!variables(vars,error,g.owner))return false;
+        if(std::any_of(vars.begin(),vars.end(),[&](const BlueprintPin& v){return v.name==variable;})){error="Choose a new variable name.";return false;}
+        if(!output&&std::any_of(g.links.begin(),g.links.end(),[&](const Link& l){return l.to==node&&l.input==pin;})){error="Disconnect the input before promoting it.";return false;}
+        if(output&&(!findPin(spec.outputs,"then")||!findPin(spec.inputs,"in"))){error="Promote an executed output, or wire this pure value into a Set variable node.";return false;}
+        BlueprintDocument staged;staged.name=name;staged.assetRoot=assetRoot;staged.graphs=graphs;staged.manifests=manifests;staged.m_visualAssets=m_visualAssets;staged.m_visualSerial=m_visualSerial;staged.m_nextId=m_nextId;
+        std::string declaration="field "+variable+":"+p->type;
+        if(!output&&blueprintLiteralType(p->type))
+        {
+            const auto custom=std::find_if(g.nodes[node].values.begin(),g.nodes[node].values.end(),[&](const InputValue& v){return v.pin==pin;});
+            std::string initial;
+            if(custom!=g.nodes[node].values.end())initial=custom->value;
+            else if(const auto* fallback=findPin(spec.defaults,pin)){initial=fallback->type;const auto prefix=p->type+"(";if(initial.rfind(prefix,0)==0&&initial.ends_with(")"))initial=initial.substr(prefix.size(),initial.size()-prefix.size()-1);if(p->type=="string"&&initial.size()>=2&&initial.front()=='"'&&initial.back()=='"')initial=initial.substr(1,initial.size()-2);}
+            if(literal("literal:"+p->type,initial))declaration+="="+initial;
+        }
+        if(!staged.editVariableDeclaration(g.owner,declaration,error)||!staged.addVariableNode(graph,variable,false,output,g.nodes[node].x+(output?300.f:-300.f),g.nodes[node].y+80.f,error))return false;
+        auto& next=staged.graphs[graph];const auto added=next.nodes.size()-1;
+        if(output)
+        {
+            std::vector<Link> continuation;for(const auto& l:next.links)if(l.from==node&&l.output=="then")continuation.push_back(l);
+            if(continuation.size()>1){error="Ambiguous execution continuation.";return false;}
+            staged.disconnect(graph,node,"then",true);
+            if(!staged.connect(graph,node,pin,added,"value",error)||!staged.connect(graph,node,"then",added,"in",error))return false;
+            for(const auto& l:continuation)if(!staged.connect(graph,added,"then",l.to,l.input,error))return false;
+        }
+        else if(!staged.connect(graph,added,"value",node,pin,error))return false;
+        std::string checked;if(!staged.serialize(checked,error))return false;
+        recordGraphList();graphs.swap(staged.graphs);m_nextId=staged.m_nextId;error.clear();return true;
+    }
     bool BlueprintDocument::connectCompatible(size_t graph,size_t from,const std::string& output,size_t to,const std::string& input,std::string& error)
     {
         if(graph>=graphs.size()||from>=graphs[graph].nodes.size()||to>=graphs[graph].nodes.size())

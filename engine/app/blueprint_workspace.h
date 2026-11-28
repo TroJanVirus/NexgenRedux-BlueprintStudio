@@ -316,6 +316,12 @@ namespace nx
         bool m_left = false, m_pan = false, m_wantedPointer = false;
         bool m_drag = false, m_dragMoved = false;
         bool m_marquee=false;
+        unsigned m_marqueeMode=0;
+        std::vector<size_t> m_marqueeBase;
+        bool m_pinContext=false,m_pinContextOutput=false;
+        size_t m_pinContextNode=static_cast<size_t>(-1);
+        std::string m_pinContextName,m_pinContextType,m_pinHover;
+        float m_pinContextX=0,m_pinContextY=0,m_pinHoverX=0,m_pinHoverY=0;
         float m_marqueeX=0,m_marqueeY=0,m_marqueeEndX=0,m_marqueeEndY=0;
         double m_wireClickTime=-1;
         float m_wireClickX=0,m_wireClickY=0;

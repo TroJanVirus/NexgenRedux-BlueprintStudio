@@ -7,6 +7,19 @@
 #include <algorithm>
 
 using namespace nx;
+NX_TEST(nativePromoteInputPinToVariable)
+{
+    BlueprintDocument doc;doc.create();std::string error,source;
+    NX_EXPECT(doc.addNode(0,"api:Save:Save::set:string,string",300,100,error));
+    NX_EXPECT(doc.connect(0,0,"then",1,"in",error));
+    NX_EXPECT(doc.setInputValue(0,1,"key","example",error));
+    NX_EXPECT(doc.promotePin(0,1,"key",false,"saveKey",error));
+    NX_EXPECT(doc.graphs[0].nodes.size()==3&&doc.graphs[0].links.size()==2);
+    NX_EXPECT(compileBlueprint(doc,source,error)&&source.find("saveKey")!=std::string::npos);
+    NX_EXPECT(!doc.promotePin(0,1,"key",false,"another",error));
+    NX_EXPECT(doc.undo()&&doc.graphs[0].nodes.size()==2);
+    NX_EXPECT(doc.redo()&&doc.graphs[0].nodes.size()==3);
+}
 NX_TEST(nativeDeleteSelectedNodesIsAtomic)
 {
     BlueprintDocument doc;doc.create();std::string error;

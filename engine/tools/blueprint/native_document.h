@@ -146,6 +146,7 @@ namespace nx
         bool deleteRoutePoint(size_t graph,size_t link,size_t point);
         bool addNode(size_t graph,const std::string& kind,float x,float y,std::string& error,const std::string& functionTarget="");
         bool placeContextNode(size_t graph,size_t existing,const std::string& pin,bool output,const std::string& kind,const std::string& reference,const std::string& otherPin,float x,float y,std::string& error);
+        bool promotePin(size_t graph,size_t node,const std::string& pin,bool output,const std::string& variable,std::string& error);
         bool connectCompatible(size_t graph,size_t from,const std::string& output,size_t to,const std::string& input,std::string& error);
         bool canCallFunction(size_t graph,const std::string& target) const;
         bool addConnectedNode(size_t graph,size_t from,const std::string& output,const std::string& kind,float x,float y,std::string& error);
