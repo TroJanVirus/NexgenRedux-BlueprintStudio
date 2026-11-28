@@ -224,6 +224,9 @@ with log.open("wb") as output:
         assert [float(v) for v in placements()[-1]["values"]["place"].split(",")]==[5,0,3]
         click(635,110)
         shot("scene-perspective-1920.png")
+        wait_for(lambda:"Framed scene actors." in log.read_text(errors="replace"),"scene camera framing")
+        click(687,945)
+        shot("scene-framed-1920.png")
         # Native tool runs the original Redux editor, then returns to this scene tab.
         click(525,25)
         wait_for(lambda:"native scene editor opened: Screen" in log.read_text(errors="replace"),"native scene tool")

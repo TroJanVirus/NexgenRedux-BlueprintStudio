@@ -391,6 +391,7 @@ namespace nx
         found->first=widget?m_widgetFirst:m_placementFirst;
         found->fourThree=m_widgetFourThree;found->threeD=m_placement3D;found->outliner=m_placementOutliner;
         found->yaw=m_placementYaw;found->distance=m_placementDistance;found->height=m_placementHeight;found->mode=m_gizmoMode;
+        found->focusX=m_sceneFocusX;found->focusZ=m_sceneFocusZ;
         if(m_activeVisualTab!=key)
         {
             m_activeVisualTab=key;
@@ -424,6 +425,7 @@ namespace nx
         m_placementSelectedOwner=tab.screen;m_placementSelectedId=tab.instance;
         m_placementFirst=tab.widget?0:tab.first;m_placement3D=tab.threeD;m_placementOutliner=tab.outliner;
         m_placementYaw=tab.yaw;m_placementDistance=tab.distance;m_placementHeight=tab.height;m_gizmoMode=tab.mode;
+        m_sceneFocusX=tab.focusX;m_sceneFocusZ=tab.focusZ;
         rememberVisualTab();
         m_status=tab.widget?"Widget designer tab restored.":"Scene placement tab restored.";
     }
@@ -1106,6 +1108,46 @@ namespace nx
         layout.bottomDy=layout.bottom+4-551;
         return layout;
     }
+    void BlueprintWorkspace::frameScenePlacement()
+    {
+        const auto markers=actorMarkers(m_document,assetScreen());
+        bool found=false;float loX=0,hiX=0,loY=0,hiY=0,loZ=0,hiZ=0;
+        const auto include=[&](float x,float y,float z,float r)
+        {
+            if(!found){loX=x-r;hiX=x+r;loY=y-r;hiY=y+r;loZ=z-r;hiZ=z+r;found=true;return;}
+            loX=std::min(loX,x-r);hiX=std::max(hiX,x+r);
+            loY=std::min(loY,y-r);hiY=std::max(hiY,y+r);
+            loZ=std::min(loZ,z-r);hiZ=std::max(hiZ,z+r);
+        };
+        for(const auto& marker:markers)if(m_placementSelectedId.empty()||marker.id==m_placementSelectedId)
+            include(marker.x,marker.y,marker.z,1);
+        if(m_placementWorld)
+        {
+            auto& world=*m_placementWorld;auto& space=world.space();
+            world.eachEntity([&](u32 id,const World::Entity& e)
+            {
+                if(!e.shown||e.dying)return;
+                u32 root=id;
+                for(unsigned depth=0;depth<64;++depth)
+                {const auto parent=world.parentOf(root);if(!parent)break;root=parent;}
+                const auto item=std::find_if(m_placementRoots.begin(),m_placementRoots.end(),[&](const auto& entry){return entry.first==root;});
+                if(item==m_placementRoots.end()||(!m_placementSelectedId.empty()&&item->second!=m_placementSelectedId))return;
+                if(const auto* spatial=space.getSpatial(id))
+                {
+                    const auto pos=space.worldPlace(id);const auto& w=spatial->world;
+                    const float radius=std::max({1.f,Vec3(w.m[0],w.m[1],w.m[2]).length(),Vec3(w.m[4],w.m[5],w.m[6]).length(),Vec3(w.m[8],w.m[9],w.m[10]).length()});
+                    include(pos.x,pos.y,pos.z,radius);
+                }
+            });
+        }
+        m_sceneFocusX=found?(loX+hiX)*0.5f:0;
+        m_sceneFocusZ=found?(loZ+hiZ)*0.5f:0;
+        m_placementHeight=found?(loY+hiY)*0.5f:0;
+        m_placementDistance=found?std::clamp(std::max({hiX-loX,hiY-loY,hiZ-loZ})*2.2f,4.f,10000.f):25;
+        m_placementReady=false;
+        m_status=found?"Framed scene actors.":"Reset empty scene view.";
+        NX_INFO("Blueprint Studio: %s",m_status.c_str());
+    }
     bool BlueprintWorkspace::placementPoint(float x,float y,float height,float& wx,float& wz) const
     {
         const auto layout=sceneLayout();
@@ -1232,15 +1274,15 @@ namespace nx
             if(index==0&&m_visualText.empty())m_visualText="0,0,0";
             m_visualInput=10;s.input->setTyping(true);m_status=index==0?"Enter world X,Y,Z.":"Enter instance override; blank inherits class default.";return;
         }
-        if(in(x,y,825,208,1000,241)){m_placement3D=!m_placement3D;releasePlacementPreview();return;}
+        if(in(x,y,825,208,1000,241)){m_placement3D=!m_placement3D;releasePlacementPreview();if(m_placement3D)frameScenePlacement();return;}
         if(in(x,y,630,208,825,241)){m_visualPlacement=false;releasePlacementPreview();return;}
         if(m_placement3D&&in(x,y,630,551,1000,573))
         {
             const unsigned button=static_cast<unsigned>((x-630)/74);
             if(button==0)m_placementYaw-=0.35f;else if(button==1)m_placementYaw+=0.35f;
             else if(button==2)m_placementDistance=std::max(4.f,m_placementDistance-3);
-            else if(button==3)m_placementDistance=std::min(100.f,m_placementDistance+3);
-            else {m_placementYaw=0.65f;m_placementDistance=25;m_placementHeight=0;}
+            else if(button==3)m_placementDistance=std::min(10000.f,m_placementDistance+3);
+            else frameScenePlacement();
             m_placementReady=false;return;
         }
         if(m_placement3D&&in(x,y,630,575,1000,598))
@@ -1343,7 +1385,8 @@ namespace nx
         {
             auto& space=m_placementWorld->space();
             const float d=m_placementDistance;
-            space.setCamera({std::sin(m_placementYaw)*d,d*0.65f+m_placementHeight,std::cos(m_placementYaw)*d},{0,m_placementHeight,0},55);
+            const Vec3 focus(m_sceneFocusX,m_placementHeight,m_sceneFocusZ);
+            space.setCamera(focus+Vec3(std::sin(m_placementYaw)*d,d*0.65f,std::cos(m_placementYaw)*d),focus,55);
             space.m_editorGrid=true;space.m_editorGridHeight=m_placementHeight;
             space.draw(c,planLeft+modalX(),planTop+modalY(),planRight-planLeft,planBottom-planTop);
             m_placementReady=true;
@@ -1385,7 +1428,7 @@ namespace nx
         c.push();c.translate(layout.toolsDx,layout.bottomDy);
         if(m_placement3D)
         {
-            const char* labels[]={"Orbit L","Orbit R","Zoom +","Zoom -","Reset"};
+            const char* labels[]={"Orbit L","Orbit R","Zoom +","Zoom -","Frame"};
             for(unsigned i=0;i<5;++i){const float x=630+74*static_cast<float>(i);c.rect(x,551,71,22,{0.19f,0.33f,0.50f,1});c.text(*m_font,labels[i],x+35,552,text,Align::Center);}
             c.text(*m_font,"Height -",635,575,text);c.text(*m_font,"Height +",925,575,text);
             c.text(*m_font,m_gizmoMode==0?"Move XYZ":m_gizmoMode==1?"Rotate XYZ":"Scale XYZ",815,575,accent,Align::Center);
@@ -4842,7 +4885,6 @@ namespace nx
                         if(!wired&&custom!=n.values.end())label+=" = "+custom->value;
                         else if(!wired&&(n.kind=="camera:orbit-timed"||n.kind=="spawn:box"||n.kind=="spawn:plane"))
                         {
-                            const auto* spec=blueprintSpec(n.kind);
                             if(spec)
                                 for(const auto& d:spec->defaults)if(d.name==pin)
                                 {

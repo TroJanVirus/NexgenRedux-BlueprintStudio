@@ -187,3 +187,8 @@ Selected nodes at readable zoom display explicit editable value fields for uncon
 ## Four-edge content docking (verification pending)
 
 Content can now dock against all four graph edges, float or hide; side panels have their own persisted width, compact header actions and resize handles. The available graph rectangle, fit-to-view, tab strip and drag hit targets exclude docked content. Added native left/right docking captures and a return to bottom docking regression. This remains content-specific docking, not a general multi-panel split tree or OS window detachment.
+
+
+## Scene framing and Windows diagnostic fix
+
+Inspected native scene/widget captures from artifact 15240686769, including the original native editor handoff and returned tab. The perspective screenshot revealed poor initial framing; the scene now frames constant placed actors when entering perspective and offers a Frame control for selected/all actors, including their preview component positions. Focus is retained per scene tab. This is editor camera framing, not gameplay camera changes. Removed a shadowed node spec variable rejected by MSVC /WX (C4456), confirmed in the Windows job logs. Full verification of the combined changes remains pending.
