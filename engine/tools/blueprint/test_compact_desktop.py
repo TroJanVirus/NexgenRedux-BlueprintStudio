@@ -223,8 +223,7 @@ with log.open("wb") as output:
         xdo("windowsize","--sync",window,1920,1080)
         wait_for(lambda:(win.get_geometry().width,win.get_geometry().height)==(1920,1080),"widget 1080p client")
         time.sleep(0.5)
-        click(120,110)
-        click(90,160)
+        click(55,145)  # Vertical Box in persistent palette
         key("ctrl+s")
         def widget_has_column():
             assets=json.loads(project.read_text())["visualAssets"]

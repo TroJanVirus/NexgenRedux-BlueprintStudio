@@ -424,6 +424,8 @@ namespace nx
         const std::string* remotePinValue(size_t graph,size_t node,const std::string& pin,bool output) const;
         void toggleRemoteTrace();
         void drawRemoteControls(Canvas& c);
+        void drawEntryText(Canvas& c,const char* value,float x,float y,Color ink,bool focused,const char* placeholder=nullptr,Align align=Align::Left);
+        bool m_caretVisible=true;
         BlueprintLocation mapRemoteLocation(const std::string& file,const std::string& fingerprint,unsigned line) const;
         struct RemoteGraphHit {BlueprintLocation location;double time;};
         std::vector<RemoteGraphHit> m_remoteGraphHits;
@@ -440,6 +442,8 @@ namespace nx
         float m_sequenceTime=0;
         double m_sequenceLast=0;
         bool m_sequencePlaying=false,m_sequenceScrub=false,m_sequenceReplace=true;
+        bool m_sequenceMoving=false;
+        float m_sequenceMoveX=0,m_sequenceMoveDuration=0;
         int m_sequenceField=-1;
         std::string m_sequenceText;
         bool beginSequenceEditor(Input& input);
