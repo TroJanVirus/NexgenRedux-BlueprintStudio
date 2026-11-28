@@ -94,3 +94,7 @@ The editor now derives its logical canvas from the desktop client size above 128
 ## Dedicated actor class editor
 
 Open actor editor / viewport from a selected reusable actor in Content. A full-window editor presents the component hierarchy at left, isolated native 3D preview and perspective orbit/zoom in the centre, and a property inspector at right, including distinct XYZ transform fields. Create child boxes/cameras, switch component shape, reset inherited overrides, jump to the actor class graph, save, or place the class in the screen. The selected live component has an XYZ orientation indicator (not a draggable component gizmo); the preview strips runtime callbacks, sounds, cameras and physics. Collision wireframe and richer component editing remain outstanding. Verification pending.
+
+## Actor viewport interaction and panel layout
+
+Actor class editor supports parent-space projected translation, axis-driven numeric rotation/scale, live isolated preview with one undoable commit on release, Escape cancellation, mouse orbit and zoom. Native collision debug geometry is preserved for the isolated class preview and can be toggled. Graph and class viewport side panels can be resized using their dividers. The actor viewport remains accessible from its graph tab. Corrected X11 test driver option termination for negative axis values. Rotation uses axis handles rather than circular rings; panels resize but do not yet undock. CI pending.

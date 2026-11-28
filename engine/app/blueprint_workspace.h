@@ -41,7 +41,10 @@ namespace nx
         bool modalOpen() const;
         float modalX() const {return (kWidth-1280.f)*0.5f;}
         float modalY() const {return (kHeight-720.f)*0.5f;}
-        float kWidth=1280,kHeight=720,kRight=1012,kBottom=674;
+        float kWidth=1280,kHeight=720,kLeft=248,kRight=1012,kBottom=674;
+        float m_leftPanel=248,m_graphRightPanel=268,m_actorRightPanel=310;
+        int m_splitter=0;
+        bool resizePanels(float x,float y,bool left,bool click,bool actor);
         float kVariableTop=350,kVariableBottom=443,kPaletteExtra=0;
         size_t kRows=8,kVariableRows=3,kPaletteRows=10;
         void rebuildPins();
@@ -68,6 +71,17 @@ namespace nx
         bool m_actorReplace=false;
         int m_actorAxis=-1;
         std::vector<std::string> m_actorAxisValues;
+        bool m_actorCollision=true,m_actorOrbit=false;
+        float m_actorPitch=0.576375f,m_actorOrbitX=0,m_actorOrbitY=0;
+        unsigned m_actorMode=0;
+        int m_actorDragAxis=-1;
+        size_t m_actorDragRevision=0;
+        float m_actorDragX=0,m_actorDragY=0,m_actorDragDx=0,m_actorDragDy=0,m_actorDragValues[3]={},m_actorDragStart[3]={};
+        unsigned actorPreviewEntity() const;
+        bool actorHandle(unsigned axis,float& x,float& y,float& dx,float& dy) const;
+        void cancelActorDrag();
+        std::string m_actorTabId,m_actorTabScreen;
+        size_t m_actorTabGraph=0;
         size_t m_visualFirst=0,m_visualComponent=0,m_visualComponentFirst=0;
         std::string m_visualSelection,m_visualText,m_visualProperty;
         std::string m_themeStyle="button";

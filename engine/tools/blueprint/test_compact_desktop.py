@@ -58,7 +58,7 @@ with log.open("wb") as output:
             xdo("key",name)
             time.sleep(0.3)
         def enter(value):
-            xdo("type","--delay",70,value)
+            xdo("type","--delay",70,"--",value)
             key("Return")
         def shot(name):
             geo = win.get_geometry()
