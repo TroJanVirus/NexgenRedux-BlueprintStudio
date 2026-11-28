@@ -196,7 +196,7 @@ def author_scene(process):
     assert_authored(process, 0, 3, 2)
     capture("01-on-enter")
     operations["graph_switch"] += 1
-    click(100, 122)
+    click(100, 300)
     if timed:
         right_add(500, 100, "camera:orbit-timed")
         operations["value"] += 1
@@ -217,7 +217,7 @@ def author_scene(process):
         click(1070, 98)
         assert recovery.read_bytes() == before
         operations["graph_switch"] += 1
-        click(100, 153)
+        click(100, 330)
         right_add(500, 100, "render:space")
         connect(2,0,0,1,0)
         assert_authored(process, 2, 2, 1)
@@ -242,7 +242,7 @@ def author_scene(process):
         assert_authored(process, 1, 5, 6)
         capture("02-update")
         operations["graph_switch"] += 1
-        click(100, 153)
+        click(100, 330)
         right_add(272, 250, "event:canvas")
         right_add(500, 100, "api:Space:Space::draw:Canvas@")
         connect(2,0,0,2,0)
@@ -314,9 +314,9 @@ with log.open("wb") as out:
             author_scene(process)
         else:
             capture("01-on-enter")
-            click(100, 122)
+            click(100, 300)
             capture("02-update")
-            click(100, 153)
+            click(100, 330)
             capture("03-draw")
         if record:
             recorder_log = (root / "recording.log").open("wb")

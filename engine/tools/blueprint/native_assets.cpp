@@ -395,7 +395,7 @@ namespace nx
             bool ok=add(0,"spawn:plane",320,60)&&val(0,1,"name","Stage floor")&&val(0,1,"size","30,1,30")&&chain(0,0,1)&&
                 add(0,"spawn:box",660,60)&&val(0,2,"name","Boss")&&val(0,2,"place","0,1.5,0")&&val(0,2,"size","2,3,2")&&val(0,2,"color","0.85,0.18,0.12,1")&&chain(0,1,2)&&
                 add(0,"api:Space:Space::sky:Color,Color",1020,60)&&val(0,3,"top","0.12,0.22,0.42,1")&&val(0,3,"horizon","0.6,0.65,0.8,1")&&chain(0,2,3)&&
-                add(0,"api:Space:Space::sun:Vec3,Color",1380,60)&&chain(0,3,4)&&candidate.createVisualAsset("sequence",sequence,error)&&candidate.renameVisualAsset(sequence,"Boss Introduction",error);
+                add(0,"api:Space:Space::sun:Vec3,Color",1380,60)&&val(0,4,"direction","0.5,0.75,0.35")&&val(0,4,"color","1,0.95,0.85,1")&&chain(0,3,4)&&candidate.createVisualAsset("sequence",sequence,error)&&candidate.renameVisualAsset(sequence,"Boss Introduction",error);
             std::vector<BlueprintCameraKey> keys;
             ok=ok&&blueprintCameraKeys("0,0,2,10,0,0,0,65,0;2,5,2,5,0,0,0,55,2@RevealBoss;4,0,1,4,0,0,0,45,1;6,0,2,8,0,0,0,60,2",keys,error)&&candidate.setCameraSequenceKeys(sequence,keys,error);
             size_t graph=0,node=0;

@@ -185,7 +185,7 @@ namespace nx
         size_t m_placementGraph=static_cast<size_t>(-1),m_placementNode=static_cast<size_t>(-1);
         float m_placementX=0,m_placementY=0;
         bool m_placementDragging=false,m_placement3D=false,m_placementReady=false,m_placementOutliner=false;
-        std::string m_placementSelectedId,m_placementSelectedOwner;
+        std::string m_placementSelectedId,m_placementSelectedOwner,m_outlinerQuery;
         size_t m_placementFirst=0,m_placementDragRevision=0;
         float m_placementStartX=0,m_placementStartY=0;
         int m_gizmoAxis=-1;

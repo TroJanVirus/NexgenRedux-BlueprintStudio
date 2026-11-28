@@ -2306,18 +2306,18 @@ NX_TEST(nativeWorkspaceGraphicalVariableEditorCreatesAndRemovesDeclarations)
     auto frame=[&](){r.assets.finish();r.input.update(state,1.0f/60);r.platform.now+=1.0/60;studio.update(r.services);studio.checkpoint(r.services);r.device->beginFrame({});r.canvas.begin();studio.draw(r.canvas);r.canvas.end();r.device->endFrame();};
     auto click=[&](float x,float y){state.mouseX=x;state.mouseY=y;state.mouseButtons[0]=true;frame();state.mouseButtons[0]=false;frame();};
     auto type=[&](const char* s){for(;*s;++s){state.typed[state.typedCount%InputState::kTyped]=static_cast<u32>(*s);++state.typedCount;}frame();};
-    frame();click(120,464);click(260,170);type("score");click(800,339);type("12");click(750,481);click(1040,132);studio.checkpoint(r.services,true);
+    frame();click(40,622);click(260,170);type("score");click(800,339);type("12");click(750,481);click(1040,132);studio.checkpoint(r.services,true);
     const std::string recovery="own/blueprint-recovery.bp.json";std::string error;
     BlueprintDocument doc;auto bytes=r.platform.files[recovery];
     NX_EXPECT(doc.load(bytes.data(),bytes.size(),error)&&doc.graphs[0].fields.size()==1);
     if(!doc.graphs.empty()&&!doc.graphs[0].fields.empty())NX_EXPECT(doc.graphs[0].fields[0].name=="score"&&doc.graphs[0].fields[0].value=="12");
     // Drag the declared field from My Blueprint, choose Get, then undo just that placement.
-    state.mouseX=120;state.mouseY=365;state.mouseButtons[0]=true;frame();state.mouseX=500;state.mouseY=280;frame();state.mouseButtons[0]=false;frame();
+    state.mouseX=120;state.mouseY=400;state.mouseButtons[0]=true;frame();state.mouseX=500;state.mouseY=280;frame();state.mouseButtons[0]=false;frame();
     click(560,320);studio.checkpoint(r.services,true);
     bytes=r.platform.files[recovery];NX_EXPECT(doc.load(bytes.data(),bytes.size(),error)&&doc.graphs[0].nodes.size()==2);
     if(!doc.graphs.empty()&&doc.graphs[0].nodes.size()==2)NX_EXPECT(doc.graphs[0].nodes[1].kind=="var:get:int"&&doc.graphs[0].nodes[1].ref=="score");
     click(900,53);
-    click(120,464);click(300,205);click(980,481);click(1040,132);studio.checkpoint(r.services,true);
+    click(40,622);click(300,205);click(980,481);click(1040,132);studio.checkpoint(r.services,true);
     bytes=r.platform.files[recovery];NX_EXPECT(doc.load(bytes.data(),bytes.size(),error)&&doc.graphs[0].fields.empty());
     studio.close(r.services);
 }
@@ -2493,11 +2493,11 @@ NX_TEST(nativeCameraSequencerFollowsActorAndDispatchesMarkersOnce)
     auto* spatial=space.getSpatial(cube);NX_EXPECT(spatial!=nullptr);if(!spatial)return;
     NX_EXPECT(strcmp(r.save.get("boss_reveal","missing"),"missing")==0);
     spatial->place={2,1.5f,-3};r.step(2);
-    Vec2 projected{};NX_EXPECT(space.toScreen({2,1.5f,-3},projected)&&fabsf(projected.x-640)<1&&fabsf(projected.y-360)<1);
+    Vec2 projected{};const auto tracked=space.cameraPlace();const bool visible=space.toScreen({2,1.5f,-3},projected);NX_INFO("Sequencer anchor: camera %.3f %.3f %.3f projected %.3f %.3f",tracked.x,tracked.y,tracked.z,projected.x,projected.y);NX_EXPECT(visible&&fabsf(projected.x-640)<1&&fabsf(projected.y-360)<1);
     r.step(40);NX_EXPECT(strcmp(r.save.get("boss_reveal","missing"),"yes")==0);
     r.save.set("boss_reveal","once");
     r.step(120);NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("boss_reveal","missing"),"once")==0&&strcmp(r.save.get("boss_finished","missing"),"yes")==0);
-    const auto end=space.cameraPlace();NX_EXPECT(fabsf(end.x-2)<0.01f&&fabsf(end.y-3.5f)<0.01f&&fabsf(end.z-1)<0.01f);
+    const auto end=space.cameraPlace();NX_INFO("Sequencer endpoint: %.3f %.3f %.3f",end.x,end.y,end.z);NX_EXPECT(fabsf(end.x-2)<0.01f&&fabsf(end.y-3.5f)<0.01f&&fabsf(end.z-1)<0.01f);
     r.save.set("boss_finished","once");r.step(60);NX_EXPECT(strcmp(r.save.get("boss_finished","missing"),"once")==0&&!r.screens.failed());
 }
 

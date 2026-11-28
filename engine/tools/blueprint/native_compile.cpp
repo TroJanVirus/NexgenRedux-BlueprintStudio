@@ -378,8 +378,8 @@ namespace nx
                     const auto vec=[&](const float* v){return "Vec3("+num(v[0])+", "+num(v[1])+", "+num(v[2])+")";};
                     source+=pad+"bool bp_seq_play_"+id+" = "+play+";\n"+pad+"if (bp_seq_play_"+id+" && !"+state+"_held) { "+state+"_running = true; "+state+"_time = 0; "+state+"_previous = -1; }\n";
                     source+=pad+state+"_held = bp_seq_play_"+id+";\n"+pad+"if ("+stop+") "+state+"_running = false;\n";
-                    const auto found="bp_seq_found_"+id,anchorName="bp_seq_anchor_name_"+id,target="bp_seq_anchor_"+id,offset="bp_seq_offset_"+id;
-                    source+=pad+"string "+anchorName+" = "+anchor+";\n"+pad+"Entity@ "+target+" = Scene::find("+anchorName+");\n"+pad+"bool "+found+" = "+anchorName+" == \"\" || ("+target+" !is null && "+target+".alive);\n"+pad+"if (!"+found+") "+state+"_running = false;\n"+pad+"Vec3 "+offset+"(0, 0, 0);\n"+pad+"if ("+anchorName+" != \"\" && "+found+") "+offset+" = "+target+".place;\n";
+                    const auto foundAnchor="bp_seq_found_"+id,anchorName="bp_seq_anchor_name_"+id,target="bp_seq_anchor_"+id,offset="bp_seq_offset_"+id;
+                    source+=pad+"string "+anchorName+" = "+anchor+";\n"+pad+"Entity@ "+target+" = Scene::find("+anchorName+");\n"+pad+"bool "+foundAnchor+" = "+anchorName+" == \"\" || ("+target+" !is null && "+target+".alive);\n"+pad+"if (!"+foundAnchor+") "+state+"_running = false;\n"+pad+"Vec3 "+offset+" = ("+target+" !is null && "+target+".alive) ? "+target+".worldPlace : Vec3(0, 0, 0);\n";
                     source+=pad+"bool "+active+" = "+state+"_running;\n"+pad+"bool "+finished+" = false;\n"+pad+"float "+elapsed+" = "+state+"_time;\n";
                     source+=pad+"if ("+active+")\n"+pad+"{\n"+pad+"    "+elapsed+" = min("+state+"_time, "+num(keys.back().time)+");\n";
                     for(size_t i=1;i<keys.size();++i)

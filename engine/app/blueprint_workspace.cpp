@@ -1204,6 +1204,13 @@ namespace nx
             return result;
         }
     }
+    // Keep filtering separate from the full placement set so a search never changes
+    // scene geometry, transform edits or viewport picking.
+    static bool outlinerMatch(const std::string& label,const std::string& id,const std::string& asset,const std::string& query)
+    {
+        const auto lower=[](std::string value){for(char& ch:value)ch=static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));return value;};
+        return lower(label+" "+id+" "+asset).find(lower(query))!=std::string::npos;
+    }
     void BlueprintWorkspace::releasePlacementPreview()
     {
         m_placementRoots.clear();m_sceneNativeEntities.clear();m_sceneNativeShown=m_sceneNativeOmitted=0;m_sceneNativeError.clear();m_sceneOrbit=m_scenePan=false;
@@ -1505,12 +1512,13 @@ namespace nx
             else {x=-10000;y=-10000;}
         }
         const auto owner=assetScreen();
-        if(m_placementSelectedOwner!=owner){m_placementSelectedId.clear();m_placementSelectedOwner=owner;m_placementFirst=0;}
+        if(m_placementSelectedOwner!=owner){m_placementSelectedId.clear();m_placementSelectedOwner=owner;m_placementFirst=0;m_outlinerQuery.clear();}
         const auto listed=actorMarkers(m_document,owner);
-        if(m_placementFirst>=listed.size())m_placementFirst=0;
-        if(m_placementOutliner&&in(x,y,280,198,610,486))
+        auto filtered=listed;std::erase_if(filtered,[&](const ActorMarker& item){return !outlinerMatch(item.label,item.id,item.asset,m_outlinerQuery);});
+        if(m_placementFirst>=filtered.size())m_placementFirst=0;
+        if(m_placementOutliner&&in(x,y,280,234,610,486))
         {
-            if(s.input->wheel()<0&&m_placementFirst+8<listed.size())++m_placementFirst;
+            if(s.input->wheel()<0&&m_placementFirst+7<filtered.size())++m_placementFirst;
             if(s.input->wheel()>0&&m_placementFirst)--m_placementFirst;
         }
         if(!m_placementOutliner&&in(x,y,280,198,610,522))
@@ -1521,10 +1529,15 @@ namespace nx
         }
         if(!click)return;
         if(in(x,y,280,156,610,189)){m_placementOutliner=x>=449;return;}
-        if(m_placementOutliner&&in(x,y,280,198,610,486))
+        if(m_placementOutliner&&in(x,y,280,198,610,231))
         {
-            const size_t index=m_placementFirst+static_cast<size_t>((y-198)/36);
-            if(index<listed.size()){const auto& marker=listed[index];m_placementSelectedId=marker.id;m_visualSelection=marker.asset;m_status="Instance selected.";}
+            if(x>=550){m_outlinerQuery.clear();m_placementFirst=0;return;}
+            m_visualText=m_outlinerQuery;m_visualProperty="FILTER WORLD OUTLINER";m_visualInput=11;s.input->setTyping(true);return;
+        }
+        if(m_placementOutliner&&in(x,y,280,234,610,486))
+        {
+            const size_t index=m_placementFirst+static_cast<size_t>((y-234)/36);
+            if(index<filtered.size()){const auto& marker=filtered[index];m_placementSelectedId=marker.id;m_visualSelection=marker.asset;m_status="Instance selected.";}
             return;
         }
         if(m_placementOutliner&&in(x,y,280,490,610,560))
@@ -2197,6 +2210,7 @@ namespace nx
                     }
                     if(m_visualInput==7){const auto nativeValue=themeColorProperty(m_visualProperty)&&!m_visualText.empty()&&m_visualText.front()!='#'?"#"+m_visualText:m_visualText;if(!m_document.setVisualThemeProperty(m_visualSelection,m_themeStyle,themeStates[m_themeState],m_visualProperty,nativeValue,m_status))break;}
                     if(m_visualInput==10&&!m_document.editVisualActorPlacement(m_placementSelectedOwner,m_placementSelectedId,m_visualProperty,m_visualText,m_status))break;
+                    if(m_visualInput==11){m_outlinerQuery=m_visualText;m_placementFirst=0;}
                     if(m_visualInput==9&&!m_document.setWidgetKey(m_visualSelection,m_widgetSelection,m_visualProperty,m_visualText,m_widgetTimelineTime,m_status))break;
                     if(m_visualInput==8)
                     {
@@ -3313,17 +3327,20 @@ namespace nx
         button(280,156,159,m_visualPlacement?"Content library":"New actor");button(449,156,161,m_visualPlacement?"World outliner":"New widget");
         if(m_visualPlacement&&m_placementOutliner)
         {
-            const auto markers=actorMarkers(m_document,assetScreen());
-            for(size_t i=0;i<8&&m_placementFirst+i<markers.size();++i)
+            auto markers=actorMarkers(m_document,assetScreen());const auto total=markers.size();
+            std::erase_if(markers,[&](const ActorMarker& item){return !outlinerMatch(item.label,item.id,item.asset,m_outlinerQuery);});
+            c.roundRect(280,198,265,33,4,{0.12f,0.17f,0.22f,1});c.clip(287,198,251,33);
+            c.text(*m_font,m_outlinerQuery.empty()?"Search placed actors...":m_outlinerQuery.c_str(),290,205,text);c.noClip();button(550,198,60,"Clear");
+            for(size_t i=0;i<7&&m_placementFirst+i<markers.size();++i)
             {
-                const auto& marker=markers[m_placementFirst+i];const float y=198+36*static_cast<float>(i);
+                const auto& marker=markers[m_placementFirst+i];const float y=234+36*static_cast<float>(i);
                 c.rect(280,y,330,33,marker.id==m_placementSelectedId?Color{0.28f,0.40f,0.52f,1}:Color{0.22f,0.22f,0.24f,1});
                 c.clip(287,y,316,33);c.text(*m_font,(marker.label+" / "+marker.id).c_str(),290,y+8,text);c.noClip();
             }
-            if(markers.empty())c.text(*m_font,"No constant linked actors.",290,210,muted);
+            if(markers.empty())c.text(*m_font,total?"No matching actors.":"No constant linked actors.",290,246,muted);
             button(280,490,159,"Position XYZ");button(449,490,161,"Rotation XYZ");
             button(280,526,159,"Scale XYZ");button(449,526,161,"Instance name");
-            c.text(*m_font,"Blank override = inherit class",290,568,muted);
+            c.text(*m_font,(std::to_string(markers.size())+" / "+std::to_string(total)+" placed actors").c_str(),290,568,muted);
         }
         else
         {
