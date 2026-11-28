@@ -2996,3 +2996,46 @@ NX_TEST(nativeEnumSwitchAndNestedValueRuntime)
     if(!r.screens.init(r.services,"project","main")){NX_EXPECT(false);return;}
     r.step(3);NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("nested_enum","missing"),"yes")==0);
 }
+
+NX_TEST(nativeWorkerGraphRunsScriptAndPollsChannel)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    BlueprintDocument doc;doc.create();std::string error,source,bytes;
+    bool ok=doc.editVariableDeclaration("Screen","field worker:Thread@",error)&&
+        doc.editVariableDeclaration("Screen","field channel:Channel@",error);
+    auto add=[&](size_t g,const char* kind){const auto n=doc.graphs[g].nodes.size();ok=ok&&doc.addNode(g,kind,0,0,error);return n;};
+    auto variable=[&](size_t g,const char* name,bool setter){const auto n=doc.graphs[g].nodes.size();ok=ok&&doc.addVariableNode(g,name,false,setter,0,0,error);return n;};
+    auto wire=[&](size_t g,size_t from,const char* output,size_t to,const char* input){ok=ok&&doc.connect(g,from,output,to,input,error);};
+    auto input=[&](size_t g,size_t n,const char* pin,const char* value){ok=ok&&doc.setInputValue(g,n,pin,value,error);};
+
+    const auto channel=add(0,"api:Channel:Channel:string"),storeChannel=variable(0,"channel",true);
+    input(0,channel,"name","bp_worker_result_test");wire(0,0,"then",channel,"in");
+    wire(0,channel,"then",storeChannel,"in");wire(0,channel,"result",storeChannel,"value");
+    const auto worker=add(0,"api:Thread:Thread:string"),storeWorker=variable(0,"worker",true);
+    input(0,worker,"script","asset:worker.as");wire(0,storeChannel,"then",worker,"in");
+    wire(0,worker,"then",storeWorker,"in");wire(0,worker,"result",storeWorker,"value");
+    const auto getWorker=variable(0,"worker",false),start=add(0,"api:Thread:start:Thread@");
+    wire(0,storeWorker,"then",start,"in");wire(0,getWorker,"value",start,"target");
+
+    const auto getChannel=variable(1,"channel",false),pop=add(1,"api:Channel:pop:Channel@:string out");
+    wire(1,0,"then",pop,"in");wire(1,getChannel,"value",pop,"target");
+    const auto branch=add(1,"branch"),save=add(1,"api:Save:Save::set:string,string");
+    wire(1,pop,"then",branch,"in");wire(1,pop,"result",branch,"condition");
+    wire(1,branch,"true",save,"in");wire(1,pop,"value",save,"value");input(1,save,"key","bp_worker_result");
+    BlueprintDocument copy;
+    if(!ok||!doc.serialize(bytes,error)||!copy.load(bytes.data(),bytes.size(),error)||!compileBlueprint(copy,source,error))
+    {NX_ERROR("Worker graph: %s",error.c_str());NX_EXPECT(false);return;}
+    r.platform.files["project/main/screen.json"]="{\"title\":\"Worker graph\"}";
+    r.platform.files["project/main/main.as"]=source;
+    r.platform.files["project/main/asset/worker.as"]=R"(
+        void main() {
+            Channel@ result = Channel("bp_worker_result_test");
+            int n = 7;
+            result.push("" + (n * n));
+        }
+    )";
+    if(!r.screens.init(r.services,"project","main")){NX_EXPECT(false);return;}
+    for(int i=0;i<3000&&!r.screens.failed()&&strcmp(r.save.get("bp_worker_result",""),"49")!=0;++i)
+    {r.step();std::this_thread::sleep_for(std::chrono::milliseconds(1));}
+    NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("bp_worker_result",""),"49")==0);
+}
