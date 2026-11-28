@@ -9,7 +9,7 @@
 using namespace nx;
 NX_TEST(nativeCatalogueContainsReferenceAPI)
 {
-    NX_EXPECT(blueprintCatalogue().size()==1312);
+    NX_EXPECT(blueprintCatalogue().size()==1318);
     const auto* save=blueprintSpec("api:Save:Save::set:string,string");
     NX_EXPECT(save&&save->inputs.size()==3&&save->outputs.size()==1);
     if(save&&save->inputs.size()==3)NX_EXPECT(save->inputs[0].type=="exec"&&save->inputs[2].type=="string");
@@ -1963,4 +1963,28 @@ NX_TEST(nativeUpstreamThreadChannelAndAudioNodes)
     NX_EXPECT(source.find("Channel(\"bp-results\")")!=std::string::npos);
     NX_EXPECT(source.find("@bp_var_channel = ")!=std::string::npos);
     NX_EXPECT(source.find(".pop(")!=std::string::npos);
+}
+
+NX_TEST(nativeAudioBusInputsAndSynthesisExport)
+{
+    BlueprintDocument doc;doc.create();std::string error,source,bytes;
+    NX_EXPECT(doc.editVariableDeclaration("Screen","field voice:Voice",error));
+    NX_EXPECT(doc.editVariableDeclaration("Screen","field sound:Sound@",error));
+    NX_EXPECT(doc.addNode(0,"api:Audio:Audio::distortion:Bus,float,float",0,0,error));
+    NX_EXPECT(!doc.setInputValue(0,1,"bus","BusEffects); quit();",error));
+    NX_EXPECT(doc.setInputValue(0,1,"bus","BusMusic",error)&&doc.setInputValue(0,1,"amount","0.2",error));
+    NX_EXPECT(doc.connect(0,0,"then",1,"in",error));
+    NX_EXPECT(doc.addNode(0,"api:Samples:Samples:uint,uint,uint",0,0,error)&&doc.setInputValue(0,2,"frames","64",error));
+    NX_EXPECT(doc.addNode(0,"audio:render-tone",0,0,error)&&doc.connect(0,1,"then",2,"in",error)&&doc.connect(0,2,"then",3,"in",error)&&doc.connect(0,2,"result",3,"samples",error));
+    NX_EXPECT(doc.addNode(0,"api:Samples:play:Samples@,float,float,float,bool",0,0,error)&&doc.connect(0,3,"then",4,"in",error)&&doc.connect(0,2,"result",4,"target",error));
+    NX_EXPECT(doc.addVariableNode(0,"voice",false,true,0,0,error)&&doc.connect(0,4,"then",5,"in",error)&&doc.connect(0,4,"result",5,"value",error));
+    NX_EXPECT(doc.addVariableNode(1,"voice",false,false,0,0,error)&&doc.addNode(1,"api:Voice:stop:Voice,float",0,0,error));
+    NX_EXPECT(doc.connect(1,0,"then",2,"in",error)&&doc.connect(1,1,"value",2,"target",error));
+    NX_EXPECT(doc.serialize(bytes,error));
+    BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error)&&compileBlueprint(copy,source,error));
+    NX_EXPECT(source.find("Audio::distortion(BusMusic,")!=std::string::npos);
+    NX_EXPECT(source.find("bp_audio_render(")!=std::string::npos&&source.find("float bp_out_3_nextPhase;")!=std::string::npos);
+    NX_EXPECT(source.find("Voice bp_var_voice;")!=std::string::npos&&source.find("bp_var_voice = ")!=std::string::npos);
+    NX_EXPECT(source.find("@bp_var_voice = ")==std::string::npos);
+    BlueprintDocument empty;empty.create();NX_EXPECT(compileBlueprint(empty,source,error)&&source.find("bp_audio_wave(")==std::string::npos);
 }
