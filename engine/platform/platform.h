@@ -215,6 +215,8 @@ namespace nx
         // Windows 11's frame: dark or light, colours, corners and backdrop. False where it can't be, wholly or in part
         // (Windows 10 has only dark and light, and other systems none of it).
         virtual bool setTitleBar(const TitleBar&) { return false; }
+        // Temporary editor chrome, independent of script-owned frame settings.
+        virtual void setEditorChrome(bool) {}
         // Its inside, in pixels, while it isn't full-screen.
         virtual bool setWindowSize(u32, u32) { return false; }
         virtual void setPointer(PointerShape) {}

@@ -347,6 +347,16 @@ namespace nx
         for(const auto& row:enumRows)if(type==row.type&&value==row.value)return true;
         return false;
     }
+    std::string blueprintEnumType(const std::string& value)
+    {
+        std::string type;
+        for(const auto& row:enumRows)if(value==row.value)
+        {
+            if(!type.empty()&&type!=row.type)return "";
+            type=row.type;
+        }
+        return type;
+    }
     bool blueprintInputLiteralType(const std::string& type){return blueprintLiteralType(type)||!blueprintEnumChoices(type).empty()||!blueprintInputComponentLabels(type).empty();}
     bool blueprintInputComponents(const std::string& type,const std::string& value,std::vector<std::string>& components)
     {

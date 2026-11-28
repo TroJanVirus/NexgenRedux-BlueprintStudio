@@ -2084,3 +2084,25 @@ NX_TEST(nativeEngineEnumChoicesAreValidatedAndExported)
     NX_EXPECT(source.find("Windows::titleLook = TitleDark")!=std::string::npos);
     NX_EXPECT(source.find("Windows::backdrop = BackdropMica")!=std::string::npos);
 }
+
+NX_TEST(nativeImportWindowsFrameEnumProperties)
+{
+    BlueprintDocument doc;std::string error,source;
+    const bool imported=importBlueprintScreen(R"(class Frame : Screen {
+        void onEnter() {
+            if (Windows::titleColors) {
+                Windows::titleLook = TitleDark;
+                Windows::corners = CornersSmall;
+            }
+            if (Windows::backdrops) { Windows::backdrop = BackdropMica; }
+            Window::pointer = PointerHand;
+        }
+    })",doc,error);
+    if(!imported)NX_ERROR("Frame enum import: %s",error.c_str());
+    NX_EXPECT(imported);if(!imported)return;
+    NX_EXPECT(compileBlueprint(doc,source,error));
+    NX_EXPECT(source.find("Windows::titleLook = TitleDark")!=std::string::npos);
+    NX_EXPECT(source.find("Windows::corners = CornersSmall")!=std::string::npos);
+    NX_EXPECT(source.find("Windows::backdrop = BackdropMica")!=std::string::npos);
+    NX_EXPECT(source.find("Window::pointer = PointerHand")!=std::string::npos);
+}

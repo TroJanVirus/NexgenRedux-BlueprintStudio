@@ -117,6 +117,7 @@ namespace nx
             NX_ERROR("Blueprint Studio: cannot load the native workspace font.");
             return;
         }
+        s.platform->setEditorChrome(true);
         m_wantedPointer = s.input->wantsPointer();
         s.input->setWantsPointer(true);
         s.platform->lockMouse(false);
@@ -156,6 +157,7 @@ namespace nx
     {
         if (!active()) return;
         stopPreview(s);
+        s.platform->setEditorChrome(false);
         saveActorTab();cancelActorDrag();m_actorOrbit=false;m_splitter=0;m_actorEditor=false;m_contentDrag.clear();m_contentPanelDrag=false;releaseContentPreviews();
         releaseWidgetPreview();releasePlacementPreview();m_widgetDesigner=m_visualPlacement=false;
         checkpoint(s,true);saveLayout(s);
@@ -3343,8 +3345,10 @@ namespace nx
         {m_status="Save a named project and select its screen first.";return;}
         checkpoint(s,true);
         if(!blueprintPrepareSceneEditor(*s.platform,m_document.assetRoot,screen,m_status))return;
+        s.platform->setEditorChrome(false);
         if(!s.screens->startSceneEditor(m_document.assetRoot,screen,m_status))
         {
+            s.platform->setEditorChrome(true);
             s.input->setWantsPointer(true);s.input->setTyping(false);s.platform->lockMouse(false);
             return;
         }
@@ -3554,6 +3558,7 @@ namespace nx
         stopTrace();
         s.screens->stopPreview();
         m_playing=false;m_sceneEditor=false;m_sceneExit=false;
+        s.platform->setEditorChrome(true);
         s.input->setWantsPointer(true);
         s.input->setTyping(false);
         s.platform->lockMouse(false);
@@ -4570,6 +4575,7 @@ namespace nx
                         m_status="Project asset folder is missing. Restore it before play testing.";
                     else if(startTrace(s))
                     {
+                        s.platform->setEditorChrome(false);
                         if(s.screens->startProjectPreview(screens,owner,m_status,m_document.assetRoot))
                         {
                             m_playing=true;clearWire();m_status="Playing "+owner+(m_traceDebugger?". Ctrl+T pauses trace; Escape stops.":". Escape returns to Studio.");
@@ -4577,6 +4583,7 @@ namespace nx
                         }
                         else
                         {
+                            s.platform->setEditorChrome(true);
                             stopTrace();focusPreviewError(m_status);
                             s.input->setWantsPointer(true);s.input->setTyping(false);
                         }

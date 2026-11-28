@@ -23,6 +23,7 @@ namespace nx
     bool blueprintInputLiteralType(const std::string& type);
     std::vector<std::string> blueprintEnumChoices(const std::string& type);
     bool blueprintEnumValue(const std::string& type,const std::string& value);
+    std::string blueprintEnumType(const std::string& value);
     bool blueprintInputComponents(const std::string& type,const std::string& value,std::vector<std::string>& components);
     std::vector<std::string> blueprintInputComponentLabels(const std::string& type);
     std::string blueprintArrayElement(const std::string& type);

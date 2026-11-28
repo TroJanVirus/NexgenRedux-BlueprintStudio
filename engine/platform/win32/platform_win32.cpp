@@ -156,6 +156,13 @@ namespace nx
                 return applyTitleBar();
             }
 
+            void setEditorChrome(bool enabled) override
+            {
+                if(m_editorChrome==enabled)return;
+                m_editorChrome=enabled;
+                applyTitleBar();
+            }
+
             // Through DWM, found when it is first wanted, so that the program starts where there is none to ask.
             bool applyTitleBar()
             {
@@ -169,7 +176,16 @@ namespace nx
                 {
                     return false;
                 }
-                const TitleBar& t = m_titleBar;
+                // The editor override is temporary. Keep the original script-owned
+                // title bar even when a script sets properties during authoring.
+                TitleBar editor;
+                editor.dark=1;
+                if(m_editorChrome && windows::build()>=22000)
+                {
+                    editor.back=0x18181A;editor.text=0xE0E8F5;editor.border=0x30343B;
+                    editor.corners=TitleBar::Corners::SmallRound;
+                }
+                const TitleBar& t = m_editorChrome ? editor : m_titleBar;
                 const auto put = [&](DWORD what, DWORD value) { return SUCCEEDED(set(m_window, what, &value, sizeof(value))); };
                 const auto colour = [](u32 rgb) -> DWORD { return rgb >= TitleBar::kNone ? rgb : ((rgb & 0xFF) << 16) | (rgb & 0xFF00) | ((rgb >> 16) & 0xFF); };
                 // DWMWA_USE_IMMERSIVE_DARK_MODE, 20, from Windows 10 2004 on; Windows 11 has the rest.
@@ -478,6 +494,7 @@ namespace nx
             HWND m_window = nullptr;
             HCURSOR m_pointer = nullptr;
             TitleBar m_titleBar;
+            bool m_editorChrome = false;
             bool m_coloured = false, m_cornered = false, m_backed = false;   // set once, so put back when asked
             WINDOWPLACEMENT m_placement = {};
             bool m_fullscreen = false;

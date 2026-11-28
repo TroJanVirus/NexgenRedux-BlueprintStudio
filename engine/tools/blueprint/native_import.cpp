@@ -379,6 +379,14 @@ namespace nx
                     return api(id,args,nullptr,true,"",v,nullptr);
                 }
                 if(id.find("::")!=std::string::npos)return api(id,{},nullptr,true,"get",v,nullptr);
+                // Recognize reference-derived engine enum tokens without guessing
+                // a type or overriding a user-declared symbol of the same name.
+                if(!instanceOnly&&!locals.count(id)&&!fields.count(id)&&!globals.count(id)&&id!=eventArg&&
+                    std::none_of(doc.graphs[graph].parameters.begin(),doc.graphs[graph].parameters.end(),[&](const BlueprintPin& p){return p.name==id;}))
+                {
+                    const auto type=blueprintEnumType(id);
+                    if(!type.empty()){v={type,id,"",static_cast<size_t>(-1)};return true;}
+                }
                 return field(id,v,instanceOnly);
             }
             struct Depth {unsigned& n;explicit Depth(unsigned& d):n(d){++n;}~Depth(){--n;}};
