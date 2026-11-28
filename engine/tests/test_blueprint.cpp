@@ -3039,3 +3039,43 @@ NX_TEST(nativeWorkerGraphRunsScriptAndPollsChannel)
     {r.step();std::this_thread::sleep_for(std::chrono::milliseconds(1));}
     NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("bp_worker_result",""),"49")==0);
 }
+
+NX_TEST(nativeAudioSynthesisAndManipulationThroughExportedGraph)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    BlueprintDocument doc;doc.create();std::string error,source;
+    bool ok=doc.editVariableDeclaration("Screen","field voice:Voice",error)&&
+        doc.editVariableDeclaration("Screen","field stream:AudioStream@",error)&&
+        doc.editVariableDeclaration("Screen","field scratch:array<float>",error);
+    auto add=[&](size_t g,const char* kind){const auto n=doc.graphs[g].nodes.size();ok=ok&&doc.addNode(g,kind,0,0,error);return n;};
+    auto variable=[&](size_t g,const char* name,bool setter){const auto n=doc.graphs[g].nodes.size();ok=ok&&doc.addVariableNode(g,name,false,setter,0,0,error);return n;};
+    auto wire=[&](size_t g,size_t a,const char* out,size_t b,const char* in){ok=ok&&doc.connectCompatible(g,a,out,b,in,error);};
+    auto input=[&](size_t g,size_t n,const char* pin,const char* value){ok=ok&&doc.setInputValue(g,n,pin,value,error);};
+    const auto samples=add(0,"api:Samples:Samples:uint,uint,uint");
+    input(0,samples,"frames","64");input(0,samples,"rate","8000");input(0,samples,"channels","2");wire(0,0,"then",samples,"in");
+    const auto render=add(0,"audio:render-tone");wire(0,samples,"then",render,"in");wire(0,samples,"result",render,"samples");
+    input(0,render,"frames","64");input(0,render,"shape","1");input(0,render,"frequency","1000");input(0,render,"endFrequency","1000");input(0,render,"gain","0.5");input(0,render,"attack","0");input(0,render,"release","0");
+    const auto gain=add(0,"audio:gain");wire(0,render,"then",gain,"in");wire(0,samples,"result",gain,"samples");input(0,gain,"frames","64");input(0,gain,"gain","0.5");
+    const auto reverse=add(0,"audio:reverse");wire(0,gain,"then",reverse,"in");wire(0,samples,"result",reverse,"samples");input(0,reverse,"frames","64");
+    const auto normalize=add(0,"audio:normalize");wire(0,reverse,"then",normalize,"in");wire(0,samples,"result",normalize,"samples");input(0,normalize,"frames","64");input(0,normalize,"peak","0.75");
+    const auto get=add(0,"api:Samples:get:Samples@,uint,uint");wire(0,normalize,"then",get,"in");wire(0,samples,"result",get,"target");input(0,get,"frame","0");input(0,get,"channel","1");
+    const auto check=add(0,"less:float");wire(0,get,"result",check,"a");input(0,check,"b","-0.7");
+    const auto branch=add(0,"branch");wire(0,get,"then",branch,"in");wire(0,check,"result",branch,"condition");
+    const auto save=add(0,"api:Save:Save::set:string,string");wire(0,branch,"true",save,"in");input(0,save,"key","bp_audio_samples");input(0,save,"value","yes");
+    const auto stream=add(0,"api:AudioStream:AudioStream:uint,uint,float");wire(0,branch,"then",stream,"in");input(0,stream,"rate","8000");input(0,stream,"channels","1");input(0,stream,"seconds","0.02");
+    const auto store=variable(0,"stream",true);wire(0,stream,"then",store,"in");wire(0,stream,"result",store,"value");
+    const auto scratch=variable(0,"scratch",false),fill=add(0,"audio:stream-tone");wire(0,store,"then",fill,"in");wire(0,stream,"result",fill,"stream");wire(0,scratch,"value",fill,"scratch");input(0,fill,"frames","512");input(0,fill,"frequency","1000");
+    const auto eq=add(0,"equal:uint");wire(0,fill,"result",eq,"a");input(0,eq,"b","160");
+    const auto ready=add(0,"branch");wire(0,fill,"then",ready,"in");wire(0,eq,"result",ready,"condition");
+    const auto queued=add(0,"api:Save:Save::set:string,string");wire(0,ready,"true",queued,"in");input(0,queued,"key","bp_audio_stream");input(0,queued,"value","yes");
+    const auto play=add(0,"api:AudioStream:play:AudioStream@,float,float");wire(0,ready,"then",play,"in");wire(0,stream,"result",play,"target");
+    const auto keep=variable(0,"voice",true);wire(0,play,"then",keep,"in");wire(0,play,"result",keep,"value");
+    const auto bus=add(0,"api:Audio:Audio::distortion:Bus,float,float");wire(0,keep,"then",bus,"in");input(0,bus,"bus","BusEffects");input(0,bus,"amount","0.1");
+    if(!ok||!compileBlueprint(doc,source,error)){NX_ERROR("Audio graph: %s",error.c_str());NX_EXPECT(false);return;}
+    r.platform.files["project/main/screen.json"]="{\"title\":\"Audio graph\"}";r.platform.files["project/main/main.as"]=source;
+    if(!r.screens.init(r.services,"project","main")){NX_EXPECT(false);return;}
+    r.step(3);NX_EXPECT(!r.screens.failed());
+    NX_EXPECT(strcmp(r.save.get("bp_audio_samples",""),"yes")==0);
+    NX_EXPECT(strcmp(r.save.get("bp_audio_stream",""),"yes")==0);
+    NX_EXPECT(r.audio.voicesInUse()==1);
+}
