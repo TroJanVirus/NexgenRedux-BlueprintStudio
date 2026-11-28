@@ -1,4 +1,5 @@
 #pragma once
+#include "script/studio_live_source.h"
 
 #include "base/types.h"
 #include "base/thread.h"
@@ -96,6 +97,11 @@ namespace nx
         void pump();
         std::string m_pendingLaunch,m_launchId,m_launchKey;
         void loadLaunchIdentity();
+        StudioLiveSource m_liveUpload;
+        bool m_liveApplying=false;
+        int m_liveCommitId=0;
+        void liveCommand(int id,const std::string& name,const JsonValue& ask);
+        void applyLiveUpload();
         void handle(const char* text, size_t size);
         void send(const std::string& line);
         void flush();

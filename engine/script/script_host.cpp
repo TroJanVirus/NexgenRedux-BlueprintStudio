@@ -164,7 +164,7 @@ namespace nx
         m_sections.emplace_back(file, std::string(code, length));
     }
 
-    bool ScriptHost::compile(const char* module, const char* file, const char* code, size_t length,const std::string& originalFingerprint)
+    bool ScriptHost::compile(const char* module, const char* file, const char* code, size_t length,const std::string& originalFingerprint,bool initializeGlobals)
     {
         m_error[0]=0;
         m_compiledSources.erase(std::remove_if(m_compiledSources.begin(),m_compiledSources.end(),[&](const CompiledSource& s){return s.module==module;}),m_compiledSources.end());
@@ -181,6 +181,7 @@ namespace nx
             discard(module);
             return false;
         }
+        if(!initializeGlobals)return true;
         m_compiledSources.push_back({module,file,originalFingerprint.empty()?scriptFingerprint(code,length):originalFingerprint});
         m_statements = 0;
         if (m_watcher)

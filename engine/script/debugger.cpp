@@ -1,6 +1,7 @@
 #include "script/debugger.h"
 #include "script/studio_launch.h"
 #include "platform/console.h"
+#include "screens/screens.h"
 #include "bindings/script_refs.h"
 #include "scene/space.h"
 #include "scene/world.h"
@@ -131,7 +132,7 @@ namespace nx
         g_debugger = nullptr;
         m_host->setWatcher(nullptr);
         m_host = nullptr;
-        m_pendingLaunch.clear();m_launchKey.clear();m_launchId.clear();
+        m_pendingLaunch.clear();m_launchKey.clear();m_launchId.clear();m_liveUpload.clear();
         resetRemoteTrace();
         m_client.close();
         m_listener.close();
@@ -155,7 +156,7 @@ namespace nx
     {
         m_launchId.clear();m_launchKey.clear();
         const auto* s=m_host&&m_host->engine()?static_cast<const Services*>(m_host->engine()->GetUserData()):nullptr;
-        if(!consoleAvailable()||!s||!s->development||!s->platform)return;
+        if(!s||!s->development||!s->platform)return;
         if(!s->platform->fileTime("studio-install.id")||!s->platform->fileTime("studio-launch.key"))return;
         FileData identity,key;
         if(!s->platform->readFile("studio-install.id",identity,MemTag::General)||identity.size!=32||
@@ -177,7 +178,7 @@ namespace nx
             if (m_listener.accept(m_client, from))
             {
                 // A new one starts with nothing set.
-                m_pendingLaunch.clear();
+                m_pendingLaunch.clear();m_liveUpload.clear();
                 m_breakpoints.clear();
                 resetRemoteTrace();
                 m_files.clear();
@@ -192,6 +193,8 @@ namespace nx
             }
         }
         pump();
+        if(!connected())m_liveUpload.clear();
+        else if(m_liveUpload.ready&&!m_paused&&m_mode==Mode::Run)applyLiveUpload();
         // Only the frame boundary may leave the running title. Never launch
         // from a script callback or while the VM is suspended.
         if(!m_pendingLaunch.empty())
@@ -329,10 +332,14 @@ namespace nx
             putNumber(reply, "version", 1);
             reply.put("sourceIdentity")->setFlag(true);
             reply.put("remoteTrace")->setFlag(true);
-            if(!m_launchId.empty())putText(reply,"launchId",m_launchId);
+            if(!m_launchId.empty()){putText(reply,"launchId",m_launchId);reply.put("liveSource")->setFlag(true);}
             putText(reply, "angelscript", ScriptHost::version());
             putNumber(reply, "id", id);
             send(reply.write(true));
+        }
+        else if(name=="liveInfo"||name=="liveBegin"||name=="liveChunk"||name=="liveCommit"||name=="liveCancel")
+        {
+            liveCommand(id,name,ask);
         }
         else if (name == "launchTitle")
         {
@@ -526,6 +533,62 @@ namespace nx
     {
         m_remoteTrace=false;m_remoteTraceGap=false;m_remoteTraceHits.clear();
     }
+    void ScriptDebugger::liveCommand(int id,const std::string& name,const JsonValue& ask)
+    {
+        JsonValue reply;putNumber(reply,"id",id);
+        const auto* s=m_host&&m_host->engine()?static_cast<const Services*>(m_host->engine()->GetUserData()):nullptr;
+        const auto text=[&](const char* key){const auto* item=ask.find(key);return item?item->text():std::string();};
+        const auto number=[&](const char* key){const auto* item=ask.find(key);return item?item->number():-1.0;};
+        bool ok=false;std::string message;
+        if(m_launchKey.empty()||!s||!s->development||!s->screens||m_liveApplying)
+        {message="Live Link is not enabled on this title.";}
+        else if(name=="liveInfo")
+        {
+            putText(reply,"screen",s->screens->current());putText(reply,"fingerprint",s->screens->liveFingerprint());
+            putNumber(reply,"limit",StudioLiveSource::limit);ok=true;
+        }
+        else if(m_paused||m_mode!=Mode::Run||!m_pendingLaunch.empty())
+        {m_liveUpload.clear();message="Resume the title before updating.";}
+        else if(name=="liveBegin")
+        {
+            const auto token=text("token");const auto total=number("size");
+            unsigned diff=0;
+            if(token.size()==32&&m_launchKey.size()==32)for(size_t i=0;i<32;++i)diff|=static_cast<unsigned>(token[i]^m_launchKey[i]);else diff=1;
+            const auto expected=text("expected");const auto screen=text("screen");
+            if(diff||screen!=s->screens->current()||expected!=s->screens->liveFingerprint()||
+                total<1||total>StudioLiveSource::limit||total!=static_cast<size_t>(total))
+            {m_liveUpload.clear();message="Installation identity, active screen, or source did not match.";}
+            else {ok=m_liveUpload.begin(screen,expected,text("fingerprint"),static_cast<size_t>(total));message=ok?"Upload started.":"Invalid upload metadata.";}
+        }
+        else if(name=="liveChunk")
+        {
+            const double offset=number("offset");
+            ok=offset>=0&&offset<=StudioLiveSource::limit&&offset==static_cast<size_t>(offset)&&m_liveUpload.append(static_cast<size_t>(offset),text("hex"));
+            if(!ok)m_liveUpload.clear();
+            putNumber(reply,"received",m_liveUpload.source.size());message=ok?"Chunk received.":"Invalid upload chunk.";
+        }
+        else if(name=="liveCommit")
+        {
+            if(m_liveUpload.commit()){m_liveCommitId=id;return;}
+            message="Incomplete or mismatched upload.";
+        }
+        else if(name=="liveCancel"){m_liveUpload.clear();ok=true;message="Upload cancelled.";}
+        reply.put("liveOk")->setFlag(ok);putText(reply,"message",message);send(reply.write(true));
+    }
+    void ScriptDebugger::applyLiveUpload()
+    {
+        auto* s=m_host&&m_host->engine()?static_cast<Services*>(m_host->engine()->GetUserData()):nullptr;
+        m_liveApplying=true;
+        // Reload may call onExit/onEnter; no suspended VM inside the transaction.
+        m_breakpoints.clear();m_files.clear();m_last=Where();resetRemoteTrace();
+        std::string error;
+        const bool ok=s&&s->screens&&s->screens->applyLiveSource(m_liveUpload.screen,m_liveUpload.expected,m_liveUpload.source,error);
+        m_liveApplying=false;m_liveUpload.clear();
+        JsonValue reply;putNumber(reply,"id",m_liveCommitId);reply.put("liveOk")->setFlag(ok);
+        putText(reply,"message",ok?"Active screen reloaded from memory; installed files unchanged.":error);
+        if(s&&s->screens){putText(reply,"screen",s->screens->current());putText(reply,"fingerprint",s->screens->liveFingerprint());}
+        send(reply.write(true));flush();
+    }
     void ScriptDebugger::recordRemoteTrace(const Where& here)
     {
         // Drop the remainder of a busy interval after 32 transitions.
@@ -553,6 +616,7 @@ namespace nx
     }
     void ScriptDebugger::line(asIScriptContext* context)
     {
+        if(m_liveApplying)return;
 #ifdef NX_DESKTOP_BLUEPRINT
         if(m_localHost&&m_trace)
         {
@@ -646,7 +710,7 @@ namespace nx
 
     void ScriptDebugger::exception(asIScriptContext* context)
     {
-        if (!m_paused && m_client.state() == TcpState::Open)
+        if (!m_liveApplying && !m_paused && m_client.state() == TcpState::Open)
         {
             stopHere(context, "exception", context->GetExceptionString());
         }

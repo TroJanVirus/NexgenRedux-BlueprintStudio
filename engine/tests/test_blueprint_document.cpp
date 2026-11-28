@@ -1,4 +1,5 @@
 #include "test.h"
+#include "script/studio_live_source.h"
 #include "script/studio_launch.h"
 #include "script/source_fingerprint.h"
 #include "base/json_tree.h"
@@ -2415,4 +2416,20 @@ NX_TEST(nativeScaleBoxDocumentAndMode)
     NX_EXPECT(!doc.setVisualWidgetProperty(page,"item-2","scaleMode","fit",error));
     NX_EXPECT(doc.serialize(bytes,error));BlueprintDocument copy;
     NX_EXPECT(copy.load(bytes.data(),bytes.size(),error)&&copy.visualAsset(page)->source==doc.visualAsset(page)->source);
+}
+
+NX_TEST(nativeLiveSourceTransfer)
+{
+    StudioLiveSource transfer;
+    const std::string code="abc\n";
+    const auto hash=scriptFingerprint(code.data(),code.size());
+    NX_EXPECT(transfer.begin("Screen",hash,hash,code.size()));
+    NX_EXPECT(transfer.append(0,"6162")&&transfer.append(2,"630a"));
+    NX_EXPECT(transfer.commit()&&transfer.ready&&transfer.source==code);
+    transfer.clear();
+    NX_EXPECT(!transfer.begin("../bad",hash,hash,code.size()));
+    NX_EXPECT(!transfer.begin("Screen",hash,hash,StudioLiveSource::limit+1));
+    NX_EXPECT(transfer.begin("Screen",hash,hash,code.size())&&!transfer.append(1,"61"));
+    NX_EXPECT(transfer.begin("Screen",hash,hash,code.size())&&!transfer.append(0,"00"));
+    NX_EXPECT(transfer.begin("Screen",hash,hash,code.size())&&transfer.append(0,"61626362")&&!transfer.commit());
 }

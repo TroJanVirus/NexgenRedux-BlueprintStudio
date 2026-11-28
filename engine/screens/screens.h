@@ -43,6 +43,9 @@ namespace nx
 
         // Restarts the current screen if its script file has changed. For development.
         void reloadChanged();
+        // In-memory development override for one active screen. Disk is unchanged.
+        std::string liveFingerprint() const;
+        bool applyLiveSource(const std::string& screen,const std::string& expected,const std::string& code,std::string& error);
 
         // One fixed step, then any changes it asked for.
         void update(float dt);
@@ -153,6 +156,7 @@ namespace nx
 #endif
         bool m_blueprintError = false;
         std::vector<std::string> m_included;
+        std::string m_liveScreen,m_liveSource;
 #ifdef NX_DESKTOP_BLUEPRINT
         bool startPreviewSession(const std::vector<PreviewScreen>& screens,const std::string& start,std::string& error,const std::string& assetRoot,bool sceneEditor);
         std::vector<PreviewScreen> m_previewScreens;

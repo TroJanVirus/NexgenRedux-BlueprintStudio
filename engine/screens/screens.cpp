@@ -65,6 +65,7 @@ namespace nx
 
     void Screens::shutdown()
     {
+        m_liveScreen.clear();std::string().swap(m_liveSource);
         if (m_services == nullptr)
         {
             return;
@@ -480,6 +481,7 @@ namespace nx
     {
         ScriptHost& host = *m_services->host;
         entry.failed = false;
+        entry.updated = false;
         entry.error[0] = 0;
         entry.loading = false;
         entry.loadingFor = 0;
@@ -528,7 +530,14 @@ namespace nx
         }
         else
 #endif
-        if (!m_services->platform->readFile(path, source, MemTag::Script))
+        if(entry.info.id==m_liveScreen&&!m_liveSource.empty())
+        {
+            auto* bytes=static_cast<u8*>(memAlloc(m_liveSource.size()+1,MemTag::Script));
+            if(!bytes){entry.failed=true;snprintf(entry.error,sizeof(entry.error),"Cannot allocate live source.");return false;}
+            memcpy(bytes,m_liveSource.data(),m_liveSource.size());bytes[m_liveSource.size()]=0;
+            source.take(bytes,m_liveSource.size());
+        }
+        else if (!m_services->platform->readFile(path, source, MemTag::Script))
         {
             entry.failed = true;
             snprintf(entry.error, sizeof(entry.error), "cannot read %s", path);
@@ -656,6 +665,53 @@ namespace nx
         if (!open) m_blueprintError = false;
     }
 
+    std::string Screens::liveFingerprint() const
+    {
+        if(!m_services||!m_services->development||!m_depth||strcmp(m_folder,"showcase")!=0)return {};
+#ifdef NX_DESKTOP_BLUEPRINT
+        if(previewing())return {};
+#endif
+        const auto& entry=m_stack[m_depth-1];
+        if(entry.loading||entry.failed||!entry.object)return {};
+        return m_services->host->compiledFingerprint(entry.module,shown(entry));
+    }
+    bool Screens::applyLiveSource(const std::string& screen,const std::string& expected,const std::string& code,std::string& error)
+    {
+        if(!m_services||!m_services->development||!m_depth||screen!=current()||expected.empty()||
+            liveFingerprint()!=expected||code.empty()||code.size()>128*1024||m_change!=Change::None)
+        {error="Active screen or source changed; refresh Live Link.";return false;}
+        if(m_services->platform->totalMemory()&&m_services->platform->totalMemory()<=128u*1024*1024&&
+            m_services->platform->freeMemory()<8u*1024*1024)
+        {error="Live compile requires at least 8 MiB free RAM; use deployment instead.";return false;}
+        auto& entry=m_stack[m_depth-1];auto& host=*m_services->host;
+        enter(entry);
+        FileData source;auto* bytes=static_cast<u8*>(memAlloc(code.size()+1,MemTag::Script));
+        if(!bytes){error="Cannot allocate validation source.";return false;}
+        memcpy(bytes,code.data(),code.size());bytes[code.size()]=0;source.take(bytes,code.size());
+        m_included.clear();host.clearSections();
+        if(!include(source,shown(entry),error,0)){host.clearSections();m_included.clear();return false;}
+        const char* validation="studio_live_validation";
+        const bool compiled=host.compile(validation,shown(entry),reinterpret_cast<const char*>(source.data),source.size,{},false);
+        const bool valid=compiled&&host.findClass(validation,"Screen");
+        if(!valid)error=compiled?"Updated source must implement Screen.":host.lastError();
+        host.discard(validation);host.clearSections();m_included.clear();source.clear();
+        if(!valid)return false;
+        // The old module remains intact until the preflight succeeds.
+        auto previousScreen=std::move(m_liveScreen);auto previousSource=std::move(m_liveSource);
+        m_liveScreen=screen;m_liveSource=code;
+        setMenu(false);m_services->input->consume();
+        unload(entry,true);m_change=Change::None;
+        if(load(entry))
+        {
+            ++m_services->reloads;error.clear();return true;
+        }
+        error=entry.error;
+        unload(entry,false);m_change=Change::None;
+        m_liveScreen=std::move(previousScreen);m_liveSource=std::move(previousSource);
+        if(!load(entry))error+="; rollback could not reload the previous screen.";
+        else error+="; previous source restored.";
+        return false;
+    }
     void Screens::reloadChanged()
     {
 #ifdef NX_DESKTOP_BLUEPRINT
