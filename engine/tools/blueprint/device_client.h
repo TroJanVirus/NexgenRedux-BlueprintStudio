@@ -129,7 +129,7 @@ namespace nx
             {
                 m_traceOutstanding=false;
                 if(!m_tracing)return;
-                m_traceGap=root["gap"].flag();
+                m_traceGap=m_traceGap||root["gap"].flag();
                 for(auto item=root["trace"].first();item.exists()&&m_hits.size()<64;item=item.next())
                 {
                     const auto line=item["line"].exact(),run=item["run"].exact(),depth=item["depth"].exact();

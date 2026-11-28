@@ -104,8 +104,11 @@ namespace nx
                 putText(line, "level", levels[static_cast<int>(level)]);
                 putText(line, "text", message);
                 Lock lock(g_debugger->m_logLock);
-                g_debugger->m_log += line.write(true);
-                g_debugger->m_log += '\n';
+                if(g_debugger->m_log.size()<32768)
+                {
+                    g_debugger->m_log += line.write(true);
+                    g_debugger->m_log += '\n';
+                }
             }
         });
         NX_INFO("debugger: waiting on port %u", static_cast<unsigned>(port));
@@ -177,11 +180,11 @@ namespace nx
     {
         if (m_client.state() != TcpState::Open)
         {
-            return;
+            m_resume=true;return;
         }
         {
             Lock lock(m_logLock);
-            m_out += m_log;
+            if(m_out.size()+m_log.size()<1024*1024)m_out += m_log;
             m_log.clear();
         }
         char buffer[4096];
@@ -189,9 +192,10 @@ namespace nx
         while ((got = m_client.receive(buffer, sizeof(buffer))) > 0)
         {
             m_in.append(buffer, got);
+            if(m_in.size()>65536){m_client.close();break;}
         }
         size_t end;
-        while ((end = m_in.find('\n')) != std::string::npos)
+        while (m_client.state()==TcpState::Open&&(end = m_in.find('\n')) != std::string::npos)
         {
             const std::string line = m_in.substr(0, end);
             m_in.erase(0, end + 1);
@@ -212,6 +216,7 @@ namespace nx
 
     void ScriptDebugger::send(const std::string& line)
     {
+        if(m_out.size()+line.size()+1>1024*1024){m_client.close();return;}
         m_out += line;
         m_out += '\n';
     }
@@ -261,7 +266,7 @@ namespace nx
             }
             if (these == nullptr)
             {
-                m_breakpoints.push_back({ file->text(), {} });
+                m_breakpoints.push_back({ file->text(), {}, {} });
                 these = &m_breakpoints.back();
             }
             these->lines.clear();

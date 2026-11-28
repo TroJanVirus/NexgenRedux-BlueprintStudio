@@ -23,3 +23,5 @@ Mark execution nodes using the existing Watch button, then select Sync watches i
 ## Bounded live trace and graph controls
 
 With a source-identity compatible runtime, the graph footer exposes pause/resume, step over/into/out, trace toggle, follow toggle, locate and device controls. Trace is opt-in. Each drain returns up to 32 distinct line transitions at 4 Hz; a busy interval may omit transitions. A gap is indicated rather than claiming an exact execution path. Recent source-matched nodes glow teal, paused nodes have a teal outline, and Follow can navigate to a verified stop when the graph is not being edited. No automatic wire inference: consecutive line samples can span helper calls and multiple graph edges. The runtime allocates and formats JSON only for drain requests, not for each line. These are bounded development diagnostics, not measured performance guarantees.
+
+Native TCP regression coverage is registered as `blueprint_remote_trace` alongside the existing bridge test. It verifies capability negotiation, matching and mismatched breakpoints, bounded drain replies, locals limits and resumption on disconnect using the real desktop runtime fixture.

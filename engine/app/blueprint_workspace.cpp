@@ -5029,7 +5029,7 @@ namespace nx
             if(compileBlueprintProject(m_document,m_remoteMaps,error))
                 for(auto& output:m_remoteMaps){m_remoteFingerprints.push_back(scriptFingerprint(output.source.data(),output.source.size()));output.source.clear();}
         }
-        bool gap=false;const auto hits=m_device.takeTrace(gap);if(!hits.empty())m_remoteGap=gap;
+        bool gap=false;const auto hits=m_device.takeTrace(gap);if(gap||!hits.empty())m_remoteGap=gap;
         for(const auto& hit:hits)
         {
             const auto location=mapRemoteLocation(hit.file,hit.fingerprint,hit.line);
