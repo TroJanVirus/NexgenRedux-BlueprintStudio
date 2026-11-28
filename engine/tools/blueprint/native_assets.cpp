@@ -347,10 +347,8 @@ namespace nx
         std::string wav;
         return blueprintEditAudioClip(clip,edit,output,wav,error)&&newToneAsset(p,root,screen,"-edited.wav",wav,relative,error);
     }
-    bool blueprintSaveTonePreset(Platform& p,const std::string& root,const std::string& screen,
-        const BlueprintTone& tone,std::string& relative,std::string& error)
+    static std::string tonePresetJson(const BlueprintTone& tone)
     {
-        if(!toneValid(tone,error))return false;
         // All keys are fixed literals. Write enough significant digits to
         // recover the identical float, even under a non-English desktop locale.
         std::ostringstream json;
@@ -368,19 +366,16 @@ namespace nx
             first=false;json<<'\"'<<f.name<<"\":"<<(tone.effects.*f.field);
         }
         json<<"}}\n";
-        return newToneAsset(p,root,screen,".bptone.json",json.str(),relative,error);
+        return json.str();
     }
-    bool blueprintLoadTonePreset(Platform& p,const std::string& root,const std::string& screen,
-        const std::string& relative,BlueprintTone& tone,std::string& error)
+
+    bool blueprintSaveTonePreset(Platform& p,const std::string& root,const std::string& screen,
+        const BlueprintTone& tone,std::string& relative,std::string& error)
     {
-        if(!blueprintAssetRoot(root)||!folderId(screen)||relative.rfind("sound/",0)!=0||
-            !relative.ends_with(".bptone.json")||!blueprintAssetName(relative.substr(6)))
-        {error="Invalid audio preset path.";return false;}
-        FileData file;JsonTree json;
-        if(!p.readFile(("own/"+root+"/"+screen+"/asset/"+relative).c_str(),file,MemTag::General)||
-            file.size>16384||!json.parse(reinterpret_cast<const char*>(file.data),file.size)||!json.root().isObject())
-        {error="Cannot read audio preset.";return false;}
-        const auto obj=json.root();
+        return toneValid(tone,error)&&newToneAsset(p,root,screen,".bptone.json",tonePresetJson(tone),relative,error);
+    }
+    static bool readTonePreset(JsonTree::Value obj,BlueprintTone& tone,std::string& error)
+    {
         if(!obj["version"].isNumber()||(obj["version"].exact()!=1&&obj["version"].exact()!=2))
         {error="Unsupported audio preset version.";return false;}
         BlueprintTone candidate;
@@ -419,6 +414,83 @@ namespace nx
         }
         if(!toneValid(candidate,error))return false;
         tone=candidate;error.clear();return true;
+    }
+    static bool readPresetFile(Platform& p,const std::string& root,const std::string& screen,
+        const std::string& relative,const char* suffix,JsonTree& json,std::string& error)
+    {
+        if(!blueprintAssetRoot(root)||!folderId(screen)||relative.rfind("sound/",0)!=0||
+            !relative.ends_with(suffix)||!blueprintAssetName(relative.substr(6)))
+        {error="Invalid audio preset path.";return false;}
+        FileData file;
+        if(!p.readFile(("own/"+root+"/"+screen+"/asset/"+relative).c_str(),file,MemTag::General)||
+            !file.size||file.size>16384||!json.parse(reinterpret_cast<const char*>(file.data),file.size)||!json.root().isObject())
+        {error="Cannot read audio preset.";return false;}
+        return true;
+    }
+    bool blueprintLoadTonePreset(Platform& p,const std::string& root,const std::string& screen,
+        const std::string& relative,BlueprintTone& tone,std::string& error)
+    {
+        JsonTree json;
+        return readPresetFile(p,root,screen,relative,".bptone.json",json,error)&&readTonePreset(json.root(),tone,error);
+    }
+    namespace
+    {
+        struct ClipField{const char* name;float BlueprintClipEdit::*field;float lo,hi;};
+        constexpr ClipField clipFields[]={{"start",&BlueprintClipEdit::start,0,1},{"end",&BlueprintClipEdit::end,0,1},
+            {"gain",&BlueprintClipEdit::gain,0,2},{"fadeIn",&BlueprintClipEdit::fadeIn,0,1},{"fadeOut",&BlueprintClipEdit::fadeOut,0,1}};
+        unsigned clipFingerprint(const BlueprintAudioClip& clip)
+        {
+            unsigned hash=2166136261u;
+            const auto byte=[&](unsigned v){hash=(hash^(v&255))*16777619u;};
+            for(unsigned v:{clip.rate,clip.channels})for(unsigned i=0;i<4;++i)byte(v>>(8*i));
+            for(auto sample:clip.pcm){const unsigned v=static_cast<unsigned>(sample);byte(v);byte(v>>8);}
+            return hash;
+        }
+    }
+    bool blueprintSaveClipPreset(Platform& p,const std::string& root,const std::string& screen,
+        const std::string& source,const BlueprintAudioClip& clip,const BlueprintClipEdit& edit,
+        const BlueprintTone& output,std::string& relative,std::string& error)
+    {
+        BlueprintAudioClip current;
+        if(!blueprintLoadAudioClip(p,root,screen,source,current,error))return false;
+        if(current.rate!=clip.rate||current.channels!=clip.channels||current.pcm!=clip.pcm)
+        {error="The source audio changed; reopen it before saving edits.";return false;}
+        std::string validated;
+        if(!blueprintEditAudioClip(clip,edit,output,validated,error))return false;
+        std::ostringstream json;json.imbue(std::locale::classic());
+        json<<std::setprecision(std::numeric_limits<float>::max_digits10)
+            <<"{\"version\":1,\"source\":\""<<source<<"\",\"fingerprint\":"<<clipFingerprint(clip)
+            <<",\"reverse\":"<<(edit.reverse?"true":"false")<<",\"normalize\":"<<(edit.normalize?"true":"false");
+        for(const auto& f:clipFields)json<<",\""<<f.name<<"\":"<<(edit.*f.field);
+        json<<",\"output\":"<<tonePresetJson(output)<<"}\n";
+        return newToneAsset(p,root,screen,".bpclip.json",json.str(),relative,error);
+    }
+    bool blueprintLoadClipPreset(Platform& p,const std::string& root,const std::string& screen,
+        const std::string& relative,std::string& source,BlueprintAudioClip& clip,BlueprintClipEdit& edit,
+        BlueprintTone& output,std::string& error)
+    {
+        JsonTree json;
+        if(!readPresetFile(p,root,screen,relative,".bpclip.json",json,error))return false;
+        const auto obj=json.root();
+        if(!obj["version"].isNumber()||obj["version"].exact()!=1||!obj["source"].isString()||
+            !obj["fingerprint"].isNumber()||obj["reverse"].type()!=JsonTree::Type::Bool||obj["normalize"].type()!=JsonTree::Type::Bool)
+        {error="Invalid clip preset format.";return false;}
+        BlueprintClipEdit candidate;BlueprintTone settings;BlueprintAudioClip decoded;
+        candidate.reverse=obj["reverse"].flag();candidate.normalize=obj["normalize"].flag();
+        for(const auto& f:clipFields)
+        {
+            const auto v=obj[f.name];
+            if(!v.isNumber()||!std::isfinite(v.exact())||v.exact()<f.lo||v.exact()>f.hi)
+            {error="Invalid clip preset parameter.";return false;}
+            candidate.*f.field=static_cast<float>(v.exact());
+        }
+        const std::string path=obj["source"].text();
+        if(!readTonePreset(obj["output"],settings,error)||!blueprintLoadAudioClip(p,root,screen,path,decoded,error))return false;
+        if(obj["fingerprint"].exact()!=clipFingerprint(decoded))
+        {error="The clip preset's source audio changed.";return false;}
+        std::string validated;
+        if(!blueprintEditAudioClip(decoded,candidate,settings,validated,error))return false;
+        source=path;clip=std::move(decoded);edit=candidate;output=settings;error.clear();return true;
     }
     bool blueprintSaveTone(Platform& p,const std::string& root,const std::string& screen,
         const BlueprintTone& tone,std::string& relative,std::string& error)

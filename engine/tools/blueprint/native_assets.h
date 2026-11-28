@@ -44,6 +44,12 @@ namespace nx
         float start=0,end=1,gain=1,fadeIn=0,fadeOut=0;
         bool reverse=false,normalize=false;
     };
+    bool blueprintSaveClipPreset(Platform& platform,const std::string& root,const std::string& screen,
+        const std::string& source,const BlueprintAudioClip& clip,const BlueprintClipEdit& edit,
+        const BlueprintTone& output,std::string& relative,std::string& error);
+    bool blueprintLoadClipPreset(Platform& platform,const std::string& root,const std::string& screen,
+        const std::string& relative,std::string& source,BlueprintAudioClip& clip,BlueprintClipEdit& edit,
+        BlueprintTone& output,std::string& error);
     bool blueprintAudioAsset(const std::string& relative);
     bool blueprintLoadAudioClip(Platform& platform,const std::string& root,const std::string& screen,
         const std::string& relative,BlueprintAudioClip& clip,std::string& error);

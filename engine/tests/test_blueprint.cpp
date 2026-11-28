@@ -1040,6 +1040,18 @@ NX_TEST(nativeImportedAudioEditsAreNonDestructive)
     NX_EXPECT(blueprintSaveEditedAudio(r.platform,doc.assetRoot,"Screen",clip,edit,tone,relative,error));
     NX_EXPECT(r.platform.files[source]==original);
     NX_EXPECT(r.platform.files["own/"+doc.assetRoot+"/Screen/asset/"+relative]==edited);
+    const std::string sourceRelative=source.substr(("own/"+doc.assetRoot+"/Screen/asset/").size());
+    std::string preset,loadedSource;BlueprintAudioClip loaded;BlueprintClipEdit loadedEdit;BlueprintTone loadedOutput;
+    NX_EXPECT(blueprintSaveClipPreset(r.platform,doc.assetRoot,"Screen",sourceRelative,clip,edit,tone,preset,error));
+    NX_EXPECT(blueprintLoadClipPreset(r.platform,doc.assetRoot,"Screen",preset,loadedSource,loaded,loadedEdit,loadedOutput,error));
+    NX_EXPECT(loadedSource==sourceRelative&&loaded.pcm==clip.pcm&&loadedEdit.reverse&&loadedEdit.start==edit.start);
+    NX_EXPECT(blueprintEditAudioClip(loaded,loadedEdit,loadedOutput,wav,error)&&wav==edited);
+    NX_EXPECT(blueprintExportPackage(r.platform,doc,"clip-preset.bp.zip",error));
+    BlueprintDocument restored;NX_EXPECT(blueprintImportPackage(r.platform,"clip-preset.bp.zip",restored,error));
+    NX_EXPECT(blueprintLoadClipPreset(r.platform,restored.assetRoot,"Screen",preset,loadedSource,loaded,loadedEdit,loadedOutput,error));
+    r.platform.files[source]="bad audio";
+    NX_EXPECT(!blueprintLoadClipPreset(r.platform,doc.assetRoot,"Screen",preset,loadedSource,loaded,loadedEdit,loadedOutput,error));
+    r.platform.files[source]=original;
     edit.end=edit.start;NX_EXPECT(!blueprintEditAudioClip(clip,edit,tone,wav,error));
     NX_EXPECT(!blueprintLoadAudioClip(r.platform,doc.assetRoot,"Screen","../bad.wav",clip,error));
     NX_EXPECT(clip.pcm.size()==44100);

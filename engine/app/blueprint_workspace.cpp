@@ -3429,9 +3429,10 @@ namespace nx
         if(in(x,y,650,116,750,150)){m_toneEffects=true;return;}
         if(in(x,y,750,116,850,150))
         {
-            if(!m_clipSource.empty()){m_status="Clip edits are exported as a new WAV; synth presets are separate.";return;}
             std::string relative;
-            if(blueprintSaveTonePreset(*s.platform,m_document.assetRoot,assetScreen(),m_tone,relative,m_status)&&
+            const bool saved=m_clipSource.empty()?blueprintSaveTonePreset(*s.platform,m_document.assetRoot,assetScreen(),m_tone,relative,m_status):
+                blueprintSaveClipPreset(*s.platform,m_document.assetRoot,assetScreen(),m_clipSource,m_audioClip,m_clipEdit,m_tone,relative,m_status);
+            if(saved&&
                 blueprintListAssets(*s.platform,m_document.assetRoot,assetScreen(),m_assetFiles,m_status))
                 m_status="Saved editable preset:"+relative;
             return;
@@ -3543,7 +3544,7 @@ namespace nx
         c.roundRect(260,100,760,525,9,{0.16f,0.16f,0.17f,1});
         c.text(*m_font,m_clipSource.empty()?"AUDIO SYNTHESIS":"AUDIO CLIP EDITOR",280,122,accent);
         button(550,116,96,34,m_clipSource.empty()?"Synth":"Clip",!m_toneEffects);button(650,116,96,34,"Effects",m_toneEffects);
-        if(m_clipSource.empty())button(750,116,100,34,"Preset +",false);
+        button(750,116,100,34,"Preset +",false);
         button(860,116,140,34,"Back",false);
         if(m_toneEffects)
         {
@@ -4550,6 +4551,16 @@ namespace nx
                     BlueprintTone candidate;
                     if(blueprintLoadTonePreset(*s.platform,m_document.assetRoot,assetScreen(),m_assetFiles[row],candidate,m_status))
                     {stopTone(s);m_clipSource.clear();m_audioClip=BlueprintAudioClip{};m_tone=candidate;m_toneRight=false;m_audioEditor=true;m_toneEffects=false;refreshTone();if(!m_toneWav.empty())m_status="Loaded editable audio preset.";}
+                }
+                else if(row<m_assetFiles.size()&&m_assetFiles[row].ends_with(".bpclip.json"))
+                {
+                    std::string source;BlueprintAudioClip clip;BlueprintClipEdit edit;BlueprintTone output;
+                    if(blueprintLoadClipPreset(*s.platform,m_document.assetRoot,assetScreen(),m_assetFiles[row],source,clip,edit,output,m_status))
+                    {
+                        stopTone(s);m_clipSource=source;m_audioClip=std::move(clip);m_clipEdit=edit;m_tone=output;
+                        m_audioEditor=true;m_toneEffects=false;m_toneRight=false;refreshTone();
+                        if(!m_toneWav.empty())m_status="Loaded non-destructive clip preset.";
+                    }
                 }
                 else if(row<m_assetFiles.size()&&blueprintAudioAsset(m_assetFiles[row]))
                 {
