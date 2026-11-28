@@ -57,10 +57,18 @@ class DeploymentTests(unittest.TestCase):
                 self.assertTrue((output/"media"/"screen-Screen").is_dir())
                 self.assertTrue((output/"media"/"debug").is_dir())
                 self.assertTrue((output/"media"/"dev").is_dir())
+                for name in IDENTITY_FILES:
+                    self.assertRegex((output/name).read_text(),r"^[0-9a-f]{32}$")
                 self.assertFalse((output/"media"/"tour").exists())
                 self.assertEqual((output/"media"/"showcase"/"Screen"/"main.as").read_text(), "class Example {}")
                 self.assertEqual((output/"media"/"global"/"project.txt").read_text(), "shared")
                 self.assertTrue((runtime/"media"/"tour").is_dir())
+                release=root/"release"
+                prepare(export,output,release,root/"cook","Screen",False)
+                for name in IDENTITY_FILES:
+                    self.assertFalse((release/name).exists())
+                self.assertFalse((release/"media"/"debug").exists())
+                self.assertFalse((release/"media"/"dev").exists())
                 with self.assertRaises(ValueError):
                     prepare(export, runtime, output, root/"cook", "Screen", True)
 

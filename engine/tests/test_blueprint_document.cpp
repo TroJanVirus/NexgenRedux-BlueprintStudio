@@ -1,4 +1,5 @@
 #include "test.h"
+#include "script/studio_launch.h"
 #include "script/source_fingerprint.h"
 #include "base/json_tree.h"
 #include "tools/blueprint/native_document.h"
@@ -2372,4 +2373,18 @@ NX_TEST(nativeSizeBoxSingleChild)
     NX_EXPECT(doc.setVisualWidgetProperty(page,"item-1","width","100",error)&&doc.setVisualWidgetProperty(page,"item-1","minHeight","40",error));
     NX_EXPECT(doc.serialize(bytes,error));BlueprintDocument copy;
     NX_EXPECT(copy.load(bytes.data(),bytes.size(),error)&&copy.visualAsset(page)->source==doc.visualAsset(page)->source);
+}
+
+NX_TEST(nativeStudioLaunchPathValidation)
+{
+    NX_EXPECT(studioLaunchPath("/E/Games/Preview")=="E:\\Games\\Preview\\default.xbe");
+    NX_EXPECT(studioLaunchPath("/F/Games/Folder/Project 2")=="F:\\Games\\Folder\\Project 2\\default.xbe");
+    NX_EXPECT(studioLaunchPath("/C/Games/Preview").empty());
+    NX_EXPECT(studioLaunchPath("/E/Games/../Other").empty());
+    NX_EXPECT(studioLaunchPath("/E/Games/Preview/").empty());
+    NX_EXPECT(studioLaunchPath("/E/Games/Preview\\Other").empty());
+    NX_EXPECT(studioLaunchPath("/E/Games/Preview:Other").empty());
+    NX_EXPECT(studioLaunchPath("/G/Games/"+std::string(43,'a')).empty());
+    NX_EXPECT(studioLaunchIdentity(std::string(32,'a')));
+    NX_EXPECT(!studioLaunchIdentity(std::string(32,'z')));
 }

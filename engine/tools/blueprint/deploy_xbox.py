@@ -27,6 +27,8 @@ def fatx_component(name):
 
 def tree_entries(root):
     """Validate before copying or uploading; never follow links or case collisions."""
+    if root.is_symlink() or not root.is_dir():
+        raise ValueError("Deployment root must be a real directory.")
     seen = set()
     entries = []
     for entry in sorted(root.rglob("*")):
@@ -110,6 +112,12 @@ def prepare(export, runtime, output, cooker, start, development):
                     raise ValueError(f"Runtime contains a nonempty startup marker: {marker.name}")
                 marker.rmdir()
         overlay(cooked, media)
+        for identity in ("studio-install.id", "studio-launch.key"):
+            existing = media / identity
+            if existing.exists():
+                if not existing.is_file():
+                    raise ValueError("Unexpected launch identity directory.")
+                existing.unlink()
         (media / ("screen-" + start)).mkdir()
         if development:
             (media / "debug").mkdir()

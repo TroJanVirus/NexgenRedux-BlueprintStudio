@@ -5168,6 +5168,7 @@ namespace nx
                 return;
             }
         }
+        if(m_deployJobHost==m_deployHost&&m_deployJobRemote==m_deployRemote)m_deployBaseline.clear();
         m_deployStatus="Deployment helper exited without a valid result. Check Python, helper path and permissions.";
     }
     void BlueprintWorkspace::updateXboxDeploy(Services& s,float x,float y,bool click)

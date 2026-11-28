@@ -177,6 +177,7 @@ namespace nx
             if (m_listener.accept(m_client, from))
             {
                 // A new one starts with nothing set.
+                m_pendingLaunch.clear();
                 m_breakpoints.clear();
                 resetRemoteTrace();
                 m_files.clear();

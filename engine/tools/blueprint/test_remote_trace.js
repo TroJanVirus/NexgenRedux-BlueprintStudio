@@ -73,6 +73,9 @@ async function main() {
         const hello=await ask('hello');
         assert.equal(hello.sourceIdentity,true);
         assert.equal(hello.remoteTrace,true);
+        assert.equal(hello.launchId,undefined);
+        const refused=await ask("launchTitle",{folder:"/E/Games/Example",token:"a".repeat(32)});
+        assert.equal(refused.launchAccepted,false);
         assert.equal((await ask('trace',{on:true})).tracing,true);
         send('pause');await ask('ready');
         await wait(x=>x.event==='stopped');
