@@ -219,7 +219,7 @@ namespace nx
         bool typeNode(const std::string& kind){return kind.rfind("data:",0)==0;}
         bool listenerNode(const std::string& kind){return kind=="dispatch:bind-listener"||kind=="dispatch:unbind-listener";}
         bool signatureType(const std::string& type)
-        {return blueprintLiteralType(type)||type=="Vec2"||type=="Vec3"||type=="Color"||type=="Entity@"||type=="Playlist@"||type=="WebSocket@"||type=="Widget@"||type=="Canvas@"||customTypeName(type)||classTypeName(type);}
+        {return blueprintLiteralType(type)||type=="Vec2"||type=="Vec3"||type=="Color"||type=="Entity@"||type=="Playlist@"||type=="WebSocket@"||type=="Widget@"||type=="Thread@"||type=="Channel@"||type=="Samples@"||type=="AudioStream@"||type=="Canvas@"||customTypeName(type)||classTypeName(type);}
         bool validSignature(const std::vector<BlueprintPin>& parameters,const std::string& result)
         {
             if(parameters.size()>8||(result!="void"&&!signatureType(result)))return false;
@@ -315,7 +315,7 @@ namespace nx
         const auto element=type.substr(6,type.size()-7);
         return element=="int"||element=="uint"||element=="float"||element=="bool"||element=="string"||element=="Vec2"||element=="Color"?element:"";
     }
-    bool blueprintVariableType(const std::string& type){return blueprintLiteralType(type)||!blueprintArrayElement(type).empty()||type=="Playlist@"||type=="WebSocket@"||type=="Widget@"||type=="BP_MapInt"||type=="BP_MapString"||type=="BP_SetInt"||type=="BP_SetString"||customTypeName(type)||classTypeName(type);}
+    bool blueprintVariableType(const std::string& type){return blueprintLiteralType(type)||!blueprintArrayElement(type).empty()||type=="Playlist@"||type=="WebSocket@"||type=="Widget@"||type=="Thread@"||type=="Channel@"||type=="Samples@"||type=="AudioStream@"||type=="BP_MapInt"||type=="BP_MapString"||type=="BP_SetInt"||type=="BP_SetString"||customTypeName(type)||classTypeName(type);}
     bool blueprintLosslessConversion(const std::string& from,const std::string& to)
     {return arrayBorrow(from,to)||(to=="double"&&(from=="int"||from=="uint"||from=="float"));}
     bool blueprintInvokesFunction(const std::string& kind)
@@ -2673,7 +2673,7 @@ namespace nx
             for(const auto& f:vars)if(f.name==variableName){type=f.type;break;}
         }
         if(setter&&!blueprintArrayElement(type).empty()){error="Use array element operations rather than whole-array assignment.";return false;}
-        const auto kind=(customTypeName(type)||classTypeName(type))?std::string(global?"typed:global:":"typed:field:")+(setter?"set":"get"):std::string(global?"global:":"var:")+(setter?"set:":"get:")+type;
+        const auto kind=(customTypeName(type)||classTypeName(type)||type=="Thread@"||type=="Channel@"||type=="Samples@"||type=="AudioStream@")?std::string(global?"typed:global:":"typed:field:")+(setter?"set":"get"):std::string(global?"global:":"var:")+(setter?"set:":"get:")+type;
         if(type.empty()||!blueprintSpec(kind)||!context(g.name,kind,g.owner)){error="Variable is not available in this graph.";return false;}
         std::string id;do{id="n"+std::to_string(++m_nextId);}while(std::any_of(g.nodes.begin(),g.nodes.end(),[&](const Node& n){return n.id==id;}));
         record(graph);g.nodes.push_back({id,kind,variableName,x,y});error.clear();return true;
