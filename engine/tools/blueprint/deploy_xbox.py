@@ -139,7 +139,18 @@ def upload_new(title, host, port, user, password, destination):
         ftp.connect(host, port, timeout=15)
         ftp.login(user, password)
         ftp.set_pasv(True)
-        # MKD must succeed. No deletion, replacement, or reuse of existing titles.
+        # Some dashboard servers treat MKD on an existing folder as success.
+        # Probe first and fail closed on ambiguous errors.
+        try:
+            ftp.cwd(destination)
+        except ftplib.error_perm as error:
+            if not str(error).startswith("550"):
+                raise
+        else:
+            raise ValueError("Remote title folder already exists; choose a new folder.")
+        for _, relative in entries:
+            if len(destination + "/" + relative.as_posix()) > 240:
+                raise ValueError(f"Remote path is too long: {relative}")
         ftp.mkd(destination)
         try:
             for entry, relative in entries:
@@ -181,7 +192,10 @@ def run_request(request_file):
         prepare(Path(options["export"]), Path(options["runtime"]), Path(options["output"]),
                 Path(options["cook"]), options["start"], True)
         if host:
-            upload_new(Path(options["output"]), host, 21, options["user"], password, destination)
+            try:
+                upload_new(Path(options["output"]), host, 21, options["user"], password, destination)
+            except Exception as error:
+                raise RuntimeError("FTP did not complete; do not launch the remote title. " + str(error)) from error
         report(True, "Installed; launch default.xbe from the dashboard." if host else "Cooked title prepared: " + options["output"])
         return 0
     except Exception as error:

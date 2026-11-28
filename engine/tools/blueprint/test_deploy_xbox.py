@@ -1,9 +1,11 @@
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
+import io
+import json
 import shutil
-from deploy_xbox import fatx_component, remote_folder, tree_entries, overlay, prepare
+from deploy_xbox import fatx_component, remote_folder, tree_entries, overlay, prepare, run_request, upload_new
 
 class DeploymentTests(unittest.TestCase):
     def test_path_constraints(self):
@@ -61,6 +63,43 @@ class DeploymentTests(unittest.TestCase):
                 self.assertTrue((runtime/"media"/"tour").is_dir())
                 with self.assertRaises(ValueError):
                     prepare(export, runtime, output, root/"cook", "Screen", True)
+
+    def test_native_request_password_not_persisted(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            request = root/"request.json"
+            settings = dict(export="export", runtime="runtime", output="output",
+                            cook="cook", start="Screen", host="192.168.1.50",
+                            remote="/E/Games/Test", user="xbox")
+            request.write_text(json.dumps(settings))
+            with patch("sys.stdin", io.StringIO("sample-secret\n")), \
+                 patch("deploy_xbox.prepare") as stage, \
+                 patch("deploy_xbox.upload_new") as upload:
+                self.assertEqual(run_request(request), 0)
+                stage.assert_called_once()
+                upload.assert_called_once_with(Path("output"), "192.168.1.50", 21,
+                                               "xbox", "sample-secret", "/E/Games/Test")
+            result = root/"result.json"
+            self.assertTrue(json.loads(result.read_text())["ok"])
+            self.assertNotIn("sample-secret", result.read_text()+request.read_text())
+            with patch("sys.stdin", io.StringIO("sample-secret\n")), \
+                 patch("deploy_xbox.prepare"), \
+                 patch("deploy_xbox.upload_new", side_effect=RuntimeError("sample-secret")):
+                self.assertEqual(run_request(request), 1)
+            self.assertFalse(json.loads(result.read_text())["ok"])
+            self.assertNotIn("sample-secret", result.read_text())
+
+    def test_ftp_refuses_existing_directory(self):
+        with tempfile.TemporaryDirectory() as temp:
+            title=Path(temp)
+            (title/"default.xbe").write_bytes(b"fixture")
+            connection=MagicMock()
+            connection.__enter__.return_value=connection
+            with patch("deploy_xbox.ftplib.FTP", return_value=connection):
+                with self.assertRaisesRegex(ValueError, "already exists"):
+                    upload_new(title,"192.168.1.50",21,"xbox","test","/E/Games/Test")
+            connection.mkd.assert_not_called()
+            connection.storbinary.assert_not_called()
 
 if __name__ == "__main__":
     unittest.main()

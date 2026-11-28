@@ -1,5 +1,5 @@
 #pragma once
-#include <cstdint>
+#include "base/types.h"
 
 namespace nx
 {
@@ -18,13 +18,13 @@ namespace nx
 
     struct GridOccupancy
     {
-        std::uint64_t occupied[256]={};
+        u64 occupied[256]={};
         unsigned next=0;
         void reserve(const GridSlot& s)
         {
             if(!s.valid())return;
-            const std::uint64_t bits=s.columnSpan==64?~std::uint64_t(0):
-                ((std::uint64_t(1)<<s.columnSpan)-1)<<s.column;
+            const u64 bits=s.columnSpan==64?~u64(0):
+                ((u64(1)<<s.columnSpan)-1)<<s.column;
             for(int row=s.row;row<s.row+s.rowSpan;++row)occupied[row]|=bits;
         }
         GridSlot nextFree(unsigned columns)
@@ -33,7 +33,7 @@ namespace nx
             while(next<256*columns)
             {
                 const unsigned at=next++,row=at/columns,col=at%columns;
-                if(!(occupied[row]&(std::uint64_t(1)<<col)))
+                if(!(occupied[row]&(u64(1)<<col)))
                 {
                     GridSlot s{static_cast<int>(row),static_cast<int>(col),1,1};
                     reserve(s);return s;
