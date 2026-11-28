@@ -1025,6 +1025,7 @@ NX_TEST(nativeFirstPersonTemplateCompilesAndRuns)
     const auto* shape=world.space().getCollider(hero);
     const auto* appearance=world.space().getAppearance(hero);
     NX_EXPECT(shape&&appearance&&appearance->model&&world.space().getCollider(marker));
+    const auto* obstacleShape=world.space().getCollider(marker);NX_EXPECT(obstacleShape&&obstacleShape->wall&&std::abs(obstacleShape->half.x-0.5f)<0.01f);
     const auto* spatial=world.space().getSpatial(hero);
     NX_EXPECT(spatial);if(!spatial)return;
     const Vec3 start=spatial->place;
@@ -1042,6 +1043,8 @@ NX_TEST(nativeFirstPersonTemplateCompilesAndRuns)
     NX_EXPECT(std::abs(world.space().getSpatial(hero)->place.y-beforeJump)<0.2f);
     const auto eye=world.space().cameraPlace();
     NX_EXPECT(std::abs(eye.y-world.space().getSpatial(hero)->place.y-1.55f)<0.2f);
+    r.platform.state.keys[static_cast<size_t>(Key::W)]=true;r.step(180);r.platform.state.keys[static_cast<size_t>(Key::W)]=false;r.step(10);
+    const auto stopped=world.space().getSpatial(hero)->place;NX_EXPECT(stopped.z<-4.5f&&stopped.z>-6.1f);
     NX_EXPECT(blueprintExportPackage(r.platform,doc,"first-person.bp.zip",error));
     BlueprintDocument restored;
     NX_EXPECT(blueprintImportPackage(r.platform,"first-person.bp.zip",restored,error));

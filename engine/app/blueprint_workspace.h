@@ -343,7 +343,7 @@ namespace nx
         std::vector<std::string> m_inputComponents,m_inputChoices;
         size_t m_inputComponent=0,m_inputChoiceFirst=0;
         bool m_inputReplace=false;
-        bool m_inlineDirty=false,m_paletteDragging=false;
+        bool m_inlineDirty=false,m_paletteDragging=false,m_inlineSelectAll=false;
         size_t m_inlineCaret=0;
         unsigned m_inlineKeys=0;
         float m_curveX[4]{},m_curveY[4]{},m_curveCenterX=0,m_curveCenterY=0,m_curveScale=1;

@@ -60,7 +60,7 @@ namespace nx
             {"player:chase-camera","Third person camera offset","Actors / Character","pivot:Vec3|yaw:float|pitch:float|distance:float","result:Vec3","bp_player_chase_camera","","","pure","Vec3","","in:pivot|in:yaw|in:pitch|in:distance","distance:float(5)"},
             {"player:flight-position","Flight position from input","Actors / Character","place:Vec3|move:Vec2|yaw:float|pitch:float|speed:float|dt:float","result:Vec3","bp_player_flight_position","","","pure","Vec3","","in:place|in:move|in:yaw|in:pitch|in:speed|in:dt","speed:float(8)"},
             {"player:ball-impulse","Rolling ball drive impulse","Actors / Character","move:Vec2|strength:float|dt:float","result:Vec3","bp_player_ball_impulse","","","pure","Vec3","","in:move|in:strength|in:dt","strength:float(18)"},
-            {"player:angles","Character facing from yaw","Actors / Character","yaw:float","result:Vec3","bp_player_angles","","","pure","Vec3","","in:yaw",""},
+            {"player:angles","Character facing from yaw","Actors / Character","yaw:float|modelYawOffset:float","result:Vec3","bp_player_angles","","","pure","Vec3","","in:yaw|in:modelYawOffset","modelYawOffset:float(0)"},
             {"camera:orbit-timed","Orbit camera around entity (timed)","Space / Camera","in:exec|name:string|radius:float|height:float|duration:float|turns:float|angle:float|loop:bool|reset:bool|dt:float","then:exec|progress:float|elapsed:float|finished:bool|found:bool","","","","","void","","","name:\"Target\"|radius:float(6)|height:float(2)|duration:float(8)|turns:float(1)|angle:float(60)|loop:false|reset:false|dt:dt"},
             {"camera:sequence","Camera Sequence (Sequencer)","Space / Camera","in:exec|play:bool|stop:bool|dt:float|anchor:string|asset:string|keys:string","then:exec|active:bool|finished:bool|elapsed:float|found:bool","","","","","void","","","play:false|stop:false|dt:dt|anchor:\"\"|asset:\"\"|keys:\"0,0,2,8,0,1,0,60,0;3,5,3,5,0,1,0,50,0;6,0,2,4,0,1,0,60,0\""},
             {"camera:activate-actor","Activate actor camera","Space / Camera","in:exec|actor:Entity@|component:string","then:exec|result:bool","Space::activateActorCamera","","","","bool","","in:actor|in:component","component:\"\""},
@@ -1744,6 +1744,7 @@ namespace nx
             }
             std::vector<std::string> keys;
             if(property=="collision")keys={"cube","sphere","capsule","exact"};
+            else if(property=="simpleCollision")keys={"cube","sphere","capsule","exact","colliderAt","wall"};
             else if(property=="model"||property=="shape")keys={"model","shape","animate"};
             else keys={property};
             for(const auto& key:keys)
@@ -2035,6 +2036,18 @@ namespace nx
                     {error="Invalid animation name.";return false;}
                     if(!text(*item,"animate",value))return false;
                 }
+            }
+            else if(property=="simpleCollision")
+            {
+                const auto split=value.find(';');std::vector<std::string> dims,center;
+                if(split==std::string::npos||!blueprintInputComponents("Vec3",value.substr(0,split),dims)||!blueprintInputComponents("Vec3",value.substr(split+1),center)){error="Invalid local bounds.";return false;}
+                for(const auto& dim:dims){const double n=std::strtod(dim.c_str(),nullptr);if(n<=0||n>1000000){error="Invalid collider extent.";return false;}}
+                for(const char* key:{"cube","sphere","capsule","exact"})item->remove(key);
+                auto* cube=item->put("cube");if(!cube)return false;cube->setArray();
+                for(const auto& dim:dims){auto* v=cube->add();if(!v)return false;v->setNumber(std::strtod(dim.c_str(),nullptr));}
+                auto* at=item->put("colliderAt");if(!at)return false;at->setArray();
+                for(const auto& dim:center){auto* v=at->add();if(!v)return false;v->setNumber(std::strtod(dim.c_str(),nullptr));}
+                auto* wall=item->put("wall");if(!wall)return false;wall->setFlag(true);
             }
             else if(property=="collision")
             {

@@ -10,6 +10,7 @@
 #include "screens/screens.h"
 #include "bindings/bindings.h"
 #include "assets/assets.h"
+#include "assets/model.h"
 #include "base/log.h"
 #include "base/memory.h"
 #include "audio/audio.h"
@@ -2839,6 +2840,18 @@ namespace nx
                     return;
                 }
                 const auto row=static_cast<size_t>(item.property);
+                if(row==7&&x>=kWidth-114&&y<item.y+17)
+                {
+                    const auto id=actorPreviewEntity();const auto* look=id&&m_placementWorld?m_placementWorld->space().getAppearance(id):nullptr;
+                    if(!look){m_status="Select a visible mesh component first.";return;}
+                    Vec3 low(-0.5f,-0.5f,-0.5f),high(0.5f,0.5f,0.5f);
+                    if(look->model){if(!look->model->model){m_status="Model is still loading; generate collision once it is ready.";return;}low=look->model->model->low;high=look->model->model->high;}
+                    else if(look->solid==Solid::None||look->custom){m_status="Simple collision requires a loaded model or native primitive.";return;}
+                    const auto extent=high-low,center=(high+low)*0.5f;
+                    const auto str=[](const Vec3& v){return std::to_string(v.x)+","+std::to_string(v.y)+","+std::to_string(v.z);};
+                    if(m_document.setVisualActorProperty(m_visualSelection,m_visualComponent,"simpleCollision",str(Vec3(std::max(0.02f,extent.x),std::max(0.02f,extent.y),std::max(0.02f,extent.z)))+";"+str(center),m_status)){m_actorCollision=true;m_status="Generated solid box from local mesh bounds. Undo restores prior collision.";}
+                    return;
+                }
                 if(editActorProperty(s,actorProperties[row])&&row>=1&&row<=3&&y>=item.y+15&&blueprintInputComponents("Vec3",m_visualText,m_actorAxisValues))
                 {m_actorAxis=std::clamp(static_cast<int>((x-right-8)/fieldWidth),0,2);m_visualText=m_actorAxisValues[static_cast<size_t>(m_actorAxis)];}
                 return;
@@ -2932,6 +2945,7 @@ namespace nx
                 const auto i=static_cast<size_t>(row.property);const auto v=item[actorProperties[i]];
                 c.rect(right+8,y,m_actorRightPanel-16,34,{0.20f,0.20f,0.21f,1});
                 c.text(*m_font,actorPropertyLabels[i],right+12,y+1,muted);
+                if(i==7){c.roundRect(kWidth-114,y,104,16,3,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Generate box",kWidth-62,y,text,Align::Center);}
                 if(i>=1&&i<=3)
                 {
                     const float fallback=i==3?1.f:0.f;const Color colors[]={{0.75f,0.22f,0.22f,1},{0.20f,0.56f,0.28f,1},{0.23f,0.43f,0.78f,1}};
@@ -5051,6 +5065,7 @@ namespace nx
         };
         const auto selectInlineField=[&](float fx,float fw)
         {
+            m_inlineSelectAll=false;
             const auto labels=blueprintInputComponentLabels(m_editType);
             if(!labels.empty()&&m_inputComponents.size()==labels.size())
             {
@@ -5547,10 +5562,12 @@ namespace nx
             else
             {
             auto active=[&]() -> std::string& {return m_inputComponents.empty()?m_edit:m_inputComponents[m_inputComponent];};
-            const unsigned arrows=(held(Key::Left)?1u:0u)|(held(Key::Right)?2u:0u);
+            const unsigned arrows=(held(Key::Left)?1u:0u)|(held(Key::Right)?2u:0u)|(control&&held(Key::A)?4u:0u);
             const unsigned fresh=arrows&~m_inlineKeys;m_inlineKeys=arrows;
             const auto previous=[&](const std::string& value){if(m_inlineCaret){--m_inlineCaret;while(m_inlineCaret&&(static_cast<unsigned char>(value[m_inlineCaret])&0xc0)==0x80)--m_inlineCaret;}};
-            if(fresh&1u)previous(active());
+            if(fresh&4u){m_inlineSelectAll=true;m_inlineCaret=active().size();}
+            if(fresh&1u){if(m_inlineSelectAll){m_inlineCaret=0;m_inlineSelectAll=false;}else previous(active());}
+            if(fresh&2u)m_inlineSelectAll=false;
             if((fresh&2u)&&m_inlineCaret<active().size()){++m_inlineCaret;while(m_inlineCaret<active().size()&&(static_cast<unsigned char>(active()[m_inlineCaret])&0xc0)==0x80)++m_inlineCaret;}
             for(u32 i=0;i<input.typedCount();++i)
             {
@@ -5561,8 +5578,10 @@ namespace nx
                     m_focus=0;input.setTyping(false);clearWire();rebuildPins();filterCatalogue();m_diagnostic={};
                     m_status="Inline input applied.";NX_INFO("Blueprint Studio: inline input applied: %s",m_editPin.c_str());break;
                 }
-                if(ch==9&&!m_inputComponents.empty()){m_inputComponent=(m_inputComponent+1)%m_inputComponents.size();m_inlineCaret=active().size();continue;}
+                if(ch==9&&!m_inputComponents.empty()){m_inputComponent=(m_inputComponent+1)%m_inputComponents.size();m_inlineCaret=active().size();m_inlineSelectAll=false;continue;}
                 auto& value=active();
+                if(m_inlineSelectAll&&(ch==8||(ch>=32&&ch!=127&&!control))){value.clear();m_inlineCaret=0;m_inlineSelectAll=false;m_inlineDirty=true;}
+                if(control&&ch!=8)continue;
                 if(ch==8&&m_inlineCaret){const auto end=m_inlineCaret;previous(value);value.erase(m_inlineCaret,end-m_inlineCaret);m_inlineDirty=true;}
                 else if(ch>=32&&ch!=127&&(m_inputComponents.empty()||(ch<128&&std::string("0123456789.eE+-").find(static_cast<char>(ch))!=std::string::npos)))
                 {std::string part;appendCharacter(part,ch,4096);if(value.size()+part.size()<=4096){value.insert(m_inlineCaret,part);m_inlineCaret+=part.size();m_inlineDirty=true;}}
@@ -6362,6 +6381,7 @@ namespace nx
                         c.roundRect(bx,py-9*m_zoom,bw,18*m_zoom,3,active?Color{0.23f,0.37f,0.49f,1}:Color{0.21f,0.22f,0.24f,1});
                         const float inset=(label.empty()?4.f:17.f)*m_zoom;
                         if(!label.empty())graphText(label,bx+3*m_zoom,py-9*m_zoom,13*m_zoom,18*m_zoom,m_zoom,muted);
+                        if(active&&m_inlineSelectAll)c.rect(bx+inset,py-8*m_zoom,std::max(0.f,bw-inset-2*m_zoom),16*m_zoom,{0.18f,0.43f,0.70f,1});
                         graphText(part.empty()&&!active?"Edit":part,bx+inset,py-9*m_zoom,bw-inset-3*m_zoom,18*m_zoom,m_zoom,text);
                         if(active){const float at=bx+inset+c.measure(*m_font,part.substr(0,m_inlineCaret).c_str()).x*m_zoom;if(at<bx+bw-2*m_zoom)c.rect(at,py-7*m_zoom,std::max(1.f,m_zoom),14*m_zoom,accent);}
                     };

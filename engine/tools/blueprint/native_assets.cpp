@@ -509,7 +509,7 @@ namespace nx
         field("field hero:Entity@");field("field yaw:float=0");field("field pitch:float=0");
         field("field walkSpeed:float=4.6");field("field jumpSpeed:float=6.4");field("field eyeHeight:float=1.55");
         field("field mouseSensitivity:float=0.2");field("field gamepadYawSpeed:float=130");field("field gamepadPitchSpeed:float=100");
-        field("field groundGrip:float=14");field("field airGrip:float=4");if(third)field("field cameraDistance:float=5");
+        field("field groundGrip:float=14");field("field airGrip:float=4");if(third){field("field cameraDistance:float=5");field("field modelYawOffset:float=180");}
         const auto fn=[&](const char* name,bool delta=false)
         {
             const auto index=candidate.graphs.size();
@@ -593,9 +593,9 @@ namespace nx
             const auto arg=std::string("arg_")+pin;
             wire(obstacle,0,arg.c_str(),box,pin);
         }
-        wire(obstacle,box,"result",collider,"target");wire(obstacle,0,"arg_size",collider,"size");
+        wire(obstacle,box,"result",collider,"target");value(obstacle,collider,"size","1,1,1");
         const auto wall=add(obstacle,"api:Entity:set_wall:Entity@,bool",1260,60);chain(obstacle,collider,wall);wire(obstacle,box,"result",wall,"target");value(obstacle,wall,"value","true");
-        note(obstacle,"OBSTACLE | Create a native SolidBox with the supplied visual transform, then attach a matching static 3D cube collider. Enable the native wall flag explicitly; no mass is assigned, so the obstacle stays fixed. Reuse this function for walls and platforms.");
+        note(obstacle,"OBSTACLE | Create a native SolidBox with the supplied visual transform, then attach a unit local cube collider (the entity transform already supplies the dimensions). Enable the native wall flag explicitly; no mass is assigned, so the obstacle stays fixed. Reuse this function for walls and platforms.");
         const auto entity=add(spawn,"api:Space:Space::spawn:Vec3",340,60);
         value(spawn,entity,"place","0,0.2,0");chain(spawn,0,entity);
         const auto keep=variable(spawn,"hero",true,680,60);chain(spawn,entity,keep);wire(spawn,entity,"result",keep,"value");
@@ -651,9 +651,9 @@ namespace nx
             cam=add(camera,"api:Space:Space::camera:Vec3,Vec3,float",1480,60);
         wire(camera,ch,"value",feet,"target");wire(camera,feet,"result",eye,"feet");wire(camera,height,"value",eye,"height");
         wire(camera,eye,"result",target,"eye");wire(camera,cy,"value",target,"yaw");wire(camera,cp,"value",target,"pitch");
-        wire(camera,cy,"value",angles,"yaw");wire(camera,angles,"result",face,"value");wire(camera,ch,"value",face,"target");
+        wire(camera,cy,"value",angles,"yaw");if(third){const auto modelHeading=variable(camera,"modelYawOffset",false,340,730);wire(camera,modelHeading,"value",angles,"modelYawOffset");}wire(camera,angles,"result",face,"value");wire(camera,ch,"value",face,"target");
         chain(camera,0,face);chain(camera,face,cam);if(third){const auto chase=add(camera,"player:chase-camera",1080,550),distance=variable(camera,"cameraDistance",false,700,730);wire(camera,eye,"result",chase,"pivot");wire(camera,cy,"value",chase,"yaw");wire(camera,cp,"value",chase,"pitch");wire(camera,distance,"value",chase,"distance");wire(camera,chase,"result",cam,"from");wire(camera,eye,"result",cam,"to");}else{wire(camera,eye,"result",cam,"from");wire(camera,target,"result",cam,"to");}value(camera,cam,"angle","72");
-        note(camera,third?"THIRD PERSON | Pivot is above the character feet. Chase camera offsets backward along yaw/pitch by cameraDistance, looks at the pivot, and follows the robot. Camera collision avoidance is not included.":"FIRST PERSON | Eye is feet position plus eye height. Target is one unit along yaw/pitch direction; field of view is 72 degrees vertically. Rotate the attached robot body with yaw, then set the native Space camera.");
+        note(camera,third?"THIRD PERSON | Pivot is above the character feet. Chase camera offsets backward along yaw/pitch by cameraDistance, looks at the pivot, and follows the robot. Model yaw offset corrects the robot asset forward axis without changing movement or camera heading. Camera collision avoidance is not included.":"FIRST PERSON | Eye is feet position plus eye height. Target is one unit along yaw/pitch direction; field of view is 72 degrees vertically. Rotate the attached robot body with yaw, then set the native Space camera.");
         const auto horizontal=add(hud,"api:Canvas:line:Canvas@,float,float,float,float,float,Color",360,60),
             vertical=add(hud,"api:Canvas:line:Canvas@,float,float,float,float,float,Color",830,60);
         chain(hud,0,horizontal);chain(hud,horizontal,vertical);

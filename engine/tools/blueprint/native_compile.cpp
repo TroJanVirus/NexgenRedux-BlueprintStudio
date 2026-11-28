@@ -1264,7 +1264,7 @@ Vec3 bp_player_ball_impulse(Vec2 move, float strength, float dt)
     if (magnitude > 1) move = move / magnitude;
     return Vec3(move.x, 0, move.y) * max(0.0f, strength) * clamp(dt, 0, 0.1f);
 }
-Vec3 bp_player_angles(float yaw) { return Vec3(0, -yaw, 0); }
+Vec3 bp_player_angles(float yaw, float modelYawOffset) { return Vec3(0, modelYawOffset - yaw, 0); }
 )BP_PLAYER";
         bool usesAudio=false;
         for(const auto& graph:document.graphs)for(const auto& node:graph.nodes)
