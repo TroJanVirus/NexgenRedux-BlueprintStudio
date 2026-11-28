@@ -193,6 +193,31 @@ with log.open("wb") as output:
         click(1812,110)
         shot("widget-designer-4x3-1920.png")
         click(1812,110)
+        # Return to content, choose the actor and open the expanded placement tab.
+        click(1628,110)
+        click(765,395)
+        click(765,744)
+        shot("scene-placement-1920.png")
+        def placements():
+            data=json.loads(project.read_text())
+            return [n for g in data["graphs"] if g["owner"]=="Screen" and g["name"]=="onEnter"
+                    for n in g["nodes"] if n["kind"]=="actor:spawn-asset"]
+        previous=len(placements())
+        # At 1920x1080: viewport (354,144)-(1908,932), world origin (1131,538).
+        drag(100,150,1201,580)
+        key("ctrl+s")
+        wait_for(lambda:len(placements())==previous+1,"wide scene drag and drop")
+        assert [float(v) for v in placements()[-1]["values"]["place"].split(",")]==[5,0,3]
+        click(635,110)
+        shot("scene-perspective-1920.png")
+        # Native tool runs the original Redux editor, then returns to this scene tab.
+        click(525,25)
+        wait_for(lambda:"native scene editor opened: Screen" in log.read_text(errors="replace"),"native scene tool")
+        shot("native-scene-editor-1920.png")
+        key("Escape")
+        key("Return")
+        wait_for(lambda:"restored scene placement tab" in log.read_text(errors="replace"),"return to placement")
+        shot("scene-returned-tab-1920.png")
         # A close request exercises normal release of the isolated world.
         msg=protocol.event.ClientMessage(window=win,client_type=conn.intern_atom("WM_PROTOCOLS"),
             data=(32,[conn.intern_atom("WM_DELETE_WINDOW"),X.CurrentTime,0,0,0]))

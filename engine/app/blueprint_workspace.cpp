@@ -3109,6 +3109,7 @@ namespace nx
         m_sceneEditor=true;m_sceneExit=false;m_playing=true;
         m_left=s.input->raw().mouseButtons[0];
         m_status="Scene editor: Save your scene, then Escape to return.";
+        NX_INFO("Blueprint Studio: native scene editor opened: %s",screen.c_str());
     }
     void BlueprintWorkspace::importAsset(Services& s,const std::string& file)
     {
@@ -3323,6 +3324,7 @@ namespace nx
                 m_assetBrowser=m_assetLibrary=m_visualPlacement=true;
                 m_widgetDesigner=false;
                 m_status="Returned to scene placement. Saved native scene files are ready.";
+                NX_INFO("Blueprint Studio: restored scene placement tab");
             }
             else
             {
