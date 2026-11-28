@@ -16,6 +16,9 @@ binary = pathlib.Path(sys.argv[1]).resolve()
 root = pathlib.Path(sys.argv[2]).resolve()
 own = root / "own"
 own.mkdir(parents=True)
+# The legacy authoring sequence explicitly selects list navigation; default groups are tested in compact desktop.
+(own / 'blueprint-editor-layout.json').write_text(json.dumps({'version':1,'graphCategories':False}))
+os.environ['NX_BLUEPRINT_TEST_GEOMETRY']='1'
 fixture = pathlib.Path(__file__).parent / "examples" / (sys.argv[3] if len(sys.argv) > 3 else "camera-orbit.bp.json")
 project = json.loads(fixture.read_text(encoding="utf-8"))
 author = "--author" in sys.argv
@@ -109,6 +112,22 @@ def wire(x1, y1, x2, y2):
     xdo("mouseup", 1)
     time.sleep(0.28)
 
+def pin(graph, node, row, output=False):
+    lines = [line.split("BP_GEOMETRY ", 1)[1] for line in log.read_text(errors="replace").splitlines() if "BP_GEOMETRY " in line]
+    for line in reversed(lines):
+        fields = line.split()
+        if int(fields[0]) != graph:
+            continue
+        for field in fields[1:]:
+            idx, coordinates = field.split(":", 1)
+            if int(idx) == node:
+                x,y,width,zoom = map(float, coordinates.split(","))
+                return round(x+(width if output else 0)),round(y+(38+22*row)*zoom)
+    raise RuntimeError(f"No rendered pin geometry for graph {graph}, node {node}")
+
+def connect(graph, src, out, dst, inp):
+    wire(*pin(graph,src,out,True),*pin(graph,dst,inp))
+
 def assert_authored(process, graph_index, nodes, links):
     def has_graph():
         try:
@@ -141,13 +160,13 @@ def author_scene(process):
     # Blank native document; every node is inserted via the right-click palette,
     # every value is entered through its actual input pin and every wire is dragged.
     right_add(500, 100, "spawn:plane")
-    right_add(760, 100, "spawn:box")
-    value(760, 160, "Cube")
+    right_add(760, 325, "spawn:box")
+    value(*pin(0,2,1), "Cube")
     if timed:
-        components(760, 182, ["0", "0.5", "0"])
-        components(760, 226, ["0.92", "0.35", "0.12", "1"])
-    wire(468, 138, 500, 138)
-    wire(696, 138, 760, 138)
+        components(*pin(0,2,2), ["0", "0.5", "0"])
+        components(*pin(0,2,4), ["0.92", "0.35", "0.12", "1"])
+    connect(0,0,0,1,0)
+    connect(0,1,0,2,0)
     assert_authored(process, 0, 3, 2)
     capture("01-on-enter")
     operations["graph_switch"] += 1
@@ -159,8 +178,8 @@ def author_scene(process):
         click(500, 485)  # Cube sorts before Floor in the known-target list.
         key("Return")
         time.sleep(0.3)
-        value(500, 226, "8")
-        wire(468, 138, 500, 138)
+        value(*pin(1,1,4), "8")
+        connect(1,0,0,1,0)
         assert_authored(process, 1, 2, 1)
         capture("02-update")
         # Inspect the actual selected node, verify that opening and closing
@@ -174,32 +193,32 @@ def author_scene(process):
         operations["graph_switch"] += 1
         click(100, 153)
         right_add(500, 100, "render:space")
-        wire(468, 138, 500, 138)
+        connect(2,0,0,1,0)
         assert_authored(process, 2, 2, 1)
         capture("03-draw")
     else:
         right_add(500, 100, "time:timeline")
         right_add(272, 330, "make:Vec3")
         right_add(500, 330, "math:orbit-position")
-        right_add(760, 100, "api:Space:Space::camera:Vec3,Vec3,float")
-        value(500, 182, "8")
-        value(272, 368, "0")
-        value(272, 390, "0.5")
-        value(272, 412, "0")
-        wire(468, 138, 500, 138)
-        wire(696, 138, 760, 138)
-        wire(696, 160, 500, 434)
-        wire(468, 368, 500, 368)
-        wire(468, 368, 760, 182)
-        wire(696, 368, 760, 160)
+        right_add(800, 115, "api:Space:Space::camera:Vec3,Vec3,float")
+        value(*pin(1,1,2), "8")
+        value(*pin(1,2,0), "0")
+        value(*pin(1,2,1), "0.5")
+        value(*pin(1,2,2), "0")
+        connect(1,0,0,1,0)
+        connect(1,1,0,4,0)
+        connect(1,1,1,3,3)
+        connect(1,2,0,3,0)
+        connect(1,2,0,4,2)
+        connect(1,3,0,4,1)
         assert_authored(process, 1, 5, 6)
         capture("02-update")
         operations["graph_switch"] += 1
         click(100, 153)
         right_add(272, 250, "event:canvas")
         right_add(500, 100, "api:Space:Space::draw:Canvas@")
-        wire(468, 138, 500, 138)
-        wire(468, 288, 500, 160)
+        connect(2,0,0,2,0)
+        connect(2,1,0,2,1)
         assert_authored(process, 2, 3, 2)
         capture("03-draw")
     # Retain the actual GUI-authored editable project, before launch.

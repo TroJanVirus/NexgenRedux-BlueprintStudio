@@ -3404,6 +3404,7 @@ NX_TEST(nativePortableProjectZipRoundTripAndCorruption)
     NX_EXPECT(blueprintEnsureAssetFolder(r.platform,doc.assetRoot,"Screen",error));
     const std::string payload("a\0b\xff",4),root=doc.assetRoot;
     r.platform.files["own/"+root+"/Screen/asset/model/mesh.glb"]=payload;
+    NX_EXPECT(r.platform.createOwnFolder((root+"/_global").c_str()));
     r.platform.files["own/"+root+"/_global/shared.txt"]="shared";
     NX_EXPECT(doc.serialize(original,error));
     NX_EXPECT(blueprintExportPackage(r.platform,doc,"portable.bp.zip",error));

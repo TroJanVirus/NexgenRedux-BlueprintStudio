@@ -72,10 +72,10 @@ jobs:
           ASAN_OPTIONS: detect_leaks=1:halt_on_error=1:fast_unwind_on_malloc=0
         run: ctest --test-dir build --output-on-failure --timeout 300 -R '^blueprint_runtime$'
       - name: Build engine audio regression tests
-        if: github.ref == 'refs/heads/blueprint/audio-authoring' || github.ref == 'refs/heads/blueprint/integration-1100c4e' || github.head_ref == 'blueprint/integration-bf38665' || github.ref == 'refs/heads/blueprint/integration-bf38665'
+        if: github.ref == 'refs/heads/blueprint/audio-authoring' || github.ref == 'refs/heads/blueprint/integration-1100c4e' || github.head_ref == 'blueprint/integration-bf38665' || github.ref == 'refs/heads/blueprint/integration-bf38665' || startsWith(github.ref, 'refs/heads/blueprint/beta-')
         run: cmake --build build --target nx_tests --parallel 4
       - name: Run engine unit tests with audio decoding and memory bounds
-        if: github.ref == 'refs/heads/blueprint/audio-authoring' || github.ref == 'refs/heads/blueprint/integration-1100c4e' || github.head_ref == 'blueprint/integration-bf38665' || github.ref == 'refs/heads/blueprint/integration-bf38665'
+        if: github.ref == 'refs/heads/blueprint/audio-authoring' || github.ref == 'refs/heads/blueprint/integration-1100c4e' || github.head_ref == 'blueprint/integration-bf38665' || github.ref == 'refs/heads/blueprint/integration-bf38665' || startsWith(github.ref, 'refs/heads/blueprint/beta-')
         env:
           ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
         run: ctest --test-dir build --output-on-failure --timeout 300 -R '^unit$'

@@ -7,3 +7,5 @@ Glyphs scale with zoom; titles remain displayed at the minimum 35% zoom. Pin lab
 Layout > Wire style cycles Curved (default), Orthogonal and Straight and persists the choice. Curves use cubic Bézier sampling; backward connections without manual reroutes detour around the endpoint nodes. Manual reroutes override automatic detours. Other intervening nodes are not obstacle-routed. The same sampled geometry is used for reroute hit testing, preserving the original anchor interval.
 
 When endpoint nodes have unequal widths, automatic detours use their combined left/right bounds. For very narrow forward gaps, the curve handles are constrained to the gap.
+
+The node library starts with functional categories, shows their available node counts, and drills into the chosen group. Search remains global, exact node IDs rank first. Graph navigation defaults to flat category sections (Events, Construction, Functions, Macros, Shared library, Types); the Variables section remains directly beneath it. Groups/List toggles the navigator mode and persists the preference. Old Tree preferences migrate to Groups by default.

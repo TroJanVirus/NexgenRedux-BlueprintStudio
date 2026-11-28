@@ -326,7 +326,7 @@ namespace nx
             for(unsigned ch=0;ch<tone.channels;++ch)
             {
                 const bool right=ch==1&&independent;
-                const auto render=add(0,"audio:render-channel",1400+ch*530,60);
+                const auto render=add(0,"audio:render-channel",1400.f+static_cast<float>(ch)*530.f,60);
                 wire(0,previous,previous==repeat?"body":"then",render,"in");wire(0,samples,"result",render,"samples");wire(0,offset,"result",render,"start");
                 input(0,render,"channel",std::to_string(ch));input(0,render,"shape",std::to_string(shapes[right?tone.rightWave:tone.wave]));
                 input(0,render,"frequency",number(right?tone.rightFrequency:tone.frequency));input(0,render,"endFrequency",number(right?tone.rightEndFrequency:tone.endFrequency));
@@ -387,8 +387,8 @@ namespace nx
             !valid(edit.gain,0,2)||!valid(edit.fadeIn,0,1)||!valid(edit.fadeOut,0,1))
         {error="Invalid clip or edit range.";return false;}
         const auto n=static_cast<unsigned>(clip.pcm.size()/clip.channels);
-        const auto start=std::min(n-1,static_cast<unsigned>(edit.start*n));
-        const auto end=std::min(n,std::max(start+1,static_cast<unsigned>(std::ceil(edit.end*n))));
+        const auto start=std::min(n-1,static_cast<unsigned>(std::round(static_cast<double>(edit.start)*n)));
+        const auto end=std::min(n,std::max(start+1,static_cast<unsigned>(std::round(static_cast<double>(edit.end)*n))));
         const unsigned count=end-start;
         float peak=0;
         if(edit.normalize)for(unsigned i=start;i<end;++i)for(unsigned ch=0;ch<clip.channels;++ch)

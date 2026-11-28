@@ -41,7 +41,7 @@ namespace nx
         struct NavigationRow {std::string key,label;size_t graph=static_cast<size_t>(-1);unsigned depth=0;};
         std::vector<NavigationRow> navigationRows() const;
         void revealNavigationGraph(size_t index);
-        bool m_graphTree=false;
+        bool m_graphTree=true;
         bool m_minimap=false,m_minimapDragging=false;
         bool m_graphHideLeft=false,m_graphHideRight=false;
         float graphBaseLeft() const;
@@ -305,6 +305,10 @@ namespace nx
         size_t m_pending=static_cast<size_t>(-1),m_paletteFirst=0;
         std::string m_pendingPin,m_query,m_edit;
         std::vector<const BlueprintNodeSpec*> m_palette;
+        struct PaletteRow {const BlueprintNodeSpec* spec=nullptr;std::string label,group;};
+        std::vector<PaletteRow> m_paletteRows;
+        std::string m_paletteGroup,m_testGraphGeometry;
+        void rebuildPaletteRows();
         int m_focus=0; // 1 catalogue search, 2 literal, 3 reference, 4 new function, 5 save as, 6 input value
         std::string m_editPin,m_editType;
         std::vector<std::string> m_inputComponents,m_inputChoices;
