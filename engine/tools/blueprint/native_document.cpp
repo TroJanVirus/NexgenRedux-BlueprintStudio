@@ -2307,6 +2307,9 @@ namespace nx
             const auto shared=value["sharedLibrary"];
             if(shared.exists()&&(shared.type()!=JsonTree::Type::Bool||g.kind!="function"||behaviourOwner(owner))){error="Invalid shared library graph.";return false;}
             g.sharedLibrary=shared.flag();
+            const auto collapsed=value["collapsed"];
+            if(collapsed.exists()&&(collapsed.type()!=JsonTree::Type::Bool||g.kind!="function"||g.inlineMacro||g.sharedLibrary)){error="Invalid collapsed graph.";return false;}
+            g.collapsed=collapsed.flag();
             const auto role=value["dataRole"];const std::string roleText=role.text();
             if(role.exists()&&(!role.isString()||g.kind!="function"||(roleText!="enum"&&roleText!="struct"&&roleText!="event"&&roleText!="coroutine"))){error="Invalid graph role.";return false;}
             g.dataRole=roleText;
@@ -2560,6 +2563,7 @@ namespace nx
         {
             auto* v=gs->add();if(!v||!text(*v,"owner",g.owner)||!text(*v,"name",g.name)||!text(*v,"kind",g.kind))return fail();
             if(g.inlineMacro){auto* macro=v->put("inlineMacro");if(!macro)return fail();macro->setFlag(true);}
+            if(g.collapsed){auto* field=v->put("collapsed");if(!field)return fail();field->setFlag(true);}
             if(g.sharedLibrary){auto* shared=v->put("sharedLibrary");if(!shared)return fail();shared->setFlag(true);}
             if(!g.dataRole.empty()&&!text(*v,"dataRole",g.dataRole))return fail();
             if(g.kind=="function")
@@ -2807,7 +2811,7 @@ namespace nx
             bool valid=false;
             for(const auto& fn:graphs)
             {
-                if(fn.kind!="function"||(kind=="call:library"?libraryFunction(fn.name):function(g.owner,fn.name))!=&fn||&fn==&g||(!functionTarget.empty()&&fn.name!=functionTarget)||
+                if(fn.kind!="function"||fn.collapsed||(kind=="call:library"?libraryFunction(fn.name):function(g.owner,fn.name))!=&fn||&fn==&g||(!functionTarget.empty()&&fn.name!=functionTarget)||
                     (kind!="call:function"&&kind!="call:library"&&(fn.sharedLibrary||fn.inlineMacro||fn.returnType!="void"))||((kind=="async:start")!=(fn.dataRole=="coroutine")))continue;
                 value=fn.name;g.nodes.push_back({id,kind,value,x,y});
                 valid=functions(error);g.nodes.pop_back();if(valid)break;
@@ -3578,6 +3582,7 @@ namespace nx
             if(node.kind!="dispatch:bind"&&node.kind!="dispatch:unbind"&&node.kind!="dispatch:bind-listener"&&node.kind!="dispatch:unbind-listener")
                 for(const auto& p:target->parameters)spec.inputs.push_back({"arg_"+p.name,p.type});
             if(target->inlineMacro)spec.title="Macro "+target->name;
+            if(target->collapsed)spec.title="Collapsed "+target->name;
             spec.result=target->returnType;
             if(spec.result!="void")spec.outputs.push_back({"result",spec.result});
         }
@@ -3748,10 +3753,10 @@ namespace nx
         if(graph>=graphs.size()||graphs[graph].kind!="function"||graphs.size()>=kMaxGraphs||!identifier(functionName)||ownerEvent(graphs[graph].owner,functionName)||
             std::any_of(graphs.begin(),graphs.end(),[&](const Graph& g){return g.owner==graphs[graph].owner&&g.name==functionName;}))
         {error="Choose a unique name for the copied function.";return false;}
-        Graph copy=graphs[graph];copy.name=functionName;copy.sharedLibrary=false;copy.dataRole.clear();
+        Graph copy=graphs[graph];copy.name=functionName;copy.sharedLibrary=false;copy.collapsed=false;copy.dataRole.clear();
         recordGraphList();graphs.push_back(std::move(copy));error.clear();return true;
     }
-    bool BlueprintDocument::collapseToFunction(size_t graph,const std::vector<size_t>& nodes,const std::string& functionName,std::string& error)
+    bool BlueprintDocument::collapseToFunction(size_t graph,const std::vector<size_t>& nodes,const std::string& functionName,std::string& error,bool collapsed)
     {
         const auto fail=[&](const std::string& reason){error=reason;return false;};
         if(graph>=graphs.size()||nodes.empty()||graphs.size()>=kMaxGraphs||!identifier(functionName))return fail("Select nodes and choose a unique function name.");
@@ -3840,7 +3845,7 @@ namespace nx
         if(selectedCount+2>kMaxNodes)return fail("Extracted graph exceeds node limit.");
         BlueprintDocument staged;staged.name=name;staged.assetRoot=assetRoot;staged.graphs=graphs;staged.manifests=manifests;staged.m_nextId=m_nextId;
         Graph outer=original,inner;outer.nodes.clear();outer.links.clear();outer.comments.clear();
-        inner.owner=original.owner;inner.name=functionName;inner.kind="function";inner.returnType=returned.type;
+        inner.owner=original.owner;inner.name=functionName;inner.kind="function";inner.returnType=returned.type;inner.collapsed=collapsed;
         for(size_t i=0;i<arguments.size();++i)inner.parameters.push_back({"input_"+std::to_string(i+1),arguments[i].type});
         std::unordered_set<std::string> ids;for(const auto& n:original.nodes)ids.insert(n.id);
         auto newId=[&](){std::string id;do{id="n"+std::to_string(++staged.m_nextId);}while(!ids.insert(id).second);return id;};
@@ -3854,7 +3859,7 @@ namespace nx
         }
         const size_t call=outer.nodes.size();outer.nodes.push_back({newId(),"call:function",functionName,first.x,first.y});
         const size_t ret=inner.nodes.size();
-        if(returned.node!=none)inner.nodes.push_back({newId(),"return:function","",24,60});
+        if(collapsed||returned.node!=none)inner.nodes.push_back({newId(),"return:function","",24,60});
         for(const auto& comment:original.comments)
         {
             const bool moved=std::any_of(inner.nodes.begin(),inner.nodes.end(),[&](const Node& n){return n.id==comment.members.front();});
@@ -3878,9 +3883,73 @@ namespace nx
             }
             else outer.links.push_back({call,outside[l.to],"result",l.input});
         }
-        if(returned.node!=none){inner.links.push_back({inside[last],ret,"then","in"});inner.links.push_back({inside[returned.node],ret,returned.pin,"value"});}
+        if(collapsed||returned.node!=none)inner.links.push_back({inside[last],ret,"then","in"});
+        if(returned.node!=none)inner.links.push_back({inside[returned.node],ret,returned.pin,"value"});
         staged.graphs[graph]=std::move(outer);staged.graphs.push_back(std::move(inner));
         if(!staged.arrange(staged.graphs.size()-1,error))return false;
+        std::string checked;if(!staged.serialize(checked,error))return false;
+        recordGraphList();graphs.swap(staged.graphs);m_nextId=staged.m_nextId;error.clear();return true;
+    }
+    bool BlueprintDocument::expandCollapsed(size_t graph,size_t node,std::string& error)
+    {
+        const auto fail=[&](const char* why){error=why;return false;};
+        if(graph>=graphs.size()||node>=graphs[graph].nodes.size())return fail("Select a collapsed node.");
+        const auto& original=graphs[graph];const auto& call=original.nodes[node];
+        const auto* inner=function(original.owner,call.ref);
+        if(call.kind!="call:function"||!inner||!inner->collapsed)return fail("Select a collapsed graph call.");
+        size_t uses=0;for(const auto& g:graphs)for(const auto& n:g.nodes)if(blueprintNamedCall(n.kind)&&function(g.owner,n.ref)==inner)++uses;
+        if(uses!=1)return fail("Collapsed graph is shared; expansion would change other calls.");
+        const auto innerIndex=static_cast<size_t>(inner-graphs.data()),none=static_cast<size_t>(-1);
+        size_t entry=none,exit=none;
+        for(size_t i=0;i<inner->nodes.size();++i)
+        {
+            if(inner->nodes[i].kind=="entry"){if(entry!=none)return fail("Multiple input tunnels.");entry=i;}
+            if(inner->nodes[i].kind=="return:function"){if(exit!=none)return fail("Multiple output tunnels.");exit=i;}
+        }
+        if(entry==none||exit==none)return fail("Both tunnels are required for expansion.");
+        const Link *enter=nullptr,*leave=nullptr,*result=nullptr;
+        for(const auto& l:inner->links)
+        {
+            if(l.from==entry&&l.output=="then"){if(enter)return fail("Multiple entry flows.");enter=&l;}
+            if(l.to==exit&&l.input=="in"){if(leave)return fail("Multiple exit flows.");leave=&l;}
+            if(l.to==exit&&l.input=="value")result=&l;
+        }
+        if(!enter||!leave||enter->to==exit||leave->from==entry)return fail("Connect both execution tunnels before expanding.");
+        if(inner->returnType!="void"&&(!result||result->from==entry))return fail("Connect an internal result to the output tunnel.");
+        if(original.nodes.size()+inner->nodes.size()-3>kMaxNodes)return fail("Expanded graph exceeds node limit.");
+        BlueprintDocument staged;staged.name=name;staged.assetRoot=assetRoot;staged.graphs=graphs;staged.manifests=manifests;staged.m_visualAssets=m_visualAssets;staged.m_visualSerial=m_visualSerial;staged.m_nextId=m_nextId;
+        Graph outer=original;outer.nodes.clear();outer.links.clear();outer.comments.clear();
+        std::vector<size_t> outside(original.nodes.size(),none),inside(inner->nodes.size(),none);
+        std::unordered_set<std::string> ids;std::unordered_map<std::string,std::string> moved;
+        for(size_t i=0;i<original.nodes.size();++i)if(i!=node){outside[i]=outer.nodes.size();outer.nodes.push_back(original.nodes[i]);ids.insert(original.nodes[i].id);}
+        const auto& anchor=inner->nodes[enter->to];
+        for(size_t i=0;i<inner->nodes.size();++i)if(i!=entry&&i!=exit)
+        {
+            Node copy=inner->nodes[i];const auto old=copy.id;
+            if(ids.count(copy.id))do{copy.id="n"+std::to_string(++staged.m_nextId);}while(ids.count(copy.id));
+            ids.insert(copy.id);moved[old]=copy.id;copy.x+=call.x-anchor.x;copy.y+=call.y-anchor.y;inside[i]=outer.nodes.size();outer.nodes.push_back(std::move(copy));
+        }
+        for(auto comment:original.comments){comment.members.erase(std::remove(comment.members.begin(),comment.members.end(),call.id),comment.members.end());if(!comment.members.empty())outer.comments.push_back(std::move(comment));}
+        for(auto comment:inner->comments){for(auto& member:comment.members){const auto it=moved.find(member);member=it==moved.end()?"":it->second;}comment.members.erase(std::remove(comment.members.begin(),comment.members.end(),""),comment.members.end());if(!comment.members.empty())outer.comments.push_back(std::move(comment));}
+        const auto add=[&](size_t a,const std::string& output,size_t b,const std::string& input){outer.links.push_back({a,b,output,input});};
+        for(const auto& l:original.links)
+        {
+            if(l.from!=node&&l.to!=node){Link copy=l;copy.from=outside[l.from];copy.to=outside[l.to];outer.links.push_back(std::move(copy));}
+            else if(l.to==node&&l.input=="in")add(outside[l.from],l.output,inside[enter->to],enter->input);
+            else if(l.from==node&&l.output=="then")add(inside[leave->from],leave->output,outside[l.to],l.input);
+            else if(l.from==node&&l.output=="result"&&result)add(inside[result->from],result->output,outside[l.to],l.input);
+        }
+        for(const auto& l:inner->links)
+        {
+            if(l.from!=entry&&l.to!=exit){Link copy=l;copy.from=inside[l.from];copy.to=inside[l.to];copy.route.clear();outer.links.push_back(std::move(copy));}
+            else if(l.from==entry&&l.to!=exit&&l.output!="then")
+            {
+                const auto external=std::find_if(original.links.begin(),original.links.end(),[&](const Link& q){return q.to==node&&q.input==l.output;});
+                if(external==original.links.end())return fail("Wire all data input tunnels before expanding.");
+                add(outside[external->from],external->output,inside[l.to],l.input);
+            }
+        }
+        staged.graphs[graph]=std::move(outer);staged.graphs.erase(staged.graphs.begin()+static_cast<std::ptrdiff_t>(innerIndex));
         std::string checked;if(!staged.serialize(checked,error))return false;
         recordGraphList();graphs.swap(staged.graphs);m_nextId=staged.m_nextId;error.clear();return true;
     }

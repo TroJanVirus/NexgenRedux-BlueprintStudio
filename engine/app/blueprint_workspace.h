@@ -26,6 +26,7 @@ namespace nx
         void update(Services& services);
         bool previewing() const { return m_playing; }
         bool tracePaused() const { return m_playing&&m_tracePaused; }
+        bool liveTraceView() const { return m_playing&&m_traceDebugger&&m_liveTraceView&&!m_tracePaused&&!m_playPaused; }
         bool playPaused() const { return m_playing&&m_playPaused; }
         void updatePreview(Services& services, float dt);
         void stopPreview(Services& services);
@@ -279,7 +280,9 @@ namespace nx
         void pauseTrace(Services& services);
         void resumeTrace(Services& services,bool step);
         void traceLine(const char* section,int line,unsigned run,asIScriptContext* context);
-        struct TraceHit { BlueprintLocation location; int line; unsigned run; std::vector<std::string> values{},stack{}; };
+        struct TraceHit { BlueprintLocation location; int line; unsigned run; std::vector<std::string> values{},stack{}; double time=0; };
+        bool m_liveTraceView=false,m_liveTraceKey=false;
+        double m_liveTraceClock=0;
         ScriptDebugger* m_traceDebugger=nullptr;
         bool m_traceEnabled=false,m_tracePaused=false,m_tracePending=false,m_traceStep=false,m_traceKey=false;
         bool m_tracePointer=false,m_traceTyping=false;
@@ -438,6 +441,7 @@ namespace nx
         size_t m_layoutComment=static_cast<size_t>(-1),m_layoutLink=static_cast<size_t>(-1),m_layoutPoint=0;
         float m_layoutStartX=0,m_layoutStartY=0,m_layoutX=0,m_layoutY=0;
         std::vector<size_t> m_selectedNodes,m_layoutMembers,m_extractNodes;
+        bool m_extractCollapsed=false;
         std::vector<std::pair<std::string,std::string>> m_graphBack;
         void openSelectedFunction();
         void returnToCaller();

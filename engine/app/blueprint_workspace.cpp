@@ -637,7 +637,7 @@ namespace nx
             auto& row=m_rows[i];const auto& n=graph.nodes[i];
             row.height=std::max(kNodeHeight,kPinStart+kPinStep*static_cast<float>(std::max(row.inputs.size(),row.outputs.size()))+8);
             const auto& alias=n.displayName;
-            row.title=!alias.empty()?alias:n.kind=="call:function"&&m_document.function(graph.owner,n.ref)&&m_document.function(graph.owner,n.ref)->inlineMacro?"Macro "+n.ref:title(n);
+            row.title=graph.collapsed&&n.kind=="entry"?"Input tunnel":graph.collapsed&&n.kind=="return:function"?"Output tunnel":n.kind=="call:function"&&m_document.function(graph.owner,n.ref)&&m_document.function(graph.owner,n.ref)->collapsed?"Collapsed "+n.ref:!alias.empty()?alias:n.kind=="call:function"&&m_document.function(graph.owner,n.ref)&&m_document.function(graph.owner,n.ref)->inlineMacro?"Macro "+n.ref:title(n);
             row.width=std::max(kNodeWidth,measure(row.title)*1.45f+54);
             // A stable field column, shared by rendering and pointer hit testing.
             const auto details=inputDetails(i);
@@ -753,7 +753,7 @@ namespace nx
         {
             if(blueprintNamedCall(base->id))
             {
-                for(const auto& fn:m_document.graphs)if(fn.kind=="function"&&(&fn!=&graph)&&
+                for(const auto& fn:m_document.graphs)if(fn.kind=="function"&&!fn.collapsed&&(&fn!=&graph)&&
                     (base->id=="call:library"?m_document.libraryFunction(fn.name)==&fn:(m_document.function(graph.owner,fn.name)==&fn&&m_document.canCallFunction(m_graph,fn.name))))
                 {
                     BlueprintNodeSpec resolved;
@@ -3929,7 +3929,7 @@ namespace nx
 
     bool BlueprintWorkspace::startTrace(Services& s)
     {
-        stopTrace();m_traceHits.clear();m_traceValues.clear();m_traceLocation={};m_traceBudget=128;m_traceSelected=m_traceFirst=m_traceDetailFirst=0;m_traceShowStack=false;
+        stopTrace();m_liveTraceClock=0;m_traceHits.clear();m_traceValues.clear();m_traceLocation={};m_traceBudget=128;m_traceSelected=m_traceFirst=m_traceDetailFirst=0;m_traceShowStack=false;
         if(!m_traceEnabled)return true;
         if(!s.debugger||!s.debugger->startLocalTrace(*s.host,[](void* user,const char* section,int line,u32 run,asIScriptContext* context)
         {static_cast<BlueprintWorkspace*>(user)->traceLine(section,line,run,context);},this))
@@ -3940,7 +3940,7 @@ namespace nx
     void BlueprintWorkspace::stopTrace()
     {
         if(m_traceDebugger)m_traceDebugger->stopLocalTrace();
-        m_traceDebugger=nullptr;m_tracePaused=false;m_tracePending=false;m_traceStep=false;m_traceKey=false;
+        m_traceDebugger=nullptr;m_liveTraceView=m_liveTraceKey=false;m_tracePaused=false;m_tracePending=false;m_traceStep=false;m_traceKey=false;
     }
 
     void BlueprintWorkspace::traceLine(const char* section,int line,unsigned run,asIScriptContext* context)
@@ -3961,7 +3961,7 @@ namespace nx
         }
         if(m_traceBudget)--m_traceBudget;
         if(m_traceHits.size()>=32)m_traceHits.erase(m_traceHits.begin());
-        TraceHit hit{location,line,run};
+        TraceHit hit{location,line,run};hit.time=m_liveTraceClock;
         m_traceDebugger->traceValues(context,hit.values);m_traceDebugger->traceStack(context,hit.stack);
         m_traceHits.push_back(std::move(hit));
         // Snapshot first watched statement before it executes. Otherwise keep the last sampled node.
@@ -4068,6 +4068,7 @@ namespace nx
     void BlueprintWorkspace::updatePreview(Services& s,float dt)
     {
         if(!m_playing)return;
+        m_liveTraceClock+=std::max(0.f,dt);
         if(m_sceneEditor)
         {
             auto& input=*s.input;const auto& raw=input.raw();
@@ -4117,6 +4118,7 @@ namespace nx
         if(!m_sceneEditor&&m_traceDebugger)
         {
             const auto& raw=s.input->raw();
+            const bool live=raw.keys[static_cast<size_t>(Key::Control)]&&raw.keys[static_cast<size_t>(Key::L)];if(live&&!m_liveTraceKey)m_liveTraceView=!m_liveTraceView;m_liveTraceKey=live;
             const bool key=raw.keys[static_cast<size_t>(Key::Control)]&&raw.keys[static_cast<size_t>(Key::T)];
             const bool toggle=key&&!m_traceKey;m_traceKey=key;
             if(m_tracePaused)
@@ -4185,6 +4187,7 @@ namespace nx
     }
     void BlueprintWorkspace::drawPreviewOverlay(Canvas& c)
     {
+        if(liveTraceView()&&m_font){c.design(kBaseWidth,kBaseHeight);c.noClip();c.roundRect(340,638,600,36,5,{0.10f,0.14f,0.20f,0.95f});c.text(*m_font,"LIVE TRACE | Ctrl+L game view | Ctrl+T pause | Esc stop",640,646,text,Align::Center);return;}
         if(m_profileOpen&&!m_sceneEditor&&!tracePaused()&&!playPaused()&&m_font)
         {
             c.design(kBaseWidth,kBaseHeight);c.noClip();c.roundRect(16,16,490,268,7,{0.10f,0.14f,0.20f,0.94f});
@@ -5165,10 +5168,12 @@ namespace nx
             if(click)
             {
                 m_nodeContext=false;
-                if(in(x,y,m_nodeContextX,m_nodeContextY+32,m_nodeContextX+270,m_nodeContextY+224))
+                if(in(x,y,m_nodeContextX,m_nodeContextY+32,m_nodeContextX+270,m_nodeContextY+288))
                 {
                     const int action=static_cast<int>((y-m_nodeContextY-32)/32);
-                    if(action==2)removeSelectedNode(input);
+                    if(action==6){m_extractCollapsed=true;m_extractNodes=m_selectedNodes;m_edit.clear();m_focus=12;input.setTyping(true);m_status="Name the private collapsed graph.";}
+                    else if(action==7){const auto owner=m_document.graphs[m_graph].owner,name=m_document.graphs[m_graph].name;if(m_document.expandCollapsed(m_graph,m_selection,m_status)){for(size_t k=0;k<m_document.graphs.size();++k)if(m_document.graphs[k].owner==owner&&m_document.graphs[k].name==name){selectGraph(k);break;}m_status="Expanded graph; undo restores the collapsed node.";}}
+                    else if(action==2)removeSelectedNode(input);
                     else if(action==3){if(m_document.disconnectNode(m_graph,m_selection)){clearWire();rebuildPins();m_diagnostic={};m_status="All node connections removed. Undo restores them.";}else m_status="Node has no connections.";}
                     else {beginNodeEditor(m_selection,input);if(action==1||action==5){m_inspectorRow=action==1?0u:1u;m_inspectorReplace=true;}if(action==4)m_status="Choose a header colour, then Apply.";}
                 }
@@ -5259,7 +5264,7 @@ namespace nx
                     {m_layoutComment=m_document.graphs[m_graph].comments.size()-1;m_edit="Comment";m_commentColour=0;m_focus=11;input.setTyping(true);}
                 }
                 else if(in(x,y,300,155,550,185))
-                {m_extractNodes=nodes;m_edit.clear();m_focus=12;input.setTyping(true);m_status="Name the extracted function.";}
+                {m_extractCollapsed=false;m_extractNodes=nodes;m_edit.clear();m_focus=12;input.setTyping(true);m_status="Name the extracted function.";}
                 else if(in(x,y,300,185,550,215)&&m_document.graphs[m_graph].kind=="function")
                 {m_edit=m_document.graphs[m_graph].name;m_focus=13;input.setTyping(true);m_status="Rename function and update its calls.";}
                 else if(in(x,y,300,215,550,245)&&m_document.graphs[m_graph].kind=="function")
@@ -5791,7 +5796,7 @@ namespace nx
                     if(focus==12)
                     {
                         const auto& g=m_document.graphs[m_graph];const auto caller=std::make_pair(g.owner,g.name);
-                        if(!m_document.collapseToFunction(m_graph,m_extractNodes,m_edit,m_status))break;
+                        if(!m_document.collapseToFunction(m_graph,m_extractNodes,m_edit,m_status,m_extractCollapsed))break;
                         if(m_graphBack.size()>=32)m_graphBack.erase(m_graphBack.begin());
                         m_graphBack.push_back(caller);selectGraph(m_document.graphs.size()-1);
                     }
@@ -5881,7 +5886,7 @@ namespace nx
                 m_left=left;return;
             }
             if(click&&in(x,y,1180,5,1268,33))
-            {m_traceEnabled=!m_traceEnabled;m_status=m_traceEnabled?"Trace enabled. Ctrl+T pauses during play test.":"Trace disabled.";m_left=left;return;}
+            {m_traceEnabled=!m_traceEnabled;m_status=m_traceEnabled?"Trace enabled. Ctrl+L live graph; Ctrl+T pauses during play test.":"Trace disabled.";m_left=left;return;}
             if(m_document.graphs.empty()){m_left=left;return;}
             if(click&&in(x,y,504,39,604,69))
             {
@@ -6248,7 +6253,7 @@ namespace nx
                     const auto pin=hitPin(x,y);
                     if(pin.node<m_rows.size()){m_pinContext=true;m_pinContextNode=pin.node;m_pinContextName=pin.name;m_pinContextType=pin.type;m_pinContextOutput=pin.output;m_pinContextX=std::clamp(x,0.f,kWidth-260.f);m_pinContextY=std::clamp(y,0.f,kHeight-150.f);m_pan=false;m_left=left;return;}
                     const auto& nodes=m_document.graphs[m_graph].nodes;
-                    for(size_t i=nodes.size();i>0;--i){const auto p=nodeLayoutPosition(i-1);const float nx=kLeft+m_x+p.x*m_zoom,ny=kTop+m_y+p.y*m_zoom;if(!in(x,y,nx,ny,nx+m_rows[i-1].width*m_zoom,ny+m_rows[i-1].height*m_zoom))continue;m_selection=i-1;m_selectedNodes={i-1};m_nodeContext=true;m_nodeContextX=std::clamp(x,0.f,kWidth-270.f);m_nodeContextY=std::clamp(y,0.f,kHeight-224.f);m_nodeClickTime=-1;break;}
+                    for(size_t i=nodes.size();i>0;--i){const auto p=nodeLayoutPosition(i-1);const float nx=kLeft+m_x+p.x*m_zoom,ny=kTop+m_y+p.y*m_zoom;if(!in(x,y,nx,ny,nx+m_rows[i-1].width*m_zoom,ny+m_rows[i-1].height*m_zoom))continue;m_selection=i-1;if(std::find(m_selectedNodes.begin(),m_selectedNodes.end(),i-1)==m_selectedNodes.end())m_selectedNodes={i-1};m_nodeContext=true;m_nodeContextX=std::clamp(x,0.f,kWidth-270.f);m_nodeContextY=std::clamp(y,0.f,kHeight-288.f);m_nodeClickTime=-1;break;}
                     if(!m_nodeContext){openPinMenu(x,y);input.setTyping(true);}
                 }
                 m_pan=false;m_left=left;return;
@@ -6380,6 +6385,9 @@ namespace nx
                 Color color=pinColor(rows[l.from].outputTypes[pins.output]);
                 if(m_highlightWire<graph.links.size()&&wire!=m_highlightWire)color.a*=0.18f;
                 if(wire==m_moveWire)color.a*=0.20f;
+                float pulse=0;
+                if(liveTraceView()&&rows[l.from].outputTypes[pins.output]=="exec")for(size_t i=1;i<m_traceHits.size();++i){const auto& a=m_traceHits[i-1];const auto& b=m_traceHits[i];if(a.run==b.run&&a.location.graph==m_graph&&b.location.graph==m_graph&&a.location.node==l.from&&b.location.node==l.to)pulse=std::max(pulse,static_cast<float>(std::clamp(1.0-(m_liveTraceClock-b.time)/0.8,0.0,1.0)));}
+                if(pulse>0)color={color.r+(1-color.r)*pulse,color.g+(0.72f-color.g)*pulse,color.b+(0.22f-color.b)*pulse,1};
                 if(tracePaused()&&rows[l.from].outputTypes[pins.output]=="exec")
                     for(size_t i=1;i<m_traceHits.size()&&i<=m_traceSelected;++i)
                     {
@@ -6390,7 +6398,7 @@ namespace nx
                 {
                     const auto& a=points[j-1];const auto& b=points[j];
                     if(std::max(a.x,b.x)<kLeft||std::min(a.x,b.x)>kRight||std::max(a.y,b.y)<kTop||std::min(a.y,b.y)>kBottom)continue;
-                    c.line(a.x,a.y,b.x,b.y,wire==m_highlightWire?3.5f:2.f,color);
+                    c.line(a.x,a.y,b.x,b.y,wire==m_highlightWire?3.5f:2.f+2*pulse,color);
                 }
                 if(points.size()>1){const auto& a=points[points.size()/2-1];const auto& b=points[points.size()/2];const float dx=b.x-a.x,dy=b.y-a.y,len=std::hypot(dx,dy);if(len>1){const float xx=(a.x+b.x)*.5f,yy=(a.y+b.y)*.5f,ux=dx/len,uy=dy/len;c.line(xx,yy,xx-6*ux+4*uy,yy-6*uy-4*ux,1.8f,color);c.line(xx,yy,xx-6*ux-4*uy,yy-6*uy+4*ux,1.8f,color);}}
                 for(size_t j=0;j<l.route.size();++j){const auto p=routeLayoutPosition(wire,j);c.circle(kLeft+m_x+p.x*m_zoom,kTop+m_y+p.y*m_zoom,6,color);}
@@ -6443,6 +6451,7 @@ namespace nx
                 else if(pure)c.circle(ix,iy,3*m_zoom,text);
                 else {c.line(ix-3*m_zoom,iy-4*m_zoom,ix+3*m_zoom,iy,1.5f*m_zoom,text);c.line(ix+3*m_zoom,iy,ix-3*m_zoom,iy+4*m_zoom,1.5f*m_zoom,text);}
                 if(n.watch)c.circle(x+w-12*m_zoom,y+12*m_zoom,5*m_zoom,{1,0.72f,0.22f,1});
+                if(liveTraceView()){float pulse=0;for(const auto& hit:m_traceHits)if(hit.location.graph==m_graph&&hit.location.node==i)pulse=std::max(pulse,static_cast<float>(std::clamp(1.0-(m_liveTraceClock-hit.time)/0.8,0.0,1.0)));if(pulse>0)c.roundLine(x,y,w,h,5,2+pulse,{1,0.72f,0.22f,pulse});}
                 if(tracePaused()&&m_traceLocation.graph==m_graph&&m_traceLocation.node==i)c.roundLine(x,y,w,h,5,3,{1,0.72f,0.22f,1});
                 else if(m_diagnostic.graph==m_graph&&m_diagnostic.node==i)c.roundLine(x,y,w,h,5,3,{0.98f,0.35f,0.38f,1});
                 else if(i==m_selection||std::find(m_selectedNodes.begin(),m_selectedNodes.end(),i)!=m_selectedNodes.end())c.roundLine(x,y,w,h,5,2,accent);
@@ -6668,10 +6677,10 @@ namespace nx
         }
         if(m_nodeContext&&m_selection<m_rows.size())
         {
-            const float x=m_nodeContextX,y=m_nodeContextY;c.roundRect(x,y,270,224,6,{0.16f,0.16f,0.17f,1});c.clip(x+8,y,254,32);c.text(*m_font,m_rows[m_selection].title.c_str(),x+10,y+7,accent);c.noClip();
+            const float x=m_nodeContextX,y=m_nodeContextY;c.roundRect(x,y,270,288,6,{0.16f,0.16f,0.17f,1});c.clip(x+8,y,254,32);c.text(*m_font,m_rows[m_selection].title.c_str(),x+10,y+7,accent);c.noClip();
             const auto& nodeTitle=m_rows[m_selection].title;
-            const std::string labels[]={"Edit "+nodeTitle,"Rename "+nodeTitle,"Delete "+nodeTitle,"Disconnect","Change Colour","Add comment"};
-            for(unsigned i=0;i<6;++i){const float yy=y+32.f+32.f*static_cast<float>(i);c.rect(x+4,yy+2,262,28,i==2?Color{0.38f,0.19f,0.23f,1}:Color{0.22f,0.22f,0.24f,1});c.clip(x+10,yy+2,250,28);c.text(*m_font,labels[i].c_str(),x+12,yy+6,text);c.noClip();}
+            const std::string labels[]={"Edit "+nodeTitle,"Rename "+nodeTitle,"Delete "+nodeTitle,"Disconnect","Change Colour","Add comment","Collapse to graph","Expand collapsed graph"};
+            for(unsigned i=0;i<8;++i){const float yy=y+32.f+32.f*static_cast<float>(i);c.rect(x+4,yy+2,262,28,i==2?Color{0.38f,0.19f,0.23f,1}:Color{0.22f,0.22f,0.24f,1});c.clip(x+10,yy+2,250,28);c.text(*m_font,labels[i].c_str(),x+12,yy+6,text);c.noClip();}
         }
         if(m_pinMenu)
         {
@@ -6882,7 +6891,7 @@ namespace nx
             }
             else if(m_focus>=12&&m_focus<=14)
             {
-                c.roundRect(260,230,760,220,8,{0.16f,0.16f,0.17f,1});c.text(*m_font,m_focus==12?"COLLAPSE TO FUNCTION":m_focus==13?"RENAME FUNCTION":"DUPLICATE FUNCTION",280,250,accent);
+                c.roundRect(260,230,760,220,8,{0.16f,0.16f,0.17f,1});c.text(*m_font,m_focus==12?(m_extractCollapsed?"COLLAPSE TO GRAPH":"COLLAPSE TO FUNCTION"):m_focus==13?"RENAME FUNCTION":"DUPLICATE FUNCTION",280,250,accent);
                 c.rect(280,290,720,36,{0.24f,0.35f,0.48f,1});c.clip(286,290,708,36);c.text(*m_font,m_edit.c_str(),290,297,text);c.noClip();
                 c.paragraph(*m_font,m_status.c_str(),280,340,720,muted);c.text(*m_font,"Enter = Apply | Escape = Cancel",280,409,muted);c.roundRect(720,400,120,36,4,{0.19f,0.4f,0.3f,1});c.text(*m_font,"Apply",780,407,text,Align::Center);c.roundRect(850,400,130,36,4,{0.22f,0.31f,0.43f,1});c.text(*m_font,"Cancel",915,407,text,Align::Center);
             }

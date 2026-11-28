@@ -1129,6 +1129,19 @@ NX_TEST(nativeCollapseLinearSelectionPreservesTypedBoundaryAndUndo)
     NX_EXPECT(doc.duplicateFunction(doc.graphs.size()-1,"AnotherScore",error)&&doc.function("Screen","AnotherScore"));
     NX_EXPECT(doc.undo()&&doc.undo()&&doc.serialize(checked,error)&&checked==after);
 }
+NX_TEST(nativeCollapsedGraphExpandsTypedTunnels)
+{
+    BlueprintDocument doc;std::string error,bytes,source;doc.create();
+    NX_EXPECT(doc.addNode(0,"literal:int",0,200,error)&&doc.addNode(0,"capture:int",300,100,error)&&doc.addNode(0,"var:set:int",600,100,error));
+    NX_EXPECT(doc.connect(0,0,"then",2,"in",error)&&doc.connect(0,1,"value",2,"value",error)&&doc.connect(0,2,"then",3,"in",error)&&doc.connect(0,2,"result",3,"value",error));
+    NX_EXPECT(doc.collapseToFunction(0,{2},"PrivateCapture",error,true));
+    NX_EXPECT(doc.function("Screen","PrivateCapture")->collapsed&&compileBlueprint(doc,source,error));
+    NX_EXPECT(doc.serialize(bytes,error));
+    BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error));
+    NX_EXPECT(copy.expandCollapsed(0,copy.graphs[0].nodes.size()-1,error));
+    NX_EXPECT(copy.graphs[0].nodes.size()==4&&copy.graphs[0].links.size()==4&&compileBlueprint(copy,source,error));
+    NX_EXPECT(copy.undo()&&copy.serialize(source,error)&&source==bytes);
+}
 NX_TEST(nativeCollapseUsesStableInputAndOneExecutedReturn)
 {
     BlueprintDocument doc;std::string error,before,source;doc.create();

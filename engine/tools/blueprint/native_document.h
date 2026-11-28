@@ -64,6 +64,7 @@ namespace nx
             std::string returnType="void";
             bool inlineMacro=false;
             bool sharedLibrary=false;
+            bool collapsed=false; // private, function-backed editor subgraph
             std::string dataRole{}; // enum, struct or custom event
             // Explicit imported fields live on the owner lifecycle entry graph.
             std::vector<Field> fields{};
@@ -203,7 +204,8 @@ namespace nx
         bool setInlineMacro(size_t graph,bool enabled,std::string& error);
         bool renameFunction(size_t graph,const std::string& functionName,std::string& error);
         bool duplicateFunction(size_t graph,const std::string& functionName,std::string& error);
-        bool collapseToFunction(size_t graph,const std::vector<size_t>& nodes,const std::string& functionName,std::string& error);
+        bool collapseToFunction(size_t graph,const std::vector<size_t>& nodes,const std::string& functionName,std::string& error,bool collapsed=false);
+        bool expandCollapsed(size_t graph,size_t node,std::string& error);
         bool functions(std::string& error) const;
         // Named instance variables and function names are scoped to their owning screen.
         std::string moduleForOwner(const std::string& owner) const;
