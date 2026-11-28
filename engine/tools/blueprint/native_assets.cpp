@@ -143,14 +143,21 @@ namespace nx
             {"sustain",&BlueprintTone::sustain,0,1},{"release",&BlueprintTone::release,0,0.33f},
             {"tail",&BlueprintTone::tail,0,2}
         };
+        constexpr ToneField rightFields[]={
+            {"rightFrequency",&BlueprintTone::rightFrequency,20,4000},{"rightEndFrequency",&BlueprintTone::rightEndFrequency,20,4000},
+            {"rightAmplitude",&BlueprintTone::rightAmplitude,0,1},{"rightAttack",&BlueprintTone::rightAttack,0,0.33f},
+            {"rightDecay",&BlueprintTone::rightDecay,0,0.33f},{"rightSustain",&BlueprintTone::rightSustain,0,1},{"rightRelease",&BlueprintTone::rightRelease,0,0.33f}
+        };
         bool toneValid(const BlueprintTone& t,std::string& error)
         {
             const auto valid=[](double v,double lo,double hi){return std::isfinite(v)&&v>=lo&&v<=hi;};
-            if(t.wave>4||(t.channels!=1&&t.channels!=2)||
+            if(t.wave>4||t.rightWave>4||(t.channels!=1&&t.channels!=2)||
                 (t.rate!=11025&&t.rate!=22050&&t.rate!=44100&&t.rate!=48000))
             {error="Invalid waveform, channel count or sample rate.";return false;}
             for(const auto& f:toneFields)if(!valid(t.*f.field,f.lo,f.hi))
             {error="Invalid tone parameter: "+std::string(f.name);return false;}
+            for(const auto& f:rightFields)if(!valid(t.*f.field,f.lo,f.hi))
+            {error="Invalid right oscillator parameter: "+std::string(f.name);return false;}
             for(const auto& f:blueprintEffectControls)if(!valid(t.effects.*f.field,f.lo,f.hi))
             {error="Invalid effect parameter: "+std::string(f.name);return false;}
             return true;
@@ -236,6 +243,14 @@ namespace nx
         BlueprintTone dry=t;dry.rate=kMixRate;
         std::string pcm;
         if(!dryToneWave(dry,pcm,error))return false;
+        std::string rightPcm;
+        if(t.channels==2&&t.independentStereo)
+        {
+            dry.wave=t.rightWave;dry.frequency=t.rightFrequency;dry.endFrequency=t.rightEndFrequency;
+            dry.amplitude=t.rightAmplitude;dry.attack=t.rightAttack;dry.decay=t.rightDecay;
+            dry.sustain=t.rightSustain;dry.release=t.rightRelease;
+            if(!dryToneWave(dry,rightPcm,error)||rightPcm.size()!=pcm.size())return false;
+        }
         const unsigned inputFrames=static_cast<unsigned>((pcm.size()-44)/2);
         std::vector<float> stereo(static_cast<size_t>(inputFrames)*2);
         for(unsigned i=0;i<inputFrames;++i)
@@ -243,6 +258,12 @@ namespace nx
             const unsigned v=static_cast<unsigned char>(pcm[44+2*i])|
                 (static_cast<unsigned>(static_cast<unsigned char>(pcm[45+2*i]))<<8);
             stereo[2*i]=stereo[2*i+1]=static_cast<float>(v>=32768?static_cast<int>(v)-65536:static_cast<int>(v));
+            if(!rightPcm.empty())
+            {
+                const unsigned rv=static_cast<unsigned char>(rightPcm[44+2*i])|
+                    (static_cast<unsigned>(static_cast<unsigned char>(rightPcm[45+2*i]))<<8);
+                stereo[2*i+1]=static_cast<float>(rv>=32768?static_cast<int>(rv)-65536:static_cast<int>(rv));
+            }
         }
         return renderAudio(t,stereo,wav,error);
     }
@@ -335,7 +356,9 @@ namespace nx
         std::ostringstream json;
         json.imbue(std::locale::classic());
         json<<std::setprecision(std::numeric_limits<float>::max_digits10)
-            <<"{\"version\":1,\"wave\":"<<tone.wave<<",\"rate\":"<<tone.rate<<",\"channels\":"<<tone.channels;
+            <<"{\"version\":2,\"wave\":"<<tone.wave<<",\"rate\":"<<tone.rate<<",\"channels\":"<<tone.channels
+            <<",\"independentStereo\":"<<(tone.independentStereo?"true":"false")<<",\"rightWave\":"<<tone.rightWave;
+        for(const auto& f:rightFields)json<<",\""<<f.name<<"\":"<<(tone.*f.field);
         for(const auto& f:toneFields)json<<",\""<<f.name<<"\":"<<(tone.*f.field);
         json<<",\"effects\":{";
         bool first=true;
@@ -358,7 +381,7 @@ namespace nx
             file.size>16384||!json.parse(reinterpret_cast<const char*>(file.data),file.size)||!json.root().isObject())
         {error="Cannot read audio preset.";return false;}
         const auto obj=json.root();
-        if(!obj["version"].isNumber()||obj["version"].exact()!=1)
+        if(!obj["version"].isNumber()||(obj["version"].exact()!=1&&obj["version"].exact()!=2))
         {error="Unsupported audio preset version.";return false;}
         BlueprintTone candidate;
         const auto number=[](JsonTree::Value v,double lo,double hi,double& out)
@@ -375,6 +398,18 @@ namespace nx
             if(!number(obj[f.name],f.lo-0.000001,f.hi+0.000001,value))
             {error="Invalid preset parameter: "+std::string(f.name);return false;}
             candidate.*f.field=std::clamp(static_cast<float>(value),f.lo,f.hi);
+        }
+        if(obj["version"].exact()==2)
+        {
+            if(obj["independentStereo"].type()!=JsonTree::Type::Bool||!integer("rightWave",0,4,candidate.rightWave))
+            {error="Invalid stereo preset.";return false;}
+            candidate.independentStereo=obj["independentStereo"].flag();
+            for(const auto& f:rightFields)
+            {
+                if(!number(obj[f.name],f.lo-0.000001,f.hi+0.000001,value))
+                {error="Invalid right oscillator parameter: "+std::string(f.name);return false;}
+                candidate.*f.field=std::clamp(static_cast<float>(value),f.lo,f.hi);
+            }
         }
         for(const auto& f:blueprintEffectControls)
         {

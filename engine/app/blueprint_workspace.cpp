@@ -3437,6 +3437,10 @@ namespace nx
             return;
         }
         bool changed=false;
+        if(m_clipSource.empty()&&!m_toneEffects&&in(x,y,280,388,445,410))
+        {m_tone.independentStereo=!m_tone.independentStereo;m_tone.channels=2;m_toneRight=false;changed=true;}
+        if(m_clipSource.empty()&&!m_toneEffects&&m_tone.independentStereo&&in(x,y,455,388,625,410))
+        {m_toneRight=!m_toneRight;return;}
         if(in(x,y,830,497,1000,525)){m_tone.channels=m_tone.channels==1?2:1;changed=true;}
         if(m_toneEffects)
         {
@@ -3479,7 +3483,7 @@ namespace nx
         else if(in(x,y,280,158,1000,190))
         {
             const auto index=static_cast<unsigned>((x-280)/144);
-            if(index<5){m_tone.wave=index;changed=true;}
+            if(index<5){(m_toneRight&&m_tone.independentStereo?m_tone.rightWave:m_tone.wave)=index;changed=true;}
         }
         if(in(x,y,280,197,1000,229))
         {
@@ -3488,9 +3492,10 @@ namespace nx
             if(index<4){m_tone.rate=rates[index];changed=true;}
         }
         struct Control {float* value;float lo,hi;};
-        const Control controls[]={{&m_tone.frequency,20,4000},{&m_tone.endFrequency,20,4000},
-            {&m_tone.seconds,0.05f,4},{&m_tone.amplitude,0,1},{&m_tone.attack,0,0.33f},
-            {&m_tone.decay,0,0.33f},{&m_tone.sustain,0,1},{&m_tone.release,0,0.33f}};
+        const bool right=m_toneRight&&m_tone.independentStereo;
+        const Control controls[]={{right?&m_tone.rightFrequency:&m_tone.frequency,20,4000},{right?&m_tone.rightEndFrequency:&m_tone.endFrequency,20,4000},
+            {&m_tone.seconds,0.05f,4},{right?&m_tone.rightAmplitude:&m_tone.amplitude,0,1},{right?&m_tone.rightAttack:&m_tone.attack,0,0.33f},
+            {right?&m_tone.rightDecay:&m_tone.decay,0,0.33f},{right?&m_tone.rightSustain:&m_tone.sustain,0,1},{right?&m_tone.rightRelease:&m_tone.release,0,0.33f}};
         if(m_clipSource.empty())for(unsigned i=0;i<8;++i)
         {
             const float xx=280.f+360.f*(i%2),yy=240.f+36.f*(i/2);
@@ -3560,7 +3565,7 @@ namespace nx
         if(m_clipSource.empty())
         {
             const char* waves[]={"Sine","Triangle","Saw","Square","Noise"};
-            for(unsigned i=0;i<5;++i)button(280.f+i*144,158,138,32,waves[i],m_tone.wave==i);
+            for(unsigned i=0;i<5;++i)button(280.f+i*144,158,138,32,waves[i],(m_toneRight&&m_tone.independentStereo?m_tone.rightWave:m_tone.wave)==i);
         }
         else
         {
@@ -3572,10 +3577,11 @@ namespace nx
         for(unsigned i=0;i<4;++i)
             button(280.f+i*180,197,174,32,(std::to_string(rates[i])+" Hz").c_str(),m_tone.rate==rates[i]);
         struct Item{const char* name;float value,lo,hi;};
-        const Item items[]={{"Start Hz",m_tone.frequency,20,4000},{"End Hz",m_tone.endFrequency,20,4000},
-            {"Seconds",m_tone.seconds,0.05f,4},{"Gain",m_tone.amplitude,0,1},
-            {"Attack",m_tone.attack,0,0.33f},{"Decay",m_tone.decay,0,0.33f},
-            {"Sustain",m_tone.sustain,0,1},{"Release",m_tone.release,0,0.33f}};
+        const bool right=m_toneRight&&m_tone.independentStereo;
+        const Item items[]={{"Start Hz",right?m_tone.rightFrequency:m_tone.frequency,20,4000},{"End Hz",right?m_tone.rightEndFrequency:m_tone.endFrequency,20,4000},
+            {"Seconds",m_tone.seconds,0.05f,4},{"Gain",right?m_tone.rightAmplitude:m_tone.amplitude,0,1},
+            {"Attack",right?m_tone.rightAttack:m_tone.attack,0,0.33f},{"Decay",right?m_tone.rightDecay:m_tone.decay,0,0.33f},
+            {"Sustain",right?m_tone.rightSustain:m_tone.sustain,0,1},{"Release",right?m_tone.rightRelease:m_tone.release,0,0.33f}};
         if(m_clipSource.empty())for(unsigned i=0;i<8;++i)
         {
             const auto& item=items[i];const float x=280.f+360.f*(i%2),y=240.f+36.f*(i/2);
@@ -3598,7 +3604,12 @@ namespace nx
             c.clip(280,350,720,32);c.text(*m_font,("Source: "+m_clipSource).c_str(),280,356,muted);c.noClip();
         }
         }
-        const float waveTop=m_toneEffects?410.f:388.f;
+        if(m_clipSource.empty()&&!m_toneEffects)
+        {
+            button(280,388,165,22,m_tone.independentStereo?"Dual oscillator":"Linked stereo",m_tone.independentStereo);
+            if(m_tone.independentStereo)button(455,388,170,22,m_toneRight?"Editing right":"Editing left",true);
+        }
+        const float waveTop=m_toneEffects||m_clipSource.empty()?414.f:388.f;
         const float middle=(waveTop+492)*0.5f,half=(492-waveTop)*0.5f-4;
         c.rect(280,waveTop,720,492-waveTop,{0.09f,0.12f,0.16f,1});
         c.line(280,middle,1000,middle,1,muted);
@@ -4538,7 +4549,7 @@ namespace nx
                 {
                     BlueprintTone candidate;
                     if(blueprintLoadTonePreset(*s.platform,m_document.assetRoot,assetScreen(),m_assetFiles[row],candidate,m_status))
-                    {stopTone(s);m_clipSource.clear();m_audioClip=BlueprintAudioClip{};m_tone=candidate;m_audioEditor=true;m_toneEffects=false;refreshTone();if(!m_toneWav.empty())m_status="Loaded editable audio preset.";}
+                    {stopTone(s);m_clipSource.clear();m_audioClip=BlueprintAudioClip{};m_tone=candidate;m_toneRight=false;m_audioEditor=true;m_toneEffects=false;refreshTone();if(!m_toneWav.empty())m_status="Loaded editable audio preset.";}
                 }
                 else if(row<m_assetFiles.size()&&blueprintAudioAsset(m_assetFiles[row]))
                 {

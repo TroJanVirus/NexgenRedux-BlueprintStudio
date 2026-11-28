@@ -8,7 +8,7 @@ Preset + saves a versioned `sound/synth-N.bptone.json` with all oscillator, enve
 
 The source tone is at most four seconds, plus up to two seconds of effect tail. 22.05 kHz mono is the default. Original Xbox has a default 6 MiB sound cache and Redux has 32 mixer voices; the displayed PCM estimate is the generated clip only, not total RAM or actual hardware performance. Use native Cook for ADPCM or Ogg where appropriate. Saw and square are simple oscillators, not band-limited; high notes can alias.
 
-The game needs no editor dependency. Independent stereo oscillator sources, graph-based synthesis and streaming authoring remain separate work. Runtime Samples, AudioStream, bus effects and playback nodes are available through the existing catalogue.
+The game needs no editor dependency. Graph-based synthesis and streaming authoring remain separate work. Dual oscillator mode provides separate waveform, pitch sweep, amplitude and ADSR per stereo channel, with shared duration/rate and bus effects. Toggle Editing left/right in Synth. Version 2 presets save both channels; version 1 presets load linked stereo. Runtime Samples, AudioStream, bus effects and playback nodes are available through the existing catalogue.
 
 ## Existing audio assets
 

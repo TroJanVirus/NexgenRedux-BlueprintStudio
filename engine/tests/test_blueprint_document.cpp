@@ -9,7 +9,7 @@
 using namespace nx;
 NX_TEST(nativeCatalogueContainsReferenceAPI)
 {
-    NX_EXPECT(blueprintCatalogue().size()==1528);
+    NX_EXPECT(blueprintCatalogue().size()==1532);
     const auto* save=blueprintSpec("api:Save:Save::set:string,string");
     NX_EXPECT(save&&save->inputs.size()==3&&save->outputs.size()==1);
     if(save&&save->inputs.size()==3)NX_EXPECT(save->inputs[0].type=="exec"&&save->inputs[2].type=="string");
@@ -1940,6 +1940,7 @@ NX_TEST(nativeUpstreamThreadChannelAndAudioNodes)
 {
     NX_EXPECT(blueprintSpec("api:Window:Window::resize:uint,uint"));
     NX_EXPECT(blueprintSpec("api:System:System::get_processors:"));
+    NX_EXPECT(blueprintSpec("api:System:System::get_hour:")&&blueprintSpec("api:System:System::get_minute:")&&blueprintSpec("api:System:System::get_second:")&&blueprintSpec("api:System:System::clock:bool"));
     NX_EXPECT(blueprintSpec("api:AudioStream:AudioStream:uint,uint,float"));
     NX_EXPECT(blueprintSpec("api:Samples:Samples:uint,uint,uint"));
     NX_EXPECT(blueprintSpec("api:Thread:Thread:string"));

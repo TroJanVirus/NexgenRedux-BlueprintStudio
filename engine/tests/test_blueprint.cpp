@@ -998,6 +998,27 @@ NX_TEST(nativeAudioEffectsAndPresetRoundTrip)
     tone.effects.echoFeedback=1.1f;NX_EXPECT(!blueprintToneWave(tone,again,error));
     tone.effects.echoFeedback=0.4f;tone.channels=0;NX_EXPECT(!blueprintToneWave(tone,again,error));
 }
+NX_TEST(nativeIndependentStereoOscillators)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    r.platform.workspaceFiles=true;
+    BlueprintTone tone;tone.channels=2;tone.independentStereo=true;tone.rightWave=3;
+    tone.rightFrequency=880;tone.rightEndFrequency=220;tone.rightAmplitude=0;
+    std::string wav,error,relative,again;
+    NX_EXPECT(blueprintToneWave(tone,wav,error));
+    auto* sound=loadSound(reinterpret_cast<const u8*>(wav.data()),wav.size());
+    NX_EXPECT(sound&&sound->channels==2);if(!sound)return;
+    bool left=false,right=false;
+    const auto* pcm=reinterpret_cast<const i16*>(sound->data);
+    for(unsigned i=0;i<sound->frames;++i){left|=pcm[i*2]!=0;right|=pcm[i*2+1]!=0;}
+    freeSound(sound);NX_EXPECT(left&&!right);
+    BlueprintDocument doc;doc.create();
+    NX_EXPECT(blueprintCreateAssetRoot(r.platform,doc.assetRoot,error));
+    NX_EXPECT(blueprintSaveTonePreset(r.platform,doc.assetRoot,"Screen",tone,relative,error));
+    BlueprintTone loaded;NX_EXPECT(blueprintLoadTonePreset(r.platform,doc.assetRoot,"Screen",relative,loaded,error));
+    NX_EXPECT(loaded.independentStereo&&loaded.rightWave==3&&loaded.rightFrequency==880);
+    NX_EXPECT(blueprintToneWave(loaded,again,error)&&wav==again);
+}
 NX_TEST(nativeImportedAudioEditsAreNonDestructive)
 {
     Rig r;NX_EXPECT(r.ok);if(!r.ok)return;

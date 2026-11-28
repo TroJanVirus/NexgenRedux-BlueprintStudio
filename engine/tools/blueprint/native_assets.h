@@ -11,6 +11,10 @@ namespace nx
         float seconds=0.6f,frequency=440,endFrequency=440,amplitude=0.65f;
         float attack=0.04f,decay=0.15f,sustain=0.65f,release=0.25f;
         unsigned channels=1;
+        bool independentStereo=false;
+        unsigned rightWave=0;
+        float rightFrequency=440,rightEndFrequency=440,rightAmplitude=0.65f;
+        float rightAttack=0.04f,rightDecay=0.15f,rightSustain=0.65f,rightRelease=0.25f;
         float tail=1.f;
         BusEffectSettings effects;
     };
