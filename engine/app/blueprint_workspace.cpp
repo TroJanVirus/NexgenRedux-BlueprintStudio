@@ -1351,11 +1351,42 @@ namespace nx
         if(!m_designUi->loadPage(resolved.data(),resolved.size(),m_designUi->root(),nullptr,"designer",true))
             m_designPreviewError=m_designUi->error();
     }
+    BlueprintWorkspace::WidgetLayout BlueprintWorkspace::widgetLayout() const
+    {
+        WidgetLayout layout;
+        const float designWidth=m_widgetFourThree?960.f:1280.f;
+        layout.previewWidth=designWidth*layout.previewScale;
+        layout.previewX=815-layout.previewWidth*0.5f;layout.previewY=207;
+        if(kWidth<1500||kHeight<720)return layout;
+        layout.wide=true;
+        const float ox=modalX(),oy=modalY();
+        layout.leftDx=12-ox-280;layout.leftDy=96-oy-156;
+        layout.rightDx=kWidth-382-ox-630;layout.rightDy=96-oy-156;
+        layout.propsDy=layout.rightDy-218;
+        layout.headerDx=kWidth-12-ox-1000;layout.headerDy=12-oy-116;
+        const float l=354-ox,r=kWidth-394-ox,t=112-oy,b=kBottom-48-oy;
+        layout.previewScale=std::max(0.01f,std::min((r-l-20)/designWidth,(b-t-20)/720.f));
+        layout.previewWidth=designWidth*layout.previewScale;layout.previewHeight=720*layout.previewScale;
+        layout.previewX=(l+r-layout.previewWidth)*0.5f;layout.previewY=(t+b-layout.previewHeight)*0.5f;
+        return layout;
+    }
     void BlueprintWorkspace::updateWidgetDesigner(Services& s,float x,float y,bool left,bool click)
     {
         const auto* page=m_document.visualAsset(m_visualSelection);
         if(!page||page->kind!="widget"){m_widgetDesigner=false;return;}
         JsonTree tree;if(!tree.parse(page->source.data(),page->source.size()))return;
+        const auto layout=widgetLayout();
+        const float pointerX=x,pointerY=y;
+        if(layout.wide)
+        {
+            if(in(x,y,280+layout.leftDx,156+layout.leftDy,610+layout.leftDx,582+layout.leftDy))
+            {x-=layout.leftDx;y-=layout.leftDy;}
+            else if(in(x,y,630+layout.rightDx,156+layout.rightDy,1000+layout.rightDx,189+layout.rightDy))
+            {x-=layout.rightDx;y-=layout.rightDy;}
+            else if(in(x,y,630+layout.rightDx,420+layout.propsDy,1000+layout.rightDx,584+layout.propsDy))
+            {x-=layout.rightDx;y-=layout.propsDy;}
+            else {x=-10000;y=-10000;}
+        }
         std::vector<DesignRow> rows;designRows(tree.root(),rows,0);
         const size_t count=m_widgetPalette?sizeof(designPalette)/sizeof(designPalette[0]):rows.size()+1;
         if(m_widgetFirst>=count)m_widgetFirst=0;
@@ -1375,17 +1406,16 @@ namespace nx
         }
         m_widgetTimelineLast=now;
         m_widgetTimelineTime=std::clamp(m_widgetTimelineTime,0.f,duration);
-        constexpr float previewScale=208.f/720.f;
-        const float previewWidth=(m_widgetFourThree?960.f:1280.f)*previewScale;
-        const float previewX=815-previewWidth*0.5f,previewY=207;
+        const float previewScale=layout.previewScale,previewWidth=layout.previewWidth,previewHeight=layout.previewHeight;
+        const float previewX=layout.previewX,previewY=layout.previewY;
         if(m_widgetPreviewDrag)
         {
-            m_widgetPreviewDx=(x-m_widgetDragX)/previewScale;
-            m_widgetPreviewDy=(y-m_widgetDragY)/previewScale;
+            m_widgetPreviewDx=(pointerX-m_widgetDragX)/previewScale;
+            m_widgetPreviewDy=(pointerY-m_widgetDragY)/previewScale;
             if(left)return;
             m_widgetPreviewDrag=false;
-            if(m_widgetDragRevision==m_document.revision()&&in(x,y,previewX,previewY,previewX+previewWidth,previewY+208)&&
-                (std::abs(x-m_widgetDragX)>2||std::abs(y-m_widgetDragY)>2))
+            if(m_widgetDragRevision==m_document.revision()&&in(pointerX,pointerY,previewX,previewY,previewX+previewWidth,previewY+previewHeight)&&
+                (std::abs(pointerX-m_widgetDragX)>2||std::abs(pointerY-m_widgetDragY)>2))
             {
                 const char* const names[]={"top-left","top-center","top-right","middle-left","center","middle-right","bottom-left","bottom-center","bottom-right"};
                 if(m_document.positionVisualWidget(m_visualSelection,m_widgetSelection,names[m_widgetDragAnchor],
@@ -1410,9 +1440,9 @@ namespace nx
         }
         if(!click)return;
         if(!m_widgetPalette&&m_designUi&&m_designPreviewError.empty()&&
-            in(x,y,previewX,previewY,previewX+previewWidth,previewY+208))
+            in(pointerX,pointerY,previewX,previewY,previewX+previewWidth,previewY+previewHeight))
         {
-            const float localX=(x-previewX)/previewScale,localY=(y-previewY)/previewScale;
+            const float localX=(pointerX-previewX)/previewScale,localY=(pointerY-previewY)/previewScale;
             // Walk in reverse painting order, taking the deepest visible widget
             // with a stable ID. Bounds use native layout, not a second renderer.
             const auto hit=[&](auto&& self,Widget& item)->Widget*
@@ -1440,7 +1470,7 @@ namespace nx
                     const auto& parent=*item->parent;
                     m_widgetBaseX=item->anchor>=0?item->offsetX:item->x-parent.pad(0);
                     m_widgetBaseY=item->anchor>=0?item->offsetY:item->y-parent.pad(1);
-                    m_widgetDragX=x;m_widgetDragY=y;m_widgetPreviewDx=m_widgetPreviewDy=0;
+                    m_widgetDragX=pointerX;m_widgetDragY=pointerY;m_widgetPreviewDx=m_widgetPreviewDy=0;
                     m_widgetDragRevision=m_document.revision();m_widgetPreviewDrag=true;
                     m_status="Drag to position; release to apply. Escape cancels.";
                 }
@@ -1573,9 +1603,15 @@ namespace nx
     {
         const auto button=[&](float x,float y,float width,const char* label)
         {c.roundRect(x,y,width,33,4,{0.19f,0.33f,0.50f,1});c.clip(x,y,width,33);c.text(*m_font,label,x+width*0.5f,y+7,text,Align::Center);c.noClip();};
+        const auto layout=widgetLayout();
+        if(layout.wide)
+        {
+            c.rect(280+layout.leftDx-6,156+layout.leftDy-6,342,kBottom-112,{0.17f,0.17f,0.18f,1});
+            c.rect(630+layout.rightDx-6,156+layout.rightDy-6,382,kBottom-112,{0.17f,0.17f,0.18f,1});
+        }
+        c.push();c.translate(layout.leftDx,layout.leftDy);
         button(280,156,220,m_widgetPalette?"Back to hierarchy":"Add widget");
         button(510,156,100,m_widgetPreviewState<0?"Live style":themeStates[m_widgetPreviewState]);
-        button(630,156,180,"Back to content");button(820,156,180,m_widgetFourThree?"4:3 / switch":"16:9 / switch");
         const auto* page=m_document.visualAsset(m_visualSelection);
         JsonTree tree;std::vector<DesignRow> rows;
         if(page&&tree.parse(page->source.data(),page->source.size()))designRows(tree.root(),rows,0);
@@ -1592,12 +1628,22 @@ namespace nx
         else {button(280,548,160,"Move up");button(450,548,160,"Move down");}
         c.rect(280,524,220,21,{0.19f,0.33f,0.50f,1});c.text(*m_font,m_widgetAnchors?"Back to properties":"Anchors / offset",390,525,text,Align::Center);
         c.rect(502,524,108,21,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Timeline",556,525,text,Align::Center);
-        const float width=m_widgetFourThree?960.f:1280.f,scale=208.f/720.f,screenWidth=width*scale;
-        const float px=815-screenWidth*0.5f,py=207;
-        c.rect(630,202,370,219,{0.055f,0.075f,0.105f,1});
+        c.pop();
+        c.push();c.translate(layout.rightDx,layout.rightDy);
+        button(630,156,180,"Back to content");button(820,156,180,m_widgetFourThree?"4:3 / switch":"16:9 / switch");
+        c.pop();
+        const float width=m_widgetFourThree?960.f:1280.f,scale=layout.previewScale,screenWidth=layout.previewWidth;
+        const float px=layout.previewX,py=layout.previewY;
+        if(layout.wide)
+        {
+            c.rect(354-modalX(),112-modalY(),kWidth-748,kBottom-160,{0.065f,0.065f,0.07f,1});
+            c.text(*m_font,m_widgetFourThree?"DESIGN PREVIEW  /  960 x 720":"DESIGN PREVIEW  /  1280 x 720",366-modalX(),92-modalY(),muted);
+            c.rect(px-1,py-1,screenWidth+2,layout.previewHeight+2,{0.34f,0.36f,0.39f,1});
+        }
+        c.rect(layout.wide?px:630,layout.wide?py:202,layout.wide?screenWidth:370,layout.wide?layout.previewHeight:219,{0.055f,0.075f,0.105f,1});
         if(m_designUi&&m_designPreviewError.empty())
         {
-            c.push();c.clip(px,py,screenWidth,208);c.translate(px,py);c.scale(scale,scale);
+            c.push();c.clip(px,py,screenWidth,layout.previewHeight);c.translate(px,py);c.scale(scale,scale);
             m_designUi->drawDesign(c,0,0,width,720,m_widgetSelection.c_str(),m_widgetPreviewState,m_widgetTimeline?m_widgetTimelineTime:0);
             if(!m_widgetSelection.empty())if(auto* selected=m_designUi->find(m_widgetSelection.c_str()))
             {
@@ -1614,8 +1660,9 @@ namespace nx
         }
         else
         {
-            c.clip(636,207,358,208);c.text(*m_font,m_designPreviewError.empty()?"Native preview":m_designPreviewError.c_str(),640,225,muted);c.noClip();
+            c.clip(px+6,py,screenWidth-12,layout.previewHeight);c.text(*m_font,m_designPreviewError.empty()?"Native preview":m_designPreviewError.c_str(),px+10,py+18,muted);c.noClip();
         }
+        c.push();c.translate(layout.rightDx,layout.propsDy);
         c.rect(630,420,370,18,{0.19f,0.33f,0.50f,1});
         c.text(*m_font,m_widgetTimeline?"TIMELINE / click to exit":m_widgetAnchors?"ANCHORS / Stack children":m_widgetEvents?"EVENTS  /  click to show properties":"PROPERTIES  /  click to show events",630,420,text);
         if(m_widgetTimeline)
@@ -1632,7 +1679,7 @@ namespace nx
             snprintf(label,sizeof(label),"%.2fs / %.2fs",m_widgetTimelineTime,duration);c.text(*m_font,label,815,493,text,Align::Center);
             button(630,512,115,a["loop"].flag()?"Loop on":"Loop off");button(752,512,118,m_widgetTimelinePlay?"Pause":"Play");button(877,512,123,"Set key");
             button(630,548,180,"Delete key");button(820,548,180,"Rewind");
-            return;
+            c.pop();return;
         }
         if(m_widgetAnchors)
         {
@@ -1649,6 +1696,7 @@ namespace nx
         }
         else for(size_t i=0;i<sizeof(designProps)/sizeof(designProps[0]);++i)
             button(630+123.34f*static_cast<float>(i%3),439+36*static_cast<float>(i/3),119,i==0&&std::any_of(rows.begin(),rows.end(),[&](const DesignRow& row){return row.id==m_widgetSelection&&row.kind=="component";})?"Unlink":designProps[i]);
+        c.pop();
     }
     void BlueprintWorkspace::updateVisualLibrary(Services& s,float x,float y,bool left,bool click,unsigned pressed)
     {
@@ -1713,7 +1761,14 @@ namespace nx
         if(pressed&1u){saveCurrent(s);return;}
         if(pressed&2u){if(m_document.undo()){selectGraph(std::min(m_graph,m_document.graphs.size()-1));m_status="Library edit undone.";}return;}
         if(pressed&4u){if(m_document.redo()){selectGraph(std::min(m_graph,m_document.graphs.size()-1));m_status="Library edit redone.";}return;}
-        if(m_widgetDesigner&&(m_widgetDragging||!(click&&(in(x,y,860,116,1000,150)||in(x,y,704,116,850,150))))){updateWidgetDesigner(s,x,y,left,click);return;}
+        if(m_widgetDesigner)
+        {
+            const auto layout=widgetLayout();
+            const float hx=x-layout.headerDx,hy=y-layout.headerDy;
+            if(m_widgetDragging||!(click&&(in(hx,hy,860,116,1000,150)||in(hx,hy,704,116,850,150))))
+            {updateWidgetDesigner(s,x,y,left,click);return;}
+            x=hx;y=hy;
+        }
         const auto& assets=m_document.visualAssets();
         if(m_visualFirst>=assets.size())m_visualFirst=assets.empty()?0:assets.size()-1;
         if(in(x,y,280,198,610,535))
@@ -2739,12 +2794,20 @@ namespace nx
     {
         const auto* current=m_document.visualAsset(m_visualSelection);
         const bool actorClass=current&&current->kind=="actor"&&!m_visualPlacement&&!m_widgetDesigner;
-        c.roundRect(260,100,760,actorClass?565.f:525.f,9,{0.16f,0.16f,0.17f,1});
+        const auto layout=widgetLayout();const bool wide=m_widgetDesigner&&layout.wide;
+        if(wide)
+        {
+            c.rect(-modalX(),-modalY(),kWidth,kHeight,{0.10f,0.10f,0.11f,1});
+            c.rect(-modalX(),-modalY(),kWidth,kTop,{0.16f,0.16f,0.17f,1});
+        }
+        else c.roundRect(260,100,760,actorClass?565.f:525.f,9,{0.16f,0.16f,0.17f,1});
         const auto button=[&](float x,float y,float w,const char* label)
         {c.roundRect(x,y,w,33,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,label,x+w*0.5f,y+7,text,Align::Center);};
-        c.text(*m_font,"CONTENT / PROJECT LIBRARY",280,122,accent);
+        if(wide)c.text(*m_font,("WIDGET DESIGNER / "+(current?current->title:std::string())).c_str(),12-modalX(),18-modalY(),text);
+        else c.text(*m_font,"CONTENT / PROJECT LIBRARY",280,122,accent);
         if(!m_widgetDesigner&&!m_visualPlacement)button(566,116,129,"New theme");
-        button(704,116,146,"Media");button(860,116,140,"Close");
+        c.push();if(wide)c.translate(layout.headerDx,layout.headerDy);
+        button(704,116,146,"Media");button(860,116,140,"Close");c.pop();
         if(m_widgetDesigner)drawWidgetDesigner(c);
         else
         {
@@ -2889,8 +2952,9 @@ namespace nx
         }
         else c.text(*m_font,"Select a definition to edit.",630,210,muted);
         }
-        const float statusY=actorClass?630.f:591.f;
-        c.clip(280,statusY,720,26);c.text(*m_font,m_status.c_str(),280,statusY+4,text);c.noClip();
+        const float statusY=wide?kBottom+5-modalY():actorClass?630.f:591.f;
+        const float statusX=wide?12-modalX():280;
+        c.clip(statusX,statusY,wide?kWidth-24:720,26);c.text(*m_font,m_status.c_str(),statusX,statusY+4,text);c.noClip();
         if(m_visualInput==7&&themeColorProperty(m_visualProperty))
         {
             c.roundRect(420,250,440,230,6,{0.08f,0.12f,0.18f,1});

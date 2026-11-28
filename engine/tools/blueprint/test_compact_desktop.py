@@ -174,6 +174,25 @@ with log.open("wb") as output:
         shot("actor-from-drawer.png")
         drag(970,470,940,470)
         shot("actor-tabs.png")
+        # The same widget designer expands to a full workspace at 1080p.
+        click(81,54)
+        click(530,172)
+        click(445,564)
+        xdo("windowsize","--sync",window,1920,1080)
+        wait_for(lambda:(win.get_geometry().width,win.get_geometry().height)==(1920,1080),"widget 1080p client")
+        time.sleep(0.5)
+        click(120,110)
+        click(90,160)
+        key("ctrl+s")
+        def widget_has_column():
+            assets=json.loads(project.read_text())["visualAssets"]
+            widget=next(a for a in assets if a["kind"]=="widget")
+            return "column" in widget["source"]
+        wait_for(widget_has_column,"wide widget hierarchy authoring")
+        shot("widget-designer-1920.png")
+        click(1812,110)
+        shot("widget-designer-4x3-1920.png")
+        click(1812,110)
         # A close request exercises normal release of the isolated world.
         msg=protocol.event.ClientMessage(window=win,client_type=conn.intern_atom("WM_PROTOCOLS"),
             data=(32,[conn.intern_atom("WM_DELETE_WINDOW"),X.CurrentTime,0,0,0]))

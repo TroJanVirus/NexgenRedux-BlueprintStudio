@@ -199,6 +199,13 @@ namespace nx
         void refreshWidgetPreview(Services& s);
         void updateWidgetDesigner(Services& s,float x,float y,bool left,bool click);
         void drawWidgetDesigner(Canvas& canvas);
+        struct WidgetLayout
+        {
+            bool wide=false;
+            float leftDx=0,leftDy=0,rightDx=0,rightDy=0,propsDy=0,headerDx=0,headerDy=0;
+            float previewX=0,previewY=0,previewWidth=0,previewHeight=208,previewScale=208.f/720.f;
+        };
+        WidgetLayout widgetLayout() const;
         int m_visualInput=0; // 1 rename asset, 2 palette label, 3 actor property, 4 widget property
         void updateVisualLibrary(Services& services,float x,float y,bool left,bool click,unsigned pressed);
         void drawVisualLibrary(Canvas& canvas);

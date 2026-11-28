@@ -152,3 +152,8 @@ Content panel supports top and bottom docking with visible drop guides, floating
 ## Construction preview call-tree validation (verification pending)
 
 Editor-safe Construction now accepts synchronous reusable functions, custom events, shared libraries/macros and explicit parent calls. Validation lives in the native document layer, traverses nested calls and checks the concrete actor's virtual overrides, rejecting runtime-only nodes even when hidden behind inherited helpers. Native typed primitive/vector/color/entity pins, safe local fields, arithmetic and selected synchronous flow nodes are accepted. Global accesses, dispatchers, coroutines, arbitrary APIs and recursive calls remain excluded. Added document regressions for inherited unsafe virtual overrides and shared library/geometry calls. The preview still invokes only the generated Construction method on a disposable world.
+
+
+## Responsive desktop widget workspace (verification pending)
+
+At logical widths of at least 1500, widget tabs use a full-client native workspace with a fixed-density hierarchy/palette on the left, a large aspect-correct design canvas in the centre, and the existing property/anchor/event/timeline tools on the right. Input, widget picking, offset dragging, and side controls share the same responsive geometry. Small clients retain the 720p layout. Added actual X11 authoring and 1080p/4:3 screenshot coverage. This does not resize the separate scene editor yet or introduce a detached OS window.
