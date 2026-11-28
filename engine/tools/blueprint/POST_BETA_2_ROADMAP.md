@@ -177,3 +177,8 @@ Inspected actual native 1920x1080 and 1280x720 desktop screenshots, not a mockup
 ## Native visual refinement pass (verification pending)
 
 Added an optional categorized My Blueprint navigation tree with collapsible screen/class owners and events, Construction, functions, macros, library and type sections. The list/tree preference persists in the existing layout file. Flat navigation remains the default to preserve existing authoring workflows and automation. Node headers now distinguish events, pure operations, flow and ordinary calls, and pins distinguish execution sockets and connected/unconnected value sockets without changing graph coordinates. Both native 3D preview types use an opt-in cached grid mesh instead of projected Canvas lines, so opaque actors occlude the grid using normal depth testing; ordinary game screens do not enable it. Added desktop tree navigation screenshot coverage. Native build and visual verification pending.
+
+
+## Inline node fields and toolbar refinement (verification pending)
+
+Selected nodes at readable zoom display explicit editable value fields for unconnected inputs on rows without competing output labels. Scalar values can be edited in place; Enter validates and commits through the existing document command, Escape or an outside click discards the draft. Compound values and named entity choices retain the established typed editor. Pins, Ctrl-disconnect, selection and graph hit targets are preserved. The graph toolbar now uses neutral chrome, native vector-drawn action icons and a distinct Play state. Added real desktop input/undo coverage. This is not yet universal inline editing of every pin layout or a finished visual parity pass.

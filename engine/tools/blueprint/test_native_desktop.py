@@ -308,6 +308,19 @@ with menu_log.open("wb") as out:
         assert graph["links"][0] == dict(**{"from": "entry"}, to=action["id"],
                                          output="then", input="in")
 
+        # Selected node inputs can be edited without leaving the graph.
+        # Existing socket clicks still invoke the legacy typed editor.
+        click(630, 397, window)
+        key("Escape")
+        click(755, 397, window)
+        enter_text("inline")
+        wait_for(lambda: "inline input applied: value" in menu_log.read_text(errors="replace"),
+                 "inline scalar edit", process)
+        key("ctrl+z")
+        click(800, 53, window)
+        wait_for(lambda: json.loads(authored.read_text())["graphs"][0]["nodes"][1]["values"]["value"] == "first",
+                 "inline edit undone", process)
+
         # An external valid file modification must not be overwritten, even
         # if the current authoring process still holds the cooperative lease.
         external = authored.read_bytes() + b"\n"

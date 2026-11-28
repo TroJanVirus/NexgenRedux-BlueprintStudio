@@ -4101,6 +4101,29 @@ namespace nx
             const auto count=variableRows().size();m_variableFirst=std::min(m_variableFirst,count>10?count-10:0);
             m_left=left;return;
         }
+        if(m_focus==16)
+        {
+            // Editing remains a draft until Enter; cancelling never changes the document.
+            if(click){m_focus=0;input.setTyping(false);m_status="Inline edit cancelled.";m_left=left;return;}
+            for(u32 i=0;i<input.typedCount();++i)
+            {
+                const auto ch=input.typed(i);
+                if(ch==13)
+                {
+                    if(!m_document.setInputValue(m_graph,m_selection,m_editPin,m_edit,m_status))break;
+                    m_focus=0;input.setTyping(false);clearWire();rebuildPins();filterCatalogue();m_diagnostic={};
+                    m_status="Inline input applied.";NX_INFO("Blueprint Studio: inline input applied: %s",m_editPin.c_str());break;
+                }
+                if(ch==8)
+                {
+                    if(m_inputReplace){m_edit.clear();m_inputReplace=false;}
+                    else if(!m_edit.empty()){size_t end=m_edit.size()-1;while(end&&(static_cast<unsigned char>(m_edit[end])&0xc0)==0x80)--end;m_edit.resize(end);}
+                }
+                else if(ch>=32)
+                {if(m_inputReplace){m_edit.clear();m_inputReplace=false;}appendCharacter(m_edit,ch,4096);}
+            }
+            m_left=left;return;
+        }
         if(m_focus==15)
         {
             const auto details=inputDetails(m_selection);m_inspectorFirst=std::min(m_inspectorFirst,details.size()>10?details.size()-10:0);
@@ -4481,6 +4504,32 @@ namespace nx
             }
             if(m_pending!=static_cast<size_t>(-1)&&std::none_of(nodes.begin(),nodes.end(),[&](const BlueprintDocument::Node& n){const auto i=static_cast<size_t>(&n-nodes.data());const float nx=kLeft+m_x+n.x*m_zoom,ny=kTop+m_y+n.y*m_zoom;return in(x,y,nx,ny,nx+kNodeWidth*m_zoom,ny+rows[i].height*m_zoom);}))
             {openPinMenu(x,y);if(m_pinMenu)input.setTyping(true);m_left=left;return;}
+            // Explicit value fields on the selected node do not steal socket
+            // clicks, multi-selection, or drags on the title/body.
+            if(!control&&!held(Key::Shift)&&m_pending==static_cast<size_t>(-1)&&m_zoom>=0.85f&&m_selection<nodes.size())
+            {
+                const auto& selected=nodes[m_selection];const auto& row=rows[m_selection];
+                const float nx=kLeft+m_x+selected.x*m_zoom,ny=kTop+m_y+selected.y*m_zoom;
+                const auto details=inputDetails(m_selection);
+                for(size_t p=0;p<row.inputs.size();++p)
+                {
+                    if(p<row.outputs.size())continue;
+                    const float py=ny+pinY(p)*m_zoom;
+                    if(!in(x,y,nx+88*m_zoom,py-9*m_zoom,nx+(kNodeWidth-10)*m_zoom,py+9*m_zoom))continue;
+                    const auto field=std::find_if(details.begin(),details.end(),[&](const InputDetail& detail){return detail.name==row.inputs[p]&&detail.editable;});
+                    if(field==details.end())continue;
+                    const std::string initial=field->origin=="Custom"?field->value:std::string();
+                    if(beginInputEdit(m_selection,field->name,input))
+                    {
+                        if(m_inputComponents.empty()&&m_inputChoices.empty())
+                        {
+                            m_edit=initial;m_focus=16;m_inputReplace=true;
+                            m_status="Inline "+field->name+" / Enter applies; Escape or outside click cancels.";
+                        }
+                        m_left=left;return;
+                    }
+                }
+            }
             clearWire();m_selection = static_cast<size_t>(-1);
             if(!held(Key::Shift))m_selectedNodes.clear();
             for (size_t i = nodes.size(); i > 0; --i)
@@ -4597,28 +4646,41 @@ namespace nx
         if(m_actorEditor){drawActorEditor(c);return;}
         c.rect(0,0,kWidth,kHeight,{0.10f,0.10f,0.11f,1});
         c.rect(0,0,kWidth,kTop,{0.16f,0.16f,0.17f,1});
+        c.rect(0,34,kWidth,1,{0.30f,0.30f,0.32f,1});
         c.text(*m_font,"NEXGEN  /  BLUEPRINT STUDIO",18,13,text);
         if(kWidth>1530)c.text(*m_font,"EVENT GRAPH / NATIVE EDITOR",kWidth-18,13,muted,Align::Right);
-        c.roundRect(300,5,104,28,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Layout",352,9,text,Align::Center);
-        c.roundRect(1088,5,86,28,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Watch",1131,9,text,Align::Center);
+        c.roundRect(300,5,104,28,3,{0.23f,0.24f,0.26f,1});c.text(*m_font,"Layout",352,9,text,Align::Center);
+        c.roundRect(1088,5,86,28,3,{0.23f,0.24f,0.26f,1});c.text(*m_font,"Watch",1131,9,text,Align::Center);
         c.roundRect(1180,5,88,28,4,m_traceEnabled?Color{0.23f,0.48f,0.29f,1}:Color{0.19f,0.33f,0.50f,1});
         c.text(*m_font,m_traceEnabled?"Trace on":"Trace off",1224,9,text,Align::Center);
         if(!m_document.graphs.empty()&&m_document.graphs[m_graph].kind=="function")
-        {c.roundRect(410,5,150,28,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Signature",485,9,text,Align::Center);}
+        {c.roundRect(410,5,150,28,3,{0.23f,0.24f,0.26f,1});c.text(*m_font,"Signature",485,9,text,Align::Center);}
         else if(m_graph<m_document.graphs.size()&&m_document.graphs[m_graph].owner.rfind("behaviour:",0)!=0)
-        {c.roundRect(410,5,150,28,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Level events",485,9,text,Align::Center);}
-        c.roundRect(566,5,168,28,4,{0.19f,0.33f,0.50f,1});
+        {c.roundRect(410,5,150,28,3,{0.23f,0.24f,0.26f,1});c.text(*m_font,"Level events",485,9,text,Align::Center);}
+        c.roundRect(566,5,168,28,3,{0.23f,0.24f,0.26f,1});
         c.clip(566,5,168,28);c.text(*m_font,m_focus==8?(m_edit.empty()?"Type name...":m_edit.c_str()):"New behaviour",650,9,text,Align::Center);c.noClip();
-        c.roundRect(740,5,110,28,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Open",795,9,text,Align::Center);
-        c.roundRect(856,5,110,28,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Save as",911,9,text,Align::Center);
-        c.roundRect(972,5,110,28,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Assets",1027,9,text,Align::Center);
+        c.roundRect(740,5,110,28,3,{0.23f,0.24f,0.26f,1});c.text(*m_font,"Open",795,9,text,Align::Center);
+        c.roundRect(856,5,110,28,3,{0.23f,0.24f,0.26f,1});c.text(*m_font,"Save as",911,9,text,Align::Center);
+        c.roundRect(972,5,110,28,3,{0.23f,0.24f,0.26f,1});c.text(*m_font,"Assets",1027,9,text,Align::Center);
         const std::string titleText=(m_document.name.empty()?"No document open":m_document.name)+(m_document.dirty()?" *":"");
         if(!m_actorTabId.empty()&&m_document.visualAsset(m_actorTabId))
         {c.rect(12,39,233,30,{0.25f,0.25f,0.27f,1});c.text(*m_font,"Actor viewport",128,44,text,Align::Center);c.clip(252,38,244,34);c.text(*m_font,shorten(titleText,32).c_str(),258,43,accent);c.noClip();}
         else {c.clip(12,38,480,34);c.text(*m_font,shorten(titleText,65).c_str(),18,43,accent);c.noClip();}
         const auto button=[&](float x,float width,const char* label,bool enabled){
-            c.roundRect(x,39,width,30,5,enabled?Color{0.19f,0.33f,0.50f,1}:Color{0.14f,0.18f,0.24f,1});
-            c.text(*m_font,label,x+width*0.5f,44,enabled?text:muted,Align::Center);
+            const bool play=x==504;const Color ink=enabled?(play?Color{0.45f,0.90f,0.59f,1}:text):Color{0.42f,0.44f,0.47f,1};
+            c.roundRect(x,39,width,30,3,enabled?(play?Color{0.16f,0.29f,0.21f,1}:Color{0.23f,0.24f,0.26f,1}):Color{0.17f,0.18f,0.19f,1});
+            c.roundLine(x,39,width,30,3,1,{0.32f,0.33f,0.35f,1});
+            const float a=x+12,b=54;
+            if(play){c.line(a-3,b-6,a+6,b,2,ink);c.line(a+6,b,a-3,b+6,2,ink);c.line(a-3,b+6,a-3,b-6,2,ink);}
+            else if(x==748){c.rect(a-5,b-6,12,12,ink);c.rect(a-2,b-5,7,4,{0.23f,0.24f,0.26f,1});c.rect(a-2,b+1,6,4,{0.23f,0.24f,0.26f,1});}
+            else if(x==864||x==954||x==1134)
+            {
+                const float dir=x==954?1.f:-1.f;
+                c.line(a-dir*5,b,a+dir*5,b,2,ink);c.line(a+dir*5,b,a,b-5,2,ink);c.line(a+dir*5,b,a,b+5,2,ink);
+            }
+            else if(x==1044){c.roundLine(a-5,b-5,11,11,1,1,ink);c.rect(a-1,b-1,3,3,ink);}
+            else {c.line(a,b+4,a,b-6,2,ink);c.line(a,b-6,a-4,b-2,2,ink);c.line(a,b-6,a+4,b-2,2,ink);c.line(a-5,b+6,a+5,b+6,2,ink);}
+            c.clip(x+22,39,width-25,30);c.text(*m_font,label,x+width*0.5f+9,44,enabled?text:muted,Align::Center);c.noClip();
         };
         button(504,100,"Play test",!m_document.graphs.empty());
         button(610,132,"Export project",!m_document.graphs.empty());button(748,110,"Save",!m_document.graphs.empty());button(864,84,"Undo",m_document.canUndo());
@@ -4737,6 +4799,7 @@ namespace nx
                     c.push();c.clip(x+2,y+1,w-4,24*m_zoom);
                     c.text(*m_font,shorten(n.kind=="call:function"&&m_document.function(graph.owner,n.ref)&&m_document.function(graph.owner,n.ref)->inlineMacro?"Macro "+n.ref:title(n),22).c_str(),x+20*m_zoom,y+3,text);c.pop();
                     // Clip each column separately to prevent long pin names overlapping.
+                    const auto editableDetails=i==m_selection&&m_zoom>=0.85f?inputDetails(i):std::vector<InputDetail>{};
                     for(size_t p=first;p<std::min(last,rows[i].inputs.size());++p)
                     {
                         const auto& pin=rows[i].inputs[p];
@@ -4754,6 +4817,19 @@ namespace nx
                                     if(v.rfind(prefix,0)==0&&v.ends_with(")"))v=v.substr(prefix.size(),v.size()-prefix.size()-1);
                                     label+=" = "+v;break;
                                 }
+                        }
+                        const auto detail=std::find_if(editableDetails.begin(),editableDetails.end(),[&](const InputDetail& field){return field.name==pin&&field.editable;});
+                        if(!wired&&p>=rows[i].outputs.size()&&detail!=editableDetails.end())
+                        {
+                            const float py=y+pinY(p)*m_zoom,fx=x+88*m_zoom,fw=w-98*m_zoom;
+                            const bool editing=m_focus==16&&m_editPin==pin;
+                            c.push();c.clip(x+6,py-10,78*m_zoom,20*m_zoom);
+                            c.text(*m_font,pin.c_str(),x+8,py-8,muted);c.pop();
+                            c.roundRect(fx,py-9*m_zoom,fw,18*m_zoom,3,editing?Color{0.23f,0.37f,0.49f,1}:Color{0.21f,0.22f,0.24f,1});
+                            c.push();c.clip(fx+3,py-9*m_zoom,fw-6,18*m_zoom);
+                            const auto value=editing?m_edit:detail->value;
+                            c.text(*m_font,shorten(value.empty()?"Edit":value,15).c_str(),fx+4,py-8,editing||detail->origin=="Custom"?text:muted);
+                            c.pop();continue;
                         }
                         const float column=p<rows[i].outputs.size()?w*0.5f:w;
                         c.push();c.clip(x+6,y+pinY(p)*m_zoom-10,column-12,20*m_zoom);
