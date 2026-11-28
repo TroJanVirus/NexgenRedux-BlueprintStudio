@@ -3039,3 +3039,52 @@ NX_TEST(nativeWorkerGraphRunsScriptAndPollsChannel)
     {r.step();std::this_thread::sleep_for(std::chrono::milliseconds(1));}
     NX_EXPECT(!r.screens.failed()&&strcmp(r.save.get("bp_worker_result",""),"49")==0);
 }
+
+#include <fstream>
+#include <iterator>
+
+NX_TEST(beta31BouncingSphereEditableProject)
+{
+    const char* project = std::getenv("BP_BOUNCE_PROJECT");
+    NX_EXPECT(project != nullptr); if (!project) return;
+    std::ifstream file(project, std::ios::binary);
+    const std::string bytes((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    BlueprintDocument doc, reopened; std::string error, saved, source;
+    if (!doc.load(bytes.data(),bytes.size(),error) || !doc.serialize(saved,error) ||
+        !reopened.load(saved.data(),saved.size(),error) || !compileBlueprint(reopened,source,error))
+    { NX_ERROR("Bouncing Sphere project: %s",error.c_str()); NX_EXPECT(false); return; }
+    Rig r; NX_EXPECT(r.ok); if (!r.ok) return;
+    r.platform.files["project/main/screen.json"]="{\"title\":\"Bouncing Sphere\"}";
+    r.platform.files["project/main/main.as"]=source;
+    if (!r.screens.init(r.services,"project","main")) { NX_EXPECT(false); return; }
+    r.step(1); NX_EXPECT(!r.screens.failed());
+    if (!r.services.world) { NX_EXPECT(false); return; }
+    auto& world=*r.services.world;
+    auto ball=world.findNamed("Ball"),floor=world.findNamed("Floor");
+    NX_EXPECT(ball && floor); if (!ball || !floor) return;
+    const auto* body=world.space().getBody(ball);
+    const auto* collider=world.space().getCollider(ball);
+    const auto* floorCollider=world.space().getCollider(floor);
+    NX_EXPECT(body && collider && floorCollider); if (!body || !collider || !floorCollider) return;
+    NX_EXPECT(collider->shape==Shape3::Sphere && floorCollider->shape==Shape3::Box);
+    NX_EXPECT(fabsf(body->bounce-0.88f)<0.001f && fabsf(body->gravity-1)<0.001f);
+    const Vec3 camera=world.space().cameraPlace();
+    NX_EXPECT(fabsf(camera.x-6)<0.01f && fabsf(camera.y-4.2f)<0.01f && fabsf(camera.z-8)<0.01f);
+    float low=100,highAfter=0; bool fell=false,bounced=false;
+    for (int i=0;i<300;++i)
+    {
+        r.step();
+        if (r.screens.failed()) {NX_EXPECT(false);return;}
+        const auto* spatial=world.space().getSpatial(ball);
+        const auto* moving=world.space().getBody(ball);
+        if (!spatial || !moving) {NX_EXPECT(false);return;}
+        const float y=spatial->place.y;
+        if (y<low) low=y;
+        if (moving->velocity.y < -1) fell=true;
+        if (fell && moving->velocity.y > 1) bounced=true;
+        if (bounced && y>highAfter) highAfter=y;
+        if (i%15==0) NX_INFO("Bounce frame %d: y=%.3f vy=%.3f",i+1,y,moving->velocity.y);
+    }
+    NX_INFO("Bounce summary: minimum y=%.3f, rebound apex=%.3f",low,highAfter);
+    NX_EXPECT(fell && bounced && low>0.2f && low<0.8f && highAfter>1.5f);
+}
