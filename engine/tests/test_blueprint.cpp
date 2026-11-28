@@ -949,7 +949,7 @@ NX_TEST(nativeAudioEffectsAndPresetRoundTrip)
     NX_EXPECT(blueprintToneWave(tone,dry,error));
     tone.channels=2;tone.effects.reverb=0.4f;tone.effects.echo=0.5f;tone.effects.distortion=0.3f;
     tone.effects.chorus=0.2f;tone.effects.flanger=0.1f;tone.effects.low=-3;
-    tone.tail=0.5f;
+    tone.tail=0.5f;tone.frequency=437.12345f;tone.effects.chorusRate=1.2345678f;
     NX_EXPECT(blueprintToneWave(tone,wet,error));
     NX_EXPECT(blueprintToneWave(tone,again,error)&&again==wet&&wet!=dry);
     auto* sound=loadSound(reinterpret_cast<const u8*>(wet.data()),wet.size());
@@ -961,6 +961,7 @@ NX_TEST(nativeAudioEffectsAndPresetRoundTrip)
     NX_EXPECT(blueprintCreateAssetRoot(r.platform,doc.assetRoot,error));
     NX_EXPECT(blueprintSaveTonePreset(r.platform,doc.assetRoot,"Screen",tone,relative,error));
     BlueprintTone loaded;NX_EXPECT(blueprintLoadTonePreset(r.platform,doc.assetRoot,"Screen",relative,loaded,error));
+    NX_EXPECT(loaded.frequency==tone.frequency&&loaded.effects.chorusRate==tone.effects.chorusRate);
     NX_EXPECT(blueprintToneWave(loaded,again,error)&&again==wet);
     NX_EXPECT(!blueprintLoadTonePreset(r.platform,doc.assetRoot,"Screen","sound/../bad.bptone.json",loaded,error));
     NX_EXPECT(loaded.channels==2);

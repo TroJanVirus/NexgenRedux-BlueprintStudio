@@ -7,6 +7,10 @@
 #include "assets/formats.h"
 #include "audio/audio.h"
 #include <memory>
+#include <sstream>
+#include <iomanip>
+#include <limits>
+#include <locale>
 #include <unordered_set>
 #include <cmath>
 #include <algorithm>
@@ -237,13 +241,22 @@ namespace nx
         const BlueprintTone& tone,std::string& relative,std::string& error)
     {
         if(!toneValid(tone,error))return false;
-        JsonValue json;
-        json.put("version")->setNumber(1);json.put("wave")->setNumber(tone.wave);
-        json.put("rate")->setNumber(tone.rate);json.put("channels")->setNumber(tone.channels);
-        for(const auto& f:toneFields)json.put(f.name)->setNumber(tone.*f.field);
-        auto* fx=json.put("effects");
-        for(const auto& f:blueprintEffectControls)fx->put(f.name)->setNumber(tone.effects.*f.field);
-        return newToneAsset(p,root,screen,".bptone.json",json.write(false),relative,error);
+        // All keys are fixed literals. Write enough significant digits to
+        // recover the identical float, even under a non-English desktop locale.
+        std::ostringstream json;
+        json.imbue(std::locale::classic());
+        json<<std::setprecision(std::numeric_limits<float>::max_digits10)
+            <<"{\"version\":1,\"wave\":"<<tone.wave<<",\"rate\":"<<tone.rate<<",\"channels\":"<<tone.channels;
+        for(const auto& f:toneFields)json<<",\""<<f.name<<"\":"<<(tone.*f.field);
+        json<<",\"effects\":{";
+        bool first=true;
+        for(const auto& f:blueprintEffectControls)
+        {
+            if(!first)json<<',';
+            first=false;json<<'\"'<<f.name<<"\":"<<(tone.effects.*f.field);
+        }
+        json<<"}}\n";
+        return newToneAsset(p,root,screen,".bptone.json",json.str(),relative,error);
     }
     bool blueprintLoadTonePreset(Platform& p,const std::string& root,const std::string& screen,
         const std::string& relative,BlueprintTone& tone,std::string& error)
