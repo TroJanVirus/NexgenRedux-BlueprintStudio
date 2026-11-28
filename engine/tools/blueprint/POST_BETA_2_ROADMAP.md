@@ -197,3 +197,8 @@ Inspected native scene/widget captures from artifact 15240686769, including the 
 ## Perspective authoring camera independence (verification pending)
 
 Scene framing now changes only the editor camera target, never the placement plane. Moving existing instances retains their own Y coordinate, while new instances use the user-selected plane. Perspective view supports right-drag orbit, middle-drag pan, wheel zoom, proportional toolbar zoom and a reference grid centred near the camera target. The far plane expands for widely separated actors. Camera focus/pitch is retained per scene tab. The grid remains editor-only. No changes to exported gameplay camera behaviour.
+
+
+## Cross-platform warning fix and scene navigation regression
+
+The Windows compiler rejected two ternary integer widths passed to Canvas::rect (C4244 with /WX). Use explicit float widths in the compact content header. Linux and macOS passed the earlier node-editing/navigation changes; Windows needs a fresh run of this combined revision. Added real X11 orbit, pan and zoom input with a saved-document equality assertion to verify camera navigation leaves authored graph data untouched. Perspective panning now clamps the target to a finite editor working range.

@@ -1232,8 +1232,8 @@ namespace nx
         const bool inside=in(x,y,planLeft,planTop,planRight,planBottom);
         const auto& raw=s.input->raw();
         const bool orbit=m_placement3D&&raw.mouseButtons[1],pan=m_placement3D&&raw.mouseButtons[2];
-        if(!orbit)m_sceneOrbit=false;
-        if(!pan)m_scenePan=false;
+        if(!orbit&&m_sceneOrbit){m_sceneOrbit=false;NX_INFO("Blueprint Studio: scene orbit completed");}
+        if(!pan&&m_scenePan){m_scenePan=false;NX_INFO("Blueprint Studio: scene pan completed");}
         if(m_placement3D&&(m_sceneOrbit||m_scenePan||inside))
         {
             if(orbit||pan)
@@ -1245,14 +1245,14 @@ namespace nx
                     else
                     {
                         const float units=m_placementDistance/std::max(1.f,planBottom-planTop);
-                        m_sceneFocusX+=(-dx*std::cos(m_placementYaw)-dy*std::sin(m_placementYaw))*units;
-                        m_sceneFocusZ+=(dx*std::sin(m_placementYaw)-dy*std::cos(m_placementYaw))*units;
+                        m_sceneFocusX=std::clamp(m_sceneFocusX+(-dx*std::cos(m_placementYaw)-dy*std::sin(m_placementYaw))*units,-100000.f,100000.f);
+                        m_sceneFocusZ=std::clamp(m_sceneFocusZ+(dx*std::sin(m_placementYaw)-dy*std::cos(m_placementYaw))*units,-100000.f,100000.f);
                     }
                 }
                 m_sceneOrbit=orbit;m_scenePan=pan;m_scenePointerX=x;m_scenePointerY=y;m_placementReady=false;return;
             }
             const float wheel=s.input->wheel();
-            if(inside&&wheel!=0){m_placementDistance=std::clamp(m_placementDistance*std::pow(0.88f,std::clamp(wheel,-8.f,8.f)),2.f,10000.f);m_placementReady=false;return;}
+            if(inside&&wheel!=0){m_placementDistance=std::clamp(m_placementDistance*std::pow(0.88f,std::clamp(wheel,-8.f,8.f)),2.f,10000.f);m_placementReady=false;NX_INFO("Blueprint Studio: scene wheel zoom");return;}
         }
         if(layout.wide)
         {
@@ -2975,8 +2975,8 @@ namespace nx
         c.rect(left,top,right-left,30,{0.24f,0.24f,0.26f,1});
         const bool narrow=right-left<360;
         c.clip(left+8,top,std::max(1.f,right-left-(narrow?150:216)),30);c.text(*m_font,narrow?"CONTENT":"CONTENT / PROJECT ASSETS",left+10,top+6,text);c.noClip();
-        c.rect(right-(narrow?72:110),top+3,narrow?64:102,25,{0.30f,0.30f,0.32f,1});c.text(*m_font,narrow?"Edit":"Manage",right-(narrow?40:59),top+5,text,Align::Center);
-        c.rect(right-(narrow?142:208),top+3,narrow?64:92,25,{0.30f,0.30f,0.32f,1});c.text(*m_font,m_contentFloating?"Dock":"Float",right-(narrow?110:162),top+5,text,Align::Center);
+        c.rect(right-(narrow?72:110),top+3,narrow?64.f:102.f,25,{0.30f,0.30f,0.32f,1});c.text(*m_font,narrow?"Edit":"Manage",right-(narrow?40:59),top+5,text,Align::Center);
+        c.rect(right-(narrow?142:208),top+3,narrow?64.f:92.f,25,{0.30f,0.30f,0.32f,1});c.text(*m_font,m_contentFloating?"Dock":"Float",right-(narrow?110:162),top+5,text,Align::Center);
         const auto& assets=m_document.visualAssets();const size_t columns=contentColumns(bounds),capacity=columns*contentRows(bounds);
         for(size_t i=0;i<capacity&&m_contentFirst+i<assets.size();++i)
         {

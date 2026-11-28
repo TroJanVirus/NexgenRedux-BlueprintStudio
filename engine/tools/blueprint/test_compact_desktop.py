@@ -59,14 +59,14 @@ with log.open("wb") as output:
             time.sleep(0.18)
             xdo("keyup",name)
             time.sleep(0.3)
-        def drag(x1,y1,x2,y2):
+        def drag(x1,y1,x2,y2,button=1):
             xdo("mousemove","--window",window,x1,y1)
             time.sleep(0.15)
-            xdo("mousedown",1)
+            xdo("mousedown",button)
             time.sleep(0.18)
             xdo("mousemove","--window",window,x2,y2)
             time.sleep(0.3)
-            xdo("mouseup",1)
+            xdo("mouseup",button)
             time.sleep(0.4)
         def enter(value):
             xdo("type","--delay",70,"--",value)
@@ -227,6 +227,19 @@ with log.open("wb") as output:
         wait_for(lambda:"Framed scene actors." in log.read_text(errors="replace"),"scene camera framing")
         click(687,945)
         shot("scene-framed-1920.png")
+        # Camera navigation must never mutate actor placement or any graph data.
+        key("ctrl+s")
+        before_navigation=json.loads(project.read_text())
+        drag(1150,500,1280,540,button=3)
+        wait_for(lambda:"scene orbit completed" in log.read_text(errors="replace"),"native perspective orbit")
+        drag(1150,500,1200,540,button=2)
+        wait_for(lambda:"scene pan completed" in log.read_text(errors="replace"),"native perspective pan")
+        xdo("mousemove","--window",window,1150,500)
+        xdo("click",4)
+        wait_for(lambda:"scene wheel zoom" in log.read_text(errors="replace"),"native perspective zoom")
+        key("ctrl+s")
+        assert json.loads(project.read_text())==before_navigation
+        shot("scene-navigation-1920.png")
         # Native tool runs the original Redux editor, then returns to this scene tab.
         click(525,25)
         wait_for(lambda:"native scene editor opened: Screen" in log.read_text(errors="replace"),"native scene tool")
