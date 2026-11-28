@@ -3679,3 +3679,29 @@ NX_TEST(nativeSegmentedHudTemplateRespondsToCapacityChanges)
     BlueprintDocument restored;NX_EXPECT(restored.load(bytes.data(),bytes.size(),error)&&compileBlueprint(restored,source,error));
 }
 #endif
+
+NX_TEST(nativeRuntimeStackSlotAnchorMutation)
+{
+    Rig r;NX_EXPECT(r.ok);if(!r.ok)return;
+    BlueprintDocument doc;doc.create();std::string id,error,source;
+    bool ok=doc.createVisualAsset("widget",id,error)&&doc.appendVisualWidget(id,"stack","",error)&&
+        doc.setVisualWidgetProperty(id,"item-1","grow","1",error)&&doc.appendVisualWidget(id,"label","Move me",error,"item-1")&&
+        doc.setVisualWidgetProperty(id,"item-2","width","100",error)&&doc.setVisualWidgetProperty(id,"item-2","height","40",error)&&
+        doc.connectVisualWidget("Screen",id,error);
+    const size_t find=doc.graphs[0].nodes.size(),set=find+1,bad=find+2;
+    ok=ok&&doc.addConnectedNode(0,find-1,"then","api:Ui:Ui::find:string",600,60,error)&&
+        doc.setInputValue(0,find,"id","item-2",error)&&
+        doc.addConnectedNode(0,find,"then","api:Widget:setAnchor:Widget@,string,float,float",950,60,error)&&
+        doc.connect(0,find,"result",set,"target",error)&&doc.setInputValue(0,set,"anchor","bottom-right",error)&&
+        doc.setInputValue(0,set,"x","-10",error)&&doc.setInputValue(0,set,"y","-20",error)&&
+        doc.addConnectedNode(0,set,"then","api:Widget:setAnchor:Widget@,string,float,float",1300,60,error)&&
+        doc.connect(0,find,"result",bad,"target",error)&&doc.setInputValue(0,bad,"anchor","bad-anchor",error)&&
+        doc.setInputValue(0,bad,"x","0",error)&&doc.setInputValue(0,bad,"y","0",error)&&compileBlueprint(doc,source,error);
+    NX_EXPECT(ok);if(!ok){NX_ERROR("Runtime Stack slot: %s",error.c_str());return;}
+    r.platform.files["showcase/main/screen.json"]="{\"title\":\"Runtime slots\"}";
+    r.platform.files["showcase/main/main.as"]=source;
+    if(!r.screens.init(r.services,"showcase","main")){NX_EXPECT(false);return;}
+    r.step(3);NX_EXPECT(!r.screens.failed());if(!r.services.ui)return;
+    const auto* item=r.services.ui->find("item-2");NX_EXPECT(item&&item->anchor==8&&item->offsetX==-10&&item->offsetY==-20);
+    if(item&&item->parent)NX_EXPECT(fabsf(item->x-(item->parent->w-item->parent->pad(2)-item->w-10))<0.01f);
+}

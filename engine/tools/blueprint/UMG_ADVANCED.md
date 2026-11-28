@@ -12,3 +12,6 @@ Original Xbox: keep expanded authored pages within 256 widgets, use small textur
 
 ## Editable example project
 Choose **Health HUD** in the native project library. The template contains a linked widget page, editable theme, three slider Change callbacks, and two documented shared function graphs. Six permanent health slots and four slots for each temporary capacity are created once. The sliders demonstrate damage (permanent capacity stays 150), temporary armour and temporary shield (capacity and segment widths change together). Partial segments use relative Fill weight; base segments use progress. The demo does not implement gameplay damage rules or shield regeneration: connect your own game events to these graphs. No textures or external media required.
+
+## Runtime Stack slots
+Use Widget `Get anchor`, `Get offset` and `setAnchor(anchor, x, y)` Blueprint nodes. Supported point anchors are top-left, top-center, top-right, middle-left, center, middle-right, bottom-left, bottom-center, bottom-right; stretch-x, stretch-y and stretch-both use symmetric insets. An empty anchor clears offsets. A wrong parent or invalid value returns false without mutating layout. Existing grow, self, align, justify, pad and width/height nodes control other slot properties. These are native Redux Widget operations, not Unreal Slot cast objects.

@@ -1287,6 +1287,9 @@ Is told which of a dialog's buttons was pressed, or -1.
 | `void set_justify(Place) property` | Changes it. |
 | `Place get_self() const property` | Where it goes itself, across what it is in. |
 | `void set_self(Place) property` | Changes it. |
+| `string get_anchor() const property` | The named Stack slot anchor, or an empty string for automatic layout. |
+| `Vec2 get_offset() const property` | The Stack slot offset in authored design units. |
+| `bool setAnchor(const string &in anchor, float x, float y)` | Sets a Stack child anchor and XY offset; empty clears the anchor. Returns false for invalid slots or values. |
 | `Color get_color() const property` | Multiplies its picture, or its text. |
 | `void set_color(const Color &in) property` | Changes it. |
 | `void set_picture(Texture@+) property` | The picture of an image, or in a button. |

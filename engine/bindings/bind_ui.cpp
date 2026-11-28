@@ -1,6 +1,8 @@
 #include "bindings/script_refs.h"
 #include "screens/screens.h"
 #include "ui/ui.h"
+#include "ui/slot_anchor.h"
+#include <cmath>
 
 #include <scriptarray/scriptarray.h>
 
@@ -339,6 +341,17 @@ namespace nx
         void setJustify(UiPlace v, Widget* w) { if (v <= UiPlace::Inherit) { w->justify = v; w->changed(); } }
         int getSelf(const Widget* w) { return static_cast<int>(w->self); }
         void setSelf(UiPlace v, Widget* w) { if (v <= UiPlace::Inherit) { w->self = v; w->changed(); } }
+        std::string getAnchor(const Widget* w) { return uiSlotAnchorName(w->anchor); }
+        Vec2 getOffset(const Widget* w) { return {w->offsetX,w->offsetY}; }
+        bool setAnchor(const std::string& anchor,float x,float y,Widget* w)
+        {
+            if(!w->ui||!w->parent||w->parent->kind!=WidgetKind::Stack||
+                !std::isfinite(x)||!std::isfinite(y)||std::abs(x)>100000.f||std::abs(y)>100000.f)return false;
+            const int index=uiSlotAnchorIndex(anchor.c_str());
+            if(index<0&&!anchor.empty())return false;
+            w->anchor=index;w->offsetX=index<0?0.f:x;w->offsetY=index<0?0.f:y;
+            w->changed();return true;
+        }
         Color getColor(const Widget* w) { return w->color; }
         void setColor(const Color& v, Widget* w) { w->color = v; }
         float getScroll(const Widget* w) { return w->scroll; }
@@ -535,6 +548,9 @@ namespace nx
         b.method("void set_justify(Place) property", NX_OBJ_LAST(setJustify), "Changes it.");
         b.method("Place get_self() const property", NX_OBJ_LAST(getSelf), "Where it goes itself, across what it is in.");
         b.method("void set_self(Place) property", NX_OBJ_LAST(setSelf), "Changes it.");
+        b.method("string get_anchor() const property", NX_OBJ_LAST(getAnchor), "The named Stack slot anchor, or an empty string for automatic layout.");
+        b.method("Vec2 get_offset() const property", NX_OBJ_LAST(getOffset), "The Stack slot offset in authored design units.");
+        b.method("bool setAnchor(const string &in anchor, float x, float y)", NX_OBJ_LAST(setAnchor), "Sets a Stack child anchor and XY offset; empty clears the anchor. Returns false for invalid slots or values.");
         b.method("Color get_color() const property", NX_OBJ_LAST(getColor), "Multiplies its picture, or its text.");
         b.method("void set_color(const Color &in) property", NX_OBJ_LAST(setColor), "Changes it.");
         b.method("void set_picture(Texture@+) property", NX_OBJ_LAST(giveImage), "The picture of an image, or in a button.");

@@ -1,5 +1,6 @@
 #include "ui/ui.h"
 #include "ui/design_geometry.h"
+#include "ui/slot_anchor.h"
 #include "base/log.h"
 
 #include <angelscript.h>
@@ -366,9 +367,7 @@ namespace nx
             else if (strcmp(key, "tag") == 0) w->tag = static_cast<int>(p.number());
             else if (strcmp(key, "anchor") == 0)
             {
-                const char* const names[]={"top-left","top-center","top-right","middle-left","center","middle-right","bottom-left","bottom-center","bottom-right","stretch-x","stretch-y","stretch-both"};
-                int anchor=-1;
-                for(int i=0;i<12;++i)if(strcmp(p.text(),names[i])==0){anchor=i;break;}
+                const int anchor=uiSlotAnchorIndex(p.text());
                 if(into.kind!=WidgetKind::Stack||anchor<0)
                 {fail(file,p.line(),"requires a stack parent and a valid anchor",p.text());return nullptr;}
                 w->anchor=anchor;
