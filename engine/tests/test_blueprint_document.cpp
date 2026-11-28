@@ -2063,3 +2063,24 @@ NX_TEST(nativeCubicCurveVisualEditIsAtomic)
     NX_EXPECT(copy.addNode(0,"make:Vec2",0,0,error)&&copy.connect(0,2,"result",1,"p0",error));
     NX_EXPECT(!copy.cubicPoints(0,1,edited,error)&&!copy.setCubicPoints(0,1,original,error));
 }
+
+NX_TEST(nativeEngineEnumChoicesAreValidatedAndExported)
+{
+    BlueprintDocument doc;doc.create();std::string error,source,bytes;
+    const auto choices=blueprintEnumChoices("TitleLook");
+    NX_EXPECT(choices.size()==3&&blueprintEnumValue("TitleLook","TitleDark"));
+    NX_EXPECT(!blueprintEnumValue("TitleLook","BackdropMica"));
+    NX_EXPECT(blueprintEnumValue("Corners","CornersSmall")&&blueprintEnumValue("Backdrop","BackdropTabbed"));
+    NX_EXPECT(blueprintEnumValue("Bus","BusMusic")&&blueprintEnumValue("Align","AlignJustify"));
+    NX_EXPECT(blueprintInputLiteralType("Pointer")&&blueprintInputLiteralType("Blend"));
+    NX_EXPECT(doc.addNode(0,"api:Windows:Windows::set_titleLook:TitleLook",0,0,error)&&doc.connect(0,0,"then",1,"in",error));
+    NX_EXPECT(!doc.setInputValue(0,1,"value","TitleDark; quit()",error));
+    NX_EXPECT(!doc.setInputValue(0,1,"value","BackdropMica",error));
+    NX_EXPECT(doc.setInputValue(0,1,"value","TitleDark",error));
+    NX_EXPECT(doc.addNode(0,"api:Windows:Windows::set_backdrop:Backdrop",0,0,error)&&doc.connect(0,1,"then",2,"in",error));
+    NX_EXPECT(doc.setInputValue(0,2,"value","BackdropMica",error));
+    NX_EXPECT(doc.serialize(bytes,error));
+    BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error)&&compileBlueprint(copy,source,error));
+    NX_EXPECT(source.find("Windows::titleLook = TitleDark")!=std::string::npos);
+    NX_EXPECT(source.find("Windows::backdrop = BackdropMica")!=std::string::npos);
+}

@@ -6,7 +6,7 @@ ROOT = Path(__file__).resolve().parents[3]
 HERE = Path(__file__).resolve().parent
 text = (ROOT / 'docs/ScriptReference.md').read_text(encoding='utf-8')
 handles = {'Texture','Model','Effect','Mesh','Font','Sound','Video','Look','Canvas','Entity','Widget','Room','Message','Request','Connection','Datagrams','Json','Path','Playlist','WebSocket','Pixels','Random','Thread','Channel','Samples','AudioStream','Curve','Batch','Packed','Zip'}
-values = {'bool','int','uint','int64','uint64','float','double','string','Vec2','Vec3','Color','Blend','Filter','Align','Ease','Bus','FieldShape','FieldJoin','Solid','Place','RoomState','Voice','Tween','Tray','XboxText','Pointer'}
+values = {'bool','int','uint','int64','uint64','float','double','string','Vec2','Vec3','Color','Blend','Filter','Align','Ease','Bus','FieldShape','FieldJoin','Solid','Place','RoomState','Voice','Tween','Tray','XboxText','Pointer','TitleLook','Corners','Backdrop'}
 sections = handles | {'Assets','Input','Audio','Save','Scene','Space','Screens','App','Maths','Ui','Net','Paths and noise','Vec2','Vec3','Color','Coroutines','Voice','Tween','Xbox','Xbox360','XboxOne','Windows','Mac','Linux','Data','Window','System'}
 
 def split(s):
@@ -56,7 +56,9 @@ def default(t,s):
 nodes=[]; seen=set(); section=''
 for line in text.splitlines():
     if line.startswith('## ' ) or line.startswith('### '): section=line.split(' ',1)[1]
-    if section not in sections: continue
+    # The reference groups Windows functions after the Backdrop enum table.
+    category = 'Windows' if section == 'Backdrop' and 'Windows::' in line else section
+    if category not in sections: continue
     m=re.match(r'\| `([^`]+)` \| (.*?) \|$',line)
     if not m: continue
     sig,desc=m.groups()
@@ -64,13 +66,13 @@ for line in text.splitlines():
     if not m: continue
     ret,name,args,prop=m.groups(); ret='void' if ret=='void' else parse_type(ret)
     # Blocking worker-only operations must not become ordinary game-thread nodes.
-    if (section == 'Thread' and name in ('wait','Worker::sleep','Worker::get_stopping','Worker::get_inThread')) or (section == 'Channel' and name == 'demand'): continue
-    if not ret or (section in {'Vec3','Color'} and not '::' in name and name not in ('hsv','lerp','fade','toLinear','toGamma')): continue
-    target=(section+'@' if section in handles else section) if section in handles|{'Voice','Tween','Vec2'} and '::' not in name else None
-    if not target and '::' not in name and section not in ('Maths','Color','Paths and noise'): continue
-    if section=='Tween' and name=='ease': target=None
-    if section in ('Path','Curve') and name in ('noise','fractalNoise','noiseSeed','triangulate','isConvex'): target=None
-    if section=='Random' and name=='randomNormal': target=None
+    if (category == 'Thread' and name in ('wait','Worker::sleep','Worker::get_stopping','Worker::get_inThread')) or (category == 'Channel' and name == 'demand'): continue
+    if not ret or (category in {'Vec3','Color'} and not '::' in name and name not in ('hsv','lerp','fade','toLinear','toGamma')): continue
+    target=(category+'@' if category in handles else category) if category in handles|{'Voice','Tween','Vec2'} and '::' not in name else None
+    if not target and '::' not in name and category not in ('Maths','Color','Paths and noise'): continue
+    if category=='Tween' and name=='ease': target=None
+    if category in ('Path','Curve') and name in ('noise','fractalNoise','noiseSeed','triangulate','isConvex'): target=None
+    if category=='Random' and name=='randomNormal': target=None
     pins=[]; outputs=[]; arguments=[]; valid=True
     if target: pins.append({'name':'target','type':target})
     for i,arg in enumerate(split(args)):
@@ -93,13 +95,13 @@ for line in text.splitlines():
     short=name.split('::')[-1]; isget=bool(prop and short.startswith('get_')); isset=bool(prop and short.startswith('set_'))
     if prop and not (isget or isset): continue
     if isset and len(pins)!=(2 if target else 1): continue
-    key=(section,name,tuple(p['type'] for p in pins),tuple((p['type'],p['name']) for p in outputs))
+    key=(category,name,tuple(p['type'] for p in pins),tuple((p['type'],p['name']) for p in outputs))
     if key in seen: continue
     seen.add(key)
     # Calls with side effects (including random and asset allocation) get execution pins.
-    pure=not outputs and (isget or section=='Vec2' or (section in ('Maths','Color') and not short.startswith('random')) or (section=='Input' and short in ('held','pressed','released','repeated','key','mouseDown','padConnected','padLeft','padRight','padTriggers','padButton','keys','buttons')))
+    pure=not outputs and (isget or category=='Vec2' or (category in ('Maths','Color') and not short.startswith('random')) or (category=='Input' and short in ('held','pressed','released','repeated','key','mouseDown','padConnected','padLeft','padRight','padTriggers','padButton','keys','buttons')))
     label=(('Get ' if isget else 'Set ' if isset else '')+short[4:] if isget or isset else short)
-    nodes.append({'id':'api:'+section+':'+name+':'+','.join(p['type'] for p in pins)+(':'+','.join(p['type']+' out' for p in outputs) if outputs else ''),'title':label,'category':section,'description':desc,'inputs':pins,'outputs':outputs,'arguments':arguments,'result':ret,'pure':pure,'call':name,'member':bool(target),'property':'get' if isget else 'set' if isset else ''})
+    nodes.append({'id':'api:'+category+':'+name+':'+','.join(p['type'] for p in pins)+(':'+','.join(p['type']+' out' for p in outputs) if outputs else ''),'title':label,'category':category,'description':desc,'inputs':pins,'outputs':outputs,'arguments':arguments,'result':ret,'pure':pure,'call':name,'member':bool(target),'property':'get' if isget else 'set' if isset else ''})
 # Factory declarations are registered by the engine but not emitted as reference table rows.
 # Keep these signatures aligned with bind_threads.cpp and bindings.cpp.
 for category, title, inputs in [

@@ -15,6 +15,10 @@ namespace nx
     {
         struct Row {const char* id;const char* title;const char* category;const char* inputs;const char* outputs;
             const char* call="";const char* property="";const char* member="";const char* pure="";const char* result="";const char* hasOut="";const char* arguments="";const char* defaults="";};
+        struct EnumRow {const char* type;const char* value;};
+        constexpr EnumRow enumRows[]={
+#include "tools/blueprint/native_enums.inc"
+        };
         constexpr Row rows[]={
             {"entry","Event entry","Flow","","then:exec"},
             {"branch","Branch","Flow","in:exec|condition:bool","true:exec|false:exec|then:exec"},
@@ -288,8 +292,7 @@ namespace nx
         }
         bool inputLiteral(const std::string& type,const std::string& value)
         {
-            if(type=="Bus")return value=="BusEffects"||value=="BusMusic"||value=="BusInterface";
-            if(type=="Align")return value=="AlignLeft"||value=="AlignCenter"||value=="AlignRight"||value=="AlignJustify";
+            if(!blueprintEnumChoices(type).empty())return blueprintEnumValue(type,value);
             if(blueprintLiteralType(type))return literal("literal:"+type,value);
             std::vector<std::string> components;return blueprintInputComponents(type,value,components);
         }
@@ -333,7 +336,18 @@ namespace nx
         if(type=="Color")return {"R","G","B","A"};
         return {};
     }
-    bool blueprintInputLiteralType(const std::string& type){return type=="Bus"||type=="Align"||blueprintLiteralType(type)||!blueprintInputComponentLabels(type).empty();}
+    std::vector<std::string> blueprintEnumChoices(const std::string& type)
+    {
+        std::vector<std::string> result;
+        for(const auto& row:enumRows)if(type==row.type)result.emplace_back(row.value);
+        return result;
+    }
+    bool blueprintEnumValue(const std::string& type,const std::string& value)
+    {
+        for(const auto& row:enumRows)if(type==row.type&&value==row.value)return true;
+        return false;
+    }
+    bool blueprintInputLiteralType(const std::string& type){return blueprintLiteralType(type)||!blueprintEnumChoices(type).empty()||!blueprintInputComponentLabels(type).empty();}
     bool blueprintInputComponents(const std::string& type,const std::string& value,std::vector<std::string>& components)
     {
         const auto labels=blueprintInputComponentLabels(type);

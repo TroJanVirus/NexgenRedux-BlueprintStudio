@@ -3972,6 +3972,13 @@ namespace nx
             if(!blueprintInputComponents(m_editType,value,m_inputComponents))
             {m_inputComponents.assign(labels.size(),"0");if(m_editType=="Color")m_inputComponents[3]="1";}
         }
+        m_inputChoices=blueprintEnumChoices(m_editType);
+        if(!m_inputChoices.empty()&&m_edit.empty())
+        {
+            BlueprintNodeSpec spec;
+            if(m_document.nodeSpec(graph,n,spec))for(const auto& d:spec.defaults)
+                if(d.name==m_editPin&&blueprintEnumValue(m_editType,d.type))m_edit=d.type;
+        }
         if(n.kind=="camera:orbit-timed"&&m_editPin=="name")m_inputChoices=namedSceneTargets();
     }
     bool BlueprintWorkspace::beginCurveEditor(Input& input)
@@ -4423,7 +4430,7 @@ namespace nx
                 if(click&&y>=472)
                 {
                     const auto index=m_inputChoiceFirst+static_cast<size_t>((y-472)/28);
-                    if(index<m_inputChoices.size()){m_edit=m_inputChoices[index];m_status="Selected known scene entity. Enter confirms.";}
+                    if(index<m_inputChoices.size()){m_edit=m_inputChoices[index];m_status="Selected value. Enter confirms.";}
                 }
             }
         }
@@ -5414,7 +5421,7 @@ namespace nx
                 c.text(*m_font,"Enter confirms | Escape cancels",730,400,text,Align::Center);
                 if(!m_inputChoices.empty())
                 {
-                    c.roundRect(340,450,600,178,8,{0.16f,0.16f,0.17f,1});c.text(*m_font,"Known named entities (scroll to choose)",360,451,accent);
+                    c.roundRect(340,450,600,178,8,{0.16f,0.16f,0.17f,1});c.text(*m_font,blueprintEnumChoices(m_editType).empty()?"Known named entities (scroll to choose)":"Enum values (scroll to choose)",360,451,accent);
                     for(size_t i=m_inputChoiceFirst;i<std::min(m_inputChoiceFirst+5,m_inputChoices.size());++i)
                     {
                         const float yy=472+28*static_cast<float>(i-m_inputChoiceFirst);c.rect(360,yy,560,26,m_edit==m_inputChoices[i]?Color{0.24f,0.35f,0.48f,1}:Color{0.17f,0.23f,0.31f,1});
