@@ -411,6 +411,7 @@ namespace nx
         std::string m_deployInstallId;
         void locateDeviceNode();
         void updateRemoteGraph(double now);
+        const std::string* remotePinValue(size_t graph,size_t node,const std::string& pin,bool output) const;
         void toggleRemoteTrace();
         void drawRemoteControls(Canvas& c);
         BlueprintLocation mapRemoteLocation(const std::string& file,const std::string& fingerprint,unsigned line) const;

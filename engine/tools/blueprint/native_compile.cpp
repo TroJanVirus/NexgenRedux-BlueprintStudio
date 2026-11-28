@@ -1477,6 +1477,37 @@ uint bp_audio_normalize(Samples@ s, uint start, uint frames, float peak)
         if(owners.size()!=1){error="Choose a screen or compile the complete project.";if(location)*location={};return false;}
         return compileBlueprintOwner(document,owners.front(),source,error,location,map);
     }
+    std::string blueprintPausedPinLocal(const BlueprintDocument& doc,size_t graphIndex,size_t nodeIndex,const std::string& pin)
+    {
+        if(graphIndex>=doc.graphs.size()||nodeIndex>=doc.graphs[graphIndex].nodes.size()||pin=="then"||pin=="in")return {};
+        // Inline macros reuse local node indices in the caller. Until the
+        // compiler emits lexical-scope identities, suppress graph values there.
+        for(const auto& graph:doc.graphs)if(graph.inlineMacro)return {};
+        const auto& graph=doc.graphs[graphIndex];const auto& n=graph.nodes[nodeIndex];
+        const auto suffix=std::to_string(nodeIndex);
+        const auto* spec=blueprintSpec(n.kind);
+        if(!spec)return {};
+        if(n.kind=="entry"&&graph.kind=="function")
+        {
+            for(const auto& p:graph.parameters)if(pin=="arg_"+p.name)return "bp_arg_"+p.name;
+            return {};
+        }
+        if(n.kind.rfind("capture:",0)==0&&pin=="result")return "bp_local_"+n.ref+"_"+suffix;
+        if(n.kind=="repeat"&&pin=="index")return "bp_index_"+suffix;
+        if(n.kind.rfind("flow:foreach:",0)==0&&(pin=="index"||pin=="element"))return "bp_"+pin+"_"+suffix;
+        if(n.kind=="actor:cast-class"&&(pin=="typed"||pin=="result"))return std::string(pin=="typed"?"bp_typed_":"bp_value_")+suffix;
+        if(n.kind=="camera:sequence"&&(pin=="active"||pin=="finished"||pin=="elapsed"||pin=="found"))return "bp_seq_"+pin+"_"+suffix;
+        if(n.kind=="time:timeline"||n.kind=="camera:orbit-timed")
+        {
+            if(pin=="found"&&n.kind=="camera:orbit-timed")return "bp_orbit_found_"+suffix;
+            if(pin=="progress"||pin=="elapsed"||pin=="finished")return "bp_timeline_"+pin+"_"+suffix;
+        }
+        if(pin=="result"&&(n.kind=="call:function"||n.kind=="call:library"||n.kind=="call:parent"||n.kind=="spawn:box"||n.kind=="spawn:plane"||n.kind=="actor:spawn-asset"||n.kind=="level:attach"||n.kind=="attach:behaviour"||
+            (!spec->pure&&!spec->call.empty()&&!spec->result.empty()&&spec->result!="void")))return "bp_value_"+suffix;
+        if(spec->hasOut&&pin!="result"&&pin!="then")for(const auto& p:spec->outputs)if(p.name==pin)return "bp_out_"+suffix+"_"+pin;
+        return {};
+    }
+
     BlueprintLocation blueprintSourceLocation(const BlueprintSourceMap& map,size_t line)
     {
         const auto found=std::lower_bound(map.begin(),map.end(),line,[](const BlueprintSourceSpan& span,size_t target){return span.lastLine<target;});

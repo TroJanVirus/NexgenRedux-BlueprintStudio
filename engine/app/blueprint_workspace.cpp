@@ -5037,7 +5037,7 @@ namespace nx
     BlueprintLocation BlueprintWorkspace::mapRemoteLocation(const std::string& file,const std::string& fingerprint,unsigned line) const
     {
         if(fingerprint.empty()||!line)return {};
-        for(size_t i=0;i<m_remoteMaps.size();++i)
+        for(size_t i=0;i<m_remoteMaps.size()&&i<m_remoteFingerprints.size();++i)
             if(file=="showcase/"+m_remoteMaps[i].id+"/main.as"&&fingerprint==m_remoteFingerprints[i])
                 return blueprintSourceLocation(m_remoteMaps[i].map,line);
         return {};
@@ -5081,6 +5081,20 @@ namespace nx
             m_status="Remote paused at verified Blueprint node.";
         }
     }
+    const std::string* BlueprintWorkspace::remotePinValue(size_t graph,size_t node,const std::string& pin,bool output) const
+    {
+        if(!m_device.paused()||m_remotePaused.graph!=graph||graph>=m_document.graphs.size()||m_device.pinValues().empty())return nullptr;
+        if(!output)
+        {
+            for(const auto& link:m_document.graphs[graph].links)if(link.to==node&&link.input==pin)
+                return remotePinValue(graph,link.from,link.output,true);
+            return nullptr;
+        }
+        const auto name=blueprintPausedPinLocal(m_document,graph,node,pin);
+        if(name.empty())return nullptr;
+        for(const auto& value:m_device.pinValues())if(value.name==name)return &value.value;
+        return nullptr;
+    }
     void BlueprintWorkspace::drawRemoteControls(Canvas& c)
     {
         if(!m_device.ready()||!m_recoveryWarning.empty())return;
@@ -5091,7 +5105,7 @@ namespace nx
             const float x=12+100.f*static_cast<float>(i);
             c.roundRect(x,y,96,21,3,{0.20f,0.32f,0.45f,1});c.text(*m_font,labels[i],x+48,y+1,text,Align::Center);
         }
-        if(kWidth>1120)c.text(*m_font,m_remoteGap?"Trace capped / gaps":"Remote debug",824,y+1,muted);
+        if(kWidth>1120)c.text(*m_font,m_device.paused()&&m_device.pinsSupported()?(m_device.pinsCapped()?"Pin snapshot capped":"Paused pin values"):m_remoteGap?"Trace capped / gaps":"Remote debug",824,y+1,muted);
     }
     bool BlueprintWorkspace::canPushLiveSource()const
     {
@@ -7205,8 +7219,10 @@ namespace nx
                     }
                     for(size_t p=first;p<std::min(last,rows[i].outputs.size());++p)
                     {
-                        const float width=std::min(w-2*pad,(c.measure(*m_font,rows[i].outputs[p].c_str()).x+4)*m_zoom);
-                        graphText(rows[i].outputs[p],x+w-pad-width,y+pinY(p)*m_zoom-10*m_zoom,width,20*m_zoom,m_zoom,muted,Align::Right);
+                        const auto* live=remotePinValue(m_graph,i,rows[i].outputs[p],true);
+                        const std::string label=live?rows[i].outputs[p]+" = "+*live:rows[i].outputs[p];
+                        const float width=std::min(w-2*pad,(c.measure(*m_font,label.c_str()).x+4)*m_zoom);
+                        graphText(label,x+w-pad-width,y+pinY(p)*m_zoom-10*m_zoom,width,20*m_zoom,m_zoom,live?Color{0.20f,0.85f,0.78f,1}:muted,Align::Right);
                     }
                 }
             }

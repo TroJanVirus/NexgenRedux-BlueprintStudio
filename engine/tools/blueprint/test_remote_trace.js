@@ -74,6 +74,7 @@ async function main() {
         assert.equal(hello.sourceIdentity,true);
         assert.equal(hello.remoteTrace,true);
         assert.equal(hello.studioActors,true);
+        assert.equal(hello.studioPins,true);
         assert.equal(hello.launchId,undefined);
         const refused=await ask("launchTitle",{folder:"/E/Games/Example",token:"a".repeat(32)});
         assert.equal(refused.launchAccepted,false);
@@ -110,6 +111,12 @@ async function main() {
         assert.equal(current.fingerprint,first.fingerprint);
         const batch=await ask('traceDrain');
         assert.ok(batch.trace.length>0&&batch.trace.length<=32);
+        const pins=await ask("studioPins");
+        assert.equal(pins.file,current.file);
+        assert.equal(pins.fingerprint,current.fingerprint);
+        assert.equal(pins.line,current.line);
+        assert.ok(pins.pins.length<=64);
+        assert.equal(pins.pins.find(p=>p.name==="bp_dispatcharg_0").value,"3");
         const variables=await ask('variables',{frame:0,scope:'locals',limit:1});
         assert.ok(variables.variables.length<=1);
         await ask('clearBreakpoints');

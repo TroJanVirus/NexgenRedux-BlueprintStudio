@@ -23,6 +23,10 @@ namespace nx
         bool traceSupported()const{return m_traceSupported;}
         struct Actor {u32 id=0,parent=0;std::string name;bool spatial=false;};
         struct ActorProperty {std::string name,value;bool editable=false;};
+        struct PinValue{std::string name,type,value;};
+        const std::vector<PinValue>& pinValues()const{return m_pinValues;}
+        bool pinsCapped()const{return m_pinsCapped;}
+        bool pinsSupported()const{return m_pinsSupported;}
         bool actorsSupported()const{return m_actorsSupported;}
         bool actorBusy()const{return m_actorRequest!=0;}
         const std::vector<Actor>& actors()const{return m_actors;}
@@ -102,7 +106,7 @@ namespace nx
         {
             m_socket.close();if(m_network)netStop();m_network=m_ready=m_paused=m_hello=m_sourceIdentity=m_traceSupported=m_tracing=m_traceOutstanding=m_traceGap=false;m_hits.clear();
             m_in.clear();m_out.clear();m_rows.clear();m_log.clear();m_file.clear();m_fingerprint.clear();m_variables.clear();m_line=0;
-            m_actorsSupported=false;m_actorRequest=0;m_actorEpoch=m_actorOffset=m_actorCount=m_actorSelected=0;m_actors.clear();m_actorProperties.clear();m_actorScreen.clear();m_actorStatus.clear();
+            m_pinsSupported=m_pinsCapped=false;m_pinValues.clear();m_actorsSupported=false;m_actorRequest=0;m_actorEpoch=m_actorOffset=m_actorCount=m_actorSelected=0;m_actors.clear();m_actorProperties.clear();m_actorScreen.clear();m_actorStatus.clear();
             m_status="Disconnected";m_launchId.clear();m_address.clear();m_liveSupported=false;m_liveStage=0;m_liveScreen.clear();m_liveFingerprint.clear();std::string().swap(m_liveBytes);
         }
         bool connect(const std::string& address,double now)
@@ -190,17 +194,18 @@ namespace nx
             if(event=="hello"&&id==1&&!m_ready)
             {
                 if(root["version"].exact()!=1){fail("Unsupported debugger protocol.");return;}
-                m_sourceIdentity=root["sourceIdentity"].flag();m_traceSupported=root["remoteTrace"].flag();m_actorsSupported=root["studioActors"].flag();m_launchId=root["launchId"].text();if(!studioLaunchIdentity(m_launchId))m_launchId.clear();m_liveSupported=root["liveSource"].flag()&&!m_launchId.empty();m_ready=true;m_poll=now;m_status="Connected; waiting for device telemetry.";
+                m_sourceIdentity=root["sourceIdentity"].flag();m_traceSupported=root["remoteTrace"].flag();m_actorsSupported=root["studioActors"].flag();m_pinsSupported=root["studioPins"].flag();m_launchId=root["launchId"].text();if(!studioLaunchIdentity(m_launchId))m_launchId.clear();m_liveSupported=root["liveSource"].flag()&&!m_launchId.empty();m_ready=true;m_poll=now;m_status="Connected; waiting for device telemetry.";
                 queue("{\"cmd\":\"ready\",\"id\":2}");
             }
             else if(event=="stopped"&&m_ready)
             {
-                m_paused=true;m_status=std::string("Stopped: ")+root["reason"].text();m_file.clear();m_fingerprint.clear();m_variables.clear();m_line=0;
+                m_paused=true;m_pinValues.clear();m_pinsCapped=false;m_status=std::string("Stopped: ")+root["reason"].text();m_file.clear();m_fingerprint.clear();m_variables.clear();m_line=0;
                 queue("{\"cmd\":\"stack\",\"id\":3}");
                 queue("{\"cmd\":\"variables\",\"id\":5,\"frame\":0,\"scope\":\"locals\",\"limit\":12}");
+                if(m_pinsSupported)queue("{\"cmd\":\"studioPins\",\"id\":14}");
             }
             else if(event=="continued")
-            {m_paused=false;m_status="Running";m_file.clear();m_fingerprint.clear();m_variables.clear();m_line=0;}
+            {m_paused=false;m_pinValues.clear();m_pinsCapped=false;m_status="Running";m_file.clear();m_fingerprint.clear();m_variables.clear();m_line=0;}
             else if(event=="launchFailed"){m_launchStatus=root["text"].text();}
             else if(id==8){m_launchStatus=root["message"].text();}
             else if(id>=11&&id<=13&&id==m_actorRequest)
@@ -268,6 +273,14 @@ namespace nx
                 m_fingerprint=std::string(top["fingerprint"].text()).substr(0,32);
                 const auto at=top["line"].exact();if(at>0&&at<1000000)m_line=static_cast<unsigned>(at);
             }
+            else if(id==14&&m_paused)
+            {
+                m_pinValues.clear();m_pinsCapped=false;
+                if(m_file!=root["file"].text()||m_fingerprint!=root["fingerprint"].text()||root["line"].exact()!=m_line)return;
+                m_pinsCapped=root["capped"].flag();
+                for(auto item=root["pins"].first();item.exists()&&m_pinValues.size()<64;item=item.next())
+                    m_pinValues.push_back({std::string(item["name"].text()).substr(0,96),std::string(item["type"].text()).substr(0,96),std::string(item["value"].text()).substr(0,192)});
+            }
             else if(id==5&&m_paused)
             {
                 m_variables.clear();
@@ -313,7 +326,8 @@ namespace nx
         TcpSocket m_socket;
         bool m_network=false,m_ready=false,m_paused=false,m_hello=false,m_sourceIdentity=false;
         bool m_traceSupported=false,m_tracing=false,m_traceOutstanding=false,m_traceGap=false;
-        bool m_liveSupported=false,m_actorsSupported=false;
+        bool m_liveSupported=false,m_actorsSupported=false,m_pinsSupported=false,m_pinsCapped=false;
+        std::vector<PinValue> m_pinValues;
         int m_actorRequest=0;
         double m_actorDeadline=0;
         u32 m_actorEpoch=0,m_actorOffset=0,m_actorCount=0,m_actorSelected=0;

@@ -334,6 +334,7 @@ namespace nx
             reply.put("sourceIdentity")->setFlag(true);
             reply.put("remoteTrace")->setFlag(true);
             reply.put("studioActors")->setFlag(true);
+            reply.put("studioPins")->setFlag(true);
             if(!m_launchId.empty()){putText(reply,"launchId",m_launchId);reply.put("liveSource")->setFlag(true);}
             putText(reply, "angelscript", ScriptHost::version());
             putNumber(reply, "id", id);
@@ -425,6 +426,7 @@ namespace nx
             const JsonValue* on = ask.find("on");
             profile(id, on && on->flag());
         }
+        else if(name=="studioPins"){studioPins(id);}
         else if(name=="studioActors"||name=="studioActor"||name=="studioActorSet")
         {
             studioActors(id,name,ask);
@@ -986,6 +988,59 @@ namespace nx
                 }
             }
         }
+    }
+
+    void ScriptDebugger::studioPins(int id)
+    {
+        JsonValue reply;putNumber(reply,"id",id);
+        auto* list=reply.put("pins");list->setArray();
+        if(m_paused&&m_stopped&&m_stopped->GetCallstackSize())
+        {
+            const char* section=nullptr;
+            const int line=m_stopped->GetLineNumber(0,nullptr,&section);
+            auto* function=m_stopped->GetFunction(0);
+            if(function&&section)
+            {
+                putText(reply,"file",m_host->sourceOf(section));
+                putText(reply,"fingerprint",m_host->compiledFingerprint(function->GetModuleName(),section));
+                putNumber(reply,"line",line);
+                const int count=m_stopped->GetVarCount(0);
+                bool capped=false;
+                // The nearest in-scope local wins. Never evaluate a function or
+                // call a getter just to populate a graph pin.
+                std::vector<std::string> seen;
+                for(int i=count-1;i>=0;--i)
+                {
+                    const char* label=nullptr;int typeId=0;
+                    if(!m_stopped->IsVarInScope(i,0)||m_stopped->GetVar(i,0,&label,&typeId)<0||!label||strncmp(label,"bp_",3)!=0)continue;
+                    const std::string name=label;
+                    if(name.size()>96||std::find(seen.begin(),seen.end(),name)!=seen.end())continue;
+                    if(list->count()>=64){capped=true;break;}
+                    seen.push_back(name);
+                    auto* address=m_stopped->GetAddressOfVar(i,0);
+                    if(!address)continue;
+                    const auto* type=m_host->engine()->GetTypeInfoById(typeId);
+                    const auto* declaration=m_host->engine()->GetTypeDeclaration(typeId,true);
+                    if(typeId&asTYPEID_OBJHANDLE)
+                    {
+                        auto* item=list->add();putText(*item,"name",name);putText(*item,"type",declaration?declaration:"?");
+                        putText(*item,"value",*static_cast<void**>(address)?"(object)":"null");
+                    }
+                    else if(!type||typeId==m_stringType||(type->GetFlags()&asOBJ_ENUM))
+                    {
+                        if(typeId==asTYPEID_VOID)continue;
+                        describe(*list->add(),label,typeId,address);
+                    }
+                    else
+                    {
+                        auto* item=list->add();putText(*item,"name",name);putText(*item,"type",declaration?declaration:"?");
+                        putText(*item,"value","(value object)");
+                    }
+                }
+                reply.put("capped")->setFlag(capped);
+            }
+        }
+        send(reply.write(true));
     }
 
     void ScriptDebugger::variables(int id, const JsonValue& ask)

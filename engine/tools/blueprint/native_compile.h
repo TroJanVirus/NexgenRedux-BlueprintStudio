@@ -7,6 +7,8 @@ namespace nx
     using BlueprintSourceMap=std::vector<BlueprintSourceSpan>;
     // Map only executable statements and method headers, not unrelated closing braces.
     BlueprintLocation blueprintSourceLocation(const BlueprintSourceMap& map,size_t line);
+    // A materialized local only, never a re-evaluated expression.
+    std::string blueprintPausedPinLocal(const BlueprintDocument& doc,size_t graph,size_t node,const std::string& pin);
     size_t blueprintErrorLine(const std::string& error,const std::string& section);
     // Generates plain AngelScript. Source and map are unchanged on failure.
     bool compileBlueprint(const BlueprintDocument& document,std::string& source,std::string& error,

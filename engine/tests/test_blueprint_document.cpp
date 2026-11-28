@@ -2449,3 +2449,15 @@ NX_TEST(nativeStudioActorValueBounds)
     NX_EXPECT(!studioActorValue("shown","yes",false));
     NX_EXPECT(!studioActorValue("name","renamed",false));
 }
+
+NX_TEST(nativePausedPinLocalMapping)
+{
+    BlueprintDocument doc;doc.create();
+    std::string error;
+    NX_EXPECT(doc.addNode(0,"spawn:box",200,120,error));
+    NX_EXPECT(blueprintPausedPinLocal(doc,0,1,"result")=="bp_value_1");
+    NX_EXPECT(blueprintPausedPinLocal(doc,0,1,"then").empty());
+    NX_EXPECT(blueprintPausedPinLocal(doc,0,999,"result").empty());
+    doc.graphs[0].inlineMacro=true;
+    NX_EXPECT(blueprintPausedPinLocal(doc,0,1,"result").empty());
+}
