@@ -1,4 +1,4 @@
-name: Verify native graph zoom, node sizing and wire routing
+name: Verify native graph appearance and bounded curved-wire geometry
 on:
   workflow_dispatch:
   push:

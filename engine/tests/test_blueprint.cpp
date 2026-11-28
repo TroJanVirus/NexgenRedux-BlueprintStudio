@@ -41,6 +41,11 @@ NX_TEST(blueprintGraphCurvedWiresAndReroutes)
     NX_EXPECT(path[1].x>300&&path[path.size()-2].x<100);
     bool around=false;for(const P& p:path)if(p.y<0||p.y>200)around=true;
     NX_EXPECT(around);
+    path=blueprintGraphWire({{300,40},{100,140}},0,1,0,200,&segments,-50,500);
+    float minX=300,maxX=300;for(const P& p:path){minX=std::min(minX,p.x);maxX=std::max(maxX,p.x);}
+    NX_EXPECT(minX<-50&&maxX>500);
+    path=blueprintGraphWire({{300,40},{301,400}},0,1,0,500,&segments);
+    for(const P& p:path)NX_EXPECT(p.x>=299.999f&&p.x<=301.001f);
     path=blueprintGraphWire({{100,40},{200,200},{300,140}},0,1,0,200,&segments);
     bool through=false,second=false;
     for(const P& p:path)if(p.x==200&&p.y==200)through=true;

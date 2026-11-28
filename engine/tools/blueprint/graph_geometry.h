@@ -2,11 +2,13 @@
 #include "tools/blueprint/native_document.h"
 #include <algorithm>
 #include <cmath>
+#include <limits>
 namespace nx
 {
     inline std::vector<BlueprintDocument::Point> blueprintGraphWire(
         const std::vector<BlueprintDocument::Point>& anchors,unsigned style,float zoom,
-        float top,float bottom,std::vector<size_t>* segments)
+        float top,float bottom,std::vector<size_t>* segments,
+        float left=std::numeric_limits<float>::infinity(),float right=-std::numeric_limits<float>::infinity())
     {
         using P=BlueprintDocument::Point;
         if(segments)segments->clear();
@@ -32,12 +34,13 @@ namespace nx
         {
             const P a=anchors[i-1],b=anchors[i];const size_t seg=i-1;
             if(style==2){append(b,seg);continue;}
-            if(anchors.size()==2&&b.x<a.x)
+            if(anchors.size()==2&&b.x<=a.x)
             {
                 const float gap=std::max(22.f,36*zoom),radius=std::min(14.f*zoom,gap*0.4f);
                 const float above=top-gap,below=bottom+gap;
                 const float corridor=std::abs(a.y-above)+std::abs(b.y-above)<=std::abs(a.y-below)+std::abs(b.y-below)?above:below;
-                const std::vector<P> path{a,{a.x+gap,a.y},{a.x+gap,corridor},{b.x-gap,corridor},{b.x-gap,b.y},b};
+                const float outerRight=std::max(a.x,right)+gap,outerLeft=std::min(b.x,left)-gap;
+                const std::vector<P> path{a,{outerRight,a.y},{outerRight,corridor},{outerLeft,corridor},{outerLeft,b.y},b};
                 for(size_t j=1;j+1<path.size();++j)
                 {
                     const P prev=path[j-1],corner=path[j],next=path[j+1];
@@ -55,7 +58,8 @@ namespace nx
             {
                 const float mid=(a.x+b.x)*0.5f;append({mid,a.y},seg);append({mid,b.y},seg);append(b,seg);continue;
             }
-            const float reach=std::clamp(std::max(std::abs(b.x-a.x)*0.5f,std::abs(b.y-a.y)*0.22f),12.f*zoom,180.f*zoom);
+            float reach=std::clamp(std::max(std::abs(b.x-a.x)*0.5f,std::abs(b.y-a.y)*0.22f),12.f*zoom,180.f*zoom);
+            if(anchors.size()==2&&b.x>a.x)reach=std::min(reach,(b.x-a.x)*0.75f);
             const float tangent=anchors.size()==2||b.x>=a.x?reach:-reach;
             bezier(a,{a.x+(i==1?reach:tangent),a.y},{b.x-(i+1==anchors.size()?reach:tangent),b.y},b,seg);
         }

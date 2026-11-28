@@ -4161,7 +4161,9 @@ namespace nx
         anchors.push_back({x2,y2});
         const float top=kTop+m_y+std::min(from.y,to.y)*m_zoom;
         const float bottom=kTop+m_y+std::max(from.y+m_rows[l.from].height,to.y+m_rows[l.to].height)*m_zoom;
-        return blueprintGraphWire(anchors,m_wireStyle,m_zoom,top,bottom,segments);
+        const float left=kLeft+m_x+std::min(from.x,to.x)*m_zoom;
+        const float right=kLeft+m_x+std::max(from.x+m_rows[l.from].width,to.x+m_rows[l.to].width)*m_zoom;
+        return blueprintGraphWire(anchors,m_wireStyle,m_zoom,top,bottom,segments,left,right);
     }
     std::vector<std::string> BlueprintWorkspace::namedSceneTargets() const
     {
@@ -4398,7 +4400,7 @@ namespace nx
                     }
                 }
                 else if(in(x,y,300,395,550,425)){m_uiScale=(m_uiScale+1)%4;m_status="Changed desktop UI density (small windows fit automatically).";}
-                else if(in(x,y,300,425,550,455)){m_leftPanel=248;m_graphRightPanel=268;m_actorRightPanel=310;m_uiScale=0;m_actorCollapsed=0;m_actorDetailsScroll=0;m_contentDrawer=false;m_contentFloating=false;m_contentPanelX=0.25f;m_contentPanelY=0.65f;m_contentPanelWidth=620;m_contentDockTop=false;m_contentPanelHeight=174;m_contentDockSide=0;m_contentSideWidth=300;m_graphTree=false;m_minimap=m_minimapDragging=false;m_graphHideLeft=m_graphHideRight=false;m_navigationFirst=0;m_navigationCollapsed.clear();resizeWorkspace(canvas);fitGraph();m_status="Reset editor panel sizes and density.";}
+                else if(in(x,y,300,425,550,455)){m_leftPanel=248;m_graphRightPanel=268;m_actorRightPanel=310;m_uiScale=0;m_actorCollapsed=0;m_actorDetailsScroll=0;m_contentDrawer=false;m_contentFloating=false;m_contentPanelX=0.25f;m_contentPanelY=0.65f;m_contentPanelWidth=620;m_contentDockTop=false;m_contentPanelHeight=174;m_contentDockSide=0;m_contentSideWidth=300;m_graphTree=false;m_minimap=m_minimapDragging=false;m_graphHideLeft=m_graphHideRight=false;m_navigationFirst=0;m_navigationCollapsed.clear();m_wireStyle=0;resizeWorkspace(canvas);fitGraph();m_status="Reset editor panel sizes and density.";}
                 else if(in(x,y,300,455,550,485)){m_minimap=!m_minimap;m_status=m_minimap?"Graph overview enabled. Click or drag to navigate.":"Graph overview hidden.";NX_INFO("Blueprint Studio: minimap %s",m_minimap?"enabled":"hidden");}
                 else if(in(x,y,300,485,550,515)){m_graphHideLeft=!m_graphHideLeft;m_status=m_graphHideLeft?"Navigator hidden.":"Navigator shown.";NX_INFO("Blueprint Studio: %s",m_status.c_str());}
                 else if(in(x,y,300,515,550,545)){m_graphHideRight=!m_graphHideRight;m_status=m_graphHideRight?"Node library hidden.":"Node library shown.";NX_INFO("Blueprint Studio: %s",m_status.c_str());}
@@ -4653,7 +4655,7 @@ namespace nx
                 std::vector<std::string> points;
                 for(size_t i=0;i<4;++i){char pair[96];snprintf(pair,sizeof(pair),"%.9g,%.9g",m_curveX[i],m_curveY[i]);points.emplace_back(pair);}
                 if(!m_curveChanged||m_document.setCubicPoints(m_graph,m_selection,points,m_status))
-                {m_focus=0;m_curveDrag=-1;m_diagnostic={};m_status="Curve points applied.";NX_INFO("Blueprint Studio: cubic curve points applied");}
+                {rebuildPins();m_focus=0;m_curveDrag=-1;m_diagnostic={};m_status="Curve points applied.";NX_INFO("Blueprint Studio: cubic curve points applied");}
             }
             else
             {
@@ -5311,7 +5313,7 @@ namespace nx
             }
             if(m_pending<graph.nodes.size())
             {
-                const auto& n=graph.nodes[m_pending];const auto& pins=m_pendingOutput?rows[m_pending].outputs:rows[m_pending].inputs;
+                const auto n=nodeLayoutPosition(m_pending);const auto& pins=m_pendingOutput?rows[m_pending].outputs:rows[m_pending].inputs;
                 const auto pin=std::find(pins.begin(),pins.end(),m_pendingPin);
                 if(pin!=pins.end())
                 {
