@@ -174,7 +174,7 @@ def author_scene(process):
     if timed:
         right_add(500, 100, "camera:orbit-timed")
         operations["value"] += 1
-        click(500, 160)
+        click(*pin(1,1,1))
         click(500, 485)  # Cube sorts before Floor in the known-target list.
         key("Return")
         time.sleep(0.3)

@@ -5481,7 +5481,8 @@ namespace nx
                     geometry+=" "+std::to_string(i)+":"+std::to_string(kLeft+m_x+nodeX(i)*m_zoom)+","+
                         std::to_string(kTop+m_y+nodeY(i)*m_zoom)+","+std::to_string(rows[i].width*m_zoom)+","+std::to_string(m_zoom);
                 }
-                if(geometry!=m_testGraphGeometry){m_testGraphGeometry=geometry;NX_INFO("BP_GEOMETRY %u%s",static_cast<unsigned>(m_graph),geometry.c_str());}
+                const auto trace=std::to_string(m_graph)+geometry;
+                if(trace!=m_testGraphGeometry){m_testGraphGeometry=trace;NX_INFO("BP_GEOMETRY %s",trace.c_str());}
             }
 #endif
             for(size_t i=0;i<graph.comments.size();++i)
