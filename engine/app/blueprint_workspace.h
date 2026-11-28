@@ -44,6 +44,8 @@ namespace nx
         float kWidth=1280,kHeight=720,kLeft=248,kRight=1012,kBottom=674;
         float m_leftPanel=248,m_graphRightPanel=268,m_actorRightPanel=310;
         int m_splitter=0;
+        unsigned m_uiScale=0; // automatic, 100%, 125%, 150%
+        void openActorGraph(bool construction);
         bool resizePanels(float x,float y,bool left,bool click,bool actor);
         float kVariableTop=350,kVariableBottom=443,kPaletteExtra=0;
         size_t kRows=8,kVariableRows=3,kPaletteRows=10;

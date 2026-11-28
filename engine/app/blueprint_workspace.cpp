@@ -153,6 +153,7 @@ namespace nx
     {
         if (!active()) return;
         stopPreview(s);
+        cancelActorDrag();m_actorOrbit=false;m_splitter=0;m_actorEditor=false;
         releaseWidgetPreview();releasePlacementPreview();m_widgetDesigner=m_visualPlacement=false;
         checkpoint(s,true);
         cancelDrag();clearWire();m_quickDrag=m_quickMenu=m_pinMenu=m_rightDown=false;m_layoutMenu=m_layoutDragging=false;m_graphBack.clear();m_focus=0;m_browsing=false;m_assetBrowser=false;s.input->setTyping(m_previousTyping);
@@ -166,15 +167,20 @@ namespace nx
     void BlueprintWorkspace::resizeWorkspace(const Canvas& c)
     {
         const float w=c.pixelWidth(),h=c.pixelHeight();
-        const float density=std::max(1.f,std::min(w/1920.f,h/1200.f));
-        const float width=w>=1280&&h>=720?w/density:kBaseWidth;
-        const float height=w>=1280&&h>=720?h/density:kBaseHeight;
-        if(std::abs(width-kWidth)>0.5f||std::abs(height-kHeight)>0.5f)
+        const float automatic=std::max(1.f,std::min(w/1920.f,h/1200.f));
+        const float requested=m_uiScale==0?automatic:m_uiScale==1?1.f:m_uiScale==2?1.25f:1.5f;
+        const float density=std::min(requested,std::min(w/kBaseWidth,h/kBaseHeight));
+        const float width=density>0?w/density:kBaseWidth;
+        const float height=density>0?h/density:kBaseHeight;
+        // Keep legacy letterboxing for small clients to preserve every control.
+        const bool small=w<kBaseWidth||h<kBaseHeight;
+        const float logicalWidth=small?kBaseWidth:width,logicalHeight=small?kBaseHeight:height;
+        if(std::abs(logicalWidth-kWidth)>0.5f||std::abs(logicalHeight-kHeight)>0.5f)
         {
             cancelDrag();clearWire();m_layoutDragging=m_quickDrag=m_quickMenu=m_pan=false;
             cancelVisualPlacement();cancelActorDrag();m_splitter=0;m_actorOrbit=false;m_widgetPreviewDrag=m_widgetDragging=false;m_placementReady=false;
         }
-        kWidth=width;kHeight=height;kLeft=m_leftPanel;kRight=kWidth-m_graphRightPanel;kBottom=kHeight-46;
+        kWidth=logicalWidth;kHeight=logicalHeight;kLeft=m_leftPanel;kRight=kWidth-m_graphRightPanel;kBottom=kHeight-46;
         const float extra=std::max(0.f,kHeight-kBaseHeight);
         kRows=8+static_cast<size_t>(extra/62.f);
         kVariableTop=350+31.f*static_cast<float>(kRows-8);
@@ -1690,6 +1696,16 @@ namespace nx
     {
         if(m_actorDragAxis>=0){m_actorDragAxis=-1;releasePlacementPreview();}
     }
+    void BlueprintWorkspace::openActorGraph(bool construction)
+    {
+        std::string owner;
+        if(!m_document.ensureActorBehaviour(m_visualSelection,owner,m_status))return;
+        const std::string graphName=construction?"Construction":"start";
+        if(construction&&!m_document.function(owner,graphName)&&!m_document.addFunction(graphName,m_status,owner))return;
+        for(size_t i=0;i<m_document.graphs.size();++i)if(m_document.graphs[i].owner==owner&&m_document.graphs[i].name==graphName)
+        {m_actorEditor=false;m_assetBrowser=false;releasePlacementPreview();selectGraph(i);m_status=construction?"Construction runs at actor spawn, before Start.":"Actor event graph. Return to viewport with the Actor viewport tab.";return;}
+        m_status="Class graph not found.";
+    }
     void BlueprintWorkspace::updateActorEditor(Services& s,float x,float y,bool left,bool click,unsigned pressed)
     {
         auto& input=*s.input;
@@ -1765,6 +1781,7 @@ namespace nx
         if(m_visualComponent>=count)m_visualComponent=0;
         const auto rows=static_cast<size_t>(std::max(1.f,(kBottom-188)/30.f));
         if(m_visualComponentFirst>=count)m_visualComponentFirst=0;
+        if(resizePanels(x,y,left,click,true))return;
         if(in(x,y,0,120,kLeft,kBottom-64))
         {
             if(input.wheel()<0&&m_visualComponentFirst+rows<count)++m_visualComponentFirst;
@@ -1772,7 +1789,6 @@ namespace nx
             if(click){const auto i=m_visualComponentFirst+static_cast<size_t>((y-120)/30);if(i<count)m_visualComponent=i;}
             return;
         }
-        if(resizePanels(x,y,left,click,true))return;
         const float right=kWidth-m_actorRightPanel;
         const float fieldWidth=(m_actorRightPanel-16.f)/3.f;
         const bool orbit=input.raw().mouseButtons[1]||input.raw().mouseButtons[2];
@@ -1807,14 +1823,9 @@ namespace nx
             }
         }
         if(in(x,y,12,39,150,69)){m_actorEditor=false;releasePlacementPreview();if(m_actorTabGraph<m_document.graphs.size())selectGraph(m_actorTabGraph);return;}
-        if(in(x,y,158,39,308,69))
-        {
-            std::string owner;
-            if(m_document.ensureActorBehaviour(m_visualSelection,owner,m_status))
-                for(size_t i=0;i<m_document.graphs.size();++i)if(m_document.graphs[i].owner==owner&&m_document.graphs[i].name=="start")
-                {m_actorEditor=false;m_assetBrowser=false;releasePlacementPreview();selectGraph(i);break;}
-            return;
-        }
+        if(in(x,y,158,39,308,69)){openActorGraph(false);return;}
+        if(in(x,y,900,39,1058,69)){openActorGraph(true);return;}
+        if(in(x,y,1066,39,1208,69)){m_uiScale=(m_uiScale+1)%4;return;}
         if(in(x,y,316,39,466,69))
         {if(m_document.placeVisualActor(m_actorTabScreen.empty()?assetScreen():m_actorTabScreen,m_visualSelection,"0,0,0",m_status)){rebuildPins();filterCatalogue();m_status="Linked actor added to screen.";}return;}
         if(in(x,y,474,39,610,69)){saveCurrent(s);return;}
@@ -1861,7 +1872,8 @@ namespace nx
         button(12,39,138,"Content");button(158,39,150,"Event graph");button(316,39,150,"Add to screen");button(474,39,136,"Save");
         const float right=kWidth-m_actorRightPanel;
         const float fieldWidth=(m_actorRightPanel-16.f)/3.f;
-        button(618,39,120,m_actorMode==0?"Translate":m_actorMode==1?"Rotate":"Scale");button(746,39,146,m_actorCollision?"Collision on":"Collision off");
+        button(618,39,120,m_actorMode==0?"Translate":m_actorMode==1?"Rotate":"Scale");button(746,39,146,m_actorCollision?"Collision on":"Collision off");button(900,39,158,"Construction");
+        button(1066,39,142,m_uiScale==0?"UI: Auto":m_uiScale==1?"UI: 100%":m_uiScale==2?"UI: 125%":"UI: 150%");
         c.rect(0,kTop,kLeft,kBottom-kTop,{0.16f,0.16f,0.17f,1});
         c.rect(right,kTop,kWidth-right,kBottom-kTop,{0.16f,0.16f,0.17f,1});
         c.rect(kLeft,kTop,right-kLeft,kBottom-kTop,{0.10f,0.10f,0.11f,1});
@@ -2893,6 +2905,8 @@ namespace nx
                         else if(writeVerified(s,"own/"+file,bytes))m_status="Exported "+file;
                     }
                 }
+                else if(in(x,y,300,395,550,425)){m_uiScale=(m_uiScale+1)%4;m_status="Changed desktop UI density (small windows fit automatically).";}
+                else if(in(x,y,300,425,550,455)){m_leftPanel=248;m_graphRightPanel=268;m_actorRightPanel=310;m_uiScale=0;resizeWorkspace(canvas);fitGraph();m_status="Reset editor panel sizes and density.";}
                 m_layoutMenu=false;
             }
             m_left=left;return;
@@ -3776,13 +3790,13 @@ namespace nx
         }
         if(m_layoutMenu)
         {
-            c.roundRect(300,35,250,360,5,{0.16f,0.16f,0.17f,1});
-            const char* labels[]={"Arrange graph","Align selected left","Align selected top","Comment selection","Collapse to function","Rename function","Duplicate function","Open selected function","Back to caller",m_document.graphs[m_graph].inlineMacro?"Convert to function":"Convert to inline macro",m_document.graphs[m_graph].sharedLibrary?"Make library graph local":"Publish to project library","Export project library"};
+            c.roundRect(300,35,250,420,5,{0.16f,0.16f,0.17f,1});
+            const char* labels[]={"Arrange graph","Align selected left","Align selected top","Comment selection","Collapse to function","Rename function","Duplicate function","Open selected function","Back to caller",m_document.graphs[m_graph].inlineMacro?"Convert to function":"Convert to inline macro",m_document.graphs[m_graph].sharedLibrary?"Make library graph local":"Publish to project library","Export project library",m_uiScale==0?"UI scale: Auto":m_uiScale==1?"UI scale: 100%":m_uiScale==2?"UI scale: 125%":"UI scale: 150%","Reset editor layout"};
             const auto& activeGraph=m_document.graphs[m_graph];
             const bool hasSelection=m_selection<activeGraph.nodes.size()||!m_selectedNodes.empty();
-            for(size_t i=0;i<12;++i)
+            for(size_t i=0;i<14;++i)
             {
-                const bool enabled=i==0||i==11||(i<=2&&m_selectedNodes.size()>=2)||((i==3||i==4)&&hasSelection)||((i==5||i==6)&&activeGraph.kind=="function")||
+                const bool enabled=i==0||i>=11||(i<=2&&m_selectedNodes.size()>=2)||((i==3||i==4)&&hasSelection)||((i==5||i==6)&&activeGraph.kind=="function")||
                     (i==7&&m_selection<activeGraph.nodes.size()&&(activeGraph.nodes[m_selection].kind=="call:function"||activeGraph.nodes[m_selection].kind=="call:library"))||(i==8&&!m_graphBack.empty())||((i==9||i==10)&&activeGraph.kind=="function");
                 const float yy=35+30*static_cast<float>(i);c.rect(304,yy+2,242,26,enabled?Color{0.19f,0.33f,0.50f,1}:Color{0.22f,0.22f,0.24f,1});c.text(*m_font,labels[i],312,yy+5,enabled?text:muted);
             }

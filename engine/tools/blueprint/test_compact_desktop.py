@@ -55,8 +55,19 @@ with log.open("wb") as output:
             xdo("mouseup",1)
             time.sleep(0.3)
         def key(name):
-            xdo("key",name)
+            xdo("keydown",name)
+            time.sleep(0.18)
+            xdo("keyup",name)
             time.sleep(0.3)
+        def drag(x1,y1,x2,y2):
+            xdo("mousemove","--window",window,x1,y1)
+            time.sleep(0.15)
+            xdo("mousedown",1)
+            time.sleep(0.18)
+            xdo("mousemove","--window",window,x2,y2)
+            time.sleep(0.3)
+            xdo("mouseup",1)
+            time.sleep(0.4)
         def enter(value):
             xdo("type","--delay",70,"--",value)
             key("Return")
@@ -96,6 +107,28 @@ with log.open("wb") as output:
             return json.loads(actor["source"])["entities"][1]["place"]
         wait_for(lambda: place()==[2.5,1.25,-0.5],"saved XYZ values")
         shot("actor-1920.png")
+        def actor_root():
+            assets=json.loads(project.read_text())["visualAssets"]
+            actor=next(a for a in assets if a["kind"]=="actor")
+            return json.loads(actor["source"])["entities"][0]
+        # Root is at the centre of the viewport; the projected positive Y handle is 52 px up.
+        click(100,134)
+        time.sleep(0.4)
+        original=actor_root().get("place",[0,0,0])
+        drag(929,525,929,475)
+        click(540,54)
+        wait_for(lambda:actor_root().get("place",[0,0,0])!=original,"native transform drag")
+        moved=actor_root()["place"]
+        assert moved[0]==original[0] and moved[1]>original[1] and moved[2]==original[2]
+        key("ctrl+z")
+        click(540,54)
+        wait_for(lambda:actor_root().get("place",[0,0,0])==original,"one-step gizmo undo")
+        # Divider is a real hit target; resize the right panel and then restore it.
+        drag(1610,700,1540,700)
+        shot("actor-wide-inspector.png")
+        drag(1540,700,1610,700)
+        # Return to the child and resize the client without losing selection.
+        click(100,164)
         xdo("windowsize","--sync",window,1280,720)
         wait_for(lambda:(win.get_geometry().width,win.get_geometry().height)==(1280,720),"720p client")
         time.sleep(0.5)
@@ -103,6 +136,11 @@ with log.open("wb") as output:
         enter("4.25")
         click(540,54)
         wait_for(lambda:place()==[4.25,1.25,-0.5],"resized actor edit")
+        # Jump from the class viewport to Construction and back, without closing the project.
+        click(978,54)
+        click(128,54)
+        time.sleep(0.4)
+        shot("actor-returned-tab.png")
         click(81,54)
         click(930,133)
         # A close request exercises normal release of the isolated world.

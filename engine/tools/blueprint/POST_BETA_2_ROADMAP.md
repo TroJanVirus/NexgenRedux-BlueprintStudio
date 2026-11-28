@@ -98,3 +98,7 @@ Open actor editor / viewport from a selected reusable actor in Content. A full-w
 ## Actor viewport interaction and panel layout
 
 Actor class editor supports parent-space projected translation, axis-driven numeric rotation/scale, live isolated preview with one undoable commit on release, Escape cancellation, mouse orbit and zoom. Native collision debug geometry is preserved for the isolated class preview and can be toggled. Graph and class viewport side panels can be resized using their dividers. The actor viewport remains accessible from its graph tab. Corrected X11 test driver option termination for negative axis values. Rotation uses axis handles rather than circular rings; panels resize but do not yet undock. CI pending.
+
+### UI density and class tabs
+
+Layout menu and actor toolbar cycle Auto / 100% / 125% / 150% (bounded by the minimum supported client). Layout > Reset editor layout restores default density and splitters. Construction and Event graph buttons open native class graphs; the Actor viewport tab returns directly to its class. Added X11 interaction coverage for transform dragging, one-step undo, inspector resizing and class tab navigation. Construction scripts are not executed in the authoring preview. CI pending.
