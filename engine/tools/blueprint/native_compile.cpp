@@ -67,7 +67,7 @@ namespace nx
                     for(unsigned char c:value)if(c<32&&c!='\n'&&c!='\r'&&c!='\t')return fail(node,"Unsupported control character in string.");
                     result=quote(value);
                 }
-                else if(type=="bool")result=value;
+                else if(type=="bool"||type=="Bus")result=value;
                 else if(type=="int"||type=="uint")
                 {
                     const bool negative=!value.empty()&&value.front()=='-';
@@ -1151,6 +1151,139 @@ namespace nx
             result+="bool bp_is_class_"+type+"(Entity@ actor)\n{\n";
             result+="    return Space::validEntity(actor) && cast<BP_Behaviour_"+type+">(actor.behaviour) !is null;\n}\n";
         }
+
+        // These helpers use stock Redux script APIs, so the exported game needs no editor
+        // runtime. Only modules with synthesis nodes receive them. Limit work per call;
+        // callers advance their phase/range on successive updates.
+        bool usesAudio=false;
+        for(const auto& graph:document.graphs)for(const auto& node:graph.nodes)
+            if(node.kind.rfind("audio:",0)==0)usesAudio=true;
+        if(usesAudio)result+=R"BP_AUDIO(
+
+float bp_audio_phase(float phase)
+{
+    if (!(phase >= -1000000 && phase <= 1000000)) return 0;
+    return phase - floor(phase);
+}
+float bp_audio_limit(float value, float low, float high)
+{
+    return !(value >= low) ? low : (value > high ? high : value);
+}
+float bp_audio_wave(float phase, uint shape)
+{
+    float p = bp_audio_phase(phase);
+    if (shape == 1) return p < 0.5f ? 1.0f : -1.0f;
+    if (shape == 2) return 2.0f * p - 1.0f;
+    if (shape == 3) return 1.0f - 4.0f * abs(p - 0.5f);
+    return sin(p * 6.283185307f);
+}
+uint bp_audio_count(uint total, uint start, uint requested)
+{
+    if (start >= total) return 0;
+    uint count = total - start;
+    if (requested < count) count = requested;
+    return count > 4096 ? uint(4096) : count;
+}
+uint bp_audio_render(Samples@ s, uint start, uint frames, float phase, uint shape,
+    float frequency, float endFrequency, float gain, float attack, float release, float &out nextPhase)
+{
+    nextPhase = bp_audio_phase(phase);
+    if (s is null) return 0;
+    uint count = bp_audio_count(s.frames, start, frames);
+    if (count == 0) return 0;
+    float rate = float(s.rate);
+    frequency = bp_audio_limit(frequency, 0, rate * 0.5f);
+    endFrequency = bp_audio_limit(endFrequency, 0, rate * 0.5f);
+    gain = bp_audio_limit(gain, 0, 1);
+    attack = bp_audio_limit(attack, 0, s.seconds);
+    release = bp_audio_limit(release, 0, s.seconds);
+    float p = nextPhase;
+    float last = s.frames > 1 ? float(s.frames - 1) : 1.0f;
+    for (uint i = 0; i < count; ++i)
+    {
+        float at = float(start + i);
+        float envelope = 1;
+        if (attack > 0) envelope = min(envelope, at / (attack * rate));
+        if (release > 0) envelope = min(envelope, (last - at) / (release * rate));
+        s.set(start + i, bp_audio_wave(p, shape) * gain * envelope);
+        p = bp_audio_phase(p + (frequency + (endFrequency - frequency) * at / last) / rate);
+    }
+    nextPhase = p;
+    return count;
+}
+uint bp_audio_stream(AudioStream@ s, array<float>@ scratch, uint frames,
+    float phase, uint shape, float frequency, float gain, float &out nextPhase)
+{
+    nextPhase = bp_audio_phase(phase);
+    if (s is null || scratch is null) return 0;
+    uint count = bp_audio_count(s.room, 0, frames);
+    if (count == 0) return 0;
+    uint channels = s.channels;
+    float step = bp_audio_limit(frequency, 0, float(s.rate) * 0.5f) / float(s.rate);
+    gain = bp_audio_limit(gain, 0, 1);
+    scratch.resize(count * channels);
+    float p = nextPhase;
+    for (uint i = 0; i < count; ++i)
+    {
+        float v = bp_audio_wave(p, shape) * gain;
+        scratch[i * channels] = v;
+        if (channels == 2) scratch[i * channels + 1] = v;
+        p = bp_audio_phase(p + step);
+    }
+    uint accepted = s.write(scratch);
+    nextPhase = accepted == count ? p : bp_audio_phase(nextPhase + step * float(accepted));
+    return accepted;
+}
+void bp_audio_write(Samples@ s, uint frame, float left, float right)
+{
+    if (s.channels == 1) s.set(frame, left);
+    else s.set(frame, left, right);
+}
+uint bp_audio_gain(Samples@ s, uint start, uint frames, float gain)
+{
+    if (s is null) return 0;
+    uint count = bp_audio_count(s.frames, start, frames);
+    gain = bp_audio_limit(gain, -16, 16);
+    for (uint i = 0; i < count; ++i)
+    {
+        uint at = start + i;
+        bp_audio_write(s, at, s.get(at, 0) * gain, s.get(at, 1) * gain);
+    }
+    return count;
+}
+uint bp_audio_reverse(Samples@ s, uint start, uint frames)
+{
+    if (s is null || start >= s.frames || frames > 4096 || frames > s.frames - start) return 0;
+    for (uint i = 0; i < frames / 2; ++i)
+    {
+        uint a = start + i, b = start + frames - i - 1;
+        float left = s.get(a, 0), right = s.get(a, 1);
+        bp_audio_write(s, a, s.get(b, 0), s.get(b, 1));
+        bp_audio_write(s, b, left, right);
+    }
+    return frames;
+}
+uint bp_audio_normalize(Samples@ s, uint start, uint frames, float peak)
+{
+    if (s is null || start >= s.frames || frames > 4096 || frames > s.frames - start) return 0;
+    float found = 0;
+    for (uint i = 0; i < frames; ++i)
+    {
+        found = max(found, abs(s.get(start + i, 0)));
+        if (s.channels == 2) found = max(found, abs(s.get(start + i, 1)));
+    }
+    if (found > 0)
+    {
+        float gain = bp_audio_limit(peak, 0, 1) / found;
+        for (uint i = 0; i < frames; ++i)
+        {
+            uint at = start + i;
+            bp_audio_write(s, at, s.get(at, 0) * gain, s.get(at, 1) * gain);
+        }
+    }
+    return frames;
+}
+)BP_AUDIO";
         if(map)
         {
             BlueprintSourceMap lines;lines.reserve(spans.size());size_t cursor=0,line=1;
