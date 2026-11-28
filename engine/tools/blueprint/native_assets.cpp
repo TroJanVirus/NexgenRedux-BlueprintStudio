@@ -594,7 +594,8 @@ namespace nx
             wire(obstacle,0,arg.c_str(),box,pin);
         }
         wire(obstacle,box,"result",collider,"target");wire(obstacle,0,"arg_size",collider,"size");
-        note(obstacle,"OBSTACLE | Create a native SolidBox with the supplied visual transform, then attach a matching static 3D cube collider. No mass is assigned, so the obstacle stays fixed. Reuse this function for walls and platforms.");
+        const auto wall=add(obstacle,"api:Entity:set_wall:Entity@,bool",1260,60);chain(obstacle,collider,wall);wire(obstacle,box,"result",wall,"target");value(obstacle,wall,"value","true");
+        note(obstacle,"OBSTACLE | Create a native SolidBox with the supplied visual transform, then attach a matching static 3D cube collider. Enable the native wall flag explicitly; no mass is assigned, so the obstacle stays fixed. Reuse this function for walls and platforms.");
         const auto entity=add(spawn,"api:Space:Space::spawn:Vec3",340,60);
         value(spawn,entity,"place","0,0.2,0");chain(spawn,0,entity);
         const auto keep=variable(spawn,"hero",true,680,60);chain(spawn,entity,keep);wire(spawn,entity,"result",keep,"value");
