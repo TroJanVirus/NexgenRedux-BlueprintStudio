@@ -559,3 +559,23 @@ NX_TEST(mixingRunsOnItsOwnThread)
     freeSound(sounds[0]);
     freeSound(sounds[1]);
 }
+
+NX_TEST(decodedSampleBudgetRejectsOversizedAudio)
+{
+    SoundData* sound = load(makeWav(12000, 2, 8000, 440, 0.5f));
+    NX_EXPECT(sound != nullptr);
+    if (!sound) return;
+    u32 frames = 123;
+    i16* rejected = decodeAll(*sound, frames, 12000u * 4u - 1u);
+    NX_EXPECT(rejected == nullptr && frames == 0);
+    memFree(rejected);
+    i16* exact = decodeAll(*sound, frames, 12000u * 4u);
+    NX_EXPECT(exact && frames == 12000);
+    if (exact)
+    {
+        NX_EXPECT(exact[2] != 0 && exact[2] == exact[3]);
+        NX_EXPECT(memcmp(exact, sound->data, 12000u * 4u) == 0);
+        memFree(exact);
+    }
+    freeSound(sound);
+}
