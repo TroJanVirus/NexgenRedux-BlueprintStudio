@@ -920,7 +920,7 @@ namespace nx
 
     bool BlueprintWorkspace::importSource(Services& s,const std::string& file)
     {
-        if(m_document.dirty()){m_status="Save changes before importing source.";return false;}
+        if(!preserveBeforeSwitch(s))return false;
         if(!standaloneSourceName(file))
         {m_status="Drop a standalone AngelScript .as file.";return false;}
         FileData data;
@@ -949,7 +949,7 @@ namespace nx
 
     bool BlueprintWorkspace::importProjectFolder(Services& s,const std::string& folder)
     {
-        if(m_document.dirty()){m_status="Save changes before importing a project.";return false;}
+        if(!preserveBeforeSwitch(s))return false;
         if(!projectFolderName(folder)){m_status="Invalid project folder.";return false;}
         const std::string base="own/"+folder;
         std::vector<std::string> owners;
@@ -1023,7 +1023,7 @@ namespace nx
             if(!m_document.importLibrary(reinterpret_cast<const char*>(data.data),data.size,m_document.graphs[m_graph].owner,m_status))return false;
             m_browsing=false;selectGraph(m_graph);checkpoint(s,true);m_status="Imported library "+file;return true;
         }
-        if(m_document.dirty()){m_status="Save changes before opening another Blueprint.";return false;}
+        if(!preserveBeforeSwitch(s))return false;
         if(blueprintPackageName(file))
         {
             BlueprintDocument candidate;
@@ -1062,7 +1062,7 @@ namespace nx
     }
     void BlueprintWorkspace::browseFiles(Services& s)
     {
-        if(m_document.dirty()){m_status="Save changes before opening another Blueprint.";return;}
+        // Browsing does not replace the active project.
         m_files.clear();m_fileFirst=0;
         s.platform->list("own",false,[](const char* name,void* user)
         {
@@ -1081,7 +1081,7 @@ namespace nx
         });
         m_files.erase(std::unique(m_files.begin(),m_files.end()),m_files.end());
         m_browsing=true;clearWire();cancelDrag();
-        m_status="Select a project, recovery, source or project folder." ;
+        m_status="Choose a project. Unsaved work is saved or retained as a recovery archive.";
     }
     std::string BlueprintWorkspace::assetScreen() const
     {
@@ -1093,8 +1093,7 @@ namespace nx
     {
         const auto screen=assetScreen();
         if(screen.empty()){m_status="Select a screen graph to manage its assets.";return;}
-        if(m_filePath.empty()||m_document.assetRoot.empty())
-        {m_status="Save as a named project before importing assets.";return;}
+        if(!ensureDraftAssets(s))return;
         if(!blueprintEnsureAssetFolder(*s.platform,m_document.assetRoot,screen,m_status)||
             !blueprintListAssets(*s.platform,m_document.assetRoot,screen,m_assetFiles,m_status))return;
         stopTone(s);m_audioEditor=false;m_sharedMedia=false;
@@ -3433,7 +3432,7 @@ namespace nx
     void BlueprintWorkspace::launchSceneEditor(Services& s)
     {
         const auto screen=assetScreen();
-        if(screen.empty()||m_filePath.empty()||m_document.assetRoot.empty())
+        if(screen.empty()||!ensureDraftAssets(s))
         {m_status="Save a named project and select its screen first.";return;}
         checkpoint(s,true);
         if(!blueprintPrepareSceneEditor(*s.platform,m_document.assetRoot,screen,m_status))return;
@@ -3697,13 +3696,32 @@ namespace nx
     void BlueprintWorkspace::importAsset(Services& s,const std::string& file)
     {
         const auto screen=assetScreen();
-        if(screen.empty()||m_filePath.empty()||m_document.assetRoot.empty())
+        if(screen.empty()||!ensureDraftAssets(s))
         {m_status="Save as a named project and select a screen before importing assets.";return;}
         if(!blueprintImportAsset(*s.platform,m_document.assetRoot,screen,file,m_status,m_sharedMedia))return;
         const bool listed=m_sharedMedia?blueprintListSharedAssets(*s.platform,m_document.assetRoot,m_assetFiles,m_status):
             blueprintListAssets(*s.platform,m_document.assetRoot,screen,m_assetFiles,m_status);
         if(!listed)return;
         m_status=std::string("Imported ")+(m_sharedMedia?"global:":"asset:")+blueprintAssetImportPath(file);
+    }
+    bool BlueprintWorkspace::ensureDraftAssets(Services& s)
+    {
+        if(!m_document.assetRoot.empty())return true;
+        std::string root;if(!blueprintCreateAssetRoot(*s.platform,root,m_status))return false;
+        m_document.assetRoot=root;m_document.markRecovered();checkpoint(s,true);return true;
+    }
+    bool BlueprintWorkspace::preserveBeforeSwitch(Services& s)
+    {
+        if(!m_document.dirty())return true;
+        if(!m_filePath.empty()&&saveCurrent(s))return true;
+        // Never discard an unnamed or externally changed project when switching.
+        std::string bytes;if(!m_document.serialize(bytes,m_status))return false;
+        static unsigned sequence=0;for(unsigned i=0;i<100;++i)
+        {
+            const auto file="own/blueprint-recovery-conflict-"+std::to_string(static_cast<long long>(std::time(nullptr)))+"-"+std::to_string(++sequence)+".bak";
+            if(!s.platform->fileTime(file.c_str()))return writeVerified(s,file,bytes);
+        }
+        m_status="Could not preserve current draft. Project remains open.";return false;
     }
     bool BlueprintWorkspace::saveNamed(Services& s,const std::string& name)
     {
@@ -4193,7 +4211,7 @@ namespace nx
     BlueprintDocument::Point BlueprintWorkspace::nodeLayoutPosition(size_t node) const
     {
         const auto& n=m_document.graphs[m_graph].nodes[node];
-        if(m_drag&&node==m_selection)return {m_dragX,m_dragY};
+        if(m_drag&&m_dragMoved&&std::find(m_selectedNodes.begin(),m_selectedNodes.end(),node)!=m_selectedNodes.end())return {n.x+m_dragX-m_grabX,n.y+m_dragY-m_grabY};
         if(m_layoutDragging&&m_layoutMoved&&m_layoutLink==static_cast<size_t>(-1)&&std::binary_search(m_layoutMembers.begin(),m_layoutMembers.end(),node))
             return {n.x+(m_layoutX-m_layoutStartX)/m_zoom,n.y+(m_layoutY-m_layoutStartY)/m_zoom};
         return {n.x,n.y};
@@ -4201,6 +4219,7 @@ namespace nx
     BlueprintDocument::Point BlueprintWorkspace::routeLayoutPosition(size_t wire,size_t point) const
     {
         const auto& l=m_document.graphs[m_graph].links[wire];const auto& p=l.route[point];
+        if(m_drag&&m_dragMoved&&std::find(m_selectedNodes.begin(),m_selectedNodes.end(),l.from)!=m_selectedNodes.end()&&std::find(m_selectedNodes.begin(),m_selectedNodes.end(),l.to)!=m_selectedNodes.end())return {p.x+m_dragX-m_grabX,p.y+m_dragY-m_grabY};
         if(m_layoutDragging&&m_layoutMoved)
         {
             if(m_layoutLink==wire&&m_layoutPoint==point)return {(m_layoutX-kLeft-m_x)/m_zoom,(m_layoutY-kTop-m_y)/m_zoom};
@@ -4466,6 +4485,7 @@ namespace nx
             if(m_assetBrowser){if(m_visualInput){m_visualInput=0;m_visualText.clear();input.setTyping(false);m_status="Input cancelled.";return;}if(m_placementDragging){cancelVisualPlacement();m_status="Placement cancelled.";return;}if(m_visualPlacement){m_visualPlacement=false;return;}if(m_widgetDesigner){if(m_widgetPreviewDrag){m_widgetPreviewDrag=false;m_status="Widget drag cancelled.";return;}if(m_widgetDragging){m_widgetDragging=false;m_widgetDragId.clear();return;}m_widgetDesigner=false;releaseWidgetPreview();return;}m_assetBrowser=false;m_status="Asset browser closed.";return;}
             if(m_browsing){m_browsing=false;m_status="Open cancelled.";return;}
             if(m_focus){m_focus=0;input.setTyping(false);m_status="Input cancelled.";return;}
+            if(m_marquee){m_marquee=false;m_selectedNodes.clear();m_selection=static_cast<size_t>(-1);m_left=input.raw().mouseButtons[0];return;}
             if(m_minimapDragging){m_minimapDragging=false;return;}
             if(m_layoutDragging||m_layoutMenu){m_layoutDragging=m_layoutMenu=false;m_status="Layout action cancelled.";return;}
             if(m_quickDrag||m_quickMenu){m_quickDrag=m_quickMenu=false;m_status="Variable placement cancelled.";return;}
@@ -4496,10 +4516,19 @@ namespace nx
         const auto held=[&](Key key){return raw.keys[static_cast<size_t>(key)];};
         const bool control=held(Key::Control);
         const unsigned keys=(control&&held(Key::S)?1u:0u)|(control&&held(Key::Z)&&!held(Key::Shift)?2u:0u)|
-            (control&&(held(Key::Y)||(held(Key::Z)&&held(Key::Shift)))?4u:0u);
+            (control&&(held(Key::Y)||(held(Key::Z)&&held(Key::Shift)))?4u:0u)|(!control&&held(Key::Q)?8u:0u);
         const unsigned pressed=keys&~m_shortcuts;m_shortcuts=keys;
         const bool click=left&&!m_left;
         const bool right=raw.mouseButtons[1];
+        if(m_marquee)
+        {
+            m_marqueeEndX=std::clamp(x,graphAreaLeft(),graphAreaRight());m_marqueeEndY=std::clamp(y,graphAreaTop(),tabTop());
+            const float x1=std::min(m_marqueeX,m_marqueeEndX),x2=std::max(m_marqueeX,m_marqueeEndX),y1=std::min(m_marqueeY,m_marqueeEndY),y2=std::max(m_marqueeY,m_marqueeEndY);
+            m_selectedNodes.clear();const auto& nodes=m_document.graphs[m_graph].nodes;
+            if(x2-x1>3||y2-y1>3)for(size_t i=0;i<nodes.size();++i){const float nx=kLeft+m_x+nodes[i].x*m_zoom,ny=kTop+m_y+nodes[i].y*m_zoom;if(nx<=x2&&nx+m_rows[i].width*m_zoom>=x1&&ny<=y2&&ny+m_rows[i].height*m_zoom>=y1)m_selectedNodes.push_back(i);}
+            m_selection=m_selectedNodes.empty()?static_cast<size_t>(-1):m_selectedNodes.back();
+            if(!left)m_marquee=false;m_left=left;return;
+        }
         if(m_actorEditor){updateActorEditor(s,x,y,left,click,pressed);m_left=left;return;}
         if(visualTabOpen()&&!m_visualInput&&!m_placementDragging&&!m_widgetDragging&&!m_widgetPreviewDrag&&updateGraphTabs(s,x,y,click)){m_left=left;return;}
         if(!modalOpen()&&!m_focus&&!m_layoutDragging&&!m_layoutMenu&&!m_pinMenu&&!m_pinDrag&&!m_drag&&!m_quickDrag&&!m_quickMenu)
@@ -4702,7 +4731,7 @@ namespace nx
             if(click&&in(x,y,384,116,524,150)){m_assetLibrary=true;m_visualInput=0;m_visualText.clear();m_visualFirst=0;m_status="Project-wide reusable actors and widget pages.";m_left=left;return;}
             if(input.wheel()<0&&m_assetFirst+10<m_assetFiles.size())++m_assetFirst;
             if(input.wheel()>0&&m_assetFirst)--m_assetFirst;
-            if(click&&in(x,y,860,116,1000,150))m_assetBrowser=false;
+            if(click&&(in(x,y,860,116,1000,150)||!in(x,y,260,100,1020,625))){m_assetBrowser=false;m_left=left;return;}
             if(click&&in(x,y,704,116,850,150))
             {
                 if(m_sharedMedia)blueprintListSharedAssets(*s.platform,m_document.assetRoot,m_assetFiles,m_status);
@@ -4756,7 +4785,7 @@ namespace nx
         {
             if(input.wheel()<0&&m_fileFirst+12<m_files.size())++m_fileFirst;
             if(input.wheel()>0&&m_fileFirst)--m_fileFirst;
-            if(click&&in(x,y,860,116,1000,150))m_browsing=false;
+            if(click&&(in(x,y,860,116,1000,150)||!in(x,y,260,100,1020,625)))m_browsing=false;
             else if(click&&in(x,y,280,166,1000,166+12*36))
             {
                 const size_t row=m_fileFirst+static_cast<size_t>((y-166)/36);
@@ -4878,6 +4907,8 @@ namespace nx
             }
             m_left=left;return;
         }
+        if(click&&((m_focus==15&&!in(x,y,160,68,1140,652))||(m_focus==6&&!in(x,y,340,226,940,m_inputChoices.empty()?450:628))||(m_focus==5&&!in(x,y,340,240,940,445))||(m_focus==9&&!in(x,y,200,226,1080,466))||(m_focus>=11&&m_focus<=14&&!in(x,y,260,230,1020,450))))
+        {m_focus=0;input.setTyping(false);m_left=left;return;}
         if(m_focus==16)
         {
             // Editing remains a draft until Enter; cancelling never changes the document.
@@ -5033,6 +5064,7 @@ namespace nx
         }
         if(!m_drag)
         {
+            if((pressed&8u)&&m_selectedNodes.size()>1){if(m_document.alignNodes(m_graph,m_selectedNodes,true,m_status))m_status="Aligned selected nodes horizontally.";m_left=left;return;}
             if(click&&in(x,y,18,39,245,69)&&!m_actorTabId.empty()&&m_document.visualAsset(m_actorTabId))
             {openActorViewport(m_actorTabId);m_left=left;return;}
             if(click&&in(x,y,300,5,404,33)){m_layoutMenu=true;clearWire();m_left=left;return;}
@@ -5137,7 +5169,7 @@ namespace nx
         }
         if(!m_graphHideLeft&&click&&in(x,y,8,kBottom-40,kLeft-8,kBottom-8))
         {
-            if(m_document.dirty())m_status="Save changes before creating a new Blueprint.";
+            if(!preserveBeforeSwitch(s)){}
             else{m_actorTabId.clear();m_actorTabScreen.clear();m_contentFirst=0;m_contentDrag.clear();resetGraphTabs();m_document.create();m_filePath.clear();m_fileBaseline.clear();m_checkpointRevision=static_cast<size_t>(-1);m_graphBack.clear();m_first=0;selectGraph(0);m_status="New Blueprint.";}
             m_left=left;return;
         }
@@ -5287,53 +5319,65 @@ namespace nx
             }
             if(m_pending!=static_cast<size_t>(-1)&&std::none_of(nodes.begin(),nodes.end(),[&](const BlueprintDocument::Node& n){const auto i=static_cast<size_t>(&n-nodes.data());const float nx=kLeft+m_x+n.x*m_zoom,ny=kTop+m_y+n.y*m_zoom;return in(x,y,nx,ny,nx+rows[i].width*m_zoom,ny+rows[i].height*m_zoom);}))
             {openPinMenu(x,y);if(m_pinMenu)input.setTyping(true);m_left=left;return;}
-            // Explicit value fields on the selected node do not steal socket
-            // clicks, multi-selection, or drags on the title/body.
-            if(!control&&!held(Key::Shift)&&m_pending==static_cast<size_t>(-1)&&m_zoom>=0.85f&&m_selection<nodes.size())
+            // All visible, unconnected literal fields are editable directly.
+            if(!control&&!held(Key::Shift)&&m_pending==static_cast<size_t>(-1)&&m_zoom>=0.65f)
             {
-                const auto& selected=nodes[m_selection];const auto& row=rows[m_selection];
-                const float nx=kLeft+m_x+selected.x*m_zoom,ny=kTop+m_y+selected.y*m_zoom;
-                const auto details=inputDetails(m_selection);
-                for(size_t p=0;p<row.inputs.size();++p)
+                for(size_t i=nodes.size();i>0;--i)
                 {
-                    if(p<row.outputs.size())continue;
-                    const float py=ny+pinY(p)*m_zoom;
-                    if(!in(x,y,nx+row.fieldX[p]*m_zoom,py-9*m_zoom,nx+(row.width-13)*m_zoom,py+9*m_zoom))continue;
-                    const auto field=std::find_if(details.begin(),details.end(),[&](const InputDetail& detail){return detail.name==row.inputs[p]&&detail.editable;});
-                    if(field==details.end())continue;
-                    const std::string initial=field->origin=="Custom"?field->value:std::string();
-                    if(beginInputEdit(m_selection,field->name,input))
+                    const auto index=i-1;const auto& n=nodes[index];const auto& row=rows[index];
+                    const float nx=kLeft+m_x+n.x*m_zoom,ny=kTop+m_y+n.y*m_zoom;
+                    if(!in(x,y,nx,ny,nx+row.width*m_zoom,ny+row.height*m_zoom))continue;
+                    const auto details=inputDetails(index);
+                    for(size_t p=0;p<row.inputs.size();++p)
                     {
-                        if(m_inputComponents.empty()&&m_inputChoices.empty())
+                        const float right=p<row.outputs.size()?(canvas.measure(*m_font,row.outputs[p].c_str()).x+25)*m_zoom:0;
+                        const float py=ny+pinY(p)*m_zoom;
+                        if(!in(x,y,nx+row.fieldX[p]*m_zoom,py-9*m_zoom,nx+(row.width-13)*m_zoom-right,py+9*m_zoom))continue;
+                        const auto field=std::find_if(details.begin(),details.end(),[&](const InputDetail& d){return d.name==row.inputs[p]&&d.editable;});
+                        if(field==details.end())continue;
+                        if(beginInputEdit(index,field->name,input))
                         {
-                            m_edit=initial;m_focus=16;m_inputReplace=true;
-                            m_status="Inline "+field->name+" / Enter applies; Escape or outside click cancels.";
+                            m_selectedNodes={index};m_edit=(field->origin=="Required"||field->value=="Event delta time"||field->value=="Native default")?"":field->value;
+                            m_focus=16;m_inputReplace=true;m_status="Enter applies; Escape cancels.";
+                            m_left=left;return;
                         }
-                        m_left=left;return;
                     }
-                }
-            }
-            clearWire();m_selection = static_cast<size_t>(-1);
-            if(!held(Key::Shift))m_selectedNodes.clear();
-            for (size_t i = nodes.size(); i > 0; --i)
-            {
-                const auto& n = nodes[i-1];
-                const float nx = kLeft+m_x+n.x*m_zoom, ny = kTop+m_y+n.y*m_zoom;
-                if (in(x,y,nx,ny,nx+rows[i-1].width*m_zoom,ny+rows[i-1].height*m_zoom))
-                {
-                    m_selection=i-1;
-                    if(held(Key::Shift))
-                    {
-                        const auto found=std::find(m_selectedNodes.begin(),m_selectedNodes.end(),i-1);
-                        if(found==m_selectedNodes.end())m_selectedNodes.push_back(i-1);else m_selectedNodes.erase(found);
-                        m_selection=m_selectedNodes.empty()?static_cast<size_t>(-1):m_selectedNodes.back();
-                        m_left=left;return;
-                    }
-                    m_selectedNodes.push_back(i-1);
-                    m_drag=true;m_dragMoved=false;m_dragX=n.x;m_dragY=n.y;
-                    m_pressX=x;m_pressY=y;m_grabX=n.x;m_grabY=n.y;
                     break;
                 }
+            }
+            clearWire();
+            bool hitNode=false;
+            for(size_t i=nodes.size();i>0;--i)
+            {
+                const auto& n=nodes[i-1];const float nx=kLeft+m_x+n.x*m_zoom,ny=kTop+m_y+n.y*m_zoom;
+                if(!in(x,y,nx,ny,nx+rows[i-1].width*m_zoom,ny+rows[i-1].height*m_zoom))continue;
+                hitNode=true;const auto found=std::find(m_selectedNodes.begin(),m_selectedNodes.end(),i-1);
+                if(control)
+                {
+                    if(found==m_selectedNodes.end())m_selectedNodes.push_back(i-1);else m_selectedNodes.erase(found);
+                    m_selection=m_selectedNodes.empty()?static_cast<size_t>(-1):m_selectedNodes.back();m_left=left;return;
+                }
+                if(found==m_selectedNodes.end())m_selectedNodes={i-1};
+                m_selection=i-1;m_drag=true;m_dragMoved=false;m_dragX=n.x;m_dragY=n.y;
+                m_pressX=x;m_pressY=y;m_grabX=n.x;m_grabY=n.y;break;
+            }
+            if(!hitNode)
+            {
+                const double now=s.platform->seconds();
+                const bool doubleClick=m_wireClickTime>=0&&now-m_wireClickTime<0.35&&std::hypot(x-m_wireClickX,y-m_wireClickY)<9;
+                m_wireClickTime=now;m_wireClickX=x;m_wireClickY=y;
+                if(doubleClick)
+                {
+                    float best=9;size_t bestLink=static_cast<size_t>(-1),bestPoint=0;
+                    for(size_t i=0;i<graph.links.size();++i)
+                    {
+                        std::vector<size_t> segments;const auto points=wireRoute(i,&segments);
+                        for(size_t j=1;j<points.size();++j){const auto& a=points[j-1];const auto& b=points[j];const float dx=b.x-a.x,dy=b.y-a.y,len=dx*dx+dy*dy;if(!len)continue;const float t=std::clamp(((x-a.x)*dx+(y-a.y)*dy)/len,0.f,1.f),d=std::hypot(x-a.x-t*dx,y-a.y-t*dy);if(d<best){best=d;bestLink=i;bestPoint=segments[j-1];}}
+                    }
+                    if(bestLink!=static_cast<size_t>(-1)&&m_document.insertRoutePoint(m_graph,bestLink,bestPoint,(x-kLeft-m_x)/m_zoom,(y-kTop-m_y)/m_zoom)){m_status="Reroute added. Drag to reposition.";m_wireClickTime=-1;m_left=left;return;}
+                }
+                m_selectedNodes.clear();m_selection=static_cast<size_t>(-1);m_marquee=true;m_marqueeX=m_marqueeEndX=x;m_marqueeY=m_marqueeEndY=y;
+                m_left=left;return;
             }
         }
         if(m_drag)
@@ -5346,11 +5390,12 @@ namespace nx
                 {
                     m_dragX=std::clamp(m_grabX+(x-m_pressX)/m_zoom,-1000000.0f,1000000.0f);
                     m_dragY=std::clamp(m_grabY+(y-m_pressY)/m_zoom,-1000000.0f,1000000.0f);
+                    if(held(Key::Shift)){m_dragX=std::round(m_dragX/16.f)*16.f;m_dragY=std::round(m_dragY/16.f)*16.f;}
                 }
             }
             else
             {
-                if(m_dragMoved&&m_document.move(m_graph,m_selection,m_dragX,m_dragY))m_status="Layout changed. Ctrl+S saves your Blueprint.";
+                if(m_dragMoved&&m_document.moveNodes(m_graph,m_selectedNodes,m_dragX-m_grabX,m_dragY-m_grabY))m_status="Layout changed. Ctrl+S saves your Blueprint.";
                 cancelDrag();
             }
             m_pan=false;m_left=left;m_lastX=x;m_lastY=y;
@@ -5418,7 +5463,7 @@ namespace nx
         if (input.repeated(Action::Right)) m_x -= 24;
         if (input.repeated(Action::Up)) m_y += 24;
         if (input.repeated(Action::Down)) m_y -= 24;
-        if (!control && input.pressed(Action::Alternate)) selectGraph((m_graph+1)%m_document.graphs.size());
+        if (!control && !held(Key::Shift) && input.pressed(Action::Alternate)) selectGraph((m_graph+1)%m_document.graphs.size());
     }
 
     void BlueprintWorkspace::draw(Canvas& c)
@@ -5609,7 +5654,7 @@ namespace nx
                 graphText(rows[i].title,x+titleInset,y,w-titleInset-titleRight,headerHeight,titleScale,text);
                 if(m_zoom>=0.65f)
                 {
-                    const auto editableDetails=i==m_selection&&m_zoom>=0.85f?inputDetails(i):std::vector<InputDetail>{};
+                    const auto editableDetails=m_zoom>=0.65f?inputDetails(i):std::vector<InputDetail>{};
                     const float pad=13*m_zoom;
                     for(size_t p=first;p<std::min(last,rows[i].inputs.size());++p)
                     {
@@ -5617,12 +5662,12 @@ namespace nx
                         const float py=y+pinY(p)*m_zoom;
                         const auto detail=std::find_if(editableDetails.begin(),editableDetails.end(),[&](const InputDetail& field){return field.name==pin&&field.editable;});
                         const float right=p<rows[i].outputs.size()?(c.measure(*m_font,rows[i].outputs[p].c_str()).x+25)*m_zoom:0;
-                        if(!wired&&p>=rows[i].outputs.size()&&detail!=editableDetails.end())
+                        if(!wired&&detail!=editableDetails.end())
                         {
-                            const float fx=x+rows[i].fieldX[p]*m_zoom,fw=x+w-pad-fx;
+                            const float fx=x+rows[i].fieldX[p]*m_zoom,fw=x+w-pad-fx-right;
                             if(fw>12*m_zoom)
                             {
-                                const bool editing=m_focus==16&&m_editPin==pin;
+                                const bool editing=m_focus==16&&i==m_selection&&m_editPin==pin;
                                 graphText(pin,x+pad,py-10*m_zoom,fx-x-pad-4*m_zoom,20*m_zoom,m_zoom,muted);
                                 c.roundRect(fx,py-9*m_zoom,fw,18*m_zoom,3,editing?Color{0.23f,0.37f,0.49f,1}:Color{0.21f,0.22f,0.24f,1});
                                 const auto value=editing?m_edit:detail->value;
@@ -5640,6 +5685,7 @@ namespace nx
                 }
             }
         }
+        if(m_marquee){const float x=std::min(m_marqueeX,m_marqueeEndX),y=std::min(m_marqueeY,m_marqueeEndY),w=std::abs(m_marqueeEndX-m_marqueeX),h=std::abs(m_marqueeEndY-m_marqueeY);c.rect(x,y,w,h,{0.25f,0.55f,0.85f,0.15f});c.roundLine(x,y,w,h,1,1,accent);}
         c.noClip();
         if(!m_graphHideLeft)
         {
@@ -5730,7 +5776,7 @@ namespace nx
             if(n.kind=="curve:cubic")
             {c.roundRect(kRight+8,kTop+456+kPaletteExtra,kWidth-kRight-16,30,4,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Edit curve", (kWidth+kRight)*0.5f,kTop+461+kPaletteExtra,text,Align::Center);}
             if(!inputDetails(m_selection).empty())
-            {c.roundRect(kRight+8,kTop+520+kPaletteExtra,kWidth-kRight-16,32,5,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Inspect inputs", (kWidth+kRight)*0.5f,kTop+526+kPaletteExtra,text,Align::Center);}
+            {c.roundRect(kRight+8,kTop+520+kPaletteExtra,kWidth-kRight-16,32,5,{0.19f,0.33f,0.50f,1});c.text(*m_font,"Edit node", (kWidth+kRight)*0.5f,kTop+526+kPaletteExtra,text,Align::Center);}
             c.roundRect(kRight+8,kBottom-40,kWidth-kRight-16,32,5,{0.38f,0.19f,0.23f,1});
             c.text(*m_font,"Delete selected", (kWidth+kRight)*0.5f,kBottom-34,text,Align::Center);
         }
@@ -5742,7 +5788,7 @@ namespace nx
         else
         {
             c.clip(12,kBottom+24,900,22);
-            c.text(*m_font,"Shift+click: select | Layout: arrange/group | Ctrl+right-click wire: reroute",12,kBottom+26,muted);
+            c.text(*m_font,"Drag empty space: select | Shift+drag: snap | Q: align | Double-click wire: reroute",12,kBottom+26,muted);
             c.noClip();
             const char* state=!m_document.dirty()?"Saved / clean":recoveryProtected()?"Recovery protected":"Recovery pending";
             c.text(*m_font,state,kWidth-12,kBottom+26,recoveryProtected()?muted:Color{1.f,0.72f,0.22f,1.f},Align::Right);

@@ -262,6 +262,8 @@ namespace nx
         void updateTone(Services& s,float x,float y,bool click);
         void drawTone(Canvas& c);
         bool saveCurrent(Services& services);
+        bool preserveBeforeSwitch(Services& services);
+        bool ensureDraftAssets(Services& services);
         bool writeVerified(Services& services,const std::string& path,const std::string& bytes);
         bool compileAndExport(Services& services);
         bool validateProject(Services& services,const std::vector<BlueprintScreenOutput>& screens);
@@ -285,7 +287,7 @@ namespace nx
         std::vector<std::string> m_traceValues;
         std::vector<BlueprintScreenOutput> m_previewOutputs;
         BlueprintLocation m_diagnostic;
-        void cancelDrag() { m_drag = false; }
+        void cancelDrag() { m_drag = false; m_marquee=false; }
         struct NodePins { std::vector<std::string> inputs, outputs, inputTypes, outputTypes; float height = 72, width = 196; std::string title; std::vector<std::string> labels; std::vector<float> fieldX; };
         struct WirePins { size_t output, input; };
         std::vector<NodePins> m_rows;
@@ -299,6 +301,10 @@ namespace nx
         float m_x = 0, m_y = 0, m_zoom = 1, m_lastX = 0, m_lastY = 0;
         bool m_left = false, m_pan = false, m_wantedPointer = false;
         bool m_drag = false, m_dragMoved = false;
+        bool m_marquee=false;
+        float m_marqueeX=0,m_marqueeY=0,m_marqueeEndX=0,m_marqueeEndY=0;
+        double m_wireClickTime=-1;
+        float m_wireClickX=0,m_wireClickY=0;
         float m_dragX = 0, m_dragY = 0, m_grabX = 0, m_grabY = 0;
         float m_pressX = 0, m_pressY = 0;
         unsigned m_shortcuts = 0;
