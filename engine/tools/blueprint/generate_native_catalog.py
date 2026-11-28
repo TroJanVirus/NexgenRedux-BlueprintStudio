@@ -13,6 +13,8 @@ def default_expr(p):
     value = p["default"]
     def scalar(v):
         return format(v, ".15g")
+    if p["type"] in ("int64","uint64"):
+        return p["type"] + "(" + str(int(value)) + ")"
     if p["type"] == "string":
         return json.dumps(value, ensure_ascii=True)
     if isinstance(value, list):

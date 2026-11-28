@@ -3,7 +3,7 @@
     'use strict';
     const catalog = typeof module !== 'undefined' ? require('./catalog.js') : root.NexgenCatalog;
     const api = new Map(catalog.nodes.map(n => [n.id, n]));
-    const types = [...new Set(['bool', 'int', 'uint', 'float', 'double', 'string', 'Vec2', 'Vec3', 'Color', ...['bool', 'int', 'uint', 'float', 'double', 'string', 'Vec2', 'Vec3', 'Color', 'Entity@'].map(t => 'array<' + t + '>@'), ...Object.keys(catalog.enums), ...catalog.nodes.flatMap(n => [n.result, ...n.inputs.map(p => p.type)])])].filter(t => t !== 'void');
+    const types = [...new Set(['bool', 'int', 'uint', 'int64', 'uint64', 'float', 'double', 'string', 'Vec2', 'Vec3', 'Color', ...['bool', 'int', 'uint', 'int64', 'uint64', 'float', 'double', 'string', 'Vec2', 'Vec3', 'Color', 'Entity@'].map(t => 'array<' + t + '>@'), ...Object.keys(catalog.enums), ...catalog.nodes.flatMap(n => [n.result, ...n.inputs.map(p => p.type)])])].filter(t => t !== 'void');
     const events = { Screen: { onEnter: [], update: [['dt', 'float']], draw: [['canvas', 'Canvas@']], onSuspend: [], onResume: [], onExit: [] }, Behaviour: { start: [], update: [['dt', 'float']], onHit: [['other', 'Entity@']], onLeave: [['other', 'Entity@']], onGone: [] } };
     const pin = (name, type, def) => ({ name, type, ...(def === undefined ? {} : { default: def }) });
     const signature = (title, category, inputs = [], outputs = [], execIn = false, execOut = []) => ({ title, category, inputs: [...(execIn ? [pin('in', 'exec')] : []), ...inputs], outputs: [...execOut.map(x => pin(x, 'exec')), ...outputs] });
@@ -22,7 +22,7 @@
     ]);
     const maths = { add: '+', subtract: '-', multiply: '*', divide: '/', less: '<', greater: '>', equal: '==', and: '&&', or: '||' };
     function defaultValue(t) { if (t === 'bool')
-        return false; if (t === 'string')
+        return false; if (t === 'int64' || t === 'uint64') return '0'; if (t === 'string')
         return ''; if (t === 'Vec2')
         return [0, 0]; if (t === 'Vec3')
         return [0, 0, 0]; if (t === 'Color')
@@ -59,6 +59,14 @@
         if (!Array.isArray(v) || v.length !== n)
             throw Error('Expected ' + n + ' components');
         return t + '(' + v.map(x => literal('float', x)).join(', ') + ')';
+    } if (t === 'int64' || t === 'uint64') {
+        // JSON numbers lose precision above 2^53; store wide integers as decimal text.
+        if (typeof v !== 'string' || !/^-?\d{1,64}$/.test(v) || (t === 'uint64' && v.startsWith('-')))
+            throw Error('Expected decimal text for ' + t);
+        const n = BigInt(v), lo = t === 'int64' ? -(1n << 63n) : 0n, hi = t === 'int64' ? (1n << 63n)-1n : (1n << 64n)-1n;
+        if (n < lo || n > hi) throw Error('Integer out of range');
+        if (n === -(1n << 63n)) return '(-int64(9223372036854775807)-int64(1))';
+        return t + '(' + String(n) + ')';
     } if (typeof v !== 'number' || !Number.isFinite(v))
         throw Error('Expected finite ' + t); if (t === 'int' || t === 'uint') {
         if (!Number.isInteger(v) || v < (t === 'int' ? -2147483648 : 0) || v > (t === 'int' ? 2147483647 : 4294967295))
@@ -236,9 +244,9 @@
             return signature('Is Valid', 'Values', [pin('value', t)], [pin('result', 'bool')]);
         if (k === 'not')
             return signature('Not', 'Math', [pin('value', 'bool')], [pin('result', 'bool')]);
-        if (k === 'toString' && ['int', 'uint', 'float', 'double', 'bool', 'string'].includes(t))
+        if (k === 'toString' && ['int', 'uint', 'int64', 'uint64', 'float', 'double', 'bool', 'string'].includes(t))
             return signature('To String (' + t + ')', 'Math', [pin('value', t)], [pin('result', 'string')]);
-        if (k === 'convert' && ['int', 'uint', 'float', 'double'].includes(t) && ['int', 'uint', 'float', 'double'].includes(n.to))
+        if (k === 'convert' && ['int', 'uint', 'int64', 'uint64', 'float', 'double'].includes(t) && ['int', 'uint', 'int64', 'uint64', 'float', 'double'].includes(n.to))
             return signature(t + ' → ' + n.to, 'Math', [pin('value', t)], [pin('result', n.to)]);
         if (k === 'select' && types.includes(t))
             return signature('Select ' + t, 'Math', [pin('condition', 'bool'), pin('a', t), pin('b', t)], [pin('result', t)]);
@@ -251,7 +259,7 @@
             if (parts.includes(n.ref))
                 return signature('Get ' + t + '.' + n.ref, 'Math', [pin('value', t)], [pin('result', 'float')]);
         }
-        if (Object.hasOwn(maths, k) && (['int', 'uint', 'float', 'double'].includes(t) && !['and', 'or'].includes(k) || t === 'bool' && ['and', 'or', 'equal'].includes(k) || t === 'string' && ['add', 'equal'].includes(k))) {
+        if (Object.hasOwn(maths, k) && (['int', 'uint', 'int64', 'uint64', 'float', 'double'].includes(t) && !['and', 'or'].includes(k) || t === 'bool' && ['and', 'or', 'equal'].includes(k) || t === 'string' && ['add', 'equal'].includes(k))) {
             return signature(k + ' (' + t + ')', 'Math', [pin('a', t), pin('b', t, k === 'divide' ? 1 : undefined)], [pin('result', ['less', 'greater', 'equal', 'and', 'or'].includes(k) ? 'bool' : t)]);
         }
         return null;
@@ -268,7 +276,7 @@
         list.push({ kind: 'get', ref: v.name }, { kind: 'set', ref: v.name }); if(parentGraph(doc,g)&&g.kind!=='macro') list.push({kind:'parentCall'}); for(const m of members(doc,'graphs').filter(x=>x.kind==='macro'&&x.name!==g.name))list.push({kind:'macroCall',ref:m.name}); for (const f of members(doc,'graphs'))
         if (f.kind === 'function')
             list.push({ kind: 'call', ref: f.name }); for (const t of types) {
-        list.push({ kind: 'constant', type: t }, { kind: 'select', type: t },{kind:'reroute',type:t}); if (['int','uint','float','double'].includes(t)) list.push({kind:'clamp',type:t});
+        list.push({ kind: 'constant', type: t }, { kind: 'select', type: t },{kind:'reroute',type:t}); if (['int','uint','int64','uint64','float','double'].includes(t)) list.push({kind:'clamp',type:t});
         if (t.endsWith('@'))
             list.push({ kind: 'valid', type: t });
         if (['Json@', 'Look@', 'Path@', 'Mesh@', 'Message@', 'Room@', 'Connection@', 'Datagrams@', 'Voice', 'Tween'].includes(t))
@@ -276,13 +284,13 @@
         if (t.startsWith('array<'))
             for (const kind of ['arrayNew', 'arrayLength', 'arrayGet', 'arrayAdd', 'arraySet', 'arrayRemove','forEach'])
                 list.push({ kind, type: t });
-        if (['int', 'uint', 'float', 'double', 'bool', 'string'].includes(t)) {
+        if (['int', 'uint', 'int64', 'uint64', 'float', 'double', 'bool', 'string'].includes(t)) {
             list.push({ kind: 'toString', type: t });
             for (const k of Object.keys(maths))
                 list.push({ kind: k, type: t });
         }
-        if (['int', 'uint', 'float', 'double'].includes(t))
-            for (const to of ['int', 'uint', 'float', 'double'])
+        if (['int', 'uint', 'int64', 'uint64', 'float', 'double'].includes(t))
+            for (const to of ['int', 'uint', 'int64', 'uint64', 'float', 'double'])
                 if (t !== to)
                     list.push({ kind: 'convert', type: t, to });
         if (['Vec2', 'Vec3', 'Color'].includes(t)) {

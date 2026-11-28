@@ -6,7 +6,7 @@ ROOT = Path(__file__).resolve().parents[3]
 HERE = Path(__file__).resolve().parent
 text = (ROOT / 'docs/ScriptReference.md').read_text(encoding='utf-8')
 handles = {'Texture','Model','Effect','Mesh','Font','Sound','Video','Look','Canvas','Entity','Widget','Room','Message','Request','Connection','Datagrams','Json','Path','Playlist','WebSocket','Pixels','Random','Thread','Channel','Samples','AudioStream','Curve','Batch','Packed','Zip'}
-values = {'bool','int','uint','float','double','string','Vec2','Vec3','Color','Blend','Filter','Align','Ease','Bus','FieldShape','FieldJoin','Solid','Place','RoomState','Voice','Tween','Tray','XboxText','Pointer'}
+values = {'bool','int','uint','int64','uint64','float','double','string','Vec2','Vec3','Color','Blend','Filter','Align','Ease','Bus','FieldShape','FieldJoin','Solid','Place','RoomState','Voice','Tween','Tray','XboxText','Pointer'}
 sections = handles | {'Assets','Input','Audio','Save','Scene','Space','Screens','App','Maths','Ui','Net','Paths and noise','Vec2','Vec3','Color','Coroutines','Voice','Tween','Xbox','Xbox360','XboxOne','Windows','Mac','Linux','Data','Window','System'}
 
 def split(s):
@@ -35,6 +35,9 @@ def default(t,s):
         try: return json.loads(s)
         except ValueError: return None
     if t=='bool': return s=='true' if s in ('true','false') else None
+    if t in ('int64','uint64'):
+        try: return str(int(s,0))
+        except ValueError: return None
     if t in ('int','uint','float','double'):
         try: return int(s,0) if t in ('int','uint') else float(s.rstrip('f'))
         except ValueError: return None
@@ -122,13 +125,13 @@ for n in list(nodes):
         nodes.append(old)
 # Enums are collected from the same reference, not inferred from name strings.
 enums={}
-for name in values-{'bool','int','uint','float','double','string','Vec2','Vec3','Color','Voice','Tween'}:
+for name in values-{'bool','int','uint','int64','uint64','float','double','string','Vec2','Vec3','Color','Voice','Tween'}:
     match=re.search(r'^## '+name+r'\n(.*?)(?=^## |\Z)',text,re.M|re.S)
     if match:
         enums[name]=re.findall(r'^\| `([A-Za-z_]\w*)` \|',match[1],re.M)
 nodes=[n for n in nodes if all(p['type'] not in enums or enums[p['type']] for p in n['inputs']) and (n['result'] not in enums or enums[n['result']])]
 # Drop unsupported enum types, e.g. if their declarations aren't listed as individual tokens.
-known={'bool','int','uint','float','double','string','Vec2','Vec3','Color','Voice','Tween','void'}|{h+'@' for h in handles}|{k for k,v in enums.items() if v}
+known={'bool','int','uint','int64','uint64','float','double','string','Vec2','Vec3','Color','Voice','Tween','void'}|{h+'@' for h in handles}|{k for k,v in enums.items() if v}
 def supported(t):
     return t in known or (t.startswith('array<') and t.endswith('>@') and t[6:-2] in known)
 nodes=[n for n in nodes if supported(n['result']) and all(supported(p['type']) for p in n['inputs']+n['outputs'])]

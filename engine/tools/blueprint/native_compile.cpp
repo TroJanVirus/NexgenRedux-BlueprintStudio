@@ -68,14 +68,15 @@ namespace nx
                     result=quote(value);
                 }
                 else if(type=="bool"||type=="Bus"||type=="Align")result=value;
-                else if(type=="int"||type=="uint")
+                else if(type=="int"||type=="uint"||type=="int64"||type=="uint64")
                 {
                     const bool negative=!value.empty()&&value.front()=='-';
                     size_t at=negative?1:0;
                     while(at+1<value.size()&&value[at]=='0')++at;
                     const auto digits=value.substr(at);
                     // AngelScript may infer signed literals differently at the 32-bit boundary.
-                    result=type+"("+(negative&&digits!="0"?"-":"")+digits+")";
+                    if(type=="int64"&&negative&&digits=="9223372036854775808")result="(-int64(9223372036854775807)-int64(1))";
+                    else result=type+"("+(negative&&digits!="0"?"-":"")+digits+")";
                 }
                 else if(!blueprintInputComponentLabels(type).empty())
                 {

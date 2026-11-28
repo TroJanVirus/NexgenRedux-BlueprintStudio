@@ -23,6 +23,8 @@ namespace nx
             {"literal:int","Integer","Values","","value:int"},
             {"literal:float","Float","Values","","value:float"},
             {"literal:uint","Unsigned integer","Values","","value:uint"},
+            {"literal:int64","Integer (64-bit)","Values","","value:int64"},
+            {"literal:uint64","Unsigned integer (64-bit)","Values","","value:uint64"},
             {"literal:double","Double","Values","","value:double"},
             {"make:Vec2","Make Vec2","Values","x:float|y:float","result:Vec2"},
             {"vec2:x","Get X (Vec2)","Math / Vector","target:Vec2","result:float","get_x","get","member","pure","float"},
@@ -68,6 +70,10 @@ namespace nx
             {"global:set:int","Set int global","Module variables","in:exec|value:int","then:exec"},
             {"global:get:uint","Get uint global","Module variables","","value:uint"},
             {"global:set:uint","Set uint global","Module variables","in:exec|value:uint","then:exec"},
+            {"global:get:int64","Get int64 global","Module variables","","value:int64"},
+            {"global:set:int64","Set int64 global","Module variables","in:exec|value:int64","then:exec"},
+            {"global:get:uint64","Get uint64 global","Module variables","","value:uint64"},
+            {"global:set:uint64","Set uint64 global","Module variables","in:exec|value:uint64","then:exec"},
             {"global:get:float","Get float global","Module variables","","value:float"},
             {"global:set:float","Set float global","Module variables","in:exec|value:float","then:exec"},
             {"global:get:double","Get double global","Module variables","","value:double"},
@@ -80,6 +86,10 @@ namespace nx
             {"var:set:int","Set int variable","Variables","in:exec|value:int","then:exec"},
             {"var:get:uint","Get uint variable","Variables","","value:uint"},
             {"var:set:uint","Set uint variable","Variables","in:exec|value:uint","then:exec"},
+            {"var:get:int64","Get int64 variable","Variables","","value:int64"},
+            {"var:set:int64","Set int64 variable","Variables","in:exec|value:int64","then:exec"},
+            {"var:get:uint64","Get uint64 variable","Variables","","value:uint64"},
+            {"var:set:uint64","Set uint64 variable","Variables","in:exec|value:uint64","then:exec"},
             {"var:get:float","Get float variable","Variables","","value:float"},
             {"var:set:float","Set float variable","Variables","in:exec|value:float","then:exec"},
             {"var:get:double","Get double variable","Variables","","value:double"},
@@ -241,6 +251,19 @@ namespace nx
             if(kind=="literal:string")return value.size()<=4096&&value.find('\0')==std::string::npos;
             if(kind=="literal:bool")return value=="true"||value=="false";
             if(kind.rfind("literal:",0)!=0||value.empty()||value.size()>64)return false;
+            // Compare decimal magnitudes as text. This is exact even on targets
+            // where double cannot distinguish adjacent 64-bit integers.
+            if(kind=="literal:int64"||kind=="literal:uint64")
+            {
+                const bool negative=value.front()=='-';
+                if(negative&&kind=="literal:uint64")return false;
+                const size_t start=negative?1:0;
+                if(start==value.size()||value.find_first_not_of("0123456789",start)!=std::string::npos)return false;
+                const auto nonzero=value.find_first_not_of('0',start);
+                const auto digits=nonzero==std::string::npos?std::string("0"):value.substr(nonzero);
+                const std::string limit=kind=="literal:uint64"?"18446744073709551615":negative?"9223372036854775808":"9223372036854775807";
+                return digits.size()<limit.size()||(digits.size()==limit.size()&&digits<=limit);
+            }
             if(value.find_first_not_of("0123456789.eE+-")!=std::string::npos)return false;
             char* end=nullptr;const double n=std::strtod(value.c_str(),&end);
             if(end!=value.c_str()+value.size()||!std::isfinite(n))return false;
@@ -290,7 +313,7 @@ namespace nx
         bool number(JsonValue& j,const char* key,double value){auto* v=j.put(key);if(!v)return false;v->setNumber(value);return true;}
     }
     bool blueprintLiteralType(const std::string& type)
-    {return type=="bool"||type=="int"||type=="uint"||type=="float"||type=="double"||type=="string";}
+    {return type=="bool"||type=="int"||type=="uint"||type=="int64"||type=="uint64"||type=="float"||type=="double"||type=="string";}
     std::vector<std::string> blueprintInputComponentLabels(const std::string& type)
     {
         if(type=="Vec2")return {"X","Y"};
@@ -327,7 +350,7 @@ namespace nx
     }
     bool blueprintVariableType(const std::string& type){return blueprintLiteralType(type)||!blueprintArrayElement(type).empty()||type=="Playlist@"||type=="WebSocket@"||type=="Widget@"||type=="Thread@"||type=="Channel@"||type=="Samples@"||type=="AudioStream@"||type=="Voice"||type=="Sound@"||type=="Curve@"||type=="Batch@"||type=="Packed@"||type=="Zip@"||type=="Font@"||type=="Texture@"||type=="BP_MapInt"||type=="BP_MapString"||type=="BP_SetInt"||type=="BP_SetString"||customTypeName(type)||classTypeName(type);}
     bool blueprintLosslessConversion(const std::string& from,const std::string& to)
-    {return arrayBorrow(from,to)||(to=="double"&&(from=="int"||from=="uint"||from=="float"));}
+    {return arrayBorrow(from,to)||(to=="double"&&(from=="int"||from=="uint"||from=="float"))||(to=="int64"&&(from=="int"||from=="uint"))||(to=="uint64"&&from=="uint");}
     bool blueprintInvokesFunction(const std::string& kind)
     {return kind=="call:function"||kind=="call:library"||kind=="call:event"||kind=="dispatch:broadcast"||kind=="async:start";}
     bool blueprintNamedCall(const std::string& kind)
@@ -384,16 +407,16 @@ namespace nx
                 {"less","Less than","<",true},{"less_equal","Less or equal","<=",true},
                 {"greater","Greater than",">",true},{"greater_equal","Greater or equal",">=",true}
             };
-            for(const std::string type:{"int","uint","float","double"})
+            for(const std::string type:{"int","uint","int64","uint64","float","double"})
             {
                 for(const auto& op:numeric)
                     operation(std::string(op.id)+":"+type,std::string(op.title)+" ("+type+")","Math",type,op.comparison?"bool":type,op.op);
-                if(type=="int"||type=="uint")operation("mod:"+type,"Remainder ("+type+")","Math",type,type,"%");
-                if(type!="uint")operation("negate:"+type,"Negate ("+type+")","Math",type,type,"-",true);
-                for(const std::string target:{"int","uint","float","double"})
+                if(type=="int"||type=="uint"||type=="int64"||type=="uint64")operation("mod:"+type,"Remainder ("+type+")","Math",type,type,"%");
+                if(type!="uint"&&type!="uint64")operation("negate:"+type,"Negate ("+type+")","Math",type,type,"-",true);
+                for(const std::string target:{"int","uint","int64","uint64","float","double"})
                     if(target!=type)operation("cast:"+type+":"+target,"Convert "+type+" to "+target,"Conversions",type,target,"cast",true);
             }
-            for(const std::string type:{"bool","int","uint","float","double","string","Vec2","Vec3","Color","Entity@","Playlist@","WebSocket@","Widget@"})
+            for(const std::string type:{"bool","int","uint","int64","uint64","float","double","string","Vec2","Vec3","Color","Entity@","Playlist@","WebSocket@","Widget@"})
             {
                 BlueprintNodeSpec spec;
                 spec.id="capture:"+type;spec.title="Capture "+type;spec.category="Variables";

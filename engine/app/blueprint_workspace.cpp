@@ -34,7 +34,7 @@ namespace nx
         constexpr float kNodeWidth = 196, kNodeHeight = 72;
         // Each native pin is provided by the generated catalogue.
         constexpr float kPinStart=38, kPinStep=22;
-        constexpr const char* variableTypes[]={"bool","int","uint","float","double","string","Playlist@","WebSocket@","Widget@","Thread@","Channel@","Samples@","AudioStream@","Sound@","Voice","Curve@","Batch@","Packed@","Zip@","Font@","Texture@","array<int>","array<uint>","array<float>","array<bool>","array<string>","array<Vec2>","array<Color>","BP_MapInt","BP_MapString","BP_SetInt","BP_SetString"};
+        constexpr const char* variableTypes[]={"bool","int","uint","int64","uint64","float","double","string","Playlist@","WebSocket@","Widget@","Thread@","Channel@","Samples@","AudioStream@","Sound@","Voice","Curve@","Batch@","Packed@","Zip@","Font@","Texture@","array<int>","array<uint>","array<float>","array<bool>","array<string>","array<Vec2>","array<Color>","BP_MapInt","BP_MapString","BP_SetInt","BP_SetString"};
         constexpr Color text = {0.88f, 0.91f, 0.96f, 1};
         constexpr Color muted = {0.57f, 0.65f, 0.76f, 1};
         constexpr Color accent = {0.27f, 0.65f, 0.98f, 1};
@@ -75,7 +75,7 @@ namespace nx
             if(type=="bool")return {0.95f,0.39f,0.45f,1};
             if(type=="string")return {0.84f,0.47f,0.90f,1};
             if(type=="float"||type=="double")return {0.46f,0.83f,0.48f,1};
-            if(type=="int"||type=="uint")return {0.34f,0.82f,0.81f,1};
+            if(type=="int"||type=="uint"||type=="int64"||type=="uint64")return {0.34f,0.82f,0.81f,1};
             if(type=="Vec2"||type=="Vec3"||type=="Color")return {0.96f,0.71f,0.32f,1};
             return accent;
         }

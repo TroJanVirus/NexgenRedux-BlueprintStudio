@@ -3134,3 +3134,39 @@ NX_TEST(nativeUpstreamCurvesBatchesAndArchivesThroughGraphs)
     NX_EXPECT(strcmp(r.save.get("bp_curve",""),"yes")==0);
     NX_EXPECT(strcmp(r.save.get("bp_archive",""),"Redux")==0);
 }
+
+NX_TEST(nativePackedWideIntegerRoundTrip)
+{
+    Rig r; NX_EXPECT(r.ok);if(!r.ok)return;
+    BlueprintDocument doc;doc.create();std::string error,source;
+    bool ok=true;
+    auto add=[&](const char* kind){auto n=doc.graphs[0].nodes.size();ok=ok&&doc.addNode(0,kind,0,0,error);return n;};
+    auto wire=[&](size_t a,const char* out,size_t b,const char* in){ok=ok&&doc.connect(0,a,out,b,in,error);};
+    auto input=[&](size_t n,const char* pin,const char* value){ok=ok&&doc.setInputValue(0,n,pin,value,error);};
+    const auto packed=add("api:Packed:Packed:");
+    wire(0,"then",packed,"in");
+    size_t tail=packed;
+    const char* values[]={"-9223372036854775808","9007199254740993","9223372036854775807"};
+    for(const char* v:values)
+    {
+        const auto write=add("api:Packed:writeI64:Packed@,int64");wire(tail,"then",write,"in");wire(packed,"result",write,"target");input(write,"value",v);tail=write;
+    }
+    const auto bytes=add("api:Packed:get_bytes:Packed@");wire(packed,"result",bytes,"target");
+    const auto reopen=add("api:Packed:Packed:string");wire(tail,"then",reopen,"in");wire(bytes,"result",reopen,"bytes");tail=reopen;
+    for(int i=0;i<3;++i)
+    {
+        const auto read=add("api:Packed:readI64:Packed@");wire(tail,"then",read,"in");wire(reopen,"result",read,"target");
+        const auto equal=add("equal:int64");wire(read,"result",equal,"a");input(equal,"b",values[i]);
+        const auto branch=add("branch");wire(read,"then",branch,"in");wire(equal,"result",branch,"condition");
+        const auto save=add("api:Save:Save::set:string,string");wire(branch,"true",save,"in");
+        input(save,"key",i==0?"wide_min":i==1?"wide_exact":"wide_max");input(save,"value","yes");tail=branch;
+    }
+    if(!ok||!compileBlueprint(doc,source,error)){NX_ERROR("Wide integer graph: %s",error.c_str());NX_EXPECT(false);return;}
+    r.platform.files["project/main/screen.json"]="{\"title\":\"Wide integer pack\"}";
+    r.platform.files["project/main/main.as"]=source;
+    if(!r.screens.init(r.services,"project","main")){NX_EXPECT(false);return;}
+    r.step(3);NX_EXPECT(!r.screens.failed());
+    NX_EXPECT(strcmp(r.save.get("wide_min",""),"yes")==0);
+    NX_EXPECT(strcmp(r.save.get("wide_exact",""),"yes")==0);
+    NX_EXPECT(strcmp(r.save.get("wide_max",""),"yes")==0);
+}

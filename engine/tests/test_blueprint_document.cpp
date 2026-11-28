@@ -9,7 +9,7 @@
 using namespace nx;
 NX_TEST(nativeCatalogueContainsReferenceAPI)
 {
-    NX_EXPECT(blueprintCatalogue().size()==1421);
+    NX_EXPECT(blueprintCatalogue().size()==1476);
     const auto* save=blueprintSpec("api:Save:Save::set:string,string");
     NX_EXPECT(save&&save->inputs.size()==3&&save->outputs.size()==1);
     if(save&&save->inputs.size()==3)NX_EXPECT(save->inputs[0].type=="exec"&&save->inputs[2].type=="string");
@@ -1987,4 +1987,31 @@ NX_TEST(nativeAudioBusInputsAndSynthesisExport)
     NX_EXPECT(source.find("Voice bp_var_voice;")!=std::string::npos&&source.find("bp_var_voice = ")!=std::string::npos);
     NX_EXPECT(source.find("@bp_var_voice = ")==std::string::npos);
     BlueprintDocument empty;empty.create();NX_EXPECT(compileBlueprint(empty,source,error)&&source.find("bp_audio_wave(")==std::string::npos);
+}
+
+NX_TEST(nativeWideIntegerLiteralsAndLosslessConversions)
+{
+    BlueprintDocument doc;doc.create();std::string error,source,bytes;
+    NX_EXPECT(doc.editVariableDeclaration("Screen","field low:int64=-9223372036854775808",error));
+    NX_EXPECT(doc.editVariableDeclaration("Screen","field high:uint64=18446744073709551615",error));
+    NX_EXPECT(!doc.editVariableDeclaration("Screen","field bad:uint64=18446744073709551616",error));
+    NX_EXPECT(doc.addNode(0,"literal:int64",0,0,error));
+    NX_EXPECT(doc.setLiteral(0,1,"9223372036854775807",error));
+    NX_EXPECT(!doc.setLiteral(0,1,"9223372036854775808",error));
+    NX_EXPECT(!doc.setLiteral(0,1,"-9223372036854775809",error));
+    NX_EXPECT(!doc.setLiteral(0,1,"1e9",error));
+    NX_EXPECT(doc.addNode(0,"literal:uint64",0,0,error));
+    NX_EXPECT(doc.setLiteral(0,2,"18446744073709551615",error));
+    NX_EXPECT(!doc.setLiteral(0,2,"18446744073709551616",error));
+    NX_EXPECT(!doc.setLiteral(0,2,"-1",error));
+    NX_EXPECT(blueprintLosslessConversion("uint","int64"));
+    NX_EXPECT(blueprintLosslessConversion("uint","uint64"));
+    NX_EXPECT(!blueprintLosslessConversion("int64","double"));
+    NX_EXPECT(!blueprintLosslessConversion("int","uint64"));
+    NX_EXPECT(blueprintSpec("api:Packed:writeI64:Packed@,int64"));
+    NX_EXPECT(blueprintSpec("api:Packed:readI64:Packed@"));
+    NX_EXPECT(doc.serialize(bytes,error));
+    BlueprintDocument copy;NX_EXPECT(copy.load(bytes.data(),bytes.size(),error)&&compileBlueprint(copy,source,error));
+    NX_EXPECT(source.find("(-int64(9223372036854775807)-int64(1))")!=std::string::npos);
+    NX_EXPECT(source.find("uint64(18446744073709551615)")!=std::string::npos);
 }

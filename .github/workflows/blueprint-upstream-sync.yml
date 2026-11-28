@@ -1,4 +1,4 @@
-name: Verify upstream integration and editable curve demo
+name: Verify upstream integration and exact 64-bit packing
 on:
   workflow_dispatch:
   push:
@@ -51,7 +51,7 @@ jobs:
           node - <<'JS'
           const assert = require('node:assert/strict');
           const nodes = require('./engine/tools/blueprint/catalog.js').nodes;
-          for (const id of ['api:Curve:Curve:','api:Curve:at:Curve@,float','api:Curve:triangulate:array<Vec2>@','api:Batch:Batch:','api:Packed:Packed:','api:Zip:Zip:','api:Vec2:rotated:Vec2,float','api:Data:Data::crc32:string','api:Thread:Thread:string','api:Channel:Channel:string','api:Channel:pop:Channel@:string out','api:Window:Window::resize:uint,uint','api:System:System::get_processors:','api:Samples:Samples:uint,uint,uint','api:AudioStream:AudioStream:uint,uint,float']) assert(nodes.some(n => n.id === id), id);
+          for (const id of ['api:Packed:writeI64:Packed@,int64','api:Packed:readI64:Packed@','api:Curve:Curve:','api:Curve:at:Curve@,float','api:Curve:triangulate:array<Vec2>@','api:Batch:Batch:','api:Packed:Packed:','api:Zip:Zip:','api:Vec2:rotated:Vec2,float','api:Data:Data::crc32:string','api:Thread:Thread:string','api:Channel:Channel:string','api:Channel:pop:Channel@:string out','api:Window:Window::resize:uint,uint','api:System:System::get_processors:','api:Samples:Samples:uint,uint,uint','api:AudioStream:AudioStream:uint,uint,float']) assert(nodes.some(n => n.id === id), id);
           for (const call of ['wait','demand','Worker::sleep']) assert(!nodes.some(n => ['Thread','Channel'].includes(n.category) && n.call === call), call);
           JS
           git diff --check
